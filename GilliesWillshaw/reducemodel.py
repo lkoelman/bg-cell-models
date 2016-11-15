@@ -264,6 +264,7 @@ def reduce_onedend():
 		- the equivalent Rin has two free parameters: d and L. Use d of the 
 		  largest tree and calculate L from this and the equivalent resistance value.
 	"""
+	# use min. amount of sections to reproduce behaviour
 	pass
 
 

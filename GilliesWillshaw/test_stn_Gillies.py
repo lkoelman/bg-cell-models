@@ -43,54 +43,19 @@ hoc.load_file("stdrun.hoc") # Load the standard run library
 
 # Global variables
 soma = None
-gillies_mechs = ['STh', 'Na', 'NaL', 'KDR', 'Kv31', 'Ih', 'Cacum', 'sKCa', 'CaT', 'HVA']
-
-def sigm(x, theta, sigma):
-    """ Sigmoid/logistic/smoothy heavyside function
-    @param x	x-value or x-axis vector
-    @param theta	midpoint of sigmoid
-    @param sigma	slope of sigmoid
-    """
-    return 1./(1.+np.exp(-(x-theta)/sigma))
-
-def sigmshift(x, y0, y1, theta, sigma):
-    """ Vertically shifted sigmoid/logistic function
-    @param x	x-value or x-axis vector
-    @param y0	y for x << theta
-    @param y1	y for x >> theta
-    @param theta	midpoint of sigmoid
-    @param sigma	slope of sigmoid
-    """
-    return y0 + y1/(1.0+np.exp(-(x-theta)/sigma))
-
-def bellshift(x, y0, y1, theta_a, theta_b, sigma_a, sigma_b):
-	"""" Vertically shifted bell curve
-	@param y0		y outside of bell region
-	@param y1		y inside bell region
-	@param theta_a	midpoint of first sigmoid
-    @param sigma_a	slope of first sigmoid
-    @param theta_b	midpoint of second sigmoid
-    @param sigma_b	slope of second sigmoid (opposite sign of sigma_a)
-	"""
-	return y0 + y1/(np.exp(-(x-theta_a)/sigma_a) + np.exp(-(x-theta_b)/sigma_b))
-
-def rates_to_steadystates(v, alphafun, betafun):
-	""" Steady state activation and time constant from rate functions """
-	alpha = alphafun(v)
-	beta = betafun(v)
-	tau_inf = 1.0 / (alpha + beta)
-	act_inf = alpha / (alpha + beta)
-	return act_inf, tau_inf
+gillies_mechs = ['STh', 'Na', 'NaL', 'KDR', 'Kv31', 'Ih', 'Cacum', 'sKCa', 'CaT', 'HVA'] # all mechanisms
+gillies_gdict = {'STh': ['gpas'], # passive/leak channel
+				'Na': ['gna'], 'NaL':['gna'], # Na channels
+				'KDR':['gk'], 'Kv31':['gk'], 'sKCa':['gk'], # K channels
+				'Ih':['gk'], # nonspecific channels
+				'CaT':['gcaT'], 'HVA':['gcaL', 'gcaN']} # Ca channels
+gillies_glist = []
+for mechname, mechgs in gillies_gdict.iteritems():
+	for gname in mechgs: gillies_glist.append(gname+'_'+mechname)
 
 def lambda_f(f, diam, Ra, cm):
 	""" Compute electrotonic length (taken from stdlib.hoc) """
 	return 1e5*np.sqrt(diam/(4*np.pi*f*Ra*cm))
-
-def plot_activation():
-	""" Plot steady state activation variables and their time constants
-		for each current of the mechanism
-	"""
-	pass
 
 def stn_cell_gillies():
 	""" Initialize cell/setup for running individual tests on cell """
@@ -104,9 +69,12 @@ def stn_cell_gillies():
 	stims = h.stim1, h.stim2, h.stim3
 	return soma, dends, stims
 
-def stn_cell_threesec():
+def stn_cell_threesec(resurgent=False):
 	""" Initialie reduced Gilliew & Willshaw model consisting of
 		three sections (one section for each dendritic tree)
+
+	OBSERVATIONS:
+	- same behavior as original model
 	"""
 	# Properties from SThprotocell.hoc
 	all_Ra = 150.224
@@ -122,8 +90,6 @@ def stn_cell_threesec():
 	soma.L = soma_L
 	soma.cm = all_cm
 	for mech in gillies_mechs: soma.insert(mech)
-	soma.gna_Na = 1.483419823e-02
-	soma.gna_NaL = 1.108670852e-05
 	setconductances(soma, -1)
 	setionstyles_gillies(soma)
 	
@@ -160,17 +126,152 @@ def stn_cell_threesec():
 
 	return soma, (dend0, dend1), (stim1, stim2, stim3)
 
+def stn_cell_threecomp():
+	""" Initialize reduced Gilliew & Willshaw model consisting of
+		three compartments (three sections with one segment each
+		in NEURON)
+
+	OBSERVATIONS
+	- cannot get same behavour as in original model or reduced model
+	  with large amount of compartments. Processes/interaction of membrane
+	  mechanisms in distal dendrite is not sufficiently isolated from
+	  processes in soma.
+	"""
+	# Properties from SThprotocell.hoc
+	all_Ra = 150.224
+	all_cm = 1.0
+	soma_L = 18.8
+	soma_diam = 18.3112
+
+	# Create soma
+	soma = h.Section()
+	soma.nseg = 1
+	soma.Ra = all_Ra
+	soma.diam = soma_diam
+	soma.L = soma_L
+	soma.cm = all_cm
+	for mech in gillies_mechs: soma.insert(mech)
+	setconductances(soma, -1)
+	setionstyles_gillies(soma)
+	
+	# Right dendritic tree (Fig. 1, small one)
+	d_proximal, d_distal = 1.9480, 0.4870 # diam of most proximal/parent sec, most distal sec
+	dend1 = h.Section()
+	dend1.connect(soma(0))
+	dend1.diam = d_proximal
+	dend1.L = 549.86 # equivalent length using Rall model
+	dend1.Ra = all_Ra
+	dend1.cm = all_cm
+	dend1.nseg = 1
+	for mech in gillies_mechs: dend1.insert(mech) # insert mechanisms
+	setconductances(dend1, 1, fixbranch=8, fixloc=0.98) # set channel conductances
+	setionstyles_gillies(dend1) # set ion styles
+
+	# Left dendritic tree (Fig. 1, big one)
+	d_proximal, d_distal = 3.0973, 0.4870 # diam of most proximal/parent sec, most distal sec
+	dend0 = h.Section()
+	dend0.connect(soma(1))
+	dend0.diam = d_proximal
+	dend0.L = 703.34 # equivalent length using Rall model
+	dend0.Ra = all_Ra
+	dend0.cm = all_cm
+	dend0.nseg = 1
+	for mech in gillies_mechs: dend0.insert(mech) # insert mechanisms
+	setconductances(dend0, 0, fixbranch=10, fixloc=0.98) # set channel conductances
+	setionstyles_gillies(dend0) # set ion styles
+
+	# Create stimulator objects
+	stim1 = h.IClamp(soma(0.5))
+	stim2 = h.IClamp(soma(0.5))
+	stim3 = h.IClamp(soma(0.5))
+
+	return soma, (dend0, dend1), (stim1, stim2, stim3)
+
+def stn_cell_resurgent():
+    """ Initialize reduced Gilliew & Willshaw model consisting of
+        three sections (one section for each dendritic tree)
+
+    """
+    # Properties from SThprotocell.hoc
+    all_Ra = 150.224
+    all_cm = 1.0
+    soma_L = 18.8
+    soma_diam = 18.3112
+
+    # List of mechanisms to insert
+    stn_mechs = list(gillies_mechs)
+    stn_mechs.append('Narsg') # add Raman & bean (2001) resurgent channel model
+
+    # List of channel conductances
+    stn_glist = list(gillies_glist)
+    stn_glist.append('gbar_Narsg')
+
+    # Create soma
+    soma = h.Section()
+    soma.nseg = 1
+    soma.Ra = all_Ra
+    soma.diam = soma_diam
+    soma.L = soma_L
+    soma.cm = all_cm
+    for mech in stn_mechs: soma.insert(mech)
+    setconductances(soma, -1, glist=stn_glist)
+    setionstyles_gillies(soma)
+    
+    # Right dendritic tree (Fig. 1, small one)
+    dend1 = h.Section()
+    dend1.connect(soma(0))
+    dend1.diam = 1.9480 # diam of topmost parent section
+    dend1.L = 549.86 # equivalent length using Rall model
+    dend1.Ra = all_Ra
+    dend1.cm = all_cm
+    opt_nseg1 = int(np.ceil(dend1.L/(0.1*lambda_f(100., dend1.diam, dend1.Ra, dend1.cm))))
+    dend1.nseg = opt_nseg1
+    for mech in stn_mechs: dend1.insert(mech) # insert mechanisms
+    setconductances(dend1, 1, glist=stn_glist) # set channel conductances
+    setionstyles_gillies(dend1) # set ion styles
+
+    # Left dendritic tree (Fig. 1, big one)
+    dend0 = h.Section()
+    dend0.connect(soma(1))
+    dend0.diam = 3.0973 # diam of topmost parent section
+    dend0.L = 703.34 # equivalent length using Rall model
+    dend0.Ra = all_Ra
+    dend0.cm = all_cm
+    opt_nseg0 = int(np.ceil(dend0.L/(0.1*lambda_f(100., dend0.diam, dend0.Ra, dend0.cm))))
+    dend0.nseg = opt_nseg0
+    for mech in stn_mechs: dend0.insert(mech) # insert mechanisms
+    setconductances(dend0, 0, glist=stn_glist) # set channel conductances
+    setionstyles_gillies(dend0) # set ion styles
+
+    # Create stimulator objects
+    stim1 = h.IClamp(soma(0.5))
+    stim2 = h.IClamp(soma(0.5))
+    stim3 = h.IClamp(soma(0.5))
+
+    return soma, (dend0, dend1), (stim1, stim2, stim3)
+
 ################################################################################
 # Functions for reduced model
 ################################################################################
 
-def setconductances(sec, dendidx):
+def setconductances(sec, dendidx, fixbranch=None, fixloc=None, glist=None):
 	""" Set conductances at the node/midpoint of each segment
 		by interpolating values along longest path
-		(e.g. along branch 1-2-5 in dend1) """
+		(e.g. along branch 1-2-5 in dend1)
+
+	@param fixbranch	if you want to map the section to a fixed
+						branch, provide its number/index
+	@param fixloc		if you want to map all segments/nodes
+						to a fixed location on the mapped branch,
+						provide a location (0<=x<=1)
+	@param glist		list of mechanisms to set conductances for
+	"""
 
 	# Load channel conductances from file
 	allgmats = reducemodel.loadgstructs()
+	if glist is None:
+		glist = list(gillies_glist)
+
 	# Na & NaL are not from file
 	h("default_gNa_soma = 1.483419823e-02")
 	h("default_gNa_dend = 1.0e-7")
@@ -191,35 +292,46 @@ def setconductances(sec, dendidx):
 		longestpath = np.array([1]) # soma is dendidx=-1, branchidx=0 in file
 		pathL = np.array([18.8])
 
-	# Interpolate each conductance along longest path
+	# Distributed conductances: interpolate each conductance along longest path
 	for iseg in range(1, sec.nseg+1):
 		xnode = (2.*iseg-1.)/(2.*sec.nseg) # arclength of current node (segment midpoint)
 		lnode = xnode*sum(pathL) # equivalent length along longest path
 
 		# first determine on which branch we are and how far on it
-		nodebranch = np.NaN # invalid branch
-		xonbranch = 0
-		for i, branchidx in enumerate(longestpath):
-			if lnode <= pathL[0:i+1].sum(): # maps to this branch
-				begL = pathL[0:i].sum()
-				endL = pathL[0:i+1].sum()
-				nodebranch = branchidx
-				xonbranch = (lnode-begL)/(endL-begL)
-				break
-		if np.isnan(nodebranch):
-			raise Exception('could not map to branch')
+		if (fixbranch is not None) and (fixloc is not None):
+			nodebranch = fixbranch
+			xonbranch = fixloc
+		else:
+			nodebranch = np.NaN # invalid branch
+			xonbranch = 0
+			for i, branchidx in enumerate(longestpath): # map node to branch and location
+				if lnode <= pathL[0:i+1].sum(): # location maps to this branch
+					begL = pathL[0:i].sum()
+					endL = pathL[0:i+1].sum()
+					nodebranch = branchidx
+					xonbranch = (lnode-begL)/(endL-begL) # how far along this branch are we
+					break
+			if np.isnan(nodebranch):
+				raise Exception('could not map to branch')
 
 		# now interpolate all conductances from file
 		for gname, gmat in allgmats.iteritems():
+			if gname not in glist:
+				print('Skipping conductance: '+gname)
+				continue
+			print('Setting conductance: '+gname)
 			branchrows = (gmat['dendidx']==dendidx) & (gmat['branchidx']==nodebranch-1)
 			gnode = np.interp(xonbranch, gmat[branchrows]['x'], gmat[branchrows]['g'])
 			sec(xnode).__setattr__(gname, gnode)
 
-		# For Na and NaL use default values (see tools.hoc/washTTX)
-		gNa = h.default_gNa_soma if dendidx==-1 else h.default_gNa_dend
-		gNaL = h.default_gNaL_soma if dendidx==-1 else h.default_gNaL_dend
-		sec(xnode).__setattr__('gna_Na', gNa)
-		sec(xnode).__setattr__('gna_NaL', gNaL)
+		# Conductances with constant value (vals: see tools.hoc/washTTX)
+		gNa = 1.483419823e-02 if dendidx==-1 else 1.0e-7 # see h.default_gNa_soma/dend in .hoc file
+		gNaL = 1.108670852e-05 if dendidx==-1 else 0.81e-5 # see h.default_gNaL_soma/dend in .hoc file
+		gNarsg = 0.016 # same as in .mod file and Akeman papeer
+		g_fixed = {'gna_Na':gNa, 'gna_NaL':gNaL, 'gbar_Narsg':gNarsg} # NOTE: Narsg is NOT in Gillies model
+		for gname, gval in g_fixed.iteritems():
+			if gname not in glist: continue
+			sec(xnode).__setattr__(gname, gval)
 
 def setionstyles_gillies(sec):
 	""" Set ion styles to work correctly with membrane mechanisms """
@@ -288,7 +400,7 @@ def applyApamin(soma, dends):
 # Experiments
 ################################################################################
 
-def test_spontaneous():
+def test_spontaneous(resurgent=False, fullmodel=True):
 	""" Run rest firing experiment from original Hoc file 
 
 	PAPER
@@ -311,21 +423,28 @@ def test_spontaneous():
 	"""
 
 	# make set-up
-	soma, dends = stn_cell_gillies()
+	if fullmodel:
+		soma, dends, stims = stn_cell_gillies()
+	else:
+		soma, dends, stims = stn_cell_threesec()
+		
 
 	# Set simulation parameters
 	dur = 2000
 	h.dt = 0.025
 	h.celsius = 37 # different temp from paper
-	h.v_init = -60 # paper simulations sue default v_init
-	h.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+	h.v_init = -60 # paper simulations use default v_init
+	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 	# Record
 	secs = {'soma': soma}
 	traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
 	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
 	# Na currents
-	traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'}
+	if resurgent:
+		traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'ina'}
+	else:
+		traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'}
 	traceSpecs['I_NaL'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'}
 	# K currents
 	traceSpecs['I_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'ik'}
@@ -351,7 +470,7 @@ def test_spontaneous():
 	recI.pop('V_soma')
 	analysis.cumulPlotTraces(recI, recordStep, cumulate=False)
 
-def test_plateau():
+def test_plateau(fulltree=True, fullseg=True):
 	""" Test plateau potential evoked by applying depolarizing pulse 
 		at hyperpolarized level of membrane potential
 
@@ -372,16 +491,19 @@ def test_plateau():
 
 	"""
 	# make set-up
-	fullmodel = False
-	if fullmodel:
+	if fulltree:
 		soma, dends, stims = stn_cell_gillies()
 		# Load section indicated with arrow in fig. 5C
 		# If you look at tree1-nom.dat it should be the seventh entry 
 		# (highest L and nseg with no child sections of which there are two instances)
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	else:
+	elif fullseg:
 		soma, dends, stims = stn_cell_threesec()
+		dendsec = dends[1]
+		dendloc = 0.9
+	else:
+		soma, dends, stims = stn_cell_threecomp()
 		dendsec = dends[1]
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
@@ -459,7 +581,7 @@ def test_plateau():
 		if k.startswith('d'): recDend[k] = recData[k]
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False, timeRange=burst_time)
 
-def test_reboundburst():
+def test_reboundburst(fulltree=True, fullseg=True):
 	""" Run rebound burst experiment from original Hoc file
 
 	GILLIES CURRENTS
@@ -481,16 +603,19 @@ def test_reboundburst():
 	"""
 
 	# make set-up
-	fullmodel = False
-	if fullmodel:
+	if fulltree:
 		soma, dends, stims = stn_cell_gillies()
 		# Load section indicated with arrow in fig. 5C
 		# If you look at tree1-nom.dat it should be the seventh entry 
 		# (highest L and nseg with no child sections of which there are two instances)
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	else:
+	elif fullseg:
 		soma, dends, stims = stn_cell_threesec()
+		dendsec = dends[1]
+		dendloc = 0.9
+	else:
+		soma, dends, stims = stn_cell_threecomp()
 		dendsec = dends[1]
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
@@ -565,7 +690,7 @@ def test_reboundburst():
 	# plt.show(block=False)
 	# Plot dendrite currentds
 
-def test_slowbursting():
+def test_slowbursting(fulltree=True, fullseg=True):
 	""" Test slow rhythmic bursting mode under conditions of constant 
 		hyperpolarizing current injection and lower sKCa conductance
 
@@ -582,16 +707,19 @@ def test_slowbursting():
 	"""
 
 	# make set-up
-	fullmodel = True
-	if fullmodel:
+	if fulltree:
 		soma, dends, stims = stn_cell_gillies()
 		# Load section indicated with arrow in fig. 5C
 		# If you look at tree1-nom.dat it should be the seventh entry 
 		# (highest L and nseg with no child sections of which there are two instances)
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	else:
+	elif fullseg:
 		soma, dends, stims = stn_cell_threesec()
+		dendsec = dends[1]
+		dendloc = 0.9
+	else:
+		soma, dends, stims = stn_cell_threecomp()
 		dendsec = dends[1]
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
@@ -670,8 +798,8 @@ def test_slowbursting():
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False)
 
 if __name__ == '__main__':
-	# test_spontaneous()
+	test_spontaneous(resurgent=False)
 	# test_reboundburst()
-	# test_plateau()
-	test_slowbursting()
+	# test_plateau(False, False)
+	# test_slowbursting()
 	# soma, dends = stn_cell_threesec()
