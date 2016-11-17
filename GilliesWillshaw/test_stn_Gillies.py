@@ -57,16 +57,30 @@ def lambda_f(f, diam, Ra, cm):
 	""" Compute electrotonic length (taken from stdlib.hoc) """
 	return 1e5*np.sqrt(diam/(4*np.pi*f*Ra*cm))
 
-def stn_cell_gillies():
-	""" Initialize cell/setup for running individual tests on cell """
+def stn_cell_gillies(resurgent=False):
+	""" Initialize full Gillies & Willshaw cell model with two dendritic trees
+	@param resurgent	if True, resurgent Na current mechanism
+						from Do & Bean (2001) is added to the cell
+	"""
 	# Create cell and three IClamp in soma
-	# make set-up
 	global soma
 	if soma is None:
 		h.xopen("createcell.hoc")
 		soma = h.SThcell[0].soma
 	dends = h.SThcell[0].dend0, h.SThcell[0].dend1
 	stims = h.stim1, h.stim2, h.stim3
+
+	# Add resurgent current if requested
+	if resurgent:
+		default_gNarsg_soma = 0.016 # same as in .mod file and Akeman papeer
+		default_gNarsg_dend = 1.0e-7 # default value for Na in Gillies model
+		soma.insert('Narsg')
+		soma.gbar_Narsg = default_gNarsg_soma
+		alldendsecs = list(dends[0]) + list(dends[1])
+		for sec in alldendsecs:
+			sec.insert('Narsg')
+			sec.gbar_Narsg = default_gNarsg_dend
+
 	return soma, dends, stims
 
 def stn_cell_threesec(resurgent=False):
@@ -796,6 +810,116 @@ def test_slowbursting(fulltree=True, fullseg=True):
 	for k, v in recData.iteritems():
 		if k.startswith('d'): recDend[k] = recData[k]
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False)
+
+def test_burstresurgent(fulltree=True, resurgent=False):
+	""" Run rebound burst experiment from original Hoc file
+
+	EXPECTED BEHAVIOUR
+	- INa_rsg slowly inactivated during long firing period
+	- INa_rsg deinactivated during hyperpolarization
+
+	TODO: 
+	- test replacement of Na mechanism with Narsg modified like in Akemann to match the
+	  timing of the two components of Na current
+	- test shorter, more realistic hyperpolarization period (corresponding to volley of IPSPs)
+	  to see if there the difference is greated between situation with and without Narsg
+	"""
+
+	# make set-up
+	if fulltree:
+		soma, dends, stims = stn_cell_gillies(resurgent=resurgent)
+		# Load section indicated with arrow in fig. 5C
+		# If you look at tree1-nom.dat it should be the seventh entry 
+		# (highest L and nseg with no child sections of which there are two instances)
+		dendsec = h.SThcell[0].dend1[7]
+		dendloc = 0.8 # approximate location along dendrite in fig. 5C
+	else:
+		soma, dends, stims = stn_cell_threesec()
+		dendsec = dends[1]
+		dendloc = 0.9
+	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
+
+	# Set simulation parameters
+	dur = 3500
+	h.dt = 0.025
+	h.celsius = 35 # different temp from paper
+	h.v_init = -60 # paper simulations sue default v_init
+	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+
+	# Set up stimulation
+	stim1.delay = 0
+	stim1.dur = 2000
+	stim1.amp = 0.025 # evoke fast spiking -> slow inactivation
+
+	stim2.delay = 2000
+	stim2.dur = 500
+	stim2.amp = -0.25 # hyperpolarizing pulse -> recovery from inactivation (deinactivation)
+
+	stim3.delay = 2500
+	stim3.dur = 1000
+	stim3.amp = 0.0
+
+	# Record
+	secs = {'soma': soma, 'dend': dendsec}
+	traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
+	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
+
+	# Na currents
+	traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'}
+	traceSpecs['I_NaL'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'}
+	# Na resurgent current related
+	if resurgent:
+		traceSpecs['I_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'ina'}
+		# traceSpecs['sI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'Itot'} # inactivated fraction
+		# traceSpecs['sC_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'Ctot'} # closed fraction
+		# traceSpecs['sB_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'B'} # blocked fraction
+		# traceSpecs['sO_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'O'} # open fraction
+	natrans=True
+	if natrans:
+		traceSpecs['sO_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'O'} # open state
+		traceSpecs['sI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'I6'} # inactivated
+		traceSpecs['sC_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'Ctot'} # closed state
+		traceSpecs['sCI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'Itot'} # closed+inactivated
+
+	# K currents
+	traceSpecs['I_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'ik'}
+	traceSpecs['I_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'ik'}
+	traceSpecs['I_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'isKCa'}
+	traceSpecs['I_h'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'ih'}
+	# Ca currents (soma)
+	traceSpecs['I_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iLCa'}
+	traceSpecs['I_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iNCa'}
+	traceSpecs['I_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'iCaT'}
+	recordStep = 0.05
+	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+
+	# Simulate
+	h.tstop = dur
+	h.init() # calls finitialize() and fcurrent()
+	h.run()
+
+	# Analyze
+	burst_time = [980, 1120]
+
+	# Soma voltage
+	recV = {'V_soma':recData['V_soma']}
+	analysis.plotTraces(recV, recordStep)
+
+	# Soma currents (relative)
+	recI = collections.OrderedDict()
+	for k, v in recData.iteritems():
+		if k.startswith('I'): recI[k] = recData[k]
+	analysis.cumulPlotTraces(recI, recordStep, cumulate=False)
+
+	# Na channel states
+	recStates = collections.OrderedDict()
+	for k, v in recData.iteritems():
+		if k.startswith('s'): recStates[k] = recData[k]
+	analysis.cumulPlotTraces(recStates, recordStep, cumulate=False)
+
+	# Overlay voltage signal
+	# plt.plot(np.arange(0, dur, recordStep), recData['V_soma'].as_numpy()*1e-3, color='r')
+	# plt.show(block=False)
 
 if __name__ == '__main__':
 	test_spontaneous(resurgent=False)

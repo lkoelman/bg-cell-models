@@ -1,14 +1,21 @@
-TITLE resurgent sodium channel
+TITLE transient sodium channel
 
 COMMENT
-Neuron implementation of a resurgent sodium channel (with blocking particle)
-Based om updated kinetic parameters from Raman and Bean, Biophys.J. 80 (2001) 729  
+Sodium channel for transient sodium current including voltage-dependent
+slow inactivation and recovery from inactivation (Kuo and Bean 1994) 
 
 Modified by Lucas Koelman, UCD Neuromuscular Systems group (November 2016)
 	- Q10 correction of maximum conductance
 	- use tables for rates
 Modified by Akemann and Knoepfel, J.Neurosci. 26 (2006) 4602
 	- Q10 correction of all rate constants
+	- updated kinetic parameters to model the transient Na current with
+	  slow ianctivation + recovery instead of resurgent current
+		a) epsilon = 1e-12 1/ms (from epsilon = 1.75 1/ms in Narsg)
+			- prevents transition to 'open channel block' state 'OB'
+		b) Oon = 2.3 1/ms (from Oon = 0.75 1/ms in Narsg)
+			- rapid inactivation of transient Na current
+		c) gbar = 0.008 mho/cm2 (from 0.015 mho/cm2)
 Khaliq & Raman (2003), J.Neurosci. 23 (2003) 4899
 	- implementation of model of resurgent Na current and publication to ModelDB
 	- updated kinetic parameters
@@ -17,13 +24,14 @@ Raman & Bean (2001), Biophys.J. 80 (2001) 729
 Kuo & Bean (1994)
 	- initial formulation of Markov-type gating model for sodium current
 	  with slow inactivation and recovery/deinactivation
+	  	- see fig. 6
 
 ENDCOMMENT
 
 NEURON {
-  SUFFIX Narsg
+  SUFFIX Na : NOTE: change Natrans->Na and gbar->gna for interoperability with default Na mechanism
   USEION na READ ena WRITE ina
-  RANGE g, gbar, ina
+  RANGE g, gna, ina
   GLOBAL activate_Q10_rates, activate_Q10_gbar
 
   : channel state info for recording
@@ -46,23 +54,23 @@ CONSTANT {
 }
 
 PARAMETER {
-	gbar = 0.016 (S/cm2)
-	celsius (degC)
-	
 	activate_Q10_rates = 1
 	activate_Q10_gbar = 1
 
+	gna = 0.014 (S/cm2) 
+	celsius (degC)			
+
 	: kinetic parameters
-	Con = 0.005			(/ms)					: closed -> inactivated transitions
-	Coff = 0.5			(/ms)					: inactivated -> closed transitions
-	Oon = 0.75			(/ms)					: open -> Ineg transition
-	Ooff = 0.005		(/ms)					: Ineg -> open transition
-	alpha = 150			(/ms)					: activation
-	beta = 3			(/ms)					: deactivation
-	gamma = 150			(/ms)					: opening
-	delta = 40			(/ms)					: closing, greater than BEAN/KUO = 0.2
-	epsilon = 1.75		(/ms)					: open -> Iplus for tau = 0.3 ms at +30 with x5
-	zeta = 0.03			(/ms)					: Iplus -> open for tau = 25 ms at -30 with x6
+	Con = 0.005			(1/ms)		: closed -> inactivated transitions
+	Coff = 0.5			(1/ms)		: inactivated -> closed transitions
+	Oon = 2.3			(1/ms)		: open -> Ineg transition
+	Ooff = 0.005		(1/ms)		: Ineg -> open transition
+	alpha = 150			(1/ms)		: activation
+	beta = 3			(1/ms)		: deactivation
+	gamma = 150			(1/ms)		: opening
+	delta = 40			(1/ms)		: closing, greater than BEAN/KUO = 0.2
+	epsilon = 1e-12		(1/ms)		: open -> Iplus for tau = 0.3 ms at +30 with x5
+	zeta = 0.03			(1/ms)		: Iplus -> open for tau = 25 ms at -30 with x6
 
 	: Vdep
 	x1 = 20				(mV)								: Vdep of activation (alpha)
@@ -144,12 +152,12 @@ STATE {
 
 BREAKPOINT {
 	SOLVE activation METHOD sparse
- 	g = gbar * gqt * O
+ 	g = gna * gqt * O
  	ina = g * (v - ena)
 
  	: channel state info for recording
- 	Ctot = C1 + C2 + C3 + C4 + C5
- 	Itot = I1 + I2 + I3 + I4 + I5
+ 	Ctot = C1 + C2 + C3 + C4 + C5 : total closed
+ 	Itot = I1 + I2 + I3 + I4 + I5 : total closed and inactivated
 }
 
 INITIAL {

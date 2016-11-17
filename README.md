@@ -27,6 +27,11 @@
 
 ## TODO NEXT ##
 
+- get parameters state model slow inactivaton & recover
+	- check parameters of Kuo & Bean (1994) model for inactivation/recovery model are the same in the Khaliq/Raman/Akeman models published on ModelDB
+		- see paper fig. 7 => not same
+	- see also [Blair & Bean (2003)](Role of Tetrodotoxin-Resistant Na Current Slow Inactivation in Adaptation of Action Potential Firing in Small-Diameter Dorsal Root Ganglion Neurons)
+
 - See if other currents need to be adjusted to accomodate new current INa_rsg
 	- e.g. reduce Ih/HCN or change its parameters
 
@@ -35,12 +40,18 @@
 - Resurgent sodium current model implementation & experiments
 	- do ModelDB search for 'narsg'
 
-- paper [Do & Bean (2004)](Sodium currents in subthalamic nucleus neurons from Nav1.6-null mice.) mentions that voltage dependence of resurgent Na current is similar in STN and Purkinje neurons
 
 # Notes #
 
 - comparison of Otsuka/RubinTerman/GilliesWillshaw model: 
 	- see Encyclopedia of Computational Neuroscience, p. 2909 (pdf p. 2961)
+
+- voltage dependence of resurgent Na current is similar in STN and Purkinje neurons
+	- stated in [Do & Bean (2004)](Sodium currents in subthalamic nucleus neurons from Nav1.6-null mice.)
+
+- the Kuo & Bean (1994) Markov state model gives reasonable simulations of the voltage-dependence of development of inactivation and recovery from inactation for sodium channels that do not give resurgent current
+	- [Raman & Bean (2001)](Inactivation and Recovery of Sodium Currents Neurons in Cerebellar Purkinje Neurons: Evidence for Two Mechanisms)
+
 
 - Raman & Bean (2001) channel model ONLY models INa_rsg compoment of INa
 	- i.e. you will still have to account of transient and persistent components

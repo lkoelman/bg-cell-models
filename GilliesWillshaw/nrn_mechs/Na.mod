@@ -27,7 +27,7 @@ UNITS {
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 
 NEURON {
-	SUFFIX Na
+	SUFFIX Na_traub
 	USEION na READ nai,ena WRITE ina
 	RANGE gna, ina
 	GLOBAL rest,activate_Q10,Q10,gmaxQ10,rate_k,gmax_k,temp1,temp2,tempb
