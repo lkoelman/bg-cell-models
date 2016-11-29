@@ -29,16 +29,23 @@
 
 - get parameters state model slow inactivaton & recover
 	- check parameters of Kuo & Bean (1994) model for inactivation/recovery model are the same in the Khaliq/Raman/Akeman models published on ModelDB
-		- see paper fig. 7 => not same
-	- see also [Blair & Bean (2003)](Role of Tetrodotoxin-Resistant Na Current Slow Inactivation in Adaptation of Action Potential Firing in Small-Diameter Dorsal Root Ganglion Neurons)
+		- see paper fig. 7 => **NOT SAME**: Khaliq & Raman is tuned specifically for the resurgent current
+	- Check paper for model that exhibits slow inactivation
+		- Do & Bean (2003) say in Discussion that mechanism of slow inactivation is same as in [Taddese & Bean (2002)](Subthreshold sodium current from rapidly inactivating sodium channels drives spontaneous firing of tuberomammillary neurons) - gating/Markov model and parameters in Fig. 7A
+		- [Blair & Bean (2003)](Role of Tetrodotoxin-Resistant Na Current Slow Inactivation in Adaptation of Action Potential Firing in Small-Diameter Dorsal Root Ganglion Neurons)
 
 - See if other currents need to be adjusted to accomodate new current INa_rsg
 	- e.g. reduce Ih/HCN or change its parameters
 
 # References/sources #
 
-- Resurgent sodium current model implementation & experiments
+- Resurgent sodium current - model implementation & experiments
 	- do ModelDB search for 'narsg'
+
+- Cell reduction
+	- Sterrat (2011) Ch. 4.3 - 4.4
+	- Marasco, A., Limongiello, A., & Migliore, M. (2013). Using Strahler’s analysis to reduce up to 200-fold the run time of realistic neuron models. Scientific Reports, 3. https://doi.org/10.1038/srep02934
+	- Encyclopedia of Computational Neuroscience p. 2598 (pdf 2650) - Reduced Morphology Models
 
 
 # Notes #

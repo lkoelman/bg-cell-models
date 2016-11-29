@@ -72,7 +72,8 @@ def compare_na_channels():
     celsius = 25
     v = np.arange(-100, 100, 0.1)
 
-    # Gillies & Willshaw: v-dependence of rate coefficients
+    ### Gillies & Willshaw ###
+    # v-dependence of rate coefficients
     tempb = 23.0
     rest = -60.
     Q10 = 1.980105147
@@ -103,7 +104,8 @@ def compare_na_channels():
     plt.ylabel('de(inactivation)')
     plt.legend()
 
-    # Raman & Bean: v-dependence of rate coefficients
+    #### Raman & Bean ###
+    # v-dependence of rate coefficients
     q10 = 3.
     qt = q10**((celsius-22.)/10.)
     qt = 1.0
@@ -134,7 +136,6 @@ def compare_na_channels():
     bip = zeta * np.exp(v/x6) * qt # (blocked->open or beta_B)
 
     # plot Raman & Bean values
-
     plt.figure()
     plt.suptitle('Raman & Bean Na channel rate coefficients')
 

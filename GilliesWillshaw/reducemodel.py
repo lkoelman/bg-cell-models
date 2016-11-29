@@ -22,7 +22,6 @@ scriptdir, scriptfile = os.path.split(__file__)
 modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
 sys.path.append(modulesbase)
 from common import analysis
-import collections
 
 # Load NEURON mechanisms
 # add this line to nrn/lib/python/neuron/__init__.py/load_mechanisms()
@@ -49,6 +48,13 @@ class Tree:
 
 	def __str__(self):
 		return str(self.payload)
+
+	def setall(self, key, value):
+		self.payload[key] = value
+		if self.left is not None:
+			self.left.setall(key, value)
+		if self.right is not None:
+			self.right.setall(key, value)
 
 def treestruct():
 	""" Return the two dendritic tree structures from the paper
@@ -90,6 +96,12 @@ def treestruct():
 	dend0tree = Tree({'index':1}, dend0upper, dend0lower)
 	return dend0tree, dend1tree
 
+def combinedtree():
+	""" Return Tree structure for entire cell """
+	dend0tree, dend1tree = treestruct()
+	somanode = Tree({'index':0}, dend0tree, dend1tree)
+	return somanode
+
 def loadgeotopostruct(dendidx):
 	""" Load geometry/topology matrix from file """
 	dendfile = os.path.normpath(os.path.join(scriptdir, 'sth-data', 'tree{0}-nom.dat'.format(dendidx)))
@@ -114,7 +126,11 @@ def loadgstructs():
 	return gmats
 
 def treechannelstruct():
-	""" Return tree structure containing channel distributions """
+	""" Return tree structure containing channel distributions.
+
+		Each tree node's payload will contain an entry gname
+		and xgname with the conductance values for each x value
+	"""
 
 	# Load conductance matrices
 	gstructs = loadgstructs()
@@ -181,8 +197,9 @@ def printproperties(tree, dendsecs):
 	printproperties(tree.left, dendsecs)
 	printproperties(tree.right, dendsecs)
 
-def reducebranch(tree, dendsecs):
+def rallreduce(tree, dendsecs):
 	""" Reduce thre tree according to Rall algorithm
+
 	@return		the equivalent electrotonic length of the tree 
 				(i.e. that should be added to parent tree of this branch)
 	@return		diameter^(3/2) of the given tree branch
@@ -206,8 +223,8 @@ def reducebranch(tree, dendsecs):
 	selfd32 = diam**(3./2.)
 
 	# Get equivalent electrotonic length of children
-	left_elec, leftd32 = reducebranch(tree.left, dendsecs)
-	right_elec, rightd32 = reducebranch(tree.right, dendsecs)
+	left_elec, leftd32 = rallreduce(tree.left, dendsecs)
+	right_elec, rightd32 = rallreduce(tree.right, dendsecs)
 
 	# Check if they are (almost) the same
 	if (left_elec==0 and right_elec==0) or (left_elec/right_elec >= 0.95 and left_elec/right_elec <= 1.05):
@@ -241,7 +258,7 @@ def reduce_dends():
 	# equivalent length
 	print('== Reducing right dendritic tree (smaller one) ===')
 	L, Ra, diam, cm, lambda_root, l_elec = getbranchproperties(1, dend1secs)
-	l_equiv, _ = reducebranch(dend1tree, dend1secs)
+	l_equiv, _ = rallreduce(dend1tree, dend1secs)
 	L_equiv = l_equiv * lambda_root
 	print('Equivalent length is {0}'.format(L_equiv)) # 549.86
 
@@ -251,7 +268,7 @@ def reduce_dends():
 
 	print('== Reducing left dendritic tree (larger one) ===')
 	L, Ra, diam, cm, lambda_root, l_elec = getbranchproperties(1, dend0secs)
-	l_equiv, _ = reducebranch(dend0tree, dend0secs)
+	l_equiv, _ = rallreduce(dend0tree, dend0secs)
 	L_equiv = l_equiv * lambda_root
 	print('Equivalent length is {0}'.format(L_equiv)) # 703.34
 
@@ -267,49 +284,39 @@ def reduce_onedend():
 	# use min. amount of sections to reproduce behaviour
 	pass
 
+def plotconductances(treetopo, treeidx, gstruct, includebranches=None):
+	""" Recursively plot conductances in each branch by descending the tree """
 
-def plotchanneldist(gext):
-	""" Plot channel distributions from cell_g<xyz> files 
-	@param gext		conductance specifier/file extenstion, e.g. 'gcaL_HVA'
-	"""
-	# Load conductance distribution from supplied file
-	scriptdir, scriptfile = os.path.split(__file__)
-	gfile = os.path.normpath(os.path.join(scriptdir, 'sth-data', 'cell-'+gext))
-	gmat = np.loadtxt(gfile)
+	if treetopo is None: return
 
-	dend0tree, dend1tree = treestruct()
+	# Get branch properties
+	branchidx = treetopo.payload['index']
 
-	def plotconductances(tree, treeidx, includebranches=None):
-		if tree is None: return
+	# Plot own distribution
+	if includebranches is None or branchidx in includebranches:
 
-		# Get branch properties
-		branchidx = tree.payload['index']
+		branchrows = (gstruct['dendidx']==treeidx) & (gstruct['branchidx']==branchidx-1)
+		x = gstruct[branchrows]['x']
+		g = gstruct[branchrows]['g']
 
-		# Plot own distribution
-		if includebranches is None or branchidx in includebranches:
-			plt.figure()
-			branchrows = (gmat[:,0]==treeidx) & (gmat[:,1]==branchidx-1)
-			x = gmat[branchrows,2]
-			g = gmat[branchrows,3]
-			plt.plot(x,g,'o')
-			plt.xlabel('x (normalized length)')
-			plt.ylabel(gext)
-			plt.suptitle('Condcutance distribution in branch {}'.format(branchidx))
-			plt.show(block=False)
+		plt.figure()
+		plt.plot(x,g,'o')
+		plt.ylim(0, 1e-2)
+		plt.xlabel('x (normalized length)')
+		plt.ylabel('gbar')
+		plt.suptitle('Conductance distribution in branch {}'.format(branchidx))
+		plt.show(block=False)
 
-			# print it
-			print('## branch {} conductances ##'.format(branchidx))
-			print('\t'.join((str(l) for l in x)))
-			print('\t'.join((str(gb) for gb in g)))
+		# print it
+		print('## branch {} conductances ##'.format(branchidx))
+		print('\t'.join((str(l) for l in x)))
+		print('\t'.join((str(gb) for gb in g)))
 
-		plotconductances(tree.left, treeidx, includebranches)
-		plotconductances(tree.right, treeidx, includebranches)
-
-	# Plot it
-	plotconductances(dend1tree, 1, includebranches=[1,2,5])
-
+	plotconductances(treetopo.left, treeidx, gstruct, includebranches)
+	plotconductances(treetopo.right, treeidx, gstruct, includebranches)
 
 if __name__ == '__main__':
-	# plotchanneldist('gcaL_HVA')
+	plotconductances(treestruct()[1], 1, loadgstruct('gcaT_CaT'), includebranches=[1,2,5])
+	# plotchanneldist(0, 'gcaL_HVA')
 	# dend0tree, dend1tree = treechannelstruct()
-	gtstruct = loadgeotopostruct(0)
+	# gtstruct = loadgeotopostruct(0)

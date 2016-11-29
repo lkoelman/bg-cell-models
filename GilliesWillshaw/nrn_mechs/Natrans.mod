@@ -29,9 +29,9 @@ Kuo & Bean (1994)
 ENDCOMMENT
 
 NEURON {
-  SUFFIX Na : NOTE: change Natrans->Na and gbar->gna for interoperability with default Na mechanism
+  SUFFIX Natrans : NOTE: change Natrans->Na and gbar->gna for interoperability with default Na mechanism
   USEION na READ ena WRITE ina
-  RANGE g, gna, ina
+  RANGE g, gbar, ina
   GLOBAL activate_Q10_rates, activate_Q10_gbar
 
   : channel state info for recording
@@ -57,7 +57,7 @@ PARAMETER {
 	activate_Q10_rates = 1
 	activate_Q10_gbar = 1
 
-	gna = 0.014 (S/cm2) 
+	gbar = 0.014 (S/cm2) 
 	celsius (degC)			
 
 	: kinetic parameters
@@ -152,7 +152,7 @@ STATE {
 
 BREAKPOINT {
 	SOLVE activation METHOD sparse
- 	g = gna * gqt * O
+ 	g = gbar * gqt * O
  	ina = g * (v - ena)
 
  	: channel state info for recording
