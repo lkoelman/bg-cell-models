@@ -9,6 +9,8 @@ reduction method
 # Python modules
 from collections import OrderedDict
 from operator import attrgetter
+import math
+PI = math.pi
 
 # NEURON modules
 import neuron
@@ -34,6 +36,23 @@ def sameparent(secrefA, secrefB):
 	""" Check if sections have same parent section """
 	return secrefA.has_parent() and secrefB.has_parent() and 
 			(secrefA.parent is secrefB.parent)
+
+def treeroot(secref):
+	""" Find the root section of the tree that given sections belongs to.
+		I.e. the first section after the root of the entire cell.
+	"""
+	orig = secref.root
+	for root in orig.children():
+		# Get subtree of the current root
+		roottree = h.SectionList()
+		root.push()
+		roottree.subtree()
+		h.pop_section()
+		# Check if given section in in subtree
+		if secref.sec in roottree:
+			return root
+	return orig
+
 
 ################################################################################
 # Clustering
@@ -94,26 +113,85 @@ def clusterize_strahler_order(noderef, secrefs):
 	leftref = getsecref(next(childiter, None), secrefs)
 	rightref = getsecref(next(childiter, None), secrefs)
 
-	clusterize_strahler_order(leftref)
-	clusterize_strahler_order(rightref)
+	clusterize_strahler_order(leftref, secrefs)
+	clusterize_strahler_order(rightref, secrefs)
 
 
 ################################################################################
 # Merging
 ################################################################################
 
-def get_next_merge(secrefs, clusterlabel):
-	""" Get next sections to merge.
+def calc_mrgRiSurf(secref):
+	""" Calculate axial resistance and surface of section
+		based on mutable its 'mrg' properties """
+	# textbook definition of axial resistance
+	mrgri = (secref.sec.Ra*secref.mrgL)/(PI*secref.mrgdiam**2/4*100)
+	# cylinder surface based on merged L and diam
+	mrgsurf = secref.mrgL*secref.mrgdiam*PI
+	return mrgri, mrgsurf
 
-	@param secrefs	list of mutable SectionRef containing all sections
-	@param clusterlabel	label of the cluster to merge
+def prep_merge(secrefs):
+	""" Prepare sections for merging procedure by computing
+		and storing metrics needed in the merging operation
+	"""
+	for secref in secrefs: # mark all as unvisited and unmerged
+		sec = secref.sec
+
+		# geometrical properties
+		secref.secSurf = 0 # total area (diam/area is range var)
+		secref.secri = 0 # total axial resistance from 0 to 1 end (seg.ri is between segments)
+		for seg in sec:
+			secref.secSurf += seg.area()
+			secref.secri += seg.ri()
+
+		# Get path from root node to this sections
+		rootsec = treeroot(secref)
+		calc_path = h.RangeVarPlot('v')
+		rootsec.push()
+		calc_path.begin(0.5)
+		sec.push()
+		calc_path.end(0.5)
+		root_path = h.SectionList()
+		calc_path.list(root_path) # store path in list
+		h.pop_section()
+		h.pop_section()
+
+		# Compute axial path resistances
+		secref.pathri1 = 0 # axial path resistance from root sec to 1 end of this sec
+		secref.pathri0 = 0 # axial path resistance from root sec to 0 end of this sec
+		path_secs = list(root_path)
+		path_len = len(root_path)
+		for i, psec in enumerate(path_secs):
+			for seg in psec:
+				secref.pathri1 += seg.ri()
+				if i < path_len-1:
+					secre.pathri0 += seg.ri()
+		
+		# mutable properties for merging
+		secref.mrgL = abs(sec.L)
+		secref.mrgdiamSer = sec.diam
+		secref.mrgdiamPar = sec.diam**2
+		secref.mrgdiam = math.sqrt(sec.Ra*sec.L*4./secref.secri/100/PI)
+		secref.mrgri = secref.secri
+		secref.mrgri2 = secref.secri
+		secref.mrgSurf = secref.secSurf
+		
+		# properties for merging iteration
+		secref.visited = False
+		secref.merged = False
+
+def find_mergeable(secrefs, clusterlabel):
+	""" Find next mergeable sections
+
+	@param secrefs			list of mutable SectionRef containing all sections
+	@param clusterlabel		label of the cluster to merge
+	@return 				tuple of Section Ref (secA, secB, secP)
 	"""
 
 	# Get sections in current cluster and sort by order
 	clustersecs = [sec in secrefs if sec.clusterlabel == clusterlabel]
-	for secref in clustersecs: # mark all as unvisited and unmerged
-		secref.visited = False
-		secref.merged = False
+	
+	# Sort by order (nseg from soma), descending
 	secsbyorder = clustersecs.sort(key=attrgetter('order'), reverse=True)
 
 	# Keep looping until all sections visited
@@ -137,6 +215,72 @@ def get_next_merge(secrefs, clusterlabel):
 		# Return sec refs from generator
 		yield secA, secB, secP
 
+def mergeChildWithParent(refA, refP):
+	""" Merge child into parent section """
+	
+	# Combine properties (call to shortnms)
+	Amri, Amsurf = calc_mrgRiSurf(refA)
+	Pmri, Pmsurf = calc_mrgRiSurf(refP)
+
+	# Combine (call to mergingSerialMethod())
+	newL = refA.mrgL + refP.mrgL
+	newRa = (refA.sec.Ra+refP.sec.Ra)/2
+	newri = Amri + Pmri
+	newSurf = max(Amsurf, Pmsurf)
+	newdiam = math.sqrt(newRa*newL*4/newri/PI/100.)
+
+	# Update parent properties
+	refP.mrgL = newL
+	refP.mrgri = newri
+	refP.mrgri2 = newri
+	refP.mrgSurf = newSurf
+	refP.mrgdiam = newdiam
+	# FIXME: unassigned/unused
+	# refP.mrgdiamSer = refA.mrgdiamSer + refP.mrgdiamSer
+	# refP.mrgdiamPar = refA.mrgdiamPar + refP.mrgdiamPar
+
+def mergeYWithParent():
+	""" Merge Y (two branched children) into parent """
+	# NOTE: see Hoc mergingYSec()/mergingYMethod()/mergingParallelMethod()/mergingSerialMethod()
+
+	# Current equivalent properties (call to shortnms)
+	Amri, Amsurf = calc_mrgRiSurf(refA)
+	Bmri, Bmsurf = calc_mrgRiSurf(refB)
+	Pmri, Pmsurf = calc_mrgRiSurf(refP)
+
+	# Combine properties of parallel sections (Call to mergingParallelMethod())
+	L12 = (refA.mrgL*Amsurf+refB.mrgL*Bmsurf)/(Amsurf+Bmsurf) # lengths weighted by surfaces
+	Ra12 = (refA.sec.Ra+refB.sec.Ra)/2
+	diam12 = math.sqrt(refA.mrgdiam**2 + refB.mrgdiam**2)
+	cross12 = PI*diam12**2/4 # cross-section area
+
+	# Equivalent propties of merged parallel sections
+	ri12 = Ra12*L12/cross12/100 # equivalent axial resistance
+	surf12 = L12*diam12*PI # equivalent surface
+
+	# Combine properties of serial sections (Call to mergingSerialMethod())
+	newL = L12 + refP.mrgL
+	newRa = (Ra12+refP.sec.Ra)/2
+	newri = ri12 + Pmri
+	newdiam = math.sqrt(newRa*newL*4/newri/PI/100.)
+	# FIXME: unassigned/unused
+	# newSurf = max(surf12, Pmsurf) # overwritten by newSurf in mergingYMethod()
+	# newdiamSer = refA.mrgdiamSer + refP.mrgdiamSer
+	# newdiamPar = refA.mrgdiamPar + refP.mrgdiamPar
+
+	# Equivalent properties of merged serial sections
+	newri2 = (Amri*Bmri/(Amri+Bmri))+Pmri
+	newSurf = max(Amsurf+Bmsurf,Pmsurf)
+
+	# Update parent properties
+	refP.mrgL = newL
+	refP.mrgri = newri
+	refP.mrgri2 = newri2
+	refP.mrgSurf = newSurf
+	refP.mrgdiam = newdiam
+	# FIXME: unassigned/unused
+	# refP.mrgdiamSer = newdiamSer + refP.mrgdiamSer
+	# refP.mrgdiamPar = newdiamPar + refP.mrgdiamPar
 
 def reduce_marasco():
 	""" Implementation of Marasco (2013) CellPurkAnalysis() & PurkReduction() """
@@ -157,7 +301,13 @@ def reduce_marasco():
 
 	# Merge within-cluster branches until islands remain
 	for clusterlabel in ['soma', 'smooth', 'spiny']:
-		for secA, secB, secP in get_next_merge(alldendsecs, clusterlabel):
+		for secA, secB, secP in find_mergeable(alldendsecs, clusterlabel):
+			# Now merge these sections
+			if secP is not None and secB is None:
+				mergeChildWithParent()
+			elif secP is not None:
+				mergeYWithParent()
+
 
 
 
