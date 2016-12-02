@@ -11,6 +11,7 @@ from collections import OrderedDict
 from operator import attrgetter
 import math
 PI = math.pi
+import warnings
 
 # NEURON modules
 import neuron
@@ -53,6 +54,13 @@ def treeroot(secref):
 			return root
 	return orig
 
+class Cluster(object):
+	""" A cluster representing merged sections """
+	def __init__(self, label):
+		self.label = label
+
+
+
 
 ################################################################################
 # Clustering
@@ -94,28 +102,133 @@ def assign_strahler_order(noderef, secrefs, par_order):
 		# nonzero and equal: increment
 		noderef.strahlernumber = leftref.strahlernumber + 1
 
-def clusterize_strahler_order(noderef, secrefs):
-	""" Cluster a tree that has been assigned Strahler numbers
+def clusterize_strahler(noderef, allsecrefs, labelsuffix=''):
+	""" Cluster a tree based on strahler numbers alone
 
-	@return	list of cluster names
+	@param noderef	any section starting from but not equal to soma
+	@effect			assign label 'trunk'/'smooth'/spiny' to sections
+					based on their Strahler number
 	"""
 
 	if noderef is None: return
 
-	if noderef.strahlernumber <= 2:
-		noderef.clusterlabel = 'spiny'
-	elif noderef.strahlernumber <= 3:
-		noderef.clusterlabel = 'smooth'
+	# Cluster label based on strahler's number
+	if noderef.strahlernumber >= 5:
+		noderef.cluster_label = 'trunk' + labelsuffix
+	elif noderef.strahlernumber > 3:
+		noderef.cluster_label = 'smooth' + labelsuffix
 	else:
-		noderef.clusterlabel = 'soma'
+		noderef.cluster_label = 'spiny' + labelsuffix
 
-	childiter = iter(noderef.child)
-	leftref = getsecref(next(childiter, None), secrefs)
-	rightref = getsecref(next(childiter, None), secrefs)
+	# Parent cluster
+	parref = getsecref(noderef.parent, allsecrefs)
+	noderef.parent_label = parref.cluster_label
+	if parref.cluster_label.startswith('soma'):
+		noderef.parent_pos = 0.5
+	else:
+		noderef.parent_pos = 0.0
 
-	clusterize_strahler_order(leftref, secrefs)
-	clusterize_strahler_order(rightref, secrefs)
+	# Cluster children (iteratively)
+	childiter = iter(noderef.sec.children())
+	leftref = getsecref(next(childiter, None), allsecrefs)
+	rightref = getsecref(next(childiter, None), allsecrefs)
+	clusterize_strahler_order(leftref, allsecrefs)
+	clusterize_strahler_order(rightref, allsecrefs)
 
+def clusterize_strahler_trunks(allsecrefs):
+	""" Cluster a tree based on strahler numbers and depending
+		on the trunk section it is attached to (trunk sections
+		are large dendritic sections attached to soma)
+
+	@param allsecrefs	list of SectionRef (mutable) with first element
+						a ref to root/soma section
+
+	ALGORITHM: this is the algorithm used in Marasco (2012)
+	- each trunk section (neighbouring soma) gets its own cluster
+	- for each trunk, two clusters are created: one for smooth and
+	  one for spiny sections attached to that trunk
+	"""
+	# Cluster soma
+	somaref = allsecrefs[0]
+	somaref.cluster_label = 'soma'
+	somaref.parent_label = 'soma'
+	somaref.parent_pos = 0.0
+
+	# Cluster each trunk and its subtree
+	for i, trunksec in enumerate(somaref.sec.children()):
+		trunkref = getsecref(trunksec, allsecrefs)
+		clusterize_strahler(trunkref, allsecrefs, labelsuffix='_'+str(i))
+
+def clusterize_marasco(allsecrefs):
+	""" Assign each section to cluster and determine cluster topology
+		according to algorithm Marasco (2012)
+
+	ALGORITHM: algorithm from clusterise1PurkinjeCell()
+	- soma gets its own cluster (the root cluster)
+	- sections with strahler order >= 5 (trunk sections) get their own cluster
+		- except if their parent is also a trunk section
+	- for each trunk cluster: one new cluster is created for spiny sections in
+	  its subtree and one for smooth sections
+	"""
+	# Split it soma/dendrite sections
+	somaref = allsecrefs[0]
+	alldendrefs = allsecrefs[1:-1]
+	alldendrefs.sort(key=attrgetter('order'), reverse=False) # sord by nseg from soma
+
+	# Create one cluster for soma
+	somaref.cluster_label = 'soma'
+	somaref.parent_label = 'soma'
+	somaref.parent_pos = 0.0
+
+	# Create one cluster for each trunk section
+	n_trunk = 0
+	for secref in alldendrefs if secref.strahlernumber >= 5 or secref.parent is somaref.sec
+		parref = getsecref(secref.parent, allsecrefs)
+		if hasattr(parref, 'cluster_label'):
+			# Create new trunk cluster for this section
+			secref.cluster_label = 'trunk' + str(n_trunk)
+			secref.trunk_number = n_trunk
+			n_trunk += 1
+
+			# assign parent cluster
+			secref.parent_label = parref.cluster_label
+			if secref.parent is somaref.sec:
+				secref.parent_pos = 0.5
+			else:
+				secref.parent_pos = 1.0
+		else:
+			warnings.warn('Encountered trunk section with unclustered parent')
+
+	# cluster subtree of each trunk sections (assign cluster, set topology)
+	for trunkref in alldendrefs if (hasattr(secref, 'cluster_label') and 
+									secref.cluster_label.startswith('trunk')):
+		i_trunk = trunkref.trunk_number
+
+		# Get all sections in trunk subtree
+		trunksubtree = h.SectionList()
+		trunkref.sec.push()
+		trunksubtree.subtree()
+		h.pop_section()
+		trunksubtree = list(trunksubtree)
+		trunksubtree.remove(trunkref.sec) # don't include trunk itself
+		trunksubrefs = [getsecref(sec, allsecrefs) for sec in trunksubtree]
+
+		# All smooth secs in subtree get their own cluster
+		has_smooth = any(secref in trunksubrefs if secref.strahlernumber > 3)
+		for subref in trunksubrefs:
+			secref.trunk_number = i_trunk # mark the trunk it is on
+			if subref.strahlernumber > 3: # SMOOTH
+				secref.cluster_label = 'smooth' + str(i_trunk)
+				secref.parent_label = trunkref.cluster_label
+				secref.parent_pos = 1.0
+			elif has_smooth: # SPINY with smooth as parent
+				secref.cluster_label = 'spiny' + str(i_trunk)
+				secref.parent_label = 'smooth' + str(i_trunk)
+				secref.parent_pos = 1.0
+			else:			 # SPINY with trunk as parent
+				secref.cluster_label = 'spiny' + str(i_trunk)
+				secref.parent_label = 'trunk' + str(i_trunk)
+				secref.parent_pos = 1.0
 
 ################################################################################
 # Merging
@@ -165,7 +278,7 @@ def prep_merge(secrefs):
 			for seg in psec:
 				secref.pathri1 += seg.ri()
 				if i < path_len-1:
-					secre.pathri0 += seg.ri()
+					secref.pathri0 += seg.ri()
 		
 		# mutable properties for merging
 		secref.mrgL = abs(sec.L)
@@ -178,18 +291,22 @@ def prep_merge(secrefs):
 		
 		# properties for merging iteration
 		secref.visited = False
-		secref.merged = False
+		secref.doMerge = False
 
 def find_mergeable(secrefs, clusterlabel):
 	""" Find next mergeable sections
 
 	@param secrefs			list of mutable SectionRef containing all sections
 	@param clusterlabel		label of the cluster to merge
+	@effect					- find next available section A and its sibling B
+							- set them to visited (unavailable for search)
+							- find their parent P if available and within cluster
+							- if P found: set A and B availbe for merge
 	@return 				tuple of Section Ref (secA, secB, secP)
 	"""
 
 	# Get sections in current cluster and sort by order
-	clustersecs = [sec in secrefs if sec.clusterlabel == clusterlabel]
+	clustersecs = [sec in secrefs if sec.cluster_label == clusterlabel]
 	
 	# Sort by order (nseg from soma), descending
 	secsbyorder = clustersecs.sort(key=attrgetter('order'), reverse=True)
@@ -209,8 +326,8 @@ def find_mergeable(secrefs, clusterlabel):
 		secP = secA.parent
 		secP = getsecref(secP, clustersecs) # None if not in cluster
 		if secP is not None:
-			if secA: secA.merged = True
-			if secB: secB.merged = True
+			if secA: secA.doMerge = True
+			if secB: secB.doMerge = True
 
 		# Return sec refs from generator
 		yield secA, secB, secP
@@ -282,34 +399,170 @@ def mergeYWithParent():
 	# refP.mrgdiamSer = newdiamSer + refP.mrgdiamSer
 	# refP.mrgdiamPar = newdiamPar + refP.mrgdiamPar
 
+def calc_eq_ppties_mrg(cluster, allsecrefs):
+	"""
+	Calculate properties of equivalent section for cluster that are based
+	on the sections marked for merging
+	"""
+	# Initialize cluster properties
+	cluster.maxL = 0 # L of longest sec in cluster
+	cluster.totsurf = 0 # sum of surf calc from mrg dimensions for each merge available sec
+	cluster.totdiam = 0 # sum of mrgdiam for each merge available sec
+	cluster.eqri2Prod = 1
+	cluster.eqri2Sum = 0
+	cluster.surfSum = 0 # sum of mrgSum property for each merge available sec
+
+	# Gather sections for merging
+	mrg_secs = [secref in allsecrefs if secref.doMerge and secref.cluster_label==cluster.label]
+	cluster.weightsL = [1.0]*len(mrg_secs)
+
+	# Update cluster properties based on mergeable sections
+	for i, secref in enumerate(mrg_secs):
+
+		if cluster.maxL < secref.mrgL:
+			cluster.maxL = secref.mrgL
+		cluster.totsurf += secref.mrgL*PI*secref.mrgdiam
+		cluster.totdiam += secref.mrgdiam
+		cluster.eqri2Prod *= secref.mrgri2
+		cluster.eqri2Sum += secref.mrgri2
+		cluster.surfSum += secref.mrgsurf
+
+		# Equivalent dimensions
+		cluster.normalFact = totsurf
+		cluster.weightsL[i] = secref.mrgL*PI*secref.mrgdiam
+		cluster.eqL += secref.mrgL*cluster.weightsL[i]
+		cluster.eqdiam += (secref.sec.Ra*cluster.maxL*4.)/(secref.mrgri*PI*100.) # rho squared
+
+	cluster.eqdiam = math.sqrt(cluster.eqdiam)
+	cluster.eqri2 = cluster.eqri2Sum/len(mrg_secs)
+	cluster.eqSurf = cluster.eqL*PI*cluster.eqdiam
+	cluster.orSurf1 = cluster.surfSum
+
+	return cluster
+
+def calc_eq_ppties_all(cluster, allsecrefs):
+	"""
+	Calculate properties of equivalent section for cluster that are based
+	on all of its sections
+
+	@param allsecrefs	list of SectionRef (mutable) with first element
+						a ref to root/soma section
+	"""
+
+	somaref = allsecrefs[0]
+
+	# Compute cluster properties based on all its sections
+	clu_secs = [secref in secrefs if secref.cluster_label==cluster.label]
+	cluster.eqRa = sum(secref.sec.Ra for secref in clu_secs)/len(clu_secs)
+	cluster.orMaxpathri = max(secref.pathri1 for secref in clu_secs)
+	cluster.orMinpathri = min(secref.pathri0 for secref in clu_secs)
+
+	# Clusters that contain only one section (trunk/soma)
+	if len(clu_secs) == 1:
+		secref = clu_secs[0]
+		if secref.has_parent() and secref.parent() is not somaref.sec
+			parref = getsecref(secref.parent(), allsecrefs)
+			orMinpathri = parref.pathri1
+		else:
+			orMinpathri = 0
+
+	# Correct if min > max
+	if orMinpathri > orMaxpathri:
+		orMinpathri, orMaxpathri = orMaxpathri, orMinpathri # swap
+
+
+################################################################################
+# Equivalent/reduced cell
+################################################################################
+
+def create_equivalent_sections(eq_clusters, allsecrefs):
+	""" Create the reduced/equivalent cell by creating 
+		a section for each cluster 
+
+	@param eq_clusters	list of Cluster objects containing data
+						for each cluster
+	@param allsecrefs	list of SectionRef (mutable) with first element
+						a ref to root/soma section
+	"""
+	# Create equivalent section for each clusters
+	eq_sections = [h.Section() for clu in eq_clusters]
+	for i, clu_i in enumerate(eq_clusters):
+		for j, clu_j in enumerate(eq_clusters):
+			if clu_j is not clu_i and clu_j.parent_label == clu_i.label:
+				eq_sections[j].connect(eq_sections[i], clu_j.parent_pos, 0)
+
+	# Set L/diam/Ra/cm/g_leak for each equivalent section
+	
+	# Calculate equivalent path resistance for each cluster/equivalent section
+	# FIXME: this was wrong, calculation happend on equivalent sections, after created
+	for i, secref in enumerate(eq_secs):
+
+		# Cluster corresponding to current section
+		cluster = next(clu in clusterList if clu.label = secref.cluster_label)
+		cluster.eqsecpathri1 = 0.0
+		cluster.eqsecpathri0 = 0.0
+
+		# Get path from root node to this sections
+		rootsec = treeroot(secref)
+		calc_path = h.RangeVarPlot('v')
+		rootsec.push()
+		calc_path.begin(.5)
+		sec.push()
+		calc_path.end(.5)
+		root_path = h.SectionList()
+		calc_path.list(root_path) # store path in list
+		h.pop_section()
+		h.pop_section()
+
+		# Compute axial path resistances
+		path_secs = list(root_path)
+		path_len = len(root_path)
+		for i, psec in enumerate(path_secs):
+			for seg in psec:
+				cluster.eqsecpathri1 += seg.ri()
+				if i < path_len-1:
+					cluster.eqsecpathri0 += seg.ri()
+
+################################################################################
+# Main routine
+################################################################################
+
 def reduce_marasco():
 	""" Implementation of Marasco (2013) CellPurkAnalysis() & PurkReduction() """
 
 	# Initialize Gillies model
 	h.xopen("createcell.hoc")
 	# Make sections accesible by both name and index + allow to add attributes
-	dendLsecs = [ExtSection(sec) for sec in h.SThcell[0].dend0]
-	dendRsecs = [ExtSection(sec) for sec in h.SThcell[0].dend1]
-	alldendsecs = dendLsecs + dendRsecs
+	somaref = ExtSection(h.SThcell[0].soma)
+	dendLrefs = [ExtSection(sec) for sec in h.SThcell[0].dend0]
+	dendRrefs = [ExtSection(sec) for sec in h.SThcell[0].dend1]
+	alldendrefs = dendLrefs + dendRrefs
+	allsecrefs = [somaref] + alldendrefs
 	
-	# Get tree topology
-	stn_tree = reducemodel.combinedtree()
-	assign_strahler(stn_tree)
-
-	# Cluster based on functional regions
-	clusterize_strahler_order(stn_tree)
+	# Cluster subtree of each trunk section
+	clusterize_strahler_trunks(allsecrefs)
+	cluster_labels = list(set(secref.cluster_label for secref in allsecrefs)) # unique labels
+	eq_clusters = [Cluster(label) for label in cluster_labels]
 
 	# Merge within-cluster branches until islands remain
-	for clusterlabel in ['soma', 'smooth', 'spiny']:
-		for secA, secB, secP in find_mergeable(alldendsecs, clusterlabel):
+	for cluster in eq_clusters:
+
+		# First merge children into parents (iteratively update parent properties)
+		for secA, secB, secP in find_mergeable(alldendrefs, cluster.label):
 			# Now merge these sections
-			if secP is not None and secB is None:
-				mergeChildWithParent()
-			elif secP is not None:
+			if secP is not None and secB is not None:
 				mergeYWithParent()
+			elif secP is not None:
+				mergeChildWithParent()
+				
 
+		# Calculate cluster/equivalent section properties
+		calc_eq_ppties_mrg(cluster, allsecrefs)
+		calc_eq_ppties_all(cluster, allsecrefs)
+		clusterList.append(cluster)
 
-
+	# Initialize the equivalent model (one equivalent sec per cluster)
+	create_equivalent_sections(eq_clusters, allsecrefs)
 
 if __name__ == '__main__':
 	stn_tree = reducemodel.combinedtree()
