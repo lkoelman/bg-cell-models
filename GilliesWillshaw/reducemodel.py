@@ -21,7 +21,6 @@ import os.path
 scriptdir, scriptfile = os.path.split(__file__)
 modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
 sys.path.append(modulesbase)
-from common import analysis
 
 # Load NEURON mechanisms
 # add this line to nrn/lib/python/neuron/__init__.py/load_mechanisms()
@@ -30,7 +29,6 @@ from common import analysis
 # 	lib_path = os.path.join(path, 'nrnmech.dll')
 NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
-	
 
 # Load NEURON function libraries
 hoc.load_file("stdlib.hoc") # Load the standard library
