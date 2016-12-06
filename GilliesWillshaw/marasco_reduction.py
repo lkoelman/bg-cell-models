@@ -339,7 +339,7 @@ def find_mergeable(secrefs, clusterlabel):
 	@effect					- find next available section A and its sibling B
 							- set them to visited (unavailable for search)
 							- find their parent P if available and within cluster
-							- if P found: set A and B availbe for merge
+							- if P not found: set A and B available for merge
 	@return 				tuple of Section Ref (secA, secB, secP)
 	"""
 
@@ -363,7 +363,7 @@ def find_mergeable(secrefs, clusterlabel):
 		# get their parent section if in same cluster
 		secP = secA.parent
 		secP = getsecref(secP, clustersecs) # None if not in cluster
-		if secP is not None:
+		if secP is None:
 			if secA: secA.doMerge = True
 			if secB: secB.doMerge = True
 
@@ -371,7 +371,11 @@ def find_mergeable(secrefs, clusterlabel):
 		yield secA, secB, secP
 
 def mergeChildWithParent(refA, refP):
-	""" Merge child into parent section """
+	"""
+	Merge child into parent section
+
+	SOURCE: mergingParentSec() -> mergingSerialMethod()
+	"""
 	
 	# Combine properties (call to shortnms)
 	Amri, Amsurf = calc_mrgRiSurf(refA)
@@ -395,9 +399,11 @@ def mergeChildWithParent(refA, refP):
 	# refP.mrgdiamPar = refA.mrgdiamPar + refP.mrgdiamPar
 
 def mergeYWithParent():
-	""" Merge Y (two branched children) into parent """
-	# NOTE: see Hoc mergingYSec()/mergingYMethod()/mergingParallelMethod()/mergingSerialMethod()
+	"""
+	Merge Y (two branched children) into parent
 
+	SOURCE: mergingYSec() -> mergingYMethod() -> (mergingParallelMethod() + mergingSerialMethod())
+	"""
 	# Current equivalent properties (call to shortnms)
 	Amri, Amsurf = calc_mrgRiSurf(refA)
 	Bmri, Bmsurf = calc_mrgRiSurf(refB)
@@ -416,7 +422,7 @@ def mergeYWithParent():
 	# Combine properties of serial sections (Call to mergingSerialMethod())
 	newL = L12 + refP.mrgL
 	newRa = (Ra12+refP.sec.Ra)/2
-	newri = ri12 + Pmri
+	newri = ri12 + Pmri # NOTE: not uses as r_a in paper (see newri2 which corresponds to r_a)
 	newdiam = math.sqrt(newRa*newL*4/newri/PI/100.)
 	# FIXME: unassigned/unused
 	# newSurf = max(surf12, Pmsurf) # overwritten by newSurf in mergingYMethod()
@@ -424,7 +430,7 @@ def mergeYWithParent():
 	# newdiamPar = refA.mrgdiamPar + refP.mrgdiamPar
 
 	# Equivalent properties of merged serial sections
-	newri2 = (Amri*Bmri/(Amri+Bmri))+Pmri
+	newri2 = (Amri*Bmri/(Amri+Bmri))+Pmri # NOTE: this one is used as ri (r_a in paper)
 	newSurf = max(Amsurf+Bmsurf,Pmsurf)
 
 	# Update parent properties
@@ -441,6 +447,8 @@ def calc_eq_ppties_mrg(cluster, allsecrefs):
 	"""
 	Calculate properties of equivalent section for cluster that are based
 	on the sections marked for merging
+
+	SOURCE: see mergingAllMethod() in mergingMethods.hoc()
 	"""
 	# Initialize cluster properties
 	cluster.maxL = 0 # L of longest sec in cluster
@@ -486,6 +494,8 @@ def calc_eq_ppties_all(cluster, allsecrefs):
 
 	@param allsecrefs	list of SectionRef (mutable) with first element
 						a ref to root/soma section
+
+	SOURCE: see first part of createPurkEqCell() in useful&InitProc.hoc
 	"""
 
 	somaref = allsecrefs[0]
