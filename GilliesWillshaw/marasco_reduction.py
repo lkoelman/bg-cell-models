@@ -71,6 +71,20 @@ def treeroot(secref):
 			return root
 	return orig
 
+def clusterroot(secref, allsecrefs):
+	""" Find the highest parent/ancestor of given section that is still
+		in the same cluster """
+	if not secref.has_parent():
+		return secref
+	else:
+		parref = getsecref(secref.parent, allsecrefs)
+		if parref is None: # case where parent is not in allsecrefs
+			return secref
+		elif parref.cluster_label != secref.cluster_label:
+			return secref
+		else:
+			return clusterroot(parref)
+
 class Cluster(object):
 	""" A cluster representing merged sections """
 
@@ -532,6 +546,8 @@ def create_equivalent_sections(eq_clusters, allsecrefs):
 						for each cluster
 	@param allsecrefs	list of SectionRef (mutable) with first element
 						a ref to root/soma section
+
+	SOURCE: in RedPurk.hoc/init(): see call to createPurkEqCell() and everything that follows it
 	"""
 	# These are scaling factors for each cluster
 	factCm = 1.0 # fixed/not set in Marasco 2012/2013 method
@@ -634,7 +650,6 @@ def reduce_marasco():
 		# Calculate cluster/equivalent section properties
 		calc_eq_ppties_mrg(cluster, allsecrefs)
 		calc_eq_ppties_all(cluster, allsecrefs)
-		clusterList.append(cluster)
 
 	# Initialize the equivalent model (one equivalent sec per cluster)
 	create_equivalent_sections(eq_clusters, allsecrefs)

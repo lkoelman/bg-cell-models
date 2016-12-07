@@ -20,7 +20,7 @@ import reducemodel
 import marasco_reduction as marasco
 from marasco_reduction import ExtSecRef, Cluster, getsecref
 
-def merge_subtree(rootref, allsecrefs):
+def collapse_subtree(rootref, allsecrefs):
 	""" 
 	Recursively merge within-cluster connected sections in subtree
 	of the given node using <br> and <seq> expressions in Marasco (2012).
@@ -42,7 +42,7 @@ def merge_subtree(rootref, allsecrefs):
 	ri_sum = 0
 	for childref in childrefs:
 		# get equivalent child properties
-		L_child, diam_child, Ra_child, ri_child = merge_subtree(childref, allsecrefs)
+		L_child, diam_child, Ra_child, ri_child = collapse_subtree(childref, allsecrefs)
 		eqsurf_child = PI*diam_child*L_child
 
 		# combine according to <br> (parallel) expressions
@@ -67,7 +67,39 @@ def merge_subtree(rootref, allsecrefs):
 	ri_seq = sum(seg.ri() for seg in rootsec) + ri_br # r_a,seq equation
 	diam_seq = math.sqrt(Ra_seq*L_seq*4./PI/ri_seq/100.) # rho_seq equation
 
-def merge_islands(cluster, allsecrefs):
+	return L_seq, diam_seq, Ra_seq, ri_seq
+
+def merge_connected(cluster, allsecrefs):
+	"""
+	Merge within-cluster connected subtrees
+
+	ALGORITHM:
+	- while sec = next section in cluster that is not absorbed and has parent within cluster:
+		- find root(sec) within cluster
+		- call collapse_subtree(root) (this marks all secs in subtree as absorbed)
+	"""
+	# Mark all sections as not absorbed
+	clu_secs = [secref for secref in secrefs if secref.cluster_label==cluster.label]
+	for sec in clu_secs: sec.absorbed = False
+
+	# utility function to check if sec has parent within same cluster
+	def has_clusterparent(secref):
+		return secref.has_parent() and (getsecref(secref.parent, clu_secs) is not None)
+
+	# Use generator expression to emulate while loop
+	for secref in (sec for sec in clu_secs if (not sec.absorbed and has_clusterparent(sec))):
+		# find root and collapse subtree
+		rootref = marasco.clusterroot(secref, clu_secs)
+		L_eq, diam_eq, Ra_eq, ri_eq = collapse_subtree(rootref, allsecrefs)
+
+		# save equivalent properties of merged sections in the root
+		rootref.L_mrg = L_eq
+		rootref.diam_mrg = diam_eq
+		rootref.Ra_mrg = Ra_eq
+		root.ri_mrg = ri_eq
+
+
+def merge_unconnected(cluster, allsecrefs):
 	""" 
 	Merge within-cluster unconnected sections after connected subtrees 
 	within cluster have been merged (absorbed into root of subtree).
@@ -87,18 +119,13 @@ def merge_islands(cluster, allsecrefs):
 	cluster.eqri = 0.
 	cluster.eqSurf = 0. # surface calculated equivalent dimensions
 	cluster.eqSurfSum = 0. # sum of surface calculated from equivalent dimensions
-	for i, secref in enumerate(mrg_secs):
-		# Get equivalent properties for each island
-		L_island = secref.mrgL
-		diam_island = secref.mrgdiam
-		ri_island = secref.mrgri
-		eqSurf_island = secref.mrgL*PI*secref.mrgdiam
-
+	for i, isle in enumerate(mrg_secs):
 		# Update equivalent properties according to <eq> expressions
-		cluster.eqSurfSum += eqSurf_island
-		cluster.eqL += L_island*eqSurf_island
-		cluster.eqdiam += diam_island**2
-		cluster.eqri += ri_island
+		eqSurf_isle = isle.L_mrg*PI*isle.diam_mrg
+		cluster.eqSurfSum += eqSurf_isle
+		cluster.eqL += isle.L_mrg*eqSurf_isle
+		cluster.eqdiam += isle.diam_mrg**2
+		cluster.eqri += isle.ri_mrg
 
 	# Finalize <eq> calculation
 	cluster.eqL /= cluster.eqSurfSum # LENGTH: equation L_eq
@@ -108,6 +135,30 @@ def merge_islands(cluster, allsecrefs):
 	cluster.eqSurf = cluster.eqL*PI*cluster.eqdiam # EQUIVALENT SURFACE
 	
 	return cluster
+
+def equivalent_sections(clusters, allsecrefs):
+	""" Create the reduced/equivalent cell by creating 
+		a section for each cluster 
+
+	@param clusters		list of Cluster objects containing data
+						for each cluster
+	@param allsecrefs	list of SectionRef (mutable) with first element
+						a ref to root/soma section
+	"""
+	# Create equivalent section for each clusters
+	eq_secs = [h.Section() for clu in eq_clusters]
+
+	# Connect sections
+	for i, clu_i in enumerate(eq_clusters):
+		for j, clu_j in enumerate(eq_clusters):
+			if clu_j is not clu_i and clu_j.parent_label == clu_i.label:
+				eq_secs[j].connect(eq_secs[i], clu_j.parent_pos, 0)
+
+	# Set dimensions, passive properties, active properties
+	for eqsec in eq_secs:
+		# see test_stn_Gillies (insert statements, setconductances())
+
+	# TODO: in RedPurk.hoc/init(): see call to createPurkEqCell() and everything that follows it
 
 # def reduce_gillies():
 if __name__ == '__main__':
@@ -134,9 +185,17 @@ if __name__ == '__main__':
 	cluster_labels = list(set(secref.cluster_label for secref in allsecrefs)) # unique labels
 	eq_clusters = [Cluster(label) for label in cluster_labels]
 
-	# TODO: merge connected & unconnected
+	# Compute equivalent section properties for each cluster
+	for cluster in eq_clusters:
+		# Merge within-cluster connected subtrees
+		merge_connected(cluster, allsecrefs)
 
-	# TODO: create equivalent sections
+		# Merge islands
+		merge_unconnected(cluster, allsecrefs)
+
+	# Create equivalent section for each cluster
+	eq_sections = equivalent_sections(eq_clusters, allsecrefs)
+
 
 # if __name__ == '__main__':
 # 	reduce_gillies()
