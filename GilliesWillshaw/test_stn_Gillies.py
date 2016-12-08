@@ -49,9 +49,7 @@ gillies_gdict = {'STh': ['gpas'], # passive/leak channel
 				'KDR':['gk'], 'Kv31':['gk'], 'sKCa':['gk'], # K channels
 				'Ih':['gk'], # nonspecific channels
 				'CaT':['gcaT'], 'HVA':['gcaL', 'gcaN']} # Ca channels
-gillies_glist = []
-for mechname, mechgs in gillies_gdict.iteritems():
-	for gname in mechgs: gillies_glist.append(gname+'_'+mechname)
+gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
 
 def lambda_f(f, diam, Ra, cm):
 	""" Compute electrotonic length (taken from stdlib.hoc) """

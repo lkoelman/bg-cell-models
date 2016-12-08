@@ -282,6 +282,21 @@ def clusterize_marasco(allsecrefs):
 				secref.parent_label = 'trunk' + str(i_trunk)
 				secref.parent_pos = 1.0
 
+def cluster_topology(rootref, allsecrefs, relations):
+	""" Determine cluster topology from list of clustered section references
+	@param relations	a container for relations of the form (parentlabel, childlabel)
+						if this is a set, the entries are guaranteed to be unique
+	"""
+	# Depth-first recursion of tree
+	for childsec in rootref.sec.children():
+		childref = getsecref(childsec, allsecrefs)
+		# Add parent-child relationship
+		if childref.cluster_label != rootref.cluster_label:
+			relations.add((rootref.cluster_label, childref.cluster_label))
+		# determine topology of subtree
+		cluster_topology(childref, allsecrefs, relations)
+
+
 ################################################################################
 # Merging
 ################################################################################
@@ -294,6 +309,37 @@ def calc_mrgRiSurf(secref):
 	# cylinder surface based on merged L and diam
 	mrgsurf = secref.mrgL*secref.mrgdiam*PI
 	return mrgri, mrgsurf
+
+def calc_path_ri(secref):
+	""" Calculate axial path resistance from root to 0 and 1 end of each section 
+	@effect		calculate axial path resistance from root to 0/1 end of sections
+				and set as properties pathri0/pathri1 on secref
+	@return		tuple pathri0, pathri1
+	"""
+	# Get path from root node to this sections
+	rootsec = treeroot(secref)
+	calc_path = h.RangeVarPlot('v')
+	rootsec.push()
+	calc_path.begin(0.5)
+	secref.sec.push()
+	calc_path.end(0.5)
+	root_path = h.SectionList()
+	calc_path.list(root_path) # store path in list
+	h.pop_section()
+	h.pop_section()
+
+	# Compute axial path resistances
+	secref.pathri1 = 0 # axial path resistance from root sec to 1 end of this sec
+	secref.pathri0 = 0 # axial path resistance from root sec to 0 end of this sec
+	path_secs = list(root_path)
+	path_len = len(path_secs)
+	for i, psec in enumerate(path_secs):
+		for seg in psec:
+			secref.pathri1 += seg.ri()
+			if i < path_len-1:
+				secref.pathri0 += seg.ri()
+
+	return secref.pathri0, secref.pathri1
 
 def prep_merge(secrefs):
 	""" Prepare sections for merging procedure by computing
@@ -309,28 +355,8 @@ def prep_merge(secrefs):
 			secref.secSurf += seg.area()
 			secref.secri += seg.ri()
 
-		# Get path from root node to this sections
-		rootsec = treeroot(secref)
-		calc_path = h.RangeVarPlot('v')
-		rootsec.push()
-		calc_path.begin(0.5)
-		sec.push()
-		calc_path.end(0.5)
-		root_path = h.SectionList()
-		calc_path.list(root_path) # store path in list
-		h.pop_section()
-		h.pop_section()
-
-		# Compute axial path resistances
-		secref.pathri1 = 0 # axial path resistance from root sec to 1 end of this sec
-		secref.pathri0 = 0 # axial path resistance from root sec to 0 end of this sec
-		path_secs = list(root_path)
-		path_len = len(root_path)
-		for i, psec in enumerate(path_secs):
-			for seg in psec:
-				secref.pathri1 += seg.ri()
-				if i < path_len-1:
-					secref.pathri0 += seg.ri()
+		# Axial path resistance
+		calc_path_ri(secref)
 		
 		# mutable properties for merging
 		secref.mrgL = abs(sec.L)
