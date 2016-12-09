@@ -10,6 +10,8 @@ described in Bush & Sejnowski (1993)
 # Python modules
 import math
 PI = math.pi
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 # NEURON modules
 import neuron
@@ -103,6 +105,48 @@ def collapse_subtree(rootref, allsecrefs):
 
 	return L_seq, diam_seq, Ra_seq, ri_seq, cmtot_sum, gtot_sum
 
+def chan_densities(cluster, allsecrefs):
+	"""
+	Calculate channel densities for all sections in given cluster
+
+	ALGORITHM:
+	- for each section:
+		- for each segment in section, save gbar and axial path resistance
+			- axial path resistance obtained by interpolating pathri0 & pathri1
+	"""
+	clu_secs = [secref for secref in allsecrefs if secref.cluster_label==cluster.label]
+
+	# Keep a dict that maps gname to a collection of data points (pathri, gbar)
+	cluster.pathri_gbar = dict((gname, []) for gname in glist)
+	for secref in clu_secs:
+		for seg in secref.sec:
+			for gname in glist:
+				if not hasattr(seg, gname):
+					continue # section doesn't have ion channel: skip
+				# Add data point
+				seg_pathri = secref.pathri0 + seg.x*(secref.pathri1-secref.pathri0)
+				seg_gbar = getattr(seg, gname)
+				cluster.pathri_gbar[gname].append((seg_pathri, seg_gbar))
+
+def calc_gbar(cluster, gname, pathri):
+	"""
+	Calculate gbar for a point on the equivalent section of given cluster
+	given the axial path resistance to that point.
+	"""
+	gbar_pts = cluster.pathri_gbar[gname] # list of (pathri, gbar) data points
+	gbar_pts = sorted(gbar_pts, key=lambda pt: pt[0]) # sort by pahtri ascending
+	eq_path_x = (pathri - cluster.pathri0) / (cluster.pathri1 - cluster.pathri0)
+	if eq_path_x <= 0.:
+		return gbar_pts[0]
+	elif eq_path_x >= 1.:
+		return gbar_pts[-1]
+	else:
+		# average of points that lie within pathri +/- 11% of segment axial resistance
+		deltari = 0.11*(cluster.pathri1-cluster.pathri0)
+		surr_pts = [pt for pt in gbar_pts if (pt[0] >= pathri-deltari) and (pt[0] <= pathri+deltari)]
+		return sum(pt[1] for pt in surr_pts)/len(surr_pts) # take average
+
+
 def merge_cluster(cluster, allsecrefs):
 	"""
 	Merge sections in cluster
@@ -126,6 +170,9 @@ def merge_cluster(cluster, allsecrefs):
 		marasco.calc_path_ri(sec) # assigns pathri0/pathri1
 	cluster.orMaxpathri = max(secref.pathri1 for secref in clu_secs)
 	cluster.orMinpathri = min(secref.pathri0 for secref in clu_secs)
+
+	# Calculate distributions of ion channel densities
+	chan_densities(cluster, allsecrefs)
 
 	# Initialize equivalent properties
 	cluster.eqL = 0.
@@ -186,14 +233,21 @@ def min_nseg_marasco(sec):
 	""" Minimum number of segments based on electrotonic length """
 	return int((sec.L/(0.1*lambda_f(100., sec.diam, sec.Ra, sec.cm))+0.9)/2)*2 + 1  
 
-def equivalent_sections(clusters, allsecrefs):
+def equivalent_sections(clusters, allsecrefs, gradients=True):
 	""" Create the reduced/equivalent cell by creating 
 		a section for each cluster 
 
 	@param clusters		list of Cluster objects containing data
 						for each cluster
+
 	@param allsecrefs	list of SectionRef (mutable) with first element
 						a ref to root/soma section
+
+	@param gradients	if True, gbar in each segment is determined from
+						the average gbar at the same path resistance in the
+						original model (i.e. nonuniform gbar). If False,
+						a uniform gbar is used in each equivalent section.
+
 	@return				list of SectionRef containing equivalent Section 
 						for each cluster (in same order) as well as min
 						and max path resistance for each cluster/section
@@ -210,32 +264,51 @@ def equivalent_sections(clusters, allsecrefs):
 				eq_secs[j].connect(eq_secs[i], clu_j.parent_pos, 0)
 
 	# Set dimensions, passive properties, active properties
-	for i, sec in enumerate(eq_secs):
+	for i, secref in enumerate(eq_secrefs):
+		sec = secref.sec
 		sec.push() # Make section the CAS
+		cluster = clusters[i]
 
 		# Set geometry 
-		sec.L = clusters[i].eqL
-		sec.diam = clusters[i].eqdiam
+		sec.L = cluster.eqL
+		sec.diam = cluster.eqdiam
 		sec_area = sum(seg.area() for seg in sec) # should be same as cluser eqSurf
-		surf_fact = clusters[i].orSurfSum/clusters[i].eqSurf # scale factor: ratio areas original/equivalent
+		surf_fact = cluster.orSurfSum/cluster.eqSurf # scale factor: ratio areas original/equivalent
 
 		# Passive electrical properties (except Rm/gleak)
-		sec.cm = clusters[i].cmtot_sum / sec_area
-		sec.Ra = clusters[i].eqRa
+		sec.cm = cluster.cmtot_sum / sec_area
+		sec.Ra = cluster.eqRa
 
 		# Set number of segments based on rule of thumb electrotonic length
 		sec.nseg = min_nseg_hines(sec)
 
+		# calculate min/max path resistance in equivalent section (cluster)
+		pathri0, pathri1 = marasco.calc_path_ri(eq_secrefs[i])
+		cluster.pathri0 = pathri0
+		cluster.pathri1 = pathri1
+		assert (pathri0 < pathri1), ('Axial path resistance at end of section '
+									 'should be higher than at start of section')
+
 		# Insert all mechanisms and set conductances (TODO: incorporate gradients)
 		for mech in mechs_chans.keys():
 			sec.insert(mech)
-		for gname in glist:
-			for seg in sec:
-				gval = clusters[i].gtot_sum[gname] / sec_area # same as divided by eqSurf
-				sec.__setattr__(gname, gval)
+		for seg in sec:
+			for gname in glist:
+				if gradients:
+					# Look for average gbar value at points with same path resistance
+					seg_pathri = secref.pathri0 + seg.x*(secref.pathri1-secref.pathri0)
+					gval = calc_gbar(cluster, gname, seg_pathri)
+				else:
+					gval = cluster.gtot_sum[gname] / sec_area # yields same sum(gbar*area) as in full model
+				seg.__setattr__(gname, gval)
 		
-		# calculate min/max path resistance in cluster (equivalent model)
-		marasco.calc_path_ri(eq_secrefs[i])
+		# correct non-uniform gbar to yield same total gbar (sum(gbar*area))
+		if gradients:
+			for gname in glist:
+				gtot_eq = sum(getattr(seg, gname)*seg.area() for seg in sec)
+				gtot_or = cluster.gtot_sum[gname]
+				for seg in sec:
+					seg.__setattr__(gname, getattr(seg, gname)*gtot_or/gtot_eq)
 
 		# Unset CAS
 		h.pop_section()
@@ -272,8 +345,11 @@ if __name__ == '__main__':
 	cluster_relations.add(('soma', 'soma')) # soma is own parent
 	marasco.cluster_topology(somaref, allsecrefs, cluster_relations)
 	for cluster in eq_clusters:
-		cluster.parent_pos = 1.
 		cluster.parent_label = next(rel[0] for rel in cluster_relations if rel[1]==cluster.label)
+		if cluster.label.startswith('trunk_1'):
+			cluster.parent_pos = 0. # right dendritic tree (SThcell.dend1) is attached to 0 end of soma
+		else:
+			cluster.parent_pos = 1. # all other sections are attached to 1 end of parent section
 
 	# Merge sections within each cluster: 
 	# i.e. calculate properties of equivalent section for each cluster

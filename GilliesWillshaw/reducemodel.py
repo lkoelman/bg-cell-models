@@ -13,8 +13,10 @@ import matplotlib.pyplot as plt
 
 import neuron
 from neuron import h
-nrn = neuron
-hoc = h
+
+# Load NEURON function libraries
+h.load_file("stdlib.hoc") # Load the standard library
+h.load_file("stdrun.hoc") # Load the standard run library
 
 import sys
 import os.path
@@ -29,10 +31,6 @@ sys.path.append(modulesbase)
 # 	lib_path = os.path.join(path, 'nrnmech.dll')
 NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
-
-# Load NEURON function libraries
-hoc.load_file("stdlib.hoc") # Load the standard library
-hoc.load_file("stdrun.hoc") # Load the standard run library
 
 # Global variables
 soma = None
