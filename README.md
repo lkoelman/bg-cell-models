@@ -27,6 +27,12 @@
 
 ## TODO NEXT ##
 
+- run other tests and see if all fail
+- check pathri to start of spiny sections in old VS new model
+- check if increasing leak conductances (NaL) fixes it
+- Check scaling factors actually used VS paper in RedPurk.hoc
+	- see if changing these fixes
+
 - get parameters state model slow inactivaton & recover
 	- check parameters of Kuo & Bean (1994) model for inactivation/recovery model are the same in the Khaliq/Raman/Akeman models published on ModelDB
 		- see paper fig. 7 => **NOT SAME**: Khaliq & Raman is tuned specifically for the resurgent current
