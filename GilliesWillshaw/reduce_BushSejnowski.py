@@ -11,7 +11,12 @@ described in Bush & Sejnowski (1993)
 import math
 PI = math.pi
 import logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logger = logging.getLogger(__name__) # create logger for this module
+# logger.setLevel(logging.DEBUG)
+# ch = logging.StreamHandler()
+# ch.setLevel(logging.DEBUG)
+# logger.addHandler(ch)
 
 # NEURON modules
 import neuron
@@ -134,7 +139,7 @@ def calc_gbar(cluster, gname, pathri):
 	given the axial path resistance to that point.
 	"""
 	gbar_pts = cluster.pathri_gbar[gname] # list of (pathri, gbar) data points
-	gbar_pts = sorted(gbar_pts, key=lambda pt: pt[0]) # sort by pahtri ascending
+	gbar_pts.sort(key=lambda pt: pt[0]) # sort by pahtri ascending
 	eq_path_x = (pathri - cluster.pathri0) / (cluster.pathri1 - cluster.pathri0)
 	if eq_path_x <= 0.:
 		return gbar_pts[0]
@@ -144,6 +149,10 @@ def calc_gbar(cluster, gname, pathri):
 		# average of points that lie within pathri +/- 11% of segment axial resistance
 		deltari = 0.11*(cluster.pathri1-cluster.pathri0)
 		surr_pts = [pt for pt in gbar_pts if (pt[0] >= pathri-deltari) and (pt[0] <= pathri+deltari)]
+		if not any(surr_pts):
+			# take average of two closest points
+			gbar_pts.sort(key=lambda pt: abs(pt[0]-pathri))
+			surr_pts = [pt for i, pt in enumerate(gbar_pts) if i < 2]
 		return sum(pt[1] for pt in surr_pts)/len(surr_pts) # take average
 
 
@@ -221,6 +230,11 @@ def merge_cluster(cluster, allsecrefs):
 	cluster.eqRa = PI*(cluster.eqdiam**2)*cluster.eqri*100./cluster.eqL # SPECIFIC AXIAL RESISTANCE: equation R_a,eq
 	cluster.eqSurf = cluster.eqL*PI*cluster.eqdiam # EQUIVALENT SURFACE
 
+	# Debugging info
+	logger.debug("Equivalent properties for cluster %s are:\
+	\n\teqL\teqdiam\teqRa\teqri\teqSurf\n\t%.3f\t%.3f\t.3%f\t%.3f\t%.3f",
+		cluster.label, cluster.eqL, cluster.eqdiam, cluster.eqRa, cluster.eqri, cluster.eqSurf)
+
 def lambda_f(f, diam, Ra, cm):
 	""" Compute electrotonic length (taken from stdlib.hoc) """
 	return 1e5*math.sqrt(diam/(4*math.pi*f*Ra*cm))
@@ -254,12 +268,12 @@ def equivalent_sections(clusters, allsecrefs, gradients=True):
 						as properties pathri0/pathri1 on SectionRef objects
 	"""
 	# Create equivalent section for each clusters
-	eq_secs = [h.Section() for clu in eq_clusters]
+	eq_secs = [h.Section() for clu in clusters]
 	eq_secrefs = [ExtSecRef(sec=sec) for sec in eq_secs]
 
 	# Connect sections
-	for i, clu_i in enumerate(eq_clusters):
-		for j, clu_j in enumerate(eq_clusters):
+	for i, clu_i in enumerate(clusters):
+		for j, clu_j in enumerate(clusters):
 			if clu_j is not clu_i and clu_j.parent_label == clu_i.label:
 				eq_secs[j].connect(eq_secs[i], clu_j.parent_pos, 0)
 
@@ -268,6 +282,7 @@ def equivalent_sections(clusters, allsecrefs, gradients=True):
 		sec = secref.sec
 		sec.push() # Make section the CAS
 		cluster = clusters[i]
+		secref.cluster_label = cluster.label
 
 		# Set geometry 
 		sec.L = cluster.eqL
@@ -289,7 +304,7 @@ def equivalent_sections(clusters, allsecrefs, gradients=True):
 		assert (pathri0 < pathri1), ('Axial path resistance at end of section '
 									 'should be higher than at start of section')
 
-		# Insert all mechanisms and set conductances (TODO: incorporate gradients)
+		# Insert all mechanisms and set conductances
 		for mech in mechs_chans.keys():
 			sec.insert(mech)
 		for seg in sec:
@@ -307,16 +322,21 @@ def equivalent_sections(clusters, allsecrefs, gradients=True):
 			for gname in glist:
 				gtot_eq = sum(getattr(seg, gname)*seg.area() for seg in sec)
 				gtot_or = cluster.gtot_sum[gname]
+				if gtot_eq <= 0. : gtot_eq = 1.
 				for seg in sec:
 					seg.__setattr__(gname, getattr(seg, gname)*gtot_or/gtot_eq)
+
+		# Debugging info:
+		logger.debug("Created equivalent section '%s' with \n\tL\tdiam\tcm\tRa\tpathri0\tpathri1\
+		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f", cluster.label, sec.L, sec.diam, sec.cm, sec.Ra, 
+		pathri0, pathri1)
 
 		# Unset CAS
 		h.pop_section()
 
 	return eq_secs, eq_secrefs # return both or secs will be deleted
 
-# def reduce_gillies():
-if __name__ == '__main__':
+def reduce_gillies():
 	""" Reduce Gillies & Willshaw STN neuron model """
 
 	# Initialize Gillies model
@@ -330,40 +350,53 @@ if __name__ == '__main__':
 	allsecrefs = [somaref] + alldendrefs
 
 	# Assign Strahler numbers
+	logger.info("Assingling Strahler's numbers...")
 	marasco.assign_strahler_order(dendLrefs[0], dendLrefs, 0)
 	marasco.assign_strahler_order(dendRrefs[0], dendRrefs, 0)
 	somaref.order = 0 # distance from soma
 	somaref.strahlernumber = dendLrefs[0].strahlernumber # same as root of left tree
 
-	# Cluster subtree of each trunk section
-	marasco.clusterize_strahler_trunks(allsecrefs, thresholds=(1,2))
-	cluster_labels = list(set(secref.cluster_label for secref in allsecrefs)) # unique labels
-	eq_clusters = [Cluster(label) for label in cluster_labels]
-
-	# Determine cluster topology
-	cluster_relations = set()
-	cluster_relations.add(('soma', 'soma')) # soma is own parent
-	marasco.cluster_topology(somaref, allsecrefs, cluster_relations)
-	for cluster in eq_clusters:
-		cluster.parent_label = next(rel[0] for rel in cluster_relations if rel[1]==cluster.label)
-		if cluster.label.startswith('trunk_1'):
-			cluster.parent_pos = 0. # right dendritic tree (SThcell.dend1) is attached to 0 end of soma
-		else:
-			cluster.parent_pos = 1. # all other sections are attached to 1 end of parent section
+	# Cluster sections
+	logger.info("Clustering sections...")
+	# Cluster soma
+	somaref.cluster_label = 'soma'
+	somaclu = Cluster('soma')
+	somaclu.parent_label = 'soma'
+	somaclu.parent_pos = 0.0
+	clusters = [somaclu]
+	# Cluster dendritic trees
+	marasco.clusterize_strahler(dendLrefs[0], allsecrefs, thresholds=(1,2), 
+								clusterlist=clusters, labelsuffix='_0')
+	marasco.clusterize_strahler(dendRrefs[0], allsecrefs, thresholds=(1,2),
+								clusterlist=clusters, labelsuffix='_1', parent_pos=0.)
+	# Debug info
+	for cluster in clusters:
+		logger.debug("Cluster '{0}'' has parent cluster '{1}'".format(cluster.label, cluster.parent_label))
 
 	# Merge sections within each cluster: 
 	# i.e. calculate properties of equivalent section for each cluster
-	for cluster in eq_clusters:
+	logger.info("Merging within-cluster sections...")
+	for cluster in clusters:
 		merge_cluster(cluster, allsecrefs) # stores equivalent properties in cluster
 
 	# Create equivalent section for each cluster
-	eq_secs, eq_secrefs = equivalent_sections(eq_clusters, allsecrefs)
+	logger.info("Creating equivalent sections...")
+	eq_secs, eq_secrefs = equivalent_sections(clusters, allsecrefs)
 
 	# Delete original model sections
 	for sec in h.allsec(): # makes each section the CAS
-		if sec.name().startswith('SThcell'):
+		if sec.name().startswith('SThcell'): # original model sections
 			h.delete_section()
+		else: # equivalent model sections
+			h.ion_style("na_ion",1,2,1,0,1)
+			h.ion_style("k_ion",1,2,1,0,1)
+			h.ion_style("ca_ion",3,2,1,1,1)
 
+	# Sort by tree
+	dendLsecs = [secref.sec for secref in eq_secrefs if secref.cluster_label.endswith('0')]
+	dendRsecs = [secref.sec for secref in eq_secrefs if secref.cluster_label.endswith('1')]
+	somasec = next(secref.sec for secref in eq_secrefs if secref.cluster_label.startswith('soma'))
+	return somasec, (dendLsecs, dendRsecs), (clusters, eq_secrefs)
 
-# if __name__ == '__main__':
-# 	reduce_gillies()
+if __name__ == '__main__':
+	reduce_gillies()

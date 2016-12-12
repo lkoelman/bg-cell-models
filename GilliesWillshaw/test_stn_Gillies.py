@@ -15,8 +15,6 @@ import matplotlib.pyplot as plt
 
 import neuron
 from neuron import h
-nrn = neuron
-hoc = h
 
 import sys
 import os.path
@@ -27,6 +25,7 @@ from common import analysis
 import collections
 
 import reducemodel
+import reduce_BushSejnowski as bush
 
 # Load NEURON mechanisms
 # add this line to nrn/lib/python/neuron/__init__.py/load_mechanisms()
@@ -38,8 +37,8 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 	
 
 # Load NEURON function libraries
-hoc.load_file("stdlib.hoc") # Load the standard library
-hoc.load_file("stdrun.hoc") # Load the standard run library
+h.load_file("stdlib.hoc") # Load the standard library
+h.load_file("stdrun.hoc") # Load the standard run library
 
 # Global variables
 soma = None
@@ -91,12 +90,25 @@ def stn_cell_gillies(resurgent=False):
 
 	return soma, dends, stims
 
-def stn_cell_threesec(resurgent=False):
-	""" Initialie reduced Gilliew & Willshaw model consisting of
-		three sections (one section for each dendritic tree)
+def stn_cell_Rall(resurgent=False, oneseg=False):
+	""" Initialise reduced Gilliew & Willshaw model with each dendritic tree
+	reduced to a single equivalent cylinder/section according to Rall's
+	reduction method and the number of segments/points determined by
+	the electrotonic length.
+
+	@param oneseg	if True, a single segment is usef for each section,
+					otherwise the number of segments is determined by 
+					dL < 0.1*lambda(100)
 
 	OBSERVATIONS:
-	- same behavior as original model
+	- (nseg from lambda)
+		- same behavior as original model except spontaneous firing
+
+	- (nseg=1)
+		- cannot get same behavour as in original model or reduced model
+		  with large amount of compartments. Processes/interaction of membrane
+		  mechanisms in distal dendrite is not sufficiently isolated from
+		  processes in soma.
 	"""
 	# Properties from SThprotocell.hoc
 	all_Ra = 150.224
@@ -129,10 +141,15 @@ def stn_cell_threesec(resurgent=False):
 	dend1.L = 549.86 # equivalent length using Rall model
 	dend1.Ra = all_Ra
 	dend1.cm = all_cm
-	opt_nseg1 = int(np.ceil(dend1.L/(0.1*lambda_f(100., dend1.diam, dend1.Ra, dend1.cm))))
-	dend1.nseg = opt_nseg1
-	for mech in stn_mechs: dend1.insert(mech) # insert mechanisms
-	setconductances(dend1, 1, glist=stn_glist) # set channel conductances
+	# Configure ion channels (distribution,...)
+	for mech in stn_mechs: dend1.insert(mech)
+	if oneseg:
+		dend1.nseg = 1
+		setconductances(dend1, 1, fixbranch=8, fixloc=0.98)
+	else:
+		opt_nseg1 = int(np.ceil(dend1.L/(0.1*lambda_f(100., dend1.diam, dend1.Ra, dend1.cm))))
+		dend1.nseg = opt_nseg1
+		setconductances(dend1, 1, glist=stn_glist)
 	setionstyles_gillies(dend1) # set ion styles
 
 	# Left dendritic tree (Fig. 1, big one)
@@ -142,10 +159,15 @@ def stn_cell_threesec(resurgent=False):
 	dend0.L = 703.34 # equivalent length using Rall model
 	dend0.Ra = all_Ra
 	dend0.cm = all_cm
-	opt_nseg0 = int(np.ceil(dend0.L/(0.1*lambda_f(100., dend0.diam, dend0.Ra, dend0.cm))))
-	dend0.nseg = opt_nseg0
+	# Configure ion channels (distribution,...)
 	for mech in stn_mechs: dend0.insert(mech) # insert mechanisms
-	setconductances(dend0, 0, glist=stn_glist) # set channel conductances
+	if oneseg:
+		dend0.nseg = 1
+		setconductances(dend0, 0, fixbranch=10, fixloc=0.98)
+	else:
+		opt_nseg0 = int(np.ceil(dend0.L/(0.1*lambda_f(100., dend0.diam, dend0.Ra, dend0.cm))))
+		dend0.nseg = opt_nseg0
+		setconductances(dend0, 0, glist=stn_glist)
 	setionstyles_gillies(dend0) # set ion styles
 
 	# Create stimulator objects
@@ -155,13 +177,30 @@ def stn_cell_threesec(resurgent=False):
 
 	return soma, (dend0, dend1), (stim1, stim2, stim3)
 
-def stn_cell_onetree():
-	""" Soma with a single tree reduced to two compartments.
+def stn_cell_Marasco():
+	""" STN cell by Gillies & Willshaw reduced using Marasco's (2012)
+		reduction method.
+	"""
+	soma, dends, clusters_secs = bush.reduce_gillies()
+
+	# Create stimulator objects
+	stim1 = h.IClamp(soma(0.5))
+	stim2 = h.IClamp(soma(0.5))
+	stim3 = h.IClamp(soma(0.5))
+
+	return soma, dends, (stim1, stim2, stim3)
+
+def stn_cell_spiny_smooth_sec():
+	""" Soma with a single tree reduced to two compartments: one equivalent
+		trunk/smooth sections + one equivalent spiny sections.
 
 		The single tree is equivalent to three instances
 		of the small (fig. 1, right) dendritic tree connected to the soma.
+		The number og segments is determined empirically.
 
 		[0..soma..1]-[0..smooth..1]-[0..spiny..1]
+
+		TODO: use surface equivalence to scale conductances/cm
 	"""
 	# Properties from SThprotocell.hoc
 	all_Ra = 150.224
@@ -218,67 +257,6 @@ def stn_cell_onetree():
 	stim3 = h.IClamp(soma(0.5))
 
 	return soma, (smooth, spiny), (stim1, stim2, stim3)
-
-def stn_cell_threecomp():
-	""" Initialize reduced Gilliew & Willshaw model consisting of
-		three compartments (three sections with one segment each
-		in NEURON)
-
-	OBSERVATIONS
-	- cannot get same behavour as in original model or reduced model
-	  with large amount of compartments. Processes/interaction of membrane
-	  mechanisms in distal dendrite is not sufficiently isolated from
-	  processes in soma.
-	"""
-	# Properties from SThprotocell.hoc
-	all_Ra = 150.224
-	all_cm = 1.0
-	soma_L = 18.8
-	soma_diam = 18.3112
-
-	# Create soma
-	soma = h.Section()
-	soma.nseg = 1
-	soma.Ra = all_Ra
-	soma.diam = soma_diam
-	soma.L = soma_L
-	soma.cm = all_cm
-	for mech in gillies_mechs: soma.insert(mech)
-	setconductances(soma, -1)
-	setionstyles_gillies(soma)
-	
-	# Right dendritic tree (Fig. 1, small one)
-	d_proximal, d_distal = 1.9480, 0.4870 # diam of most proximal/parent sec, most distal sec
-	dend1 = h.Section()
-	dend1.connect(soma(0))
-	dend1.diam = d_proximal
-	dend1.L = 549.86 # equivalent length using Rall model
-	dend1.Ra = all_Ra
-	dend1.cm = all_cm
-	dend1.nseg = 1
-	for mech in gillies_mechs: dend1.insert(mech) # insert mechanisms
-	setconductances(dend1, 1, fixbranch=8, fixloc=0.98) # set channel conductances
-	setionstyles_gillies(dend1) # set ion styles
-
-	# Left dendritic tree (Fig. 1, big one)
-	d_proximal, d_distal = 3.0973, 0.4870 # diam of most proximal/parent sec, most distal sec
-	dend0 = h.Section()
-	dend0.connect(soma(1))
-	dend0.diam = d_proximal
-	dend0.L = 703.34 # equivalent length using Rall model
-	dend0.Ra = all_Ra
-	dend0.cm = all_cm
-	dend0.nseg = 1
-	for mech in gillies_mechs: dend0.insert(mech) # insert mechanisms
-	setconductances(dend0, 0, fixbranch=10, fixloc=0.98) # set channel conductances
-	setionstyles_gillies(dend0) # set ion styles
-
-	# Create stimulator objects
-	stim1 = h.IClamp(soma(0.5))
-	stim2 = h.IClamp(soma(0.5))
-	stim3 = h.IClamp(soma(0.5))
-
-	return soma, (dend0, dend1), (stim1, stim2, stim3)
 
 
 ################################################################################
@@ -515,8 +493,8 @@ def test_spontaneous(resurgent=False, fullmodel=True):
 	if fullmodel:
 		soma, dends, stims = stn_cell_gillies()
 	else:
-		# soma, dends, stims = stn_cell_threesec()
-		soma, dends, stims = stn_cell_onetree()
+		# soma, dends, stims = stn_cell_Rall()
+		soma, dends, stims = stn_cell_spiny_smooth_sec()
 		
 
 	# Set simulation parameters
@@ -591,11 +569,11 @@ def test_plateau(fulltree=True, fullseg=True):
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
 	elif fullseg:
-		soma, dends, stims = stn_cell_threesec()
+		soma, dends, stims = stn_cell_Rall()
 		dendsec = dends[1]
 		dendloc = 0.9
 	else:
-		soma, dends, stims = stn_cell_threecomp()
+		soma, dends, stims = stn_cell_Rall(oneseg=True)
 		dendsec = dends[1]
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
@@ -703,11 +681,11 @@ def test_reboundburst(fulltree=True, fullseg=True):
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
 	elif fullseg:
-		soma, dends, stims = stn_cell_threesec()
+		soma, dends, stims = stn_cell_Rall()
 		dendsec = dends[1]
 		dendloc = 0.9
 	else:
-		soma, dends, stims = stn_cell_threecomp()
+		soma, dends, stims = stn_cell_Rall(oneseg=True)
 		dendsec = dends[1]
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
@@ -807,11 +785,11 @@ def test_slowbursting(fulltree=True, fullseg=True):
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
 	elif fullseg:
-		soma, dends, stims = stn_cell_threesec()
+		soma, dends, stims = stn_cell_Rall()
 		dendsec = dends[1]
 		dendloc = 0.9
 	else:
-		soma, dends, stims = stn_cell_threecomp()
+		soma, dends, stims = stn_cell_Rall(oneseg=True)
 		dendsec = dends[1]
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
@@ -912,7 +890,7 @@ def test_burstresurgent(fulltree=True, resurgent=False):
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
 	else:
-		soma, dends, stims = stn_cell_threesec()
+		soma, dends, stims = stn_cell_Rall()
 		dendsec = dends[1]
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
@@ -1000,8 +978,9 @@ def test_burstresurgent(fulltree=True, resurgent=False):
 	# plt.show(block=False)
 
 if __name__ == '__main__':
-	soma, dends, recData = test_spontaneous(fullmodel=False, resurgent=False)
+	# soma, dends, recData = test_spontaneous(fullmodel=False, resurgent=False)
 	# test_reboundburst()
 	# test_plateau(False, False)
 	# test_slowbursting()
-	# soma, dends = stn_cell_threesec()
+	# soma, dends, stims = stn_cell_Rall()
+	soma, dends, stims = stn_cell_Marasco()

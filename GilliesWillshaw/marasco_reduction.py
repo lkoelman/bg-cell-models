@@ -11,7 +11,9 @@ from collections import OrderedDict
 from operator import attrgetter
 import math
 PI = math.pi
-import warnings
+import logging
+logger = logging.getLogger(__name__) # create logger for this module
+logger.setLevel(logging.DEBUG)
 
 # NEURON modules
 import neuron
@@ -144,15 +146,19 @@ def assign_strahler_order(noderef, secrefs, par_order):
 		# nonzero and equal: increment
 		noderef.strahlernumber = leftref.strahlernumber + 1
 
-def clusterize_strahler(noderef, allsecrefs, thresholds, labelsuffix=''):
+def clusterize_strahler(noderef, allsecrefs, thresholds, clusterlist, labelsuffix='', parent_pos=1.0):
 	""" Cluster a tree based on strahler numbers alone
 
 	@param noderef	any section starting from but not equal to soma
+	@param parent_pos	position on parent cluster
 	@effect			assign label 'trunk'/'smooth'/spiny' to sections
 					based on their Strahler number
 	"""
-
 	if noderef is None: return
+
+	# Clustering thresholds
+	if thresholds is None:
+		thresholds = (3,5)
 
 	# Cluster label based on strahler's number
 	if noderef.strahlernumber <= thresholds[0]: # default: <= 3
@@ -162,21 +168,27 @@ def clusterize_strahler(noderef, allsecrefs, thresholds, labelsuffix=''):
 	else:
 		noderef.cluster_label = 'trunk' + labelsuffix
 
-
 	# Parent cluster
 	parref = getsecref(noderef.parent, allsecrefs)
-	noderef.parent_label = parref.cluster_label
-	if parref.cluster_label.startswith('soma'):
-		noderef.parent_pos = 0.5
+	if parref.cluster_label != noderef.cluster_label:
+		noderef.parent_label = parref.cluster_label
 	else:
-		noderef.parent_pos = 0.0
+		noderef.parent_label = parref.parent_label
+	noderef.parent_pos = parent_pos # by default at end of section
+
+	# Add new cluster
+	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
+		newclu = Cluster(noderef.cluster_label)
+		newclu.parent_label = noderef.parent_label
+		newclu.parent_pos = noderef.parent_pos
+		clusterlist.append(newclu)
 
 	# Cluster children (iteratively)
 	childiter = iter(noderef.sec.children())
 	leftref = getsecref(next(childiter, None), allsecrefs)
 	rightref = getsecref(next(childiter, None), allsecrefs)
-	clusterize_strahler(leftref, allsecrefs, thresholds, labelsuffix)
-	clusterize_strahler(rightref, allsecrefs, thresholds, labelsuffix)
+	clusterize_strahler(leftref, allsecrefs, thresholds, clusterlist, labelsuffix)
+	clusterize_strahler(rightref, allsecrefs, thresholds, clusterlist, labelsuffix)
 
 def clusterize_strahler_trunks(allsecrefs, thresholds=None):
 	""" Cluster a tree based on strahler numbers and depending
@@ -207,7 +219,8 @@ def clusterize_strahler_trunks(allsecrefs, thresholds=None):
 	# Cluster each trunk and its subtree
 	for i, trunksec in enumerate(somaref.sec.children()):
 		trunkref = getsecref(trunksec, allsecrefs)
-		clusterize_strahler(trunkref, allsecrefs,thresholds, labelsuffix='_'+str(i))
+		clusterize_strahler(trunkref, allsecrefs, thresholds, labelsuffix='_'+str(i))
+		logger.debug("Using suffix '_%i' for subtree of section %s", i, trunksec.name())
 
 def clusterize_marasco(allsecrefs):
 	""" Assign each section to cluster and determine cluster topology
@@ -248,7 +261,7 @@ def clusterize_marasco(allsecrefs):
 			else:
 				secref.parent_pos = 1.0
 		else:
-			warnings.warn('Encountered trunk section with unclustered parent')
+			logger.warn('Encountered trunk section with unclustered parent')
 
 	# cluster subtree of each trunk sections (assign cluster, set topology)
 	trunk_secs = [sec for sec in alldendrefs if (hasattr(secref, 'cluster_label') and 
