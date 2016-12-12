@@ -25,7 +25,7 @@ from common import analysis
 import collections
 
 import reducemodel
-import reduce_BushSejnowski as bush
+import reduce_marasco as marasco
 
 # Load NEURON mechanisms
 # add this line to nrn/lib/python/neuron/__init__.py/load_mechanisms()
@@ -177,11 +177,11 @@ def stn_cell_Rall(resurgent=False, oneseg=False):
 
 	return soma, (dend0, dend1), (stim1, stim2, stim3)
 
-def stn_cell_Marasco():
+def stn_cell_Marasco(customclustering=True):
 	""" STN cell by Gillies & Willshaw reduced using Marasco's (2012)
 		reduction method.
 	"""
-	soma, dends, clusters_secs = bush.reduce_gillies()
+	soma, dends, clusters_secs = marasco.reduce_gillies(customclustering)
 
 	# Create stimulator objects
 	stim1 = h.IClamp(soma(0.5))
@@ -200,7 +200,7 @@ def stn_cell_spiny_smooth_sec():
 
 		[0..soma..1]-[0..smooth..1]-[0..spiny..1]
 
-		TODO: use surface equivalence to scale conductances/cm
+		TODO: use surface equivalence to scale conductances/cm and conserve axial resistance?
 	"""
 	# Properties from SThprotocell.hoc
 	all_Ra = 150.224
@@ -467,7 +467,7 @@ def applyApamin(soma, dends):
 # Experiments
 ################################################################################
 
-def test_spontaneous(resurgent=False, fullmodel=True):
+def test_spontaneous(soma, dends, stims, resurgent=False):
 	""" Run rest firing experiment from original Hoc file 
 
 	PAPER
@@ -488,15 +488,6 @@ def test_spontaneous(resurgent=False, fullmodel=True):
 	
 
 	"""
-
-	# make set-up
-	if fullmodel:
-		soma, dends, stims = stn_cell_gillies()
-	else:
-		# soma, dends, stims = stn_cell_Rall()
-		soma, dends, stims = stn_cell_spiny_smooth_sec()
-		
-
 	# Set simulation parameters
 	dur = 2000
 	h.dt = 0.025
@@ -540,7 +531,7 @@ def test_spontaneous(resurgent=False, fullmodel=True):
 
 	return soma, dends, recData
 
-def test_plateau(fulltree=True, fullseg=True):
+def test_plateau():
 	""" Test plateau potential evoked by applying depolarizing pulse 
 		at hyperpolarized level of membrane potential
 
@@ -560,19 +551,22 @@ def test_plateau(fulltree=True, fullseg=True):
 		- burst seems to go on as long as CaT+CaL remains approx. constant, and burst ends as long as CaT too low
 
 	"""
+	
+	cellmodel = 1 # 1=full / 2=Rall with L from lambda / 3=Rall with nseg=1
+
 	# make set-up
-	if fulltree:
+	if cellmodel==1:
 		soma, dends, stims = stn_cell_gillies()
 		# Load section indicated with arrow in fig. 5C
 		# If you look at tree1-nom.dat it should be the seventh entry 
 		# (highest L and nseg with no child sections of which there are two instances)
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	elif fullseg:
+	elif cellmodel==2:
 		soma, dends, stims = stn_cell_Rall()
 		dendsec = dends[1]
 		dendloc = 0.9
-	else:
+	elif cellmodel==3:
 		soma, dends, stims = stn_cell_Rall(oneseg=True)
 		dendsec = dends[1]
 		dendloc = 0.9
@@ -978,9 +972,15 @@ def test_burstresurgent(fulltree=True, resurgent=False):
 	# plt.show(block=False)
 
 if __name__ == '__main__':
+	# Make cell
+	# soma, dends, stims = stn_cell_gillies()
+	# soma, dends, stims = stn_cell_Rall()
+	soma, dends, stims = stn_cell_Marasco(customclustering=True)
+
+	# Run experiment
+	test_spontaneous(soma, dends, stims)
 	# soma, dends, recData = test_spontaneous(fullmodel=False, resurgent=False)
 	# test_reboundburst()
 	# test_plateau(False, False)
 	# test_slowbursting()
-	# soma, dends, stims = stn_cell_Rall()
-	soma, dends, stims = stn_cell_Marasco()
+	
