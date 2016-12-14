@@ -27,11 +27,22 @@
 
 ## TODO NEXT ##
 
-- run other tests and see if all fail
-- check pathri to start of spiny sections in old VS new model
-- check if increasing leak conductances (NaL) fixes it
-- Check scaling factors actually used VS paper in RedPurk.hoc
-	- see if changing these fixes
+- Debug code
+	- [x] Check scaling factors actually used VS paper in RedPurk.hoc
+		- same as mentioned in paper: original/equivalent surface (if synapses in cluster: only count sections containing synapse toward original surface)
+	- [x] Calculate marasco reduction by hand for simple tree and see what happens to theoretical Rin
+		- calculated by hand and adapted expressions to make units match
+		- Rin is conserved witn 0.2% accuracy for toy tree (secs P/A/B)
+	- [ ] Calculate and compare input resistance of trees in full/reduced model using algorithm Sterrat Ch. 4
+		- large tree: `Rin_AC_eq/R_in_AC_or` = 1.39
+		- large tree: `Rin_DC_eq/R_in_DC_or` = 1.13
+		- small tree: `Rin_AC_eq/R_in_AC_or` = 1.60
+		- small tree `Rin_DC_eq/R_in_DC_or` = 1.10
+	- [ ] run other tests and see if all fail
+	- [ ] Use Hoc `Impedance` class to calculate input impendance in soma
+	
+	- [ ] check if scaling soma conductances (e.g. depolarizing NaP) fixes it
+	
 
 - get parameters state model slow inactivaton & recover
 	- check parameters of Kuo & Bean (1994) model for inactivation/recovery model are the same in the Khaliq/Raman/Akeman models published on ModelDB

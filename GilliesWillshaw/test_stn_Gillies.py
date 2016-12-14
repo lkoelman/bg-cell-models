@@ -552,7 +552,7 @@ def test_plateau():
 
 	"""
 	
-	cellmodel = 1 # 1=full / 2=Rall with L from lambda / 3=Rall with nseg=1
+	cellmodel = 1 # 1=full / 2=Rall with L from lambda / 3=Rall with nseg=1 / 4=Marasco
 
 	# make set-up
 	if cellmodel==1:
@@ -569,6 +569,10 @@ def test_plateau():
 	elif cellmodel==3:
 		soma, dends, stims = stn_cell_Rall(oneseg=True)
 		dendsec = dends[1]
+		dendloc = 0.9
+	elif cellmodel==4:
+		soma, dends, stims = stn_cell_Marasco(customclustering=True)
+		dendsec = dends[1][-1] # last/most distal section of small dendrite
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
 
@@ -645,7 +649,7 @@ def test_plateau():
 		if k.startswith('d'): recDend[k] = recData[k]
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False, timeRange=burst_time)
 
-def test_reboundburst(fulltree=True, fullseg=True):
+def test_reboundburst(cellmodel):
 	""" Run rebound burst experiment from original Hoc file
 
 	GILLIES CURRENTS
@@ -666,21 +670,27 @@ def test_reboundburst(fulltree=True, fullseg=True):
 
 	"""
 
+	cellmodel = 1 # 1=full / 2=Rall with L from lambda / 3=Rall with nseg=1 / 4=Marasco
+
 	# make set-up
-	if fulltree:
+	if cellmodel==1:
 		soma, dends, stims = stn_cell_gillies()
 		# Load section indicated with arrow in fig. 5C
 		# If you look at tree1-nom.dat it should be the seventh entry 
 		# (highest L and nseg with no child sections of which there are two instances)
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	elif fullseg:
+	elif cellmodel==2:
 		soma, dends, stims = stn_cell_Rall()
 		dendsec = dends[1]
 		dendloc = 0.9
-	else:
+	elif cellmodel==3:
 		soma, dends, stims = stn_cell_Rall(oneseg=True)
 		dendsec = dends[1]
+		dendloc = 0.9
+	elif cellmodel==4:
+		soma, dends, stims = stn_cell_Marasco(customclustering=True)
+		dendsec = dends[1][-1] # last/most distal section of small dendrite
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
 
@@ -754,7 +764,7 @@ def test_reboundburst(fulltree=True, fullseg=True):
 	# plt.show(block=False)
 	# Plot dendrite currentds
 
-def test_slowbursting(fulltree=True, fullseg=True):
+def test_slowbursting(cellmodel):
 	""" Test slow rhythmic bursting mode under conditions of constant 
 		hyperpolarizing current injection and lower sKCa conductance
 
@@ -770,21 +780,27 @@ def test_slowbursting(fulltree=True, fullseg=True):
 		- slow depolarization continues until majority of CaL channels activated
 	"""
 
+	cellmodel = 1 # 1=full / 2=Rall with L from lambda / 3=Rall with nseg=1 / 4=Marasco
+
 	# make set-up
-	if fulltree:
+	if cellmodel==1:
 		soma, dends, stims = stn_cell_gillies()
 		# Load section indicated with arrow in fig. 5C
 		# If you look at tree1-nom.dat it should be the seventh entry 
 		# (highest L and nseg with no child sections of which there are two instances)
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	elif fullseg:
+	elif cellmodel==2:
 		soma, dends, stims = stn_cell_Rall()
 		dendsec = dends[1]
 		dendloc = 0.9
-	else:
+	elif cellmodel==3:
 		soma, dends, stims = stn_cell_Rall(oneseg=True)
 		dendsec = dends[1]
+		dendloc = 0.9
+	elif cellmodel==4:
+		soma, dends, stims = stn_cell_Marasco(customclustering=True)
+		dendsec = dends[1][-1] # last/most distal section of small dendrite
 		dendloc = 0.9
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
 

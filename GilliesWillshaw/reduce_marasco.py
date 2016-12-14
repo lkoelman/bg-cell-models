@@ -28,18 +28,73 @@ import marasco_ported as marasco
 from marasco_ported import ExtSecRef, Cluster, getsecref
 
 # Global variables (convert to class members in future)
-mechs_chans = {'STh': ['gpas'], # passive/leak channel
+gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel
 				'Na': ['gna'], 'NaL': ['gna'], # Na channels
 				'KDR': ['gk'], 'Kv31': ['gk'], 'sKCa':['gk'], # K channels
 				'Ih': ['gk'], # nonspecific channels
 				'CaT': ['gcaT'], 'HVA': ['gcaL', 'gcaN'], # Ca channels
 				'Cacum': []} # No channels
-glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
 
-def collapse_subtree(rootref, allsecrefs):
+mechs_chans = gillies_mechs_chans
+
+def glist():
 	""" 
-	Recursively merge within-cluster connected sections in subtree
-	of the given node using <br> and <seq> expressions in Marasco (2012).
+	Return list of conductance names accessible as properties
+	on a section/segment after all mechanisms in mechs_chans.keys()
+	have been inserted
+	"""
+	return [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
+
+def merge_parallel(childrefs, allsecrefs):
+	"""
+	Merge parallel branched sections into one equivalent section
+	"""
+	# Initialize combined properties of branched sections (children)
+	L_br = 0.
+	diam_br = 0.
+	Ra_br = 0.
+	ri_br = 1.
+	eqsurf_sum = 0.
+	ri_sum = 0.
+	gtot_br = dict((gname, 0.0) for gname in glist()) # sum of gbar multiplied by area
+	cmtot_br = 0. # sum of cm multiplied by area
+
+	# Update combined properties using the dimensions/electrical properties
+	# of each child according to <br> expressions in Marasco (2012) 
+	for childref in childrefs:
+		# get equivalent child properties
+		L_child, diam_child, Ra_child, ri_child, cmtot_child, gtot_child = merge_sequential(childref, allsecrefs)
+		eqsurf_child = PI*diam_child*L_child
+
+		# combine according to <br> (parallel) expressions
+		eqsurf_sum += eqsurf_child
+		L_br += eqsurf_child*L_child # LENGTH: eq (1) - weight by area
+		diam_br += diam_child**2 # RADIUS: eq (2) - 2-norm of radii
+		Ra_br += Ra_child # SPECIFIC AXIAL RESISTANCE - average Ra
+		ri_br *= ri_child # ABSOLUTE AXIAL RESISTANCE - parallel conductances
+		ri_sum += ri_child # need sum in final calculation
+
+		# Distributed properties
+		cmtot_br += cmtot_child
+		for gname in glist():
+			gtot_br[gname] += gtot_child[gname]
+
+		# mark child as absorbed
+		childref.absorbed = True
+		childref.visited = True
+
+	# Finalize <br> calculation (MUST BE VALID IF ONLY ONE CHILDREF)
+	L_br /= eqsurf_sum # eq. L_br
+	diam_br = math.sqrt(diam_br) # eq. rho_br
+	Ra_br = Ra_br/len(childrefs) # average Ra (NOTE: not used, cluster Ra calc from dimensions & ri)
+	if len(childrefs) > 1:
+		ri_br /= ri_sum # eq. r_a,br: product/sum
+
+	return L_br, diam_br, Ra_br, ri_br, cmtot_br, gtot_br
+
+def merge_sequential(rootref, allsecrefs):
+	""" 
+	Merge sequential sections into one equivalent sections
 	"""
 	# Get references
 	rootsec = rootref.sec
@@ -53,62 +108,38 @@ def collapse_subtree(rootref, allsecrefs):
 	ri_root = sum(seg.ri() for seg in rootsec) # absolute axial resistance between 0-1 ends
 
 	# Distributed properties
-	cmtot_sum = sum(seg.cm*seg.area() for seg in rootsec) # sum of cm multiplied by area
-	gtot_sum = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
-	for gname in glist:
-		gtot_sum[gname] += sum(getattr(seg, gname)*seg.area() for seg in rootsec)
+	cmtot_seq = sum(seg.cm*seg.area() for seg in rootsec) # sum of cm multiplied by area
+	gtot_seq = dict((gname, 0.0) for gname in glist()) # sum of gbar multiplied by area
+	for gname in glist():
+		gtot_seq[gname] += sum(getattr(seg, gname)*seg.area() for seg in rootsec)
 
 	# Handle leaf sections
 	if not any(childrefs):
-		return L_root, diam_root, Ra_root, ri_root, cmtot_sum, gtot_sum
+		return L_root, diam_root, Ra_root, ri_root, cmtot_seq, gtot_seq
 
-	# Initialize combined properties of branched sections (children)
-	L_br = 0.
-	diam_br = 0.
-	Ra_br = 0.
-	ri_br = 1.
-	eqsurf_sum = 0.
-	ri_sum = 0.
-	gtot_sum = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
-	cmtot_sum = 0. # sum of cm multiplied by area
-
-	# Update combined properties using the dimensions/electrical properties
-	# of each child according to <br> expressions in Marasco (2012) 
-	for childref in childrefs:
-		# get equivalent child properties
-		L_child, diam_child, Ra_child, ri_child, cmtot_child, gtot_child = collapse_subtree(childref, allsecrefs)
-		eqsurf_child = PI*diam_child*L_child
-
-		# combine according to <br> (parallel) expressions
-		eqsurf_sum += eqsurf_child
-		L_br += eqsurf_child*L_child # LENGTH: eq (1) - weight by area
-		diam_br += diam_child**2 # RADIUS: eq (2) - 2-norm of radii
-		Ra_br += Ra_child # SPECIFIC AXIAL RESISTANCE - average Ra
-		ri_br *= ri_child # ABSOLUTE AXIAL RESISTANCE - parallel conductances
-		ri_sum += ri_child # need sum in final calculation
-
-		# Distributed properties
-		cmtot_sum += cmtot_child
-		for gname in glist:
-			gtot_sum[gname] += gtot_child[gname]
-
-		# mark child as absorbed
-		childref.absorbed = True
-		childref.visited = True
-
-	# Finalize <br> calculation
-	L_br /= eqsurf_sum
-	diam_br = math.sqrt(diam_br)
-	Ra_br = Ra_br/len(childrefs) # average Ra
-	ri_br /= ri_sum
+	# Combine properties of parallel branched sections (children)
+	L_br, diam_br, Ra_br, ri_br, cmtot_br, gtot_br = merge_parallel(childrefs, allsecrefs)
 
 	# use <seq> expressions in Marasco (2012) to merge equivalent child into parent
 	L_seq = L_root + L_br # L_seq equation
 	Ra_seq = (Ra_root + Ra_br)/2.
 	ri_seq = ri_root + ri_br # r_a,seq equation
-	diam_seq = math.sqrt(Ra_seq*L_seq*4./PI/ri_seq/100.) # rho_seq equation
+	diam_seq = math.sqrt(Ra_seq*L_seq*4./PI/ri_seq/100.) # rho_seq equation (conserves ri_seq)
+	
+	# Keep track of total conductance/capacitance
+	cmtot_seq += cmtot_br
+	for gname in glist():
+		gtot_seq[gname] += gtot_br[gname]
 
-	return L_seq, diam_seq, Ra_seq, ri_seq, cmtot_sum, gtot_sum
+	return L_seq, diam_seq, Ra_seq, ri_seq, cmtot_seq, gtot_seq
+
+def collapse_subtree(rootref, allsecrefs):
+	""" 
+	Recursively merge within-cluster connected sections in subtree
+	of the given node using <br> and <seq> expressions in Marasco (2012).
+	"""
+	# Collapse is equal to sequential merge of the root and equivalent parallel circuit of its children
+	return merge_sequential(rootref, allsecrefs)
 
 def chan_densities(cluster, allsecrefs):
 	"""
@@ -122,10 +153,10 @@ def chan_densities(cluster, allsecrefs):
 	clu_secs = [secref for secref in allsecrefs if secref.cluster_label==cluster.label]
 
 	# Keep a dict that maps gname to a collection of data points (pathri, gbar)
-	cluster.pathri_gbar = dict((gname, []) for gname in glist)
+	cluster.pathri_gbar = dict((gname, []) for gname in glist())
 	for secref in clu_secs:
 		for seg in secref.sec:
-			for gname in glist:
+			for gname in glist():
 				if not hasattr(seg, gname):
 					continue # section doesn't have ion channel: skip
 				# Add data point
@@ -190,7 +221,7 @@ def merge_cluster(cluster, allsecrefs):
 	cluster.orSurfSum = sum(sum(seg.area() for seg in secref.sec) for secref in clu_secs)
 	cluster.eqSurfSum = 0. # sum of surface calculated from equivalent dimensions
 	cluster.cmtot_sum = 0.
-	cluster.gtot_sum = dict((gname, 0.0) for gname in glist)
+	cluster.gtot_sum = dict((gname, 0.0) for gname in glist())
 
 	# utility function to check if sec has parent within cluster
 	def has_clusterparent(secref):
@@ -202,6 +233,7 @@ def merge_cluster(cluster, allsecrefs):
 		rootref = marasco.clusterroot(secref, clu_secs) # make sure it is a cluster root
 
 		# Collapse subtree
+		logger.debug("Collapsing subtree of cluster root %s", repr(rootref))
 		L_eq, diam_eq, Ra_eq, ri_eq, cmtot_eq, gtot_eq = collapse_subtree(rootref, allsecrefs)
 
 		# Combine properties of collapse sections using <eq> expressions
@@ -213,7 +245,7 @@ def merge_cluster(cluster, allsecrefs):
 
 		# Save distributed properties
 		cluster.cmtot_sum += cmtot_eq
-		for gname in glist:
+		for gname in glist():
 			cluster.gtot_sum[gname] += gtot_eq[gname]
 
 		# Mark as visited
@@ -231,8 +263,9 @@ def merge_cluster(cluster, allsecrefs):
 	cluster.eqSurf = cluster.eqL*PI*cluster.eqdiam # EQUIVALENT SURFACE
 
 	# Debugging info
-	logger.debug("Equivalent properties for cluster %s are:\
-	\n\teqL\teqdiam\teqRa\teqri\teqSurf\n\t%.3f\t%.3f\t.3%f\t%.3f\t%.3f",
+	logger.debug("Merged cluster '%s': equivalent properties are:\
+		\n\teqL\teqdiam\teqRa\teqri\teqSurf\
+		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f",
 		cluster.label, cluster.eqL, cluster.eqdiam, cluster.eqRa, cluster.eqri, cluster.eqSurf)
 
 def lambda_f(f, diam, Ra, cm):
@@ -308,7 +341,7 @@ def equivalent_sections(clusters, allsecrefs, gradients=True):
 		for mech in mechs_chans.keys():
 			sec.insert(mech)
 		for seg in sec:
-			for gname in glist:
+			for gname in glist():
 				if gradients:
 					# Look for average gbar value at points with same path resistance
 					seg_pathri = secref.pathri0 + seg.x*(secref.pathri1-secref.pathri0)
@@ -319,7 +352,7 @@ def equivalent_sections(clusters, allsecrefs, gradients=True):
 		
 		# correct non-uniform gbar to yield same total gbar (sum(gbar*area))
 		if gradients:
-			for gname in glist:
+			for gname in glist():
 				gtot_eq = sum(getattr(seg, gname)*seg.area() for seg in sec)
 				gtot_or = cluster.gtot_sum[gname]
 				if gtot_eq <= 0. : gtot_eq = 1.
@@ -336,14 +369,79 @@ def equivalent_sections(clusters, allsecrefs, gradients=True):
 
 	return eq_secs, eq_secrefs # return both or secs will be deleted
 
-def label_diam(secref):
-	""" Assign cluster label based on diameter """
-	if secref.sec.diam <= 1.0: # diameters: see Gilles & Willshaw (2006) fig. 1
-		return 'spiny'
-	else:
-		return 'trunk'
+def cluster_sections(rootrefs, allsecrefs, custom=True):
+	""" Cluster all sections """
+	somaref, dendLroot, dendRroot = rootrefs[:]
 
-def reduce_gillies(customclustering=False):
+	# Cluster soma
+	somaref.cluster_label = 'soma'
+	somaclu = Cluster('soma')
+	somaclu.parent_label = 'soma'
+	somaclu.parent_pos = 0.0
+	clusters = [somaclu]
+
+	def clusterfun(secref):
+		""" Assign cluster label based on diameter """
+		if secref.sec.diam <= 1.0: # diameters: see Gilles & Willshaw (2006) fig. 1
+			return 'spiny'
+		else:
+			return 'trunk'
+
+	# Cluster dendritic trees
+	if custom:
+		marasco.clusterize_custom(dendLroot, allsecrefs, clusterfun, clusters, 
+									labelsuffix='_0')
+		marasco.clusterize_custom(dendRroot, allsecrefs, clusterfun, clusters, 
+									labelsuffix='_1', parent_pos=0.)
+	else:
+		marasco.clusterize_strahler(dendLroot, allsecrefs, thresholds=(1,2), 
+									clusterlist=clusters, labelsuffix='_0')
+		marasco.clusterize_strahler(dendRroot, allsecrefs, thresholds=(1,2),
+									clusterlist=clusters, labelsuffix='_1', parent_pos=0.)
+	# Debug info
+	for cluster in clusters:
+		logger.debug("Cluster '{0}'' has parent cluster '{1}'".format(cluster.label, cluster.parent_label))
+
+	return clusters
+
+def compare_models(or_secrefs, eq_secrefs):
+	""" Compare model properties """
+	somaref, dendLrefs, dendRrefs = or_secrefs[0], or_secrefs[1], or_secrefs[2]
+	eq_somaref, eq_dendLrefs, eq_dendRrefs = eq_secrefs[0], eq_secrefs[1], eq_secrefs[2]
+
+	# Compare input resistance of large/left tree 
+	rootsecs = [dendLrefs[0].sec, eq_dendLrefs[0].sec, dendRrefs[0].sec, eq_dendRrefs[0].sec]
+	Rin_DC = [reducemodel.inputresistance_tree(sec, 0., 'gna_NaL') for sec in rootsecs]
+	Rin_AC = [reducemodel.inputresistance_tree(sec, 100., 'gna_NaL') for sec in rootsecs]
+	
+	print("=== INPUT RESISTANCE ===\
+	\nLeft tree (Original model):\
+	\nRin_AC={:.3f} \tRin_DC={:.3f}\
+	\nLeft tree (Equivalent model):\
+	\nRin_AC={:.3f} \tRin_DC={:.3f}\n\
+	\nRight tree (Original model):\
+	\nRin_AC={:.3f} \tRin_DC={:.3f}\
+	\nRight tree (Equivalent model):\
+	\nRin_AC={:.3f} \tRin_DC={:.3f}".format(
+	Rin_AC[0], Rin_DC[0], Rin_AC[1], Rin_DC[1],
+	Rin_AC[2], Rin_DC[2], Rin_AC[3], Rin_DC[3]))
+
+	raise Exception('breakpoint')
+
+def label_order(label):
+	""" Return order (distance from soma) based on label """
+	if label.startswith('soma'):
+		return 0
+	elif label.startswith('trunk'):
+		return 1
+	elif label.startswith('smooth'):
+		return 2
+	elif label.startswith('spiny'):
+		return 3
+	else:
+		return 4
+
+def reduce_gillies(customclustering=True):
 	""" Reduce Gillies & Willshaw STN neuron model """
 
 	# Initialize Gillies model
@@ -365,26 +463,8 @@ def reduce_gillies(customclustering=False):
 
 	# Cluster sections
 	logger.info("Clustering sections...")
-	# Cluster soma
-	somaref.cluster_label = 'soma'
-	somaclu = Cluster('soma')
-	somaclu.parent_label = 'soma'
-	somaclu.parent_pos = 0.0
-	clusters = [somaclu]
-	# Cluster dendritic trees
-	if customclustering:
-		marasco.clusterize_custom(dendLrefs[0], allsecrefs, label_diam, clusters, 
-									labelsuffix='_0')
-		marasco.clusterize_custom(dendRrefs[0], allsecrefs, label_diam, clusters, 
-									labelsuffix='_1', parent_pos=0.)
-	else:
-		marasco.clusterize_strahler(dendLrefs[0], allsecrefs, thresholds=(1,2), 
-									clusterlist=clusters, labelsuffix='_0')
-		marasco.clusterize_strahler(dendRrefs[0], allsecrefs, thresholds=(1,2),
-									clusterlist=clusters, labelsuffix='_1', parent_pos=0.)
-	# Debug info
-	for cluster in clusters:
-		logger.debug("Cluster '{0}'' has parent cluster '{1}'".format(cluster.label, cluster.parent_label))
+	rootrefs = (somaref, dendLrefs[0], dendRrefs[0])
+	clusters = cluster_sections(rootrefs, allsecrefs, custom=customclustering)
 
 	# Merge sections within each cluster: 
 	# i.e. calculate properties of equivalent section for each cluster
@@ -395,6 +475,17 @@ def reduce_gillies(customclustering=False):
 	# Create equivalent section for each cluster
 	logger.info("Creating equivalent sections...")
 	eq_secs, eq_secrefs = equivalent_sections(clusters, allsecrefs)
+	# Sort equivalent sections
+	eq_sorted = sorted(eq_secrefs, key=lambda ref: label_order(ref.cluster_label))
+	eq_somaref = next(ref for ref in eq_secrefs if ref.cluster_label.startswith('soma'))
+	eq_dendLrefs = [ref for ref in eq_secrefs if ref.cluster_label.endswith('0')]
+	eq_dendRrefs = [ref for ref in eq_secrefs if ref.cluster_label.endswith('1')]
+	eq_somasec = eq_somaref.sec
+	eq_dendLsecs = [ref.sec for ref in eq_dendLrefs]
+	eq_dendRsecs = [ref.sec for ref in eq_dendRrefs]
+
+	# Compare full/reduced model
+	compare_models([somaref, dendLrefs, dendRrefs], [eq_somaref, eq_dendLrefs, eq_dendRrefs])
 
 	# Delete original model sections
 	for sec in h.allsec(): # makes each section the CAS
@@ -404,12 +495,14 @@ def reduce_gillies(customclustering=False):
 			h.ion_style("na_ion",1,2,1,0,1)
 			h.ion_style("k_ion",1,2,1,0,1)
 			h.ion_style("ca_ion",3,2,1,1,1)
-
-	# Sort by tree
-	dendLsecs = [secref.sec for secref in eq_secrefs if secref.cluster_label.endswith('0')]
-	dendRsecs = [secref.sec for secref in eq_secrefs if secref.cluster_label.endswith('1')]
-	somasec = next(secref.sec for secref in eq_secrefs if secref.cluster_label.startswith('soma'))
-	return somasec, (dendLsecs, dendRsecs), (clusters, eq_secrefs)
+	
+	# return data structures
+	cluster_data = (clusters, eq_secrefs)
+	eq_secs = (eq_somasec, eq_dendLsecs, eq_dendRsecs)
+	eq_refs = (eq_somaref, eq_dendLrefs, eq_dendRrefs)
+	or_refs = (somaref, dendLrefs, dendRrefs)
+	or_secs = (h.SThcell[0].soma, list(h.SThcell[0].dend0), list(h.SThcell[0].dend1))
+	return cluster_data, eq_refs, or_refs
 
 if __name__ == '__main__':
-	reduce_gillies()
+	cluster_data, eq_refs, or_refs = reduce_gillies()
