@@ -283,7 +283,7 @@ def stn_cell(cellmodel):
 		dendloc = 0.9
 		allsecs = [soma] + list(dends)
 	elif cellmodel==4: # Marasco - custom clustering
-		clusters, eq_secs, eq_refs = marasco.reduce_gillies(customclustering=True, average_trees=False)
+		clusters, eq_secs, eq_refs = marasco.reduce_gillies(customclustering=True, average_trees=True)
 		soma, dendLsecs, dendRsecs = eq_secs
 		dendsec = dendRsecs[-1] # last/most distal section of small dendrite
 		dendloc = 0.9

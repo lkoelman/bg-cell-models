@@ -331,7 +331,9 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 						as properties pathri0/pathri1 on SectionRef objects
 	"""
 	# Create equivalent section for each clusters
-	eq_secs = [h.Section() for clu in clusters]
+	# eq_secs = [h.Section() for clu in clusters]
+	for clu in clusters: h("create %s" % clu.label) # ensures references are not destroyed and names are clear
+	eq_secs = [getattr(h, clu.label) for clu in clusters]
 	eq_secrefs = [ExtSecRef(sec=sec) for sec in eq_secs]
 
 	# Connect sections
@@ -463,6 +465,7 @@ def reduce_gillies(customclustering, average_trees):
 	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1]
 	alldendrefs = dendLrefs + dendRrefs
 	allsecrefs = [somaref] + alldendrefs
+	or_refs = (somaref, dendLrefs, dendRrefs)
 
 	# Assign Strahler numbers
 	logger.info("Assingling Strahler's numbers...")
@@ -496,7 +499,9 @@ def reduce_gillies(customclustering, average_trees):
 	eq_dendRsecs = [ref.sec for ref in eq_dendRrefs]
 
 	# Compare full/reduced model
-	analysis.compare_models([somaref, dendLrefs, dendRrefs], [eq_somaref, eq_dendLrefs, eq_dendRrefs], glist())
+	eq_secs = (eq_somasec, eq_dendLsecs, eq_dendRsecs)
+	eq_refs = (eq_somaref, eq_dendLrefs, eq_dendRrefs)
+	analysis.compare_models(or_refs, eq_refs, [])
 
 	# Delete original model sections
 	for sec in h.allsec(): # makes each section the CAS
@@ -508,12 +513,10 @@ def reduce_gillies(customclustering, average_trees):
 			h.ion_style("ca_ion",3,2,1,1,1)
 
 	logger.info("Equivalent tree topology:")
-	if logger.isEnabledFor(logger.getEffectiveLevel()):
+	if logger.getEffectiveLevel() >= logging.DEBUG:
 		h.topology() # prints topology
 	
 	# return data structures
-	eq_secs = (eq_somasec, eq_dendLsecs, eq_dendRsecs)
-	eq_refs = (eq_somaref, eq_dendLrefs, eq_dendRrefs)
 	return clusters, eq_secs, eq_refs
 
 if __name__ == '__main__':
