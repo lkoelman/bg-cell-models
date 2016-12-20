@@ -30,18 +30,25 @@
 - Debug code
 	- [x] Check scaling factors actually used VS paper in RedPurk.hoc
 		- same as mentioned in paper: original/equivalent surface (if synapses in cluster: only count sections containing synapse toward original surface)
-	- [x] Calculate marasco reduction by hand for simple tree and see what happens to theoretical Rin
+	- [x] See what happens to theoretical Rin in toy model
+		- Calculate marasco reduction by hand for simple tree
 		- calculated by hand and adapted expressions to make units match
-		- Rin is conserved witn 0.2% accuracy for toy tree (secs P/A/B)
-	- [ ] Calculate and compare input resistance of trees in full/reduced model using algorithm Sterrat Ch. 4
-		- large tree: `Rin_AC_eq/R_in_AC_or` = 1.39
-		- large tree: `Rin_DC_eq/R_in_DC_or` = 1.13
-		- small tree: `Rin_AC_eq/R_in_AC_or` = 1.60
-		- small tree `Rin_DC_eq/R_in_DC_or` = 1.10
-	- [ ] run other tests and see if all fail
+		- in toy tree (secs P/A/B): Rin is conserved witn 0.2% accuracy for toy tree
+			- NOTE that cluster root sections are not merged here with Marasco <eq> expressions
+	- [x] See what happens to theoretical Rin in Gillies & Willshaw model
+		- Calculate and compare input resistance of trees in full/reduced model (using algorithm Sterrat Ch. 4)
+		- if trees averaged/RaMERGINGMETHOD=1: they are not equal (see compare_models())
+		- if trees not averaged/RaMERGINGMETHOD=0: they are practically equal (within 1%)
+	- [x] run other tests and see if all fail
+		- they fail, likely due to different input resistance
+	- [x] check if mergingYmethod correctly implemented
+		- i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
+		- however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
+	- [ ] Correct scaling/fitting
+		- read Chapt Sterrat parameter fitting
+		- compare values post-/pre-reduction
+		- check scaling factors on soma ppties -> adjusted to account for non-conservation R_in?
 	- [ ] Use Hoc `Impedance` class to calculate input impendance in soma
-	
-	- [ ] check if scaling soma conductances (e.g. depolarizing NaP) fixes it
 	
 
 - get parameters state model slow inactivaton & recover

@@ -25,6 +25,7 @@ from common import analysis
 import collections
 
 import reducemodel
+from reducemodel import lambda_AC
 import reduce_marasco as marasco
 
 # Load NEURON mechanisms
@@ -50,9 +51,6 @@ gillies_gdict = {'STh': ['gpas'], # passive/leak channel
 				'CaT':['gcaT'], 'HVA':['gcaL', 'gcaN']} # Ca channels
 gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
 
-def lambda_f(f, diam, Ra, cm):
-	""" Compute electrotonic length (taken from stdlib.hoc) """
-	return 1e5*np.sqrt(diam/(4*np.pi*f*Ra*cm))
 
 def get_gillies_secs():
 	""" Get soma and dendritic trees when full model has been created. 
@@ -147,7 +145,7 @@ def stn_cell_Rall(resurgent=False, oneseg=False):
 		dend1.nseg = 1
 		setconductances(dend1, 1, fixbranch=8, fixloc=0.98)
 	else:
-		opt_nseg1 = int(np.ceil(dend1.L/(0.1*lambda_f(100., dend1.diam, dend1.Ra, dend1.cm))))
+		opt_nseg1 = int(np.ceil(dend1.L/(0.1*lambda_AC(dend1,100))))
 		dend1.nseg = opt_nseg1
 		setconductances(dend1, 1, glist=stn_glist)
 	setionstyles_gillies(dend1) # set ion styles
@@ -165,7 +163,7 @@ def stn_cell_Rall(resurgent=False, oneseg=False):
 		dend0.nseg = 1
 		setconductances(dend0, 0, fixbranch=10, fixloc=0.98)
 	else:
-		opt_nseg0 = int(np.ceil(dend0.L/(0.1*lambda_f(100., dend0.diam, dend0.Ra, dend0.cm))))
+		opt_nseg0 = int(np.ceil(dend0.L/(0.1*lambda_AC(dend0,100))))
 		dend0.nseg = opt_nseg0
 		setconductances(dend0, 0, glist=stn_glist)
 	setionstyles_gillies(dend0) # set ion styles
@@ -177,30 +175,18 @@ def stn_cell_Rall(resurgent=False, oneseg=False):
 
 	return soma, (dend0, dend1), (stim1, stim2, stim3)
 
-def stn_cell_Marasco(customclustering=True):
-	""" STN cell by Gillies & Willshaw reduced using Marasco's (2012)
-		reduction method.
-	"""
-	soma, dends, clusters_secs = marasco.reduce_gillies(customclustering)
-
-	# Create stimulator objects
-	stim1 = h.IClamp(soma(0.5))
-	stim2 = h.IClamp(soma(0.5))
-	stim3 = h.IClamp(soma(0.5))
-
-	return soma, dends, (stim1, stim2, stim3)
-
 def stn_cell_spiny_smooth_sec():
-	""" Soma with a single tree reduced to two compartments: one equivalent
-		trunk/smooth sections + one equivalent spiny sections.
+	""" 
+	Soma with a single tree reduced to two compartments: one equivalent
+	trunk/smooth sections + one equivalent spiny sections.
 
-		The single tree is equivalent to three instances
-		of the small (fig. 1, right) dendritic tree connected to the soma.
-		The number og segments is determined empirically.
+	The single tree is equivalent to three instances
+	of the small (fig. 1, right) dendritic tree connected to the soma.
+	The number og segments is determined empirically.
 
-		[0..soma..1]-[0..smooth..1]-[0..spiny..1]
+	[0..soma..1]-[0..smooth..1]-[0..spiny..1]
 
-		TODO: use surface equivalence to scale conductances/cm and conserve axial resistance?
+	TODO: use surface equivalence to scale conductances/cm and conserve axial resistance?
 	"""
 	# Properties from SThprotocell.hoc
 	all_Ra = 150.224
@@ -230,7 +216,7 @@ def stn_cell_spiny_smooth_sec():
 	smooth.L = 80 # sum of diameters branch 1 & 2
 	smooth.Ra = all_Ra
 	smooth.cm = all_cm
-	opt_nseg1 = int(np.ceil(smooth.L/(0.1*lambda_f(100., smooth.diam, smooth.Ra, smooth.cm))))
+	opt_nseg1 = int(np.ceil(smooth.L/(0.1*lambda_AC(smooth,100))))
 	smooth.nseg = 9
 	for mech in stn_mechs: smooth.insert(mech) # insert mechanisms
 	interpconductances(smooth, 1, path=[1,2], glist=stn_glist) # set channel conductances
@@ -244,7 +230,7 @@ def stn_cell_spiny_smooth_sec():
 	spiny.L = 289 # lenth of long branch
 	spiny.Ra = all_Ra
 	spiny.cm = all_cm
-	opt_nseg0 = int(np.ceil(spiny.L/(0.1*lambda_f(100., spiny.diam, spiny.Ra, spiny.cm))))
+	opt_nseg0 = int(np.ceil(spiny.L/(0.1*lambda_AC(spiny,100))))
 	spiny.nseg = 9
 	for mech in stn_mechs: spiny.insert(mech) # insert mechanisms
 	interpconductances(spiny, 1, path=[5], glist=stn_glist) # set channel conductances
@@ -258,6 +244,59 @@ def stn_cell_spiny_smooth_sec():
 
 	return soma, (smooth, spiny), (stim1, stim2, stim3)
 
+def stn_cell(cellmodel):
+	""" 
+	Create stn cell with given identifier 
+
+	ID		model description
+	-------------------------
+	1		Original Gillies & Willshaw STN cell model
+
+	2		Gilles & Willshaw model reduced using Rall's model
+			to one equivalent section per dendritic tree. The
+			number of segments is determined from the electrotonic
+			length to yield sufficient accuracy
+
+	3		Same as 2, except only one segment per secion is used
+
+	4		Gillies & Willshaw STN cell model reduced using
+			Marasco's reduction method with a custom clustering
+			criterion based on diameter
+	"""
+	stims = None
+	if cellmodel==1: # Full model
+		soma, dends, stims = stn_cell_gillies()
+		# Load section indicated with arrow in fig. 5C
+		# If you look at tree1-nom.dat it should be the seventh entry 
+		# (highest L and nseg with no child sections of which there are two instances)
+		dendsec = h.SThcell[0].dend1[7]
+		dendloc = 0.8 # approximate location along dendrite in fig. 5C
+		allsecs = [soma] + list(dends[0]) + list(dends[1])
+	elif cellmodel==2: # Rall - optimal nseg
+		soma, dends, stims = stn_cell_Rall()
+		dendsec = dends[1]
+		dendloc = 0.9
+		allsecs = [soma] + list(dends)
+	elif cellmodel==3: # Rall - one segment
+		soma, dends, stims = stn_cell_Rall(oneseg=True)
+		dendsec = dends[1]
+		dendloc = 0.9
+		allsecs = [soma] + list(dends)
+	elif cellmodel==4: # Marasco - custom clustering
+		clusters, eq_secs, eq_refs = marasco.reduce_gillies(customclustering=True, average_trees=False)
+		soma, dendLsecs, dendRsecs = eq_secs
+		dendsec = dendRsecs[-1] # last/most distal section of small dendrite
+		dendloc = 0.9
+		allsecs = [soma] + dendLsecs + dendRsecs
+
+	# Insert stimulation electrodes
+	if stims is None:
+		stim1 = h.IClamp(soma(0.5))
+		stim2 = h.IClamp(soma(0.5))
+		stim3 = h.IClamp(soma(0.5))
+		stims = stim1, stim2, stim3
+	
+	return soma, [(dendsec, dendloc)], stims, allsecs
 
 ################################################################################
 # Functions for reduced model
@@ -467,7 +506,7 @@ def applyApamin(soma, dends):
 # Experiments
 ################################################################################
 
-def test_spontaneous(soma, dends, stims, resurgent=False):
+def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	""" Run rest firing experiment from original Hoc file 
 
 	PAPER
@@ -529,9 +568,9 @@ def test_spontaneous(soma, dends, stims, resurgent=False):
 	recI.pop('V_soma')
 	analysis.cumulPlotTraces(recI, recordStep, cumulate=False)
 
-	return soma, dends, recData
+	return soma, recData
 
-def test_plateau():
+def test_plateau(soma, dends_locs, stims):
 	""" Test plateau potential evoked by applying depolarizing pulse 
 		at hyperpolarized level of membrane potential
 
@@ -551,29 +590,9 @@ def test_plateau():
 		- burst seems to go on as long as CaT+CaL remains approx. constant, and burst ends as long as CaT too low
 
 	"""
-	
-	cellmodel = 1 # 1=full / 2=Rall with L from lambda / 3=Rall with nseg=1 / 4=Marasco
-
-	# make set-up
-	if cellmodel==1:
-		soma, dends, stims = stn_cell_gillies()
-		# Load section indicated with arrow in fig. 5C
-		# If you look at tree1-nom.dat it should be the seventh entry 
-		# (highest L and nseg with no child sections of which there are two instances)
-		dendsec = h.SThcell[0].dend1[7]
-		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	elif cellmodel==2:
-		soma, dends, stims = stn_cell_Rall()
-		dendsec = dends[1]
-		dendloc = 0.9
-	elif cellmodel==3:
-		soma, dends, stims = stn_cell_Rall(oneseg=True)
-		dendsec = dends[1]
-		dendloc = 0.9
-	elif cellmodel==4:
-		soma, dends, stims = stn_cell_Marasco(customclustering=True)
-		dendsec = dends[1][-1] # last/most distal section of small dendrite
-		dendloc = 0.9
+	# Get electrodes and sections to record from
+	dendsec = dends_locs[0][0]
+	dendloc = dends_locs[0][1]
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
 
 	# Set simulation parameters
@@ -648,8 +667,9 @@ def test_plateau():
 	for k, v in recData.iteritems():
 		if k.startswith('d'): recDend[k] = recData[k]
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False, timeRange=burst_time)
+	return soma, recData
 
-def test_reboundburst(cellmodel):
+def test_reboundburst(soma, dends_locs, stims):
 	""" Run rebound burst experiment from original Hoc file
 
 	GILLIES CURRENTS
@@ -669,29 +689,9 @@ def test_reboundburst(cellmodel):
 		  in a different evolution of AP shape within a burst
 
 	"""
-
-	cellmodel = 1 # 1=full / 2=Rall with L from lambda / 3=Rall with nseg=1 / 4=Marasco
-
-	# make set-up
-	if cellmodel==1:
-		soma, dends, stims = stn_cell_gillies()
-		# Load section indicated with arrow in fig. 5C
-		# If you look at tree1-nom.dat it should be the seventh entry 
-		# (highest L and nseg with no child sections of which there are two instances)
-		dendsec = h.SThcell[0].dend1[7]
-		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	elif cellmodel==2:
-		soma, dends, stims = stn_cell_Rall()
-		dendsec = dends[1]
-		dendloc = 0.9
-	elif cellmodel==3:
-		soma, dends, stims = stn_cell_Rall(oneseg=True)
-		dendsec = dends[1]
-		dendloc = 0.9
-	elif cellmodel==4:
-		soma, dends, stims = stn_cell_Marasco(customclustering=True)
-		dendsec = dends[1][-1] # last/most distal section of small dendrite
-		dendloc = 0.9
+	# Get electrodes and sections to record from
+	dendsec = dends_locs[0][0]
+	dendloc = dends_locs[0][1]
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
 
 	# Set simulation parameters
@@ -764,7 +764,7 @@ def test_reboundburst(cellmodel):
 	# plt.show(block=False)
 	# Plot dendrite currentds
 
-def test_slowbursting(cellmodel):
+def test_slowbursting(soma, dends_locs, stims):
 	""" Test slow rhythmic bursting mode under conditions of constant 
 		hyperpolarizing current injection and lower sKCa conductance
 
@@ -779,29 +779,9 @@ def test_slowbursting(cellmodel):
 	- inter-burst: in the dendrites, CaL and CaT (very small due to relatively high Vm) gradually depolarize the membrane
 		- slow depolarization continues until majority of CaL channels activated
 	"""
-
-	cellmodel = 1 # 1=full / 2=Rall with L from lambda / 3=Rall with nseg=1 / 4=Marasco
-
-	# make set-up
-	if cellmodel==1:
-		soma, dends, stims = stn_cell_gillies()
-		# Load section indicated with arrow in fig. 5C
-		# If you look at tree1-nom.dat it should be the seventh entry 
-		# (highest L and nseg with no child sections of which there are two instances)
-		dendsec = h.SThcell[0].dend1[7]
-		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	elif cellmodel==2:
-		soma, dends, stims = stn_cell_Rall()
-		dendsec = dends[1]
-		dendloc = 0.9
-	elif cellmodel==3:
-		soma, dends, stims = stn_cell_Rall(oneseg=True)
-		dendsec = dends[1]
-		dendloc = 0.9
-	elif cellmodel==4:
-		soma, dends, stims = stn_cell_Marasco(customclustering=True)
-		dendsec = dends[1][-1] # last/most distal section of small dendrite
-		dendloc = 0.9
+	# Get electrodes and sections to record from
+	dendsec = dends_locs[0][0]
+	dendloc = dends_locs[0][1]
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
 
 	# Set simulation parameters
@@ -877,7 +857,7 @@ def test_slowbursting(cellmodel):
 		if k.startswith('d'): recDend[k] = recData[k]
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False)
 
-def test_burstresurgent(fulltree=True, resurgent=False):
+def test_burstresurgent(soma, dends_locs, stims):
 	""" Run rebound burst experiment from original Hoc file
 
 	EXPECTED BEHAVIOUR
@@ -890,19 +870,9 @@ def test_burstresurgent(fulltree=True, resurgent=False):
 	- test shorter, more realistic hyperpolarization period (corresponding to volley of IPSPs)
 	  to see if there the difference is greated between situation with and without Narsg
 	"""
-
-	# make set-up
-	if fulltree:
-		soma, dends, stims = stn_cell_gillies(resurgent=resurgent)
-		# Load section indicated with arrow in fig. 5C
-		# If you look at tree1-nom.dat it should be the seventh entry 
-		# (highest L and nseg with no child sections of which there are two instances)
-		dendsec = h.SThcell[0].dend1[7]
-		dendloc = 0.8 # approximate location along dendrite in fig. 5C
-	else:
-		soma, dends, stims = stn_cell_Rall()
-		dendsec = dends[1]
-		dendloc = 0.9
+	# Get electrodes and sections to record from
+	dendsec = dends_locs[0][0]
+	dendloc = dends_locs[0][1]
 	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
 
 	# Set simulation parameters
@@ -989,13 +959,10 @@ def test_burstresurgent(fulltree=True, resurgent=False):
 
 if __name__ == '__main__':
 	# Make cell
-	# soma, dends, stims = stn_cell_gillies()
-	# soma, dends, stims = stn_cell_Rall()
-	soma, dends, stims = stn_cell_Marasco(customclustering=True)
+	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=4)
 
 	# Run experiment
-	test_spontaneous(soma, dends, stims)
-	# soma, dends, recData = test_spontaneous(fullmodel=False, resurgent=False)
+	soma, recData = test_spontaneous(soma, dends_locs, stims)
 	# test_reboundburst()
 	# test_plateau(False, False)
 	# test_slowbursting()

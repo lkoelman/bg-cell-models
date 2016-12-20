@@ -167,8 +167,10 @@ def clusterize_custom(noderef, allsecrefs, clusterfun, clusterlist, labelsuffix=
 	# Add new cluster
 	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
 		newclu = Cluster(noderef.cluster_label)
+		parclu = next(clu for clu in clusterlist if clu.label==noderef.parent_label)
 		newclu.parent_label = noderef.parent_label
 		newclu.parent_pos = noderef.parent_pos
+		newclu.order = parclu.order + 1
 		clusterlist.append(newclu)
 
 	# Cluster children (iteratively)

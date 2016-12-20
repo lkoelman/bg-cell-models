@@ -17,8 +17,7 @@ import reducemodel
 import reduce_marasco as marasco
 from marasco_ported import ExtSecRef, Cluster, getsecref
 
-# def test_inputresistance():
-if __name__ == '__main__':
+def test_Rin_Ycluster():
 	""" Test input resistance of simple tree before & after reduction """
 	# Child section A
 	asec = h.Section()
