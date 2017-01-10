@@ -67,7 +67,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		- labelTime (True|False): whether to show the time axis label (default:True)
 		- includeTraces (['V_soma', ...]): traces to include in this plot
 		- excludeTraces (['V_soma', ...]): traces to exclude in this plot
-		- yRange: y limit for range, e.g. (0, 60)
+		- yRange: y limit for range, e.g. (0, 60). Can be a tuple, list or dict with traces as keys
 		
 		Returns figure handles
 	"""
@@ -105,7 +105,9 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		plt.ylabel(trace, fontsize=fontsiz)
 		if labelTime:
 			plt.xlabel('Time (ms)', fontsize=fontsiz)
-		if yRange is not None:
+		if isinstance(yRange, dict):
+			plt.ylim(yRange[trace])
+		elif yRange is not None:
 			plt.ylim(yRange)
 		plt.xlim(timeRange)
 

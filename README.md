@@ -37,15 +37,16 @@
 			- NOTE that cluster root sections are not merged here with Marasco <eq> expressions
 	- [x] See what happens to theoretical Rin in Gillies & Willshaw model
 		- Calculate and compare input resistance of trees in full/reduced model (using algorithm Sterrat Ch. 4)
-		- if trees averaged/RaMERGINGMETHOD=1: they are not equal (see compare_models())
-		- if trees not averaged/RaMERGINGMETHOD=0: they are practically equal (within 1%)
+		- => if trees averaged/RaMERGINGMETHOD=1: they are not equal (see compare_models())
+		- => if trees not averaged/RaMERGINGMETHOD=0: they are practically equal (within 1%)
 	- [x] run other tests and see if all fail
-		- they fail, likely due to different input resistance
-	- [x] check if mergingYmethod correctly implemented
-		- i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
-		- however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
+		- => they fail, likely due to different input resistance
+	- [x] check if mergingYmethod correctly implemented 
+		- => NO
+		- => i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
+		- => however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
 	- [ ] Correct scaling/fitting
-		- read Chapt Sterrat parameter fitting
+		- [x] read Chapt Sterrat parameter fitting
 		- compare values post-/pre-reduction
 		- check scaling factors on soma ppties -> adjusted to account for non-conservation R_in?
 	- [ ] Use Hoc `Impedance` class to calculate input impendance in soma

@@ -208,15 +208,17 @@ def merge_cluster(cluster, allsecrefs, average_trees):
 	"""
 	Merge sections in cluster
 
-	@param average_trees	If True, the equivalent specific axial resistance is set so
-						that the absolute axial resistance is the  average of all 
-						the unconnected subtrees in the cluster (note that this 
-						does not conserve input resistance).
-						If False, the specific axial resistance is the average of
-						the cluster and the diameter expression will ensure that the
-						absolute axial resistance will be equivalent to the parallel
-						circuit of all the unconnected subtrees, preserving input
-						resistance.
+	@param average_trees	If True, the input resistance is not conserved for (i.e.
+						no parallel circuit of disconnected subtrees in cluster) but
+						the specific axial resistance is calculated so that
+						the absolute axial resistance of the equivalent section 
+						is the average of all disconnected subtrees in the cluster.
+						This is the method used in Marasco (2013) (RaMERGINGMETHOD=1).
+							If False, the input resistance is conserved: the specific 
+						axial resistance is the average of the cluster and the diameter 
+						is calculated so that the absolute axial resistance will be 
+						equivalent to the parallel circuit of all the unconnected subtrees, 
+						preserving input resistance.
 
 	ALGORITHM
 	- find the next root of a within-cluster connected subtree
@@ -395,9 +397,9 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 					seg.__setattr__(gname, getattr(seg, gname)*gtot_or/gtot_eq)
 
 		# Debugging info:
-		logger.debug("Created equivalent section '%s' with \n\tL\tdiam\tcm\tRa\tpathri0\tpathri1\
-		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f", cluster.label, sec.L, sec.diam, sec.cm, sec.Ra, 
-		pathri0, pathri1)
+		logger.debug("Created equivalent section '%s' with \n\tL\tdiam\tcm\tRa\tpathri0\tpathri1\tnseg\
+		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d", cluster.label, sec.L, sec.diam, sec.cm, sec.Ra, 
+		pathri0, pathri1, sec.nseg)
 
 		# Unset CAS
 		h.pop_section()
@@ -405,7 +407,13 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 	return eq_secs, eq_secrefs # return both or secs will be deleted
 
 def cluster_sections(rootrefs, allsecrefs, custom=True):
-	""" Cluster all sections """
+	""" Cluster all sections 
+
+	@param custom	if False, use Strahler's numbers with two thresholds
+					for clustering dendritic sections. If True, use a custom
+					clustering method/criterion defined in local function
+					clusterfun().
+	"""
 	somaref, dendLroot, dendRroot = rootrefs[:]
 
 	# Cluster soma
@@ -454,7 +462,13 @@ def label_order(label):
 		return 4
 
 def reduce_gillies(customclustering, average_trees):
-	""" Reduce Gillies & Willshaw STN neuron model """
+	""" Reduce Gillies & Willshaw STN neuron model 
+
+	@param customclustering		see param 'customclustering' in function
+								cluster_sections()
+	@param average_trees		see param 'average_trees' in function
+								merge_cluster
+	"""
 
 	# Initialize Gillies model
 	h.xopen("createcell.hoc")

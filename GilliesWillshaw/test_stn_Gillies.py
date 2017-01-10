@@ -283,7 +283,9 @@ def stn_cell(cellmodel):
 		dendloc = 0.9
 		allsecs = [soma] + list(dends)
 	elif cellmodel==4: # Marasco - custom clustering
-		clusters, eq_secs, eq_refs = marasco.reduce_gillies(customclustering=True, average_trees=True)
+		marasco_method = True # whether trees will be averaged (True, as in paper) or Rin conserved (False)
+		clusters, eq_secs, eq_refs = marasco.reduce_gillies(
+			customclustering=True, average_trees=marasco_method)
 		soma, dendLsecs, dendRsecs = eq_secs
 		dendsec = dendRsecs[-1] # last/most distal section of small dendrite
 		dendloc = 0.9
@@ -507,13 +509,15 @@ def applyApamin(soma, dends):
 ################################################################################
 
 def test_spontaneous(soma, dends_locs, stims, resurgent=False):
-	""" Run rest firing experiment from original Hoc file 
+	""" Run rest firing experiment from original Hoc file
 
-	PAPER
+	@param soma			soma section
+	@param dends_locs	list of tuples (sec, loc) containing a section
+						and x coordinate to place recording electrode
+	@param stims		list of electrodes (IClamp)
 
-	TEST RESULTS
+	GILLIES CURRENTS
 
-	CURRENTS
 	- during ISI:
 		- INaP (INaL) is significant (-0.02) in ISI and looks like main mechanism responsible
 		  for spontaneous depolarization/firing
@@ -521,6 +525,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 			- sKCa is responsible for most of the AHP, as it should
 		- ICaT slowly activates in dendrites but is small (0.0008)
 			- might help spontaneous depolarization
+
 	- during AP
 		- the HVA currents ICaL and ICaN contribute to depolarization
 		- peak IKv3 is twice as high as IKDR (contributes more to repolarization)
@@ -556,19 +561,25 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	recordStep = 0.05
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
 
+	# Set fixed ranges for comparison
+	traceYLims = {'V_soma': (-80, 40), 'I_Na': (-1., 0.1), 'I_NaL': (-2.5e-3, -5e-4),
+				'I_KDR': (0, 0.12), 'I_Kv3': (0, 0.20), 'I_KCa': (0, 0.014),
+				'I_h': (-5e-4, 2.5e-3), 'I_CaL': (-3.5e-2, 0), 'I_CaN': (-3e-2, 0),
+				'I_CaT': (-6e-2, 40)}
+
 	# Simulate
 	h.tstop = dur
 	h.init() # calls finitialize() and fcurrent()
 	h.run()
 
 	# Analyze
-	analysis.plotTraces(recData, recordStep)
+	figs = analysis.plotTraces(recData, recordStep, yRange=traceYLims)
 	recI = collections.OrderedDict()
 	for key in reversed(recData): recI[key] = recData[key]
 	recI.pop('V_soma')
-	analysis.cumulPlotTraces(recI, recordStep, cumulate=False)
+	cumfig = analysis.cumulPlotTraces(recI, recordStep, cumulate=False)
 
-	return soma, recData
+	return recData, figs + [cumfig]
 
 def test_plateau(soma, dends_locs, stims):
 	""" Test plateau potential evoked by applying depolarizing pulse 
@@ -667,7 +678,7 @@ def test_plateau(soma, dends_locs, stims):
 	for k, v in recData.iteritems():
 		if k.startswith('d'): recDend[k] = recData[k]
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False, timeRange=burst_time)
-	return soma, recData
+	return recData
 
 def test_reboundburst(soma, dends_locs, stims):
 	""" Run rebound burst experiment from original Hoc file
@@ -763,6 +774,7 @@ def test_reboundburst(soma, dends_locs, stims):
 	# plt.plot(np.arange(0, dur, recordStep), recData['V_soma'].as_numpy()*1e-3, color='r')
 	# plt.show(block=False)
 	# Plot dendrite currentds
+	return soma, recData
 
 def test_slowbursting(soma, dends_locs, stims):
 	""" Test slow rhythmic bursting mode under conditions of constant 
@@ -856,6 +868,7 @@ def test_slowbursting(soma, dends_locs, stims):
 	for k, v in recData.iteritems():
 		if k.startswith('d'): recDend[k] = recData[k]
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False)
+	return recData
 
 def test_burstresurgent(soma, dends_locs, stims):
 	""" Run rebound burst experiment from original Hoc file
@@ -961,9 +974,23 @@ if __name__ == '__main__':
 	# Make cell
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=4)
 
-	# Run experiment
-	soma, recData = test_spontaneous(soma, dends_locs, stims)
-	# test_reboundburst()
-	# test_plateau(False, False)
+	# Test spontaneous firing
+	# [ ] simulated full model
+	#	=> fast spiking
+	# [ ] Simulated using average axial resistance (Marasco method)
+	#	=> faster spiking
+	# [ ] Simulated using conservation of Rin (no averaging of trees)
+	#	=> fastest spiking
+	recData = test_spontaneous(soma, dends_locs, stims)
+	
+	# Test rebound burst simulator protocol
+	# [x] simulated full model
+	# [x] Simulated using average axial resistance (Marasco method)
+	# [x] Simulated using conservation of Rin (no averaging of trees)
+	# recData = test_reboundburst(soma, dends_locs, stims)
+
+	# Test generation of plateau potential
+	# recData = test_plateau(soma, dends_locs, stims)
+
 	# test_slowbursting()
 	
