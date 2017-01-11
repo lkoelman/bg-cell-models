@@ -262,6 +262,10 @@ def stn_cell(cellmodel):
 	4		Gillies & Willshaw STN cell model reduced using
 			Marasco's reduction method with a custom clustering
 			criterion based on diameter
+
+	5		Reduced Gillies & Willshaw STN model using Marasco's
+			reduction method except subtrees/axial resistance is not
+			averaged but compounded and input resistance is conserved.
 	"""
 	stims = None
 	if cellmodel==1: # Full model
@@ -282,8 +286,10 @@ def stn_cell(cellmodel):
 		dendsec = dends[1]
 		dendloc = 0.9
 		allsecs = [soma] + list(dends)
-	elif cellmodel==4: # Marasco - custom clustering
+	elif cellmodel==4 or cellmodel==5: # Marasco - custom clustering
 		marasco_method = True # whether trees will be averaged (True, as in paper) or Rin conserved (False)
+		if cellmodel==5:
+			marasco_method = False
 		clusters, eq_secs, eq_refs = marasco.reduce_gillies(
 			customclustering=True, average_trees=marasco_method)
 		soma, dendLsecs, dendRsecs = eq_secs
@@ -516,7 +522,10 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 						and x coordinate to place recording electrode
 	@param stims		list of electrodes (IClamp)
 
-	GILLIES CURRENTS
+	PROTOCOL
+	- spontaneous firing: no stimulation
+
+	OBSERVATIONS (GILLIES MODEL)
 
 	- during ISI:
 		- INaP (INaL) is significant (-0.02) in ISI and looks like main mechanism responsible
@@ -565,7 +574,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	traceYLims = {'V_soma': (-80, 40), 'I_Na': (-1., 0.1), 'I_NaL': (-2.5e-3, -5e-4),
 				'I_KDR': (0, 0.12), 'I_Kv3': (0, 0.20), 'I_KCa': (0, 0.014),
 				'I_h': (-5e-4, 2.5e-3), 'I_CaL': (-3.5e-2, 0), 'I_CaN': (-3e-2, 0),
-				'I_CaT': (-6e-2, 40)}
+				'I_CaT': (-6e-2, 6e-2)}
 
 	# Simulate
 	h.tstop = dur
@@ -658,6 +667,12 @@ def test_plateau(soma, dends_locs, stims):
 	recordStep = 0.05
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
 
+	# Set fixed ranges for comparison
+	traceYLims = {'V_soma': (-80, 40), 'I_Na': (-0.7, 0.1), 'I_NaL': (-2e-3, 0),
+				'I_KDR': (0, 0.1), 'I_Kv3': (-1e-2, 0.1), 'I_KCa': (-1e-3, 8e-3),
+				'I_h': (-2e-3, 6e-3), 'I_CaL': (-1.5e-2, 1e-3), 'I_CaN': (-2e-2, 1e-3),
+				'I_CaT': (-6e-2, 6e-2)}
+
 	# Simulate
 	h.tstop = dur
 	h.init() # calls finitialize() and fcurrent()
@@ -669,7 +684,7 @@ def test_plateau(soma, dends_locs, stims):
 	recSoma = collections.OrderedDict()
 	for k, v in recData.iteritems():
 		if not k.startswith('d'): recSoma[k] = recData[k]
-	analysis.plotTraces(recSoma, recordStep, timeRange=burst_time)
+	analysis.plotTraces(recSoma, recordStep, timeRange=burst_time, yRange=traceYLims)
 	# Soma currents (relative)
 	recSoma.pop('V_soma')
 	analysis.cumulPlotTraces(recSoma, recordStep, cumulate=False, timeRange=burst_time)
@@ -750,6 +765,12 @@ def test_reboundburst(soma, dends_locs, stims):
 	recordStep = 0.05
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
 
+	# Set fixed ranges for comparison
+	traceYLims = {'V_soma': (-100, 20), 'I_Na': (-1., 2e-2), 'I_NaL': (-3e-3, -5e-4),
+				'I_KDR': (0, 0.12), 'I_Kv3': (0, 0.20), 'I_KCa': (0, 0.012),
+				'I_h': (-4e-3, 0.012), 'I_CaL': (-3e-2, 1e-2), 'I_CaN': (-3e-2, 1e-2),
+				'I_CaT': (-6e-2, 6e-2)}
+
 	# Simulate
 	h.tstop = dur
 	h.init() # calls finitialize() and fcurrent()
@@ -761,7 +782,7 @@ def test_reboundburst(soma, dends_locs, stims):
 	recSoma = collections.OrderedDict()
 	for k, v in recData.iteritems():
 		if not k.startswith('d'): recSoma[k] = recData[k]
-	analysis.plotTraces(recSoma, recordStep)
+	analysis.plotTraces(recSoma, recordStep, yRange=traceYLims)
 	# Soma currents (relative)
 	recSoma.pop('V_soma')
 	analysis.cumulPlotTraces(recSoma, recordStep, cumulate=False)
@@ -973,14 +994,21 @@ def test_burstresurgent(soma, dends_locs, stims):
 if __name__ == '__main__':
 	# Make cell
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=4)
+	soma.Ra = soma.Ra*2 # correct incorrect calculation for Ra soma cluster
+
+	
+	# adjust Cm and all ionic conductances including gleak (Rm)
+	surffact = 2
+	soma.cm = soma.cm * surffact
+	soma.gpas_STh = soma.gpas_STh * surffact
+	# for gname in marasco.glist():
+	# 	for seg in soma:
+	# 		seg.__setattr__(gname, getattr(seg, gname)*surffact)
 
 	# Test spontaneous firing
-	# [ ] simulated full model
-	#	=> fast spiking
-	# [ ] Simulated using average axial resistance (Marasco method)
-	#	=> faster spiking
-	# [ ] Simulated using conservation of Rin (no averaging of trees)
-	#	=> fastest spiking
+	# [x] simulated full model
+	# [x] Simulated using average axial resistance (Marasco method)
+	# [x] Simulated using conservation of Rin (no averaging of trees)
 	recData = test_spontaneous(soma, dends_locs, stims)
 	
 	# Test rebound burst simulator protocol
@@ -990,6 +1018,9 @@ if __name__ == '__main__':
 	# recData = test_reboundburst(soma, dends_locs, stims)
 
 	# Test generation of plateau potential
+	# [x] simulated full model
+	# [x] Simulated using average axial resistance (Marasco method)
+	# [x] Simulated using conservation of Rin (no averaging of trees)
 	# recData = test_plateau(soma, dends_locs, stims)
 
 	# test_slowbursting()

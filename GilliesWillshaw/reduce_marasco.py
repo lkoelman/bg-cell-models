@@ -281,7 +281,8 @@ def merge_cluster(cluster, allsecrefs, average_trees):
 		rootref.visited = True
 
 	# Check each section either absorbed or rootsec
-	assert not any(not sec.absorbed and has_clusterparent(sec) for sec in clu_secs), (
+	# assert not any(not sec.absorbed and has_clusterparent(sec) for sec in clu_secs), (
+	assert all(sec.absorbed or not has_clusterparent(sec) for sec in clu_secs), (
 			'Each section should be either absorbed or be a root within the cluster')
 
 	# Finalize <eq> calculation
@@ -289,7 +290,7 @@ def merge_cluster(cluster, allsecrefs, average_trees):
 	cluster.eqdiam = math.sqrt(cluster.eqdiam) # RADIUS: equation rho_eq
 	cluster.eqri /= sum(not sec.absorbed for sec in clu_secs) # ABSOLUTE AXIAL RESISTANCE: equation r_a,eq
 	if average_trees:
-		cluster.eqRa = PI*(cluster.eqdiam**2)*cluster.eqri*100./cluster.eqL # conserve eqri as absolute axial resistance
+		cluster.eqRa = PI*(cluster.eqdiam/2.)**2*cluster.eqri*100./cluster.eqL # conserve eqri as absolute axial resistance
 	else:
 		cluster.eqRa = sum(secref.sec.Ra for secref in clu_secs)/len(clu_secs) # average Ra in cluster
 	cluster.eqSurf = cluster.eqL*PI*cluster.eqdiam # EQUIVALENT SURFACE
@@ -357,7 +358,7 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 		# Set geometry 
 		sec.L = cluster.eqL
 		sec.diam = cluster.eqdiam
-		sec_area = sum(seg.area() for seg in sec) # should be same as cluser eqSurf
+		sec_area = sum(seg.area() for seg in sec) # should be same as cluster eqSurf
 		surf_fact = cluster.orSurfSum/cluster.eqSurf # scale factor: ratio areas original/equivalent
 
 		# Passive electrical properties (except Rm/gleak)
@@ -371,8 +372,11 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 		pathri0, pathri1 = marasco.calc_path_ri(eq_secrefs[i])
 		cluster.pathri0 = pathri0
 		cluster.pathri1 = pathri1
+		sec_ri = sum(seg.ri() for seg in sec)
 		assert (pathri0 < pathri1), ('Axial path resistance at end of section '
 									 'should be higher than at start of section')
+		assert (-1e-6 < (pathri1 - pathri0) - sec_ri < 1e-6), ('absolute axial '
+						'resistance not consistent with axial path resistance')
 
 		# Insert all mechanisms and set conductances
 		for mech in mechs_chans.keys():
@@ -395,11 +399,12 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 				if gtot_eq <= 0. : gtot_eq = 1.
 				for seg in sec:
 					seg.__setattr__(gname, getattr(seg, gname)*gtot_or/gtot_eq)
+					# seg.__setattr__(gname, getattr(seg, gname)*surf_fact)
 
 		# Debugging info:
-		logger.debug("Created equivalent section '%s' with \n\tL\tdiam\tcm\tRa\tpathri0\tpathri1\tnseg\
-		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d", cluster.label, sec.L, sec.diam, sec.cm, sec.Ra, 
-		pathri0, pathri1, sec.nseg)
+		logger.debug("Created equivalent section '%s' with \n\tL\tdiam\tcm\tRa\tri\tpathri0\tpathri1\tnseg\
+		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d", cluster.label, sec.L, sec.diam, sec.cm, sec.Ra, 
+		sec_ri, pathri0, pathri1, sec.nseg)
 
 		# Unset CAS
 		h.pop_section()
@@ -413,6 +418,8 @@ def cluster_sections(rootrefs, allsecrefs, custom=True):
 					for clustering dendritic sections. If True, use a custom
 					clustering method/criterion defined in local function
 					clusterfun().
+	@return			list of Cluster objects that store each cluster's label,
+					parent label, position on parent, order
 	"""
 	somaref, dendLroot, dendRroot = rootrefs[:]
 
