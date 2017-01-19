@@ -1,13 +1,13 @@
 # TODO PLAN #
 
-- first compare balance of currents Otsuka/Gillies/RubinTerman/KhaliqRaman papers and see which currents are responsible for the different features of STN cell dynamics (e.g. bursts, spontaneous pacemaking, ...)
+1. first compare balance of currents Otsuka/Gillies/RubinTerman/KhaliqRaman papers and see which currents are responsible for the different features of STN cell dynamics (e.g. bursts, spontaneous pacemaking, ...)
 	- (plot equilibrium activations variables for each current)
 	- implement experiments for different firing/physiology features from all papers
 		- go through paper Gillies and add experiments to Otsuka test script
 		- also add experiments for INaR from DoBean STN/Purkinje & Khaliq Purkinje papers
 	- run experiment for each feature in each model
 
-- Construct equivalent reduced model
+2. Construct equivalent reduced model
 	- reduction method: see principles of computational modeling, Ch. 8 & Ch. 4.3.3
 		1. Simplify tree morphology (see Ch. 4.3.3) & p. 85
 			- iteratively replace cylinders using technique in Box 3.2 and 3/2 assumption
@@ -17,17 +17,29 @@
 				- d and Ra determine input resistance for axial current
 	- pick the balance of currents & implementations that agree most with other STN physiology papers
 		- possibly enhance rebound bursts according to Otsuka model to make sure they are robust
-	- then replace the Na current with the more detailed Na channel model of Khaliq & Raman model for Purkinje cells
+
+3. Add bursting mechanism: removal of slow inactivation of Na currents by IPSPs
+	- add slowly inactivating Na channels with de-inactivation by IPSPs
+		- see refs `DoBean2003/Baufreton2005/Wilson2015`
+	- then replace the Na current with the more detailed Na channel model of Do/Bean/Khaliq/Raman model
 		- but retain the relative magnitude of gnabar and see that you can still reproduce main features of Otsuka & Gillies models
 			- potentially include two na mechanisms (one for persistent/transient, one for resurgent)
 			- sum of new Na currents must be equal to sum of existing Na currents
+	- (design experiment to test if resurgent Na currents promote additional patterning unexplained by models without this current)
 
-- design experiment to test if resurgent Na currents promote additional patterning unexplained by models without this current
+4. Add synapses
+	- based on studies synapse distribution
+	- use synapse mapping procedure Marasco & adapt topology of reduced model to preserve transformations and I/O characteristics of dendritic tree
+
+5. Reduce GPe model
+	- see ref
+
+
 
 
 ## TODO NEXT ##
 
-- Debug code
+- Test model reduction code
 	- [x] Check scaling factors actually used VS paper in RedPurk.hoc
 		- same as mentioned in paper: original/equivalent surface (if synapses in cluster: only count sections containing synapse toward original surface)
 	- [x] See what happens to theoretical Rin in toy model
@@ -42,23 +54,16 @@
 	- [x] run other tests and see if all fail
 		- => they fail, likely due to different input resistance
 	- [x] check if mergingYmethod correctly implemented 
-		- => NO
-		- => i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
-		- => however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
-	- [ ] Correct scaling/fitting
+		- => NO: i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
+		- however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
+	- [x] Correct scaling/fitting
 		- [x] read Chapt Sterrat parameter fitting
-		- compare values post-/pre-reduction
-		- check scaling factors on soma ppties -> adjusted to account for non-conservation R_in?
-	- [ ] Use Hoc `Impedance` class to calculate input impendance in soma
+		- [x] compare values post-/pre-reduction
+		- => spontaneous firing rate can be adapted by changing cm/gpas/gnaL. However by tuning these parameters you cannot get the firing as low as in the full model (9 Hz)
 	
-
-- get parameters state model slow inactivaton & recover
-	- check parameters of Kuo & Bean (1994) model for inactivation/recovery model are the same in the Khaliq/Raman/Akeman models published on ModelDB
-		- see paper fig. 7 => **NOT SAME**: Khaliq & Raman is tuned specifically for the resurgent current
-	- Check paper for model that exhibits slow inactivation
-		- Do & Bean (2003) say in Discussion that mechanism of slow inactivation is same as in [Taddese & Bean (2002)](Subthreshold sodium current from rapidly inactivating sodium channels drives spontaneous firing of tuberomammillary neurons) - gating/Markov model and parameters in Fig. 7A
-		- [Blair & Bean (2003)](Role of Tetrodotoxin-Resistant Na Current Slow Inactivation in Adaptation of Action Potential Firing in Small-Diameter Dorsal Root Ganglion Neurons)
-
+- Implement slow inactivation
+	- [ ] get parameters state model slow inactivaton & recovery from papers (see notes below)
+		
 - See if other currents need to be adjusted to accomodate new current INa_rsg
 	- e.g. reduce Ih/HCN or change its parameters
 
@@ -78,14 +83,23 @@
 - comparison of Otsuka/RubinTerman/GilliesWillshaw model: 
 	- see Encyclopedia of Computational Neuroscience, p. 2909 (pdf p. 2961)
 
+## Na channel inactivation ##
 - voltage dependence of resurgent Na current is similar in STN and Purkinje neurons
 	- stated in [Do & Bean (2004)](Sodium currents in subthalamic nucleus neurons from Nav1.6-null mice.)
 
-- the Kuo & Bean (1994) Markov state model gives reasonable simulations of the voltage-dependence of development of inactivation and recovery from inactation for sodium channels that do not give resurgent current
+
+- Papers/model _slow inactivation_ of Na currents
+	- [Kuo & Bean (1994)](Na Channels Must Deactivate to Recover from Inactivation)
+	- "the Kuo & Bean (1994) Markov state model gives reasonable simulations of the voltage-dependence of development of inactivation and recovery from inactation for sodium channels that do not give resurgent current"
+		- mentioned in [Raman & Bean (2001)]()
+	- [Do & Bean (2003)](Subthreshold Na currents and pacemaking of STN neurons: modulation by slow inactivation) 
+		- say in Discussion that mechanism of slow inactivation is same as in [Taddese & Bean (2002)](Subthreshold sodium current from rapidly inactivating sodium channels drives spontaneous firing of tuberomammillary neurons) - gating/Markov model and parameters in Fig. 7A
+	- TOCHECK: [Blair & Bean (2003)](Role of Tetrodotoxin-Resistant Na Current Slow Inactivation in Adaptation of Action Potential Firing in Small-Diameter Dorsal Root Ganglion Neurons)
+
+- Papers/model of _resurgent_ Na current (`I_Na_rsg`)
 	- [Raman & Bean (2001)](Inactivation and Recovery of Sodium Currents Neurons in Cerebellar Purkinje Neurons: Evidence for Two Mechanisms)
-
-
-- Raman & Bean (2001) channel model ONLY models INa_rsg compoment of INa
-	- i.e. you will still have to account of transient and persistent components
-	- this is confirmed by plotting INa and INarsg in code supplied with Akemann and Knoepfel, J.Neurosci. 26 (2006) 4602
-		- see
+		- ONLY models INa_rsg compoment of INa
+			- i.e. you will still have to account of transient and persistent components
+			- this is confirmed by plotting INa and INarsg in code supplied with Akemann and Knoepfel, J.Neurosci. 26 (2006) 4602
+	- [Khaliq, Raman (2003)](The Contribution of Na_rsg to HF Firing in Purkinje Neurons) & [Akeman (2006)](Interaction of Kv3 K channels & I_Na_rsg Influences the Rate of Spontaneous Firing of Purkinje Neurons) models published on ModelDB
+		- => see paper fig. 7, Khaliq & Raman model is tuned specifically for the resurgent current, doen NOT model slow inactivation

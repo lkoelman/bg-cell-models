@@ -994,13 +994,15 @@ def test_burstresurgent(soma, dends_locs, stims):
 if __name__ == '__main__':
 	# Make cell
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=4)
-	soma.Ra = soma.Ra*2 # correct incorrect calculation for Ra soma cluster
 
-	
+	# Cell adjustments
+	soma.Ra = 2*soma.Ra # correct incorrect calculation for Ra soma cluster
+	# for sec in h.allsec():
+	# 	sec.gna_NaL = 0.6*sec.gna_NaL
 	# adjust Cm and all ionic conductances including gleak (Rm)
-	surffact = 2
-	soma.cm = soma.cm * surffact
-	soma.gpas_STh = soma.gpas_STh * surffact
+	# surffact = 1. # f=1 => T=37 ms ; f=2 => T=64 ms
+	# soma.cm = 2.0 * soma.cm
+	# soma.gpas_STh = 6.0 * soma.gpas_STh
 	# for gname in marasco.glist():
 	# 	for seg in soma:
 	# 		seg.__setattr__(gname, getattr(seg, gname)*surffact)

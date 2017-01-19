@@ -104,7 +104,66 @@ class Cluster(object):
 	# 			desc += '\n\t|- {0}: {1}'.format(ppty, getattr(self, ppty))
 	# 	return desc
 
+def dupe_secprops(src_sec, tar_sec, mechs_pars):
+	""" Copy section properties """
+	# Number of segments and mechanisms
+	tar_sec.nseg = src_sec.nseg
+	for mech in mechs_pars.keys():
+		tar_sec.insert(mech)
 
+	# Geometry and passive properties
+	tar_sec.L = src_sec.L
+	tar_sec.Ra = src_sec.Ra
+	tar_sec.cm = src_sec.cm
+
+	# copy RANGE properties
+	for seg in src_sec:
+		tar_sec(seg.x).diam = seg.diam # diameter
+		for mech in mechs_pars.keys():
+			for par in mechs_pars[mech]:
+				prop = par+'_'+mech
+				setattr(tar_sec(seg.x), prop, getattr(seg, prop))
+
+	# ion styles
+	src_sec.push()
+	ions = ['na', 'k', 'ca']
+	styles = [h.ion_style(ion+'_ion') for ion in ions]
+	tar_sec.push()
+	for i, ion in enumerate(ions):
+		style = styles[i]
+		c_style = int(style) & (1+2)
+		cinit = (int(style) & 4) >> 2
+		e_style = (int(style) & (8+16)) >> 3
+		einit = (int(style) & 32) >> 5
+		eadvance = (int(style) & 64) >> 6
+		h.ion_style(ion+'_ion', c_style, e_style, einit, eadvance, cinit)
+	h.pop_section()
+	h.pop_section()
+
+def dupe_subtree(sec_orig, mechs_pars, tree_copy=None):
+	""" Duplicate tree of given section """
+	# foreach child: attach new section to duproot, copy properties
+	if tree_copy is None:
+		tree_copy = []
+
+	# Copy current root node
+	copyname = sec_orig.name() + '_copy'
+	i = 0
+	while issection(copyname):
+		if i > 1000:
+			raise Exception('Too many copies of this section!')
+		i += 1
+		copyname = sec_orig.name() + ('_copy_%i' % i)
+	h("create %s" % copyname)
+	sec_copy = getattr(h, copyname)
+	dupe_secprops(sec_orig, sec_copy, mechs_pars)
+	tree_copy.append(sec_copy)
+
+	# Copy children
+	for childsec in rootsec.children():
+		dupe_subtree(childsec, mechs_pars, tree_copy)
+
+	return tree_copy
 
 ################################################################################
 # Clustering
