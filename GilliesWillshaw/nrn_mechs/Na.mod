@@ -29,7 +29,7 @@ INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 NEURON {
 	SUFFIX Na
 	USEION na READ nai,ena WRITE ina
-	RANGE gna, ina
+	RANGE gna, ina, o
 	GLOBAL rest,activate_Q10,Q10,gmaxQ10,rate_k,gmax_k,temp1,temp2,tempb
 }
 
@@ -62,11 +62,13 @@ ASSIGNED {
 	betah (/ms)
 	rate_k
 	gmax_k
+	o
 }
 
 BREAKPOINT {
 	SOLVE states METHOD cnexp
-	ina  = (gna*gmax_k)*m*m*h*(v-ena)
+	o = m*m*h
+	ina  = (gna*gmax_k)*o*(v-ena)
 }
 
 UNITSOFF

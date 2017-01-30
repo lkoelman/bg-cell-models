@@ -109,7 +109,8 @@ def dupe_secprops(src_sec, tar_sec, mechs_pars):
 	# Number of segments and mechanisms
 	tar_sec.nseg = src_sec.nseg
 	for mech in mechs_pars.keys():
-		tar_sec.insert(mech)
+		if hasattr(src_sec(0.5), mech):
+			tar_sec.insert(mech)
 
 	# Geometry and passive properties
 	tar_sec.L = src_sec.L
@@ -140,30 +141,31 @@ def dupe_secprops(src_sec, tar_sec, mechs_pars):
 	h.pop_section()
 	h.pop_section()
 
-def dupe_subtree(sec_orig, mechs_pars, tree_copy=None):
-	""" Duplicate tree of given section """
-	# foreach child: attach new section to duproot, copy properties
-	if tree_copy is None:
-		tree_copy = []
-
+def dupe_subtree(rootsec, mechs_pars, tree_copy):
+	""" Duplicate tree of given section
+	@param rootsec		root section of the subtree
+	@param mechs_pars	dictionary mechanism_name -> parameter_name
+	@param tree_copy	out argument: list to be filled
+	"""
 	# Copy current root node
-	copyname = sec_orig.name() + '_copy'
+	copyname = 'copyof_' + rootsec.name()
 	i = 0
-	while issection(copyname):
+	while h.issection(copyname):
 		if i > 1000:
 			raise Exception('Too many copies of this section!')
 		i += 1
-		copyname = sec_orig.name() + ('_copy_%i' % i)
+		copyname = ('copy%iof' % i) + rootsec.name()
 	h("create %s" % copyname)
-	sec_copy = getattr(h, copyname)
-	dupe_secprops(sec_orig, sec_copy, mechs_pars)
-	tree_copy.append(sec_copy)
+	root_copy = getattr(h, copyname)
+	dupe_secprops(rootsec, root_copy, mechs_pars)
+	tree_copy.append(root_copy)
 
 	# Copy children
 	for childsec in rootsec.children():
-		dupe_subtree(childsec, mechs_pars, tree_copy)
+		child_copy = dupe_subtree(childsec, mechs_pars, tree_copy)
+		child_copy.connect(root_copy, childsec.parentseg().x, 0)
 
-	return tree_copy
+	return root_copy
 
 ################################################################################
 # Clustering

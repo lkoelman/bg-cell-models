@@ -398,8 +398,14 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 				gtot_or = cluster.gtot_sum[gname]
 				if gtot_eq <= 0. : gtot_eq = 1.
 				for seg in sec:
-					seg.__setattr__(gname, getattr(seg, gname)*gtot_or/gtot_eq)
+					# NOTE: old method, almost same but less accurate
 					# seg.__setattr__(gname, getattr(seg, gname)*surf_fact)
+					# NOTE: this conserves gtot since sum(g_i*area_i * gtot_or/gtot_eq) = gtot_or/gtot_eq*sum(gi*area_i) = gtot_or/gtot_eq*gtot_eq
+					seg.__setattr__(gname, getattr(seg, gname)*gtot_or/gtot_eq)
+				# Check calculation
+				gtot_eq_scaled = sum(getattr(seg, gname)*seg.area() for seg in sec)
+				logger.debug("== Conductance %s ===\nOriginal: gtot = %.3f\nEquivalent: gtot = %.3f",
+								gname, gtot_or, gtot_eq_scaled)
 
 		# Debugging info:
 		logger.debug("Created equivalent section '%s' with \n\tL\tdiam\tcm\tRa\tri\tpathri0\tpathri1\tnseg\

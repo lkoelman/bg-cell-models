@@ -33,7 +33,7 @@ INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 NEURON {
 	SUFFIX HVA
 	USEION ca READ cai,cao,eca WRITE ica
-	RANGE gcaN, gcaL, iNCa, iLCa
+	RANGE gcaN, gcaL, iNCa, iLCa, o_N, o_L
 	GLOBAL inactLtau,inactLmax,activate_Q10,Q10,gmaxQ10,rate_k,gmax_k,temp1,temp2,tempb
 }
 
@@ -73,14 +73,18 @@ ASSIGNED {
 	htau (ms)
 	rate_k
 	gmax_k
+	o_N
+	o_L
 }
 
 BREAKPOINT {
 	LOCAL vghk
 	SOLVE states METHOD cnexp
 	vghk = ghkg(v,cai,cao,2)
-	iNCa = gmax_k*(gcaN * u)*q*q*vghk
-	iLCa = gmax_k*(gcaL)*q*q*h*vghk
+	o_N = u*q*q
+	o_L = q*q*h
+	iNCa = gmax_k*(gcaN*o_N)*vghk
+	iLCa = gmax_k*(gcaL*o_L)*vghk
 	ica  = iNCa + iLCa
 }
 

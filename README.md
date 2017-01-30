@@ -56,9 +56,10 @@
 	- [x] check if mergingYmethod correctly implemented 
 		- => NO: i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
 		- however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
-	- [x] Correct scaling/fitting
+	- [ ] Correct spontaneous firing rate through scaling/fitting
 		- [x] read Chapt Sterrat parameter fitting
 		- [x] compare values post-/pre-reduction
+		- [x] test effect of extra dendrites => increases firing rate (due to more I_NaL provided?)
 		- => spontaneous firing rate can be adapted by changing cm/gpas/gnaL. However by tuning these parameters you cannot get the firing as low as in the full model (9 Hz)
 	
 - Implement slow inactivation
