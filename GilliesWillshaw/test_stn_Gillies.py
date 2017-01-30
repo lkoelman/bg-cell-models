@@ -22,9 +22,10 @@ import os.path
 scriptdir, scriptfile = os.path.split(__file__)
 modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
 sys.path.append(modulesbase)
-from common import analysis
 import collections
+import re
 
+from common import analysis
 import reducemodel
 from reducemodel import lambda_AC
 import reduce_marasco as marasco
@@ -561,9 +562,8 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 		traceSpecs['V_'+dendname] = {'sec':dendname,'loc':dend_loc[1],'var':'v'}
 
 	# Na currents
-	traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'}
-	traceSpecs['I_NaL'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'}
-	# NOTE: leak currents such as I_NaL and gpas_STh are always open
+	traceSpecs['I_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'} # transient sodium
+	traceSpecs['I_NaP'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'} # persistent sodium
 	# K currents
 	traceSpecs['I_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'ik'}
 	traceSpecs['I_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'ik'}
@@ -573,10 +573,11 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	traceSpecs['I_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iNCa'}
 	traceSpecs['I_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'iCaT'}
 	# Nonspecific currents
-	traceSpecs['I_h'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'ih'}
+	traceSpecs['I_HCN'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'ih'}
 
 	# Na Channel open fractions
-	traceSpecs['O_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'o'}
+	traceSpecs['O_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'o'}
+	# NOTE: leak currents such as I_NaL and gpas_STh are always open
 	# K channel open fractions
 	traceSpecs['O_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'n'}
 	traceSpecs['O_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'p'}
@@ -586,28 +587,29 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	traceSpecs['O_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'o_N'}
 	traceSpecs['O_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'o'}
 	# Nonspecific channel open fractions
-	traceSpecs['O_h'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'f'}
+	traceSpecs['O_HCN'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'f'}
 
 	# Na channel activated fractions
-	traceSpecs['A_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'m'}
+	traceSpecs['A_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'m'}
 	# K channels activated fractions - same as open fractions (single state variable)
 	traceSpecs['A_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'n'}
 	traceSpecs['A_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'p'}
 	traceSpecs['A_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'w'}
 	# Ca channels activated fractions
-	traceSpecs['A_CaLN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'q'} # shared activation var for L/N
+	traceSpecs['A_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'q'} # shared activation var for L/N
+	traceSpecs['A_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'q'} # shared activation var for L/N
 	traceSpecs['A_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'r'}
 	# Nonspecific channels activated fractions - same as open fractions (single state variable)
-	traceSpecs['A_h'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'f'}
+	traceSpecs['A_HCN'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'f'}
 
 	# Na channel inactivated fractions
-	traceSpecs['B_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'h'}
+	traceSpecs['B_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'h'}
 	# K channels inactivated fractions - not present (single state variable)
 	# Ca channels inactivated fractions
 	traceSpecs['B_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'h'} # Ca-depentdent inactivation
 	traceSpecs['B_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'u'} # V-dependent inactivation
-	traceSpecs['B_CaTf'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'s'} # fast inactivation
-	traceSpecs['B_CaTs'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'d'} # slow inactivation
+	traceSpecs['B_CaT_f'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'s'} # fast inactivation
+	traceSpecs['B_CaT_s'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'d'} # slow inactivation
 	# Nonspecific channels activated fractions - not present (single state variable)
 
 	# Recording command
@@ -626,49 +628,74 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	vm_ax = figs_vm[0].axes[0]
 
 	# Plot ionic currents in separate axes
-	recI = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if k.startswith('I_'): recI[k] = v
-	traceYLims = {'I_Na': (-1., 0.1), 'I_NaL': (-2.5e-3, -5e-4),
-				'I_KDR': (0, 0.12), 'I_Kv3': (0, 0.20), 'I_KCa': (0, 0.014),
-				'I_h': (-5e-4, 2.5e-3), 'I_CaL': (-3.5e-2, 0), 'I_CaN': (-3e-2, 0),
-				'I_CaT': (-6e-2, 6e-2)}
-	figs_I = analysis.plotTraces(recI, recordStep, yRange=traceYLims, 
-								traceSharex=vm_ax, showFig=False)
+	# recI = collections.OrderedDict()
+	# for k, v in recData.iteritems():
+	# 	if k.startswith('I_'): recI[k] = v
+	# traceYLims = {'I_Na': (-1., 0.1), 'I_NaL': (-2.5e-3, -5e-4),
+	# 			'I_KDR': (0, 0.12), 'I_Kv3': (0, 0.20), 'I_KCa': (0, 0.014),
+	# 			'I_h': (-5e-4, 2.5e-3), 'I_CaL': (-3.5e-2, 0), 'I_CaN': (-3e-2, 0),
+	# 			'I_CaT': (-6e-2, 6e-2)}
+	# figs_I = analysis.plotTraces(recI, recordStep, yRange=traceYLims, 
+	# 							traceSharex=vm_ax, showFig=False)
 
-	# Plot currents on same axis
+	# Plot ionic currents on same axis
 	# recI = collections.OrderedDict()
 	# for k, v in recData.iteritems():
 	# 	if k.startswith('I_'): recI[k] = v
 	# cumfig = analysis.cumulPlotTraces(recI, recordStep, showFig=False)
 
+	figs = []
+	cursors = []
+
+	# Plot activations-currents on same axis per current
+	ions_chans = [('NaT', 'NaP', 'HCN'), ('KDR', 'Kv3', 'KCa'), ('CaL', 'CaN', 'CaT')]
+	patterns = [r'^\w_(Na|h)', r'^\w_K', r'^\w_Ca'] # one pattern per ion, and one plot per pattern
+	for ionchans in ions_chans: # one figure for each ion
+		fig, axrows = plt.subplots(len(ionchans), 1, sharex=True) # one plot for each channel
+		for i, chan in enumerate(ionchans):
+			# TODO: group part after _ in tracename and make one plot per distinct item
+			pat = re.compile(r'^\w_' + chan)
+			chanFilter = lambda x: re.search(pat, x)
+			twinFilter = lambda	x: x.startswith('I_')
+			analysis.cumulPlotTraces(recData	, recordStep, showFig=False, 
+								fig=None, ax1=axrows[i], traceSharex=vm_ax, 
+								includeFilter=chanFilter, twinFilter=twinFilter, 
+								yRange=(-0.01,1))
+			# Add figure interaction
+			cursor = matplotlib.widgets.MultiCursor(fig.canvas, fig.axes, 
+						color='r', lw=1, horizOn=False, vertOn=True)
+		figs.append(fig)
+		cursors.append(cursor)
+
+
+
 	# Plot channel open fractions
-	recO = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if k.startswith('O_'): recO[k] = v
-	fig_O = analysis.cumulPlotTraces(recO, recordStep, showFig=False, 
-						traceSharex=vm_ax, parentFig=None, yRange=(-0.01,1))
+	# recO = collections.OrderedDict()
+	# for k, v in recData.iteritems():
+	# 	if k.startswith('O_'): recO[k] = v
+	# fig_O = analysis.cumulPlotTraces(recO, recordStep, showFig=False, 
+	# 					traceSharex=vm_ax, fig=None, yRange=(-0.01,1))
 
-	# Plot channel activated fractions
-	recA = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if k.startswith('A_'): recA[k] = v
-	fig_A = analysis.cumulPlotTraces(recA, recordStep, showFig=False,
-						traceSharex=vm_ax, parentFig=fig_O, yRange=(-0.01,1))
+	# # Plot channel activated fractions
+	# recA = collections.OrderedDict()
+	# for k, v in recData.iteritems():
+	# 	if k.startswith('A_'): recA[k] = v
+	# fig_A = analysis.cumulPlotTraces(recA, recordStep, showFig=False,
+	# 					traceSharex=vm_ax, fig=fig_O, yRange=(-0.01,1))
 
-	# Plot channel inactivated/blocked fractions
-	recB = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if k.startswith('B_'): recB[k] = v
-	fig_B = analysis.cumulPlotTraces(recB, recordStep, showFig=False,
-						traceSharex=vm_ax, parentFig=fig_O, yRange=(-0.01,1))
+	# # Plot channel inactivated/blocked fractions
+	# recB = collections.OrderedDict()
+	# for k, v in recData.iteritems():
+	# 	if k.startswith('B_'): recB[k] = v
+	# fig_B = analysis.cumulPlotTraces(recB, recordStep, showFig=False,
+	# 					traceSharex=vm_ax, fig=fig_O, yRange=(-0.01,1))
 
 	# Add figure interaction
-	cursor = matplotlib.widgets.MultiCursor(fig_O.canvas, fig_O.axes, 
-				color='r', lw=1, horizOn=False, vertOn=True)
+	# cursor = matplotlib.widgets.MultiCursor(parfig.canvas, parfig.axes, 
+	# 			color='r', lw=1, horizOn=False, vertOn=True)
 
-	plt.show()
-	return recData, cursor
+	plt.show(block=False)
+	return recData, figs, cursors
 
 def test_plateau(soma, dends_locs, stims):
 	""" Test plateau potential evoked by applying depolarizing pulse 
@@ -1079,17 +1106,20 @@ if __name__ == '__main__':
 	soma.Ra = 2*soma.Ra # correct incorrect calculation for Ra soma cluster
 
 	# Attach duplicate of one tree
-	# from marasco_ported import dupe_subtree
-	# trunk_copy = dupe_subtree(h.trunk_0, gillies_gdict, [])
-	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
+	from marasco_ported import dupe_subtree
+	copy_mechs = {'STh': ['gpas']} # use var gillies_gdict for full copy
+	trunk_copy = dupe_subtree(h.trunk_0, copy_mechs	, [])
+	trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
 	# Adjust Cm and ionic/leak conductances
-	for sec in h.allsec():
-		sec.gk_sKCa = 1.2*sec.gk_sKCa
-		if sec is h.soma:
-			sec.gna_NaL = 0.25*sec.gna_NaL
-		else:
-			sec.gna_NaL = 0.9*sec.gna_NaL
+	# for sec in h.allsec():
+	# 	for seg in sec:
+	# 		if seg is h.soma:
+	# 			seg.gna_NaL = 0.55*seg.gna_NaL
+	# 		else:
+	# 			seg.gna_NaL = 0.55*seg.gna_NaL
+
+	# Adjust scaling factors
 	# surffact = 1. # f=1 => T=37 ms ; f=2 => T=64 ms
 	# soma.cm = 2.0 * soma.cm
 	# soma.gpas_STh = 6.0 * soma.gpas_STh

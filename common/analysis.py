@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import collections
+import re
 
 def recordTraces(secs, traceSpecs, recordStep, duration=None):
 	""" Record the given traces from section
@@ -140,15 +141,30 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 					includeTraces=None, excludeTraces=None,
 					showFig=True, colorList=None, lineList=None, 
-					traceSharex=None, parentFig=None, showGrid=True,
-					yRange=None):
-	""" Cumulative plot of traces """
+					traceSharex=None, fig=None, showGrid=True,
+					yRange=None, twinFilter=None, includeFilter=None,
+					yRangeR=None, ax1=None):
+	""" Cumulative plot of traces
+
+	@param fig 				if provided, add axs as subplot to this fig
+
+	@param traceSharex		a matplotlib.axes.Axes object to share the
+							x-axis with (x-axis locked while zooming/panning)
+
+	@param twinFilter		function that takes as argument a trace name, 
+							returns True if trace should be plotted on right
+							axis (using ax.twinx()), False if on left
+	"""
 
 	tracesList = traceData.keys()
+	if includeFilter is not None:
+		tracesList = [trace for trace in tracesList	if includeFilter(trace)]
 	if includeTraces is not None:
 		tracesList = [trace for trace in tracesList if trace in includeTraces]
 	if excludeTraces is not None:
 		tracesList = [trace for trace in tracesList if trace not in excludeTraces]
+	if len(tracesList) == 0:
+		raise Exception('No traces left for plotting after applying filter!')
 
 	if timeRange is None:
 		timeRange = [0, traceData[tracesList[0]].size()*recordStep]
@@ -170,33 +186,61 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 		lineList = ['-', '--', '-.', ':']
 
 	fontsiz=12
-	if parentFig:
-		fig = parentFig
+
+	# Get the axes to draw on
+	if not fig and not ax1: # create fig and axis
+		fig = plt.figure()
+		ax1 = fig.add_subplot(111, sharex=traceSharex)
+	elif not fig and ax1: # get fig from given axis
+		fig = ax1.figure
+	elif fig and not ax1: # add new axis to figure
 		nax = len(fig.axes)
 		for i, ax in enumerate(fig.axes):
 			ax.change_geometry(nax+1, 1, i+1) # change grid and position in grid
 		ax1 = fig.add_subplot(nax+1, 1, nax+1, sharex=traceSharex)
+	if twinFilter is not None:
+		ax2 = ax1.twinx()
 	else:
-		fig = plt.figure()
-		ax1 = fig.add_subplot(111, sharex=traceSharex)
+		twinFilter = lambda x: False
 
 	t = np.arange(timeRange[0], timeRange[1]+recordStep, recordStep)
 	cumulTrace = np.zeros(int((timeRange[1]-timeRange[0])/recordStep))
 
-	for itrace, trace in enumerate(tracesList):
-		tracevec = traceData[trace].as_numpy()
+	# plot each trace
+	lines = []
+	for itrace, tracename in enumerate(tracesList):
+		tracevec = traceData[tracename].as_numpy()
 		data = tracevec[int(timeRange[0]/recordStep):int(timeRange[1]/recordStep)]
-		plt.plot(t[:len(data)], data+cumulTrace, label=trace, 
-			color=colorList[itrace%len(colorList)], linestyle=lineList[itrace%len(lineList)])
+		if twinFilter(tracename):
+			pax = ax2
+		else:
+			pax = ax1
+		li, = pax.plot(t[:len(data)], data+cumulTrace, label=tracename	, 
+					color=colorList[itrace%len(colorList)], linestyle=lineList[itrace%len(lineList)])
+		lines.append(li)
 		if cumulate: cumulTrace += data
 
 	# Axes ranges/labels
 	plt.xlim(timeRange)
 	if yRange is not None:
-		plt.ylim(yRange)
-	plt.ylabel('I', fontsize=fontsiz)
-	plt.xlabel(' + '.join(tracesList), fontsize=fontsiz)
-	plt.legend()
+		ax1.set_ylim(yRange)
+	if yRangeR is not None:
+		ax2.set_ylim(yRangeR)
+
+	# Set labels
+	L_prefixes = []
+	R_prefixes = []
+	for tracename in tracesList:
+		match = re.search(r'^._', tracename)
+		if match and twinFilter(tracename):
+			R_prefixes.append(match.group()[:-1])
+		elif match:
+			L_prefixes.append(match.group()[:-1])
+	ax1.set_ylabel(', '.join(set(L_prefixes)), fontsize=fontsiz)
+	ax2.set_ylabel(', '.join(set(R_prefixes)), fontsize=fontsiz)
+
+	# legend for lines plotted in all axes
+	ax1.legend(lines, [l.get_label() for l in lines])
 
 	# Customize the grid
 	ax1.grid(showGrid)
