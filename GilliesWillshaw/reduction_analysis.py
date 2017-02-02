@@ -10,8 +10,8 @@ import math
 import matplotlib.pyplot as plt
 
 # Own modules
-import reducemodel
-from marasco_ported import ExtSecRef, Cluster, getsecref
+import reduction_tools
+from reduction_tools import ExtSecRef, Cluster, getsecref
 
 def plotconductance(secref, gname, titleattr):
 	sec = secref.sec
@@ -52,8 +52,8 @@ def compare_models(or_secrefs, eq_secrefs, plot_glist):
 
 	# Compare input resistance of large/left tree 
 	rootsecs = [dendLrefs[0].sec, eq_dendLrefs[0].sec, dendRrefs[0].sec, eq_dendRrefs[0].sec]
-	Rin_DC = [reducemodel.inputresistance_tree(sec, 0., 'gpas_STh') for sec in rootsecs]
-	Rin_AC = [reducemodel.inputresistance_tree(sec, 100., 'gpas_STh') for sec in rootsecs]
+	Rin_DC = [reduction_tools.inputresistance_tree(sec, 0., 'gpas_STh') for sec in rootsecs]
+	Rin_AC = [reduction_tools.inputresistance_tree(sec, 100., 'gpas_STh') for sec in rootsecs]
 	
 	print("\n=== INPUT RESISTANCE ===\
 	\nLarge tree (Original model):\

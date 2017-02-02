@@ -1,6 +1,6 @@
 """
 Reduce Gillies & Willshaw (2006) STN neuron model using the method
-described in Bush & Sejnowski (1993)
+described in Marasco & Migliore (2012)
 
 
 @author Lucas Koelman
@@ -36,10 +36,10 @@ NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Own modules
-import reducemodel
-import marasco_ported as marasco
-from marasco_ported import ExtSecRef, Cluster, getsecref
-import marasco_analysis as analysis
+import reduction_tools
+import reduction_tools as redtools
+from reduction_tools import ExtSecRef, Cluster, getsecref # for convenience
+import reduction_analysis as analysis
 
 # Global variables (convert to class members in future)
 gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel
@@ -236,7 +236,7 @@ def merge_cluster(cluster, allsecrefs, average_trees):
 
 	# Calculate min/max path resistance in cluster (full model)
 	for sec in clu_secs:
-		marasco.calc_path_ri(sec) # assigns pathri0/pathri1
+		redtools.calc_path_ri(sec) # assigns pathri0/pathri1
 	cluster.orMaxpathri = max(secref.pathri1 for secref in clu_secs)
 	cluster.orMinpathri = min(secref.pathri0 for secref in clu_secs)
 
@@ -259,7 +259,7 @@ def merge_cluster(cluster, allsecrefs, average_trees):
 	# Find connected subtrees within cluster and merge/collapse them
 	rootfinder = (sec for sec in clu_secs if (not sec.visited and not has_clusterparent(sec))) # compiles generator function
 	for secref in rootfinder:
-		rootref = marasco.clusterroot(secref, clu_secs) # make sure it is a cluster root
+		rootref = redtools.clusterroot(secref, clu_secs) # make sure it is a cluster root
 
 		# Collapse subtree
 		logger.debug("Collapsing subtree of cluster root %s", repr(rootref))
@@ -369,7 +369,7 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 		sec.nseg = min_nseg_hines(sec)
 
 		# calculate min/max path resistance in equivalent section (cluster)
-		pathri0, pathri1 = marasco.calc_path_ri(eq_secrefs[i])
+		pathri0, pathri1 = redtools.calc_path_ri(eq_secrefs[i])
 		cluster.pathri0 = pathri0
 		cluster.pathri1 = pathri1
 		sec_ri = sum(seg.ri() for seg in sec)
@@ -446,14 +446,14 @@ def cluster_sections(rootrefs, allsecrefs, custom=True):
 
 	# Cluster dendritic trees
 	if custom:
-		marasco.clusterize_custom(dendLroot, allsecrefs, clusterfun, clusters, 
+		redtools.clusterize_custom(dendLroot, allsecrefs, clusterfun, clusters, 
 									labelsuffix='_0')
-		marasco.clusterize_custom(dendRroot, allsecrefs, clusterfun, clusters, 
+		redtools.clusterize_custom(dendRroot, allsecrefs, clusterfun, clusters, 
 									labelsuffix='_1', parent_pos=0.)
 	else:
-		marasco.clusterize_strahler(dendLroot, allsecrefs, thresholds=(1,2), 
+		redtools.clusterize_strahler(dendLroot, allsecrefs, thresholds=(1,2), 
 									clusterlist=clusters, labelsuffix='_0')
-		marasco.clusterize_strahler(dendRroot, allsecrefs, thresholds=(1,2),
+		redtools.clusterize_strahler(dendRroot, allsecrefs, thresholds=(1,2),
 									clusterlist=clusters, labelsuffix='_1', parent_pos=0.)
 	# Debug info
 	for cluster in clusters:
@@ -496,8 +496,8 @@ def reduce_gillies(customclustering, average_trees):
 
 	# Assign Strahler numbers
 	logger.info("Assingling Strahler's numbers...")
-	marasco.assign_strahler_order(dendLrefs[0], dendLrefs, 0)
-	marasco.assign_strahler_order(dendRrefs[0], dendRrefs, 0)
+	redtools.assign_strahler_order(dendLrefs[0], dendLrefs, 0)
+	redtools.assign_strahler_order(dendRrefs[0], dendRrefs, 0)
 	somaref.order = 0 # distance from soma
 	somaref.strahlernumber = dendLrefs[0].strahlernumber # same as root of left tree
 

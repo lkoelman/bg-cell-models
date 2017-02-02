@@ -13,9 +13,9 @@ import neuron
 h = neuron.h
 
 # Own modules
-import reducemodel
+import reduction_tools
 import reduce_marasco as marasco
-from marasco_ported import ExtSecRef, Cluster, getsecref
+from reduction_tools import ExtSecRef, Cluster, getsecref
 
 def test_Rin_Ycluster():
 	""" Test input resistance of simple tree before & after reduction """
@@ -54,12 +54,12 @@ def test_Rin_Ycluster():
 	psec.connect(somasec, 1, 0)
 
 	# Compute input resistances
-	lambA = reducemodel.electrotonic_length(asec, asec.gl_hh, 0.)
-	RinA = reducemodel.inputresistance_sealed(asec, asec.gl_hh, 0.)
-	lambB = reducemodel.electrotonic_length(bsec, bsec.gl_hh, 0.)
-	RinB = reducemodel.inputresistance_sealed(bsec, bsec.gl_hh, 0.)
+	lambA = reduction_tools.electrotonic_length(asec, asec.gl_hh, 0.)
+	RinA = reduction_tools.inputresistance_sealed(asec, asec.gl_hh, 0.)
+	lambB = reduction_tools.electrotonic_length(bsec, bsec.gl_hh, 0.)
+	RinB = reduction_tools.inputresistance_sealed(bsec, bsec.gl_hh, 0.)
 	R_end = 1./(1./RinA	+ 1./RinB)
-	RinP = reducemodel.inputresistance_leaky(psec, psec.gl_hh, 0., R_end)
+	RinP = reduction_tools.inputresistance_leaky(psec, psec.gl_hh, 0., R_end)
 
 	# Do marasco Reduction
 	marasco.mechs_chans = {'hh': ['gnabar', 'gkbar', 'gl']}
@@ -81,4 +81,4 @@ def test_Rin_Ycluster():
 	csec = eq_secs[0]
 
 	# Compute inputresistance
-	RinC = reducemodel.inputresistance_sealed(csec, csec.gl_hh, 0.)
+	RinC = reduction_tools.inputresistance_sealed(csec, csec.gl_hh, 0.)

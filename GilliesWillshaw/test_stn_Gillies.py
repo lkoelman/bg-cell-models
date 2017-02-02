@@ -26,8 +26,8 @@ import collections
 import re
 
 from common import analysis
-import reducemodel
-from reducemodel import lambda_AC
+import reduction_tools
+from reduction_tools import lambda_AC
 import reduce_marasco as marasco
 
 # Load NEURON mechanisms
@@ -177,10 +177,10 @@ def stn_cell_Rall(resurgent=False, oneseg=False):
 
 	return soma, (dend0, dend1), (stim1, stim2, stim3)
 
-def stn_cell_spiny_smooth_sec():
+def stn_cell_onedend():
 	""" 
-	Soma with a single tree reduced to two compartments: one equivalent
-	trunk/smooth sections + one equivalent spiny sections.
+	Soma with a single equivalent dendritic tree reduced to two compartments: 
+	one equivalent trunk/smooth sections + one equivalent spiny sections.
 
 	The single tree is equivalent to three instances
 	of the small (fig. 1, right) dendritic tree connected to the soma.
@@ -190,61 +190,76 @@ def stn_cell_spiny_smooth_sec():
 
 	TODO: use surface equivalence to scale conductances/cm and conserve axial resistance?
 	"""
-	# Properties from SThprotocell.hoc
+	# Passive properties for all segments (from SThprotocell.hoc)
 	all_Ra = 150.224
 	all_cm = 1.0
-	soma_L = 18.8
-	soma_diam = 18.3112
 
 	# List of mechanisms/conductances
 	stn_mechs = list(gillies_mechs) # List of mechanisms to insert
 	stn_glist = list(gillies_glist) # List of channel conductances to modify
 
+	# Create sections
+	secnames = ['soma', 'trunk', 'spiny']
+	for name in secnames:
+		# ensures references are not destroyed and names are not memory addresses
+		h("create %s" % name)
+
 	# Create soma
-	soma = h.Section()
+	soma = getattr(h, secnames[0])
 	soma.nseg = 1
+	# Passive electrical ppties (except Rm/gpas)
+	soma.L = 18.8
+	soma.diam = 18.3112
 	soma.Ra = all_Ra
-	soma.diam = soma_diam
-	soma.L = soma_L
 	soma.cm = all_cm
-	for mech in stn_mechs: soma.insert(mech)
+	# Ion channels
+	for mech in stn_mechs:
+		soma.insert(mech)
 	setconductances(soma, -1, glist=stn_glist)
 	setionstyles_gillies(soma)
 	
-	# Primary neurite, equiv. to smooth dendrites
-	smooth = h.Section()
-	smooth.connect(soma, 1, 0) # connect parent@0.0 to child@1.0
-	smooth.diam = (1.9480+1.2272)/2.0 * 1.0 # 3 times average diameter of branch 1 & 2
-	smooth.L = 80 # sum of diameters branch 1 & 2
-	smooth.Ra = all_Ra
-	smooth.cm = all_cm
-	opt_nseg1 = int(np.ceil(smooth.L/(0.1*lambda_AC(smooth,100))))
-	smooth.nseg = 9
-	for mech in stn_mechs: smooth.insert(mech) # insert mechanisms
-	interpconductances(smooth, 1, path=[1,2], glist=stn_glist) # set channel conductances
-	setionstyles_gillies(smooth) # set ion styles
-	print("Created section with {0} segments".format(smooth.nseg))
+	# Primary neurite, equiv. to trunk/smooth dendrites
+	trunk = getattr(h, secnames[1])
+	trunk.connect(soma, 1, 0) # connect parent@0.0 to child@1.0
+	# Passive electrical ppties (except Rm/gpas)
+	trunk.L = 80 # sum of diameters branch 1 & 2
+	trunk.diam = (1.9480+1.2272)/2.0 * 1.0 # 3 times average diameter of branch 1 & 2
+	trunk.Ra = all_Ra
+	trunk.cm = all_cm
+	opt_nseg1 = int(np.ceil(trunk.L/(0.1*lambda_AC(trunk,100))))
+	trunk.nseg = 9
+	# Ion channels
+	for mech in stn_mechs:
+		trunk.insert(mech)
+	interpconductances(trunk, 1, path=[1,2], glist=stn_glist) # set channel conductances
+	setionstyles_gillies(trunk) # set ion styles
 
-	# Secondary neurite, equiv. to spiny dendrites
-	spiny = h.Section()
-	spiny.connect(smooth, 1, 0) # connect parent@0.0 to child@1.0
+	# Secondary neurite, equivalent to spiny dendrites
+	spiny = getattr(h, secnames[2])
+	spiny.connect(trunk, 1, 0)
+	# Passive electrical ppties (except Rm/gpas)
+	spiny.L = 289 # length of long branch in full model
 	spiny.diam = 0.7695 * 1.0 # 3 times diameter of long branch (branch 5)
-	spiny.L = 289 # lenth of long branch
 	spiny.Ra = all_Ra
 	spiny.cm = all_cm
 	opt_nseg0 = int(np.ceil(spiny.L/(0.1*lambda_AC(spiny,100))))
 	spiny.nseg = 9
-	for mech in stn_mechs: spiny.insert(mech) # insert mechanisms
+	# Ion channels
+	for mech in stn_mechs:
+		spiny.insert(mech)
 	interpconductances(spiny, 1, path=[5], glist=stn_glist) # set channel conductances
 	setionstyles_gillies(spiny) # set ion styles
-	print("Created section with {0} segments".format(spiny.nseg))
+
+	for secname in secnames:
+		sec = getattr(h, secname)
+		print("Created section '{}'' with {} segments".format(sec.name(), sec.nseg))
 
 	# Create stimulator objects
 	stim1 = h.IClamp(soma(0.5))
 	stim2 = h.IClamp(soma(0.5))
 	stim3 = h.IClamp(soma(0.5))
 
-	return soma, (smooth, spiny), (stim1, stim2, stim3)
+	return soma, (trunk, spiny), (stim1, stim2, stim3)
 
 def stn_cell(cellmodel):
 	""" 
@@ -268,6 +283,12 @@ def stn_cell(cellmodel):
 	5		Reduced Gillies & Willshaw STN model using Marasco's
 			reduction method except subtrees/axial resistance is not
 			averaged but compounded and input resistance is conserved.
+
+	6		Custom reduction of Gillies & Willshaw STN model with a
+			single equivalent denritic tree containing one equivalent
+			smooth and one spiny section next to the soma section.
+			Parameters are fitted or empirically determined to produce
+			qualitatively similar behaviour to the full model.
 	"""
 	stims = None
 	if cellmodel==1: # Full model
@@ -311,16 +332,36 @@ def stn_cell(cellmodel):
 ################################################################################
 # Functions for reduced model
 ################################################################################
+
+def interp_gbar_pathri():
+	""" Interpolate channel density (max conductance) according
+		to equivalent path resistance.
+
+	ALGORITHM
+	- determine point with equivalent path resistance in full model
+	- set channel density to gbar of that point
+	"""
+	pass
+
 def interpconductances(sec, dendidx, path, glist=None):
 	""" Interpolate conductances along given path of branches 
-	@param sec			section to set conductances for
-	@param dendidx		index of the dendritic tree
-	@param path			indices of branches along dendritic tree
-	@param glist		list of conductances to set (including mechanism suffix)
+
+	@type	sec			Hoc.Section()
+	@param	sec			section to set conductances for
+
+	@type	dendidx		int
+	@param	dendidx		index of the dendritic tree
+
+	@type	path		sequence of int
+	@param	path		indices of branches in full model, specifying path
+						along dendritic tree from soma outward
+
+	@type	glist		dict<str, str>
+	@param	glist		list of conductances to set (including mechanism suffix)
 	"""
 
 	# Load channel conductances from file
-	allgmats = reducemodel.loadgstructs()
+	allgmats = reduction_tools.loadgstructs()
 	if glist is None:
 		glist = list(gillies_glist)
 
@@ -331,13 +372,12 @@ def interpconductances(sec, dendidx, path, glist=None):
 	h("default_gNaL_dend = 0.81e-5")
 
 	# branch indices along longest path
-	geostruct = reducemodel.loadgeotopostruct(dendidx)
+	geostruct = reduction_tools.loadgeotopostruct(dendidx)
 	pathL = np.array([geostruct[i-1]['L'] for i in path]) # length of each branch along path
 
 	# Distributed conductances: interpolate each conductance along longest path
-	for iseg in range(1, sec.nseg+1):
-		xnode = (2.*iseg-1.)/(2.*sec.nseg) # arclength of current node (segment midpoint)
-		lnode = xnode*sum(pathL) # equivalent length along longest path
+	for seg in sec:
+		lnode = seg.x*sum(pathL) # equivalent length along longest path
 
 		# first determine on which branch we are and how far on it
 		nodebranch = np.NaN # invalid branch
@@ -367,8 +407,8 @@ def interpconductances(sec, dendidx, path, glist=None):
 		gNarsg = 0.016 # same as in .mod file and Akeman papeer
 		g_fixed = {'gna_Na':gNa, 'gna_NaL':gNaL, 'gbar_Narsg':gNarsg} # NOTE: Narsg is NOT in Gillies model
 		for gname, gval in g_fixed.iteritems():
-			if gname not in glist: continue
-			sec(xnode).__setattr__(gname, gval)
+			if gname in glist:
+				setattr(seg, gname, gval)
 
 
 def setconductances(sec, dendidx, fixbranch=None, fixloc=None, glist=None):
@@ -376,16 +416,22 @@ def setconductances(sec, dendidx, fixbranch=None, fixloc=None, glist=None):
 		by interpolating values along longest path
 		(e.g. along branch 1-2-5 in dend1)
 
-	@param fixbranch	if you want to map the section to a fixed
-						branch, provide its number/index
+	@param dendidx		index of the denritic tree where longest path should
+						be followed (1/0/-1)
+
+	@param fixbranch	if you want to map the section to a fixed branch
+						instead of following the longest path, provide its index
+
 	@param fixloc		if you want to map all segments/nodes
 						to a fixed location on the mapped branch,
 						provide a location (0<=x<=1)
-	@param glist		list of conductances to set (including mechanism suffix)
+
+	@type	glist		dict<str, str>
+	@param	glist		list of conductances to set (including mechanism suffix)
 	"""
 
 	# Load channel conductances from file
-	allgmats = reducemodel.loadgstructs()
+	allgmats = reduction_tools.loadgstructs()
 	if glist is None:
 		glist = list(gillies_glist)
 
@@ -397,11 +443,11 @@ def setconductances(sec, dendidx, fixbranch=None, fixloc=None, glist=None):
 
 	# branch indices along longest path
 	if dendidx == 1:
-		geostruct = reducemodel.loadgeotopostruct(dendidx)
+		geostruct = reduction_tools.loadgeotopostruct(dendidx)
 		longestpath = np.array([1,2,5])
 		pathL = np.array([geostruct[i-1]['L'] for i in longestpath])
 	elif dendidx == 0:
-		geostruct = reducemodel.loadgeotopostruct(dendidx)
+		geostruct = reduction_tools.loadgeotopostruct(dendidx)
 		longestpath = np.array([1,2,4,7])
 		pathL = np.array([geostruct[i-1]['L'] for i in longestpath])
 	else: # -1: soma
@@ -1107,7 +1153,7 @@ if __name__ == '__main__':
 			seg.gna_NaL = 0.6 * seg.gna_NaL
 
 	# Attach duplicate of one tree
-	# from marasco_ported import dupe_subtree
+	# from reduction_tools import dupe_subtree
 	# copy_mechs = {'STh': ['gpas']} # use var gillies_gdict for full copy
 	# trunk_copy = dupe_subtree(h.trunk_0, copy_mechs	, [])
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
