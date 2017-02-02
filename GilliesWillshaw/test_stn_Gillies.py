@@ -513,54 +513,19 @@ def applyApamin(soma, dends):
 			sec(xnode).__setattr__('gk_sKCa', 0.0)
 
 ################################################################################
-# Experiments
+# Recording & Analysis functions
 ################################################################################
 
-def test_spontaneous(soma, dends_locs, stims, resurgent=False):
-	""" Run rest firing experiment from original Hoc file
+def rec_currents_activations(traceSpecs):
+	""" Specify trace recordings for all ionic currents
+		and activation variables 
 
-	@param soma			soma section
-	@param dends_locs	list of tuples (sec, loc) containing a section
-						and x coordinate to place recording electrode
-	@param stims		list of electrodes (IClamp)
+	@param traceSpecs	collections.OrderedDict of trace specifications
 
-	PROTOCOL
-	- spontaneous firing: no stimulation
-
-	OBSERVATIONS (GILLIES MODEL)
-
-	- during ISI:
-		- INaP (INaL) is significant (-0.02) in ISI and looks like main mechanism responsible
-		  for spontaneous depolarization/firing
-		- IKCa (repolarizing) is also significant (+0.004) during ISI
-			- sKCa is responsible for most of the AHP, as it should
-		- ICaT slowly activates in dendrites but is small (0.0008)
-			- might help spontaneous depolarization
-
-	- during AP
-		- the HVA currents ICaL and ICaN contribute to depolarization
-		- peak IKv3 is twice as high as IKDR (contributes more to repolarization)
-	
-
+	@effect				for each ionic current, insert a trace specification
+						for the current, open fractions, activation, 
+						and inactivation variables
 	"""
-	# Set simulation parameters
-	dur = 2000
-	h.dt = 0.025
-	h.celsius = 37 # different temp from paper (fig 3B: 25degC, fig. 3C: 35degC)
-	h.v_init = -60 # paper simulations use default v_init
-	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
-
-	# Recording: trace specification
-	secs = {'soma': soma}
-	traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
-
-	# Membrane voltages
-	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
-	for i, dend_loc in enumerate(dends_locs):
-		dendname = 'dend%i' % i
-		secs[dendname] = dend_loc[0]
-		traceSpecs['V_'+dendname] = {'sec':dendname,'loc':dend_loc[1],'var':'v'}
-
 	# Na currents
 	traceSpecs['I_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'} # transient sodium
 	traceSpecs['I_NaP'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'} # persistent sodium
@@ -612,7 +577,95 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	traceSpecs['B_CaT_s'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'d'} # slow inactivation
 	# Nonspecific channels activated fractions - not present (single state variable)
 
-	# Recording command
+def plot_currents_activations(recData, recordStep, timeRange=None):
+	""" Plot currents and (in)activation variable for each ionic
+		current in the same axis. Ionic currents are grouped per ion
+		in one figure, and the x-axes are synchronized for zooming
+		and panning.
+
+	@param recData		traces recorded using a trace specification provided
+						by rec_currents_activations()
+
+	@return				tuple figs, cursors where figs is a list of figures
+						that were created and cursors a list of cursors
+	"""
+	figs = []
+	cursors = []
+
+	# Plot activations-currents on same axis per current
+	ions_chans = [('NaT', 'NaP', 'HCN'), ('KDR', 'Kv3', 'KCa'), ('CaL', 'CaN', 'CaT')]
+	for ionchans in ions_chans: # one figure for each ion
+		fig, axrows = plt.subplots(len(ionchans), 1, sharex=True) # one plot for each channel
+		for i, chan in enumerate(ionchans):
+			# Which traces need to be plotted
+			pat = re.compile(r'^\w_' + chan)
+			chanFilter = lambda x: re.search(pat, x)
+			twinFilter = lambda	x: x.startswith('I_')
+			# Plot traces that match pattern
+			analysis.cumulPlotTraces(recData, recordStep, showFig=False, 
+								fig=None, ax1=axrows[i], yRange=(-0.1,1.1), timeRange=timeRange,
+								includeFilter=chanFilter, twinFilter=twinFilter)
+			# Add figure interaction
+			cursor = matplotlib.widgets.MultiCursor(fig.canvas, fig.axes, 
+						color='r', lw=1, horizOn=False, vertOn=True)
+		figs.append(fig)
+		cursors.append(cursor)
+
+	return figs, cursors
+
+################################################################################
+# Experiments
+################################################################################
+
+def test_spontaneous(soma, dends_locs, stims, resurgent=False):
+	""" Run rest firing experiment from original Hoc file
+
+	@param soma			soma section
+	@param dends_locs	list of tuples (sec, loc) containing a section
+						and x coordinate to place recording electrode
+	@param stims		list of electrodes (IClamp)
+
+	PROTOCOL
+	- spontaneous firing: no stimulation
+
+	OBSERVATIONS (GILLIES MODEL)
+
+	- during ISI:
+		- INaP (INaL) is significant (-0.02) in ISI and looks like main mechanism responsible
+		  for spontaneous depolarization/firing
+		- IKCa (repolarizing) is also significant (+0.004) during ISI
+			- sKCa is responsible for most of the AHP, as it should
+		- ICaT slowly activates in dendrites but is small (0.0008)
+			- might help spontaneous depolarization
+
+	- during AP
+		- the HVA currents ICaL and ICaN contribute to depolarization
+		- peak IKv3 is twice as high as IKDR (contributes more to repolarization)
+	
+
+	"""
+	# Set simulation parameters
+	dur = 2000
+	h.dt = 0.025
+	h.celsius = 37 # different temp from paper (fig 3B: 25degC, fig. 3C: 35degC)
+	h.v_init = -60 # paper simulations use default v_init
+	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+
+	# Recording: trace specification
+	secs = {'soma': soma}
+	traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
+
+	# Membrane voltages
+	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
+	for i, (dend,loc) in enumerate(dends_locs):
+		dendname = 'dend%i' % i
+		secs[dendname] = dend
+		traceSpecs['V_'+dendname] = {'sec':dendname,'loc':loc,'var':'v'}
+
+	# Record ionic currents, open fractions, (in)activation variables
+	rec_currents_activations(traceSpecs)
+
+	# Set up recording vectors
 	recordStep = 0.05
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
 
@@ -627,6 +680,9 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	vm_fig = figs_vm[0]
 	vm_ax = figs_vm[0].axes[0]
 
+	# Plot ionic currents, (in)activation variables
+	figs, cursors = plot_currents_activations(recData, recordStep)
+
 	# Plot ionic currents in separate axes
 	# recI = collections.OrderedDict()
 	# for k, v in recData.iteritems():
@@ -637,62 +693,6 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	# 			'I_CaT': (-6e-2, 6e-2)}
 	# figs_I = analysis.plotTraces(recI, recordStep, yRange=traceYLims, 
 	# 							traceSharex=vm_ax, showFig=False)
-
-	# Plot ionic currents on same axis
-	# recI = collections.OrderedDict()
-	# for k, v in recData.iteritems():
-	# 	if k.startswith('I_'): recI[k] = v
-	# cumfig = analysis.cumulPlotTraces(recI, recordStep, showFig=False)
-
-	figs = []
-	cursors = []
-
-	# Plot activations-currents on same axis per current
-	ions_chans = [('NaT', 'NaP', 'HCN'), ('KDR', 'Kv3', 'KCa'), ('CaL', 'CaN', 'CaT')]
-	patterns = [r'^\w_(Na|h)', r'^\w_K', r'^\w_Ca'] # one pattern per ion, and one plot per pattern
-	for ionchans in ions_chans: # one figure for each ion
-		fig, axrows = plt.subplots(len(ionchans), 1, sharex=True) # one plot for each channel
-		for i, chan in enumerate(ionchans):
-			# TODO: group part after _ in tracename and make one plot per distinct item
-			pat = re.compile(r'^\w_' + chan)
-			chanFilter = lambda x: re.search(pat, x)
-			twinFilter = lambda	x: x.startswith('I_')
-			analysis.cumulPlotTraces(recData	, recordStep, showFig=False, 
-								fig=None, ax1=axrows[i], traceSharex=vm_ax, 
-								includeFilter=chanFilter, twinFilter=twinFilter, 
-								yRange=(-0.01,1))
-			# Add figure interaction
-			cursor = matplotlib.widgets.MultiCursor(fig.canvas, fig.axes, 
-						color='r', lw=1, horizOn=False, vertOn=True)
-		figs.append(fig)
-		cursors.append(cursor)
-
-
-
-	# Plot channel open fractions
-	# recO = collections.OrderedDict()
-	# for k, v in recData.iteritems():
-	# 	if k.startswith('O_'): recO[k] = v
-	# fig_O = analysis.cumulPlotTraces(recO, recordStep, showFig=False, 
-	# 					traceSharex=vm_ax, fig=None, yRange=(-0.01,1))
-
-	# # Plot channel activated fractions
-	# recA = collections.OrderedDict()
-	# for k, v in recData.iteritems():
-	# 	if k.startswith('A_'): recA[k] = v
-	# fig_A = analysis.cumulPlotTraces(recA, recordStep, showFig=False,
-	# 					traceSharex=vm_ax, fig=fig_O, yRange=(-0.01,1))
-
-	# # Plot channel inactivated/blocked fractions
-	# recB = collections.OrderedDict()
-	# for k, v in recData.iteritems():
-	# 	if k.startswith('B_'): recB[k] = v
-	# fig_B = analysis.cumulPlotTraces(recB, recordStep, showFig=False,
-	# 					traceSharex=vm_ax, fig=fig_O, yRange=(-0.01,1))
-
-	# Add figure interaction
-	# cursor = matplotlib.widgets.MultiCursor(parfig.canvas, parfig.axes, 
-	# 			color='r', lw=1, horizOn=False, vertOn=True)
 
 	plt.show(block=False)
 	return recData, figs, cursors
@@ -735,6 +735,7 @@ def test_plateau(soma, dends_locs, stims):
 	I_depol = I_hyper + 0.2 # see fig. 10D: 0.2 nA (=stim.amp) over hyperpolarizing current
 	dur_depol = 50 # see fig. 10D, top right
 	del_depol = 1000
+	burst_time = [del_depol-50, del_depol+200] # empirical
 
 	stim1.delay = 0
 	stim1.dur = del_depol
@@ -751,56 +752,60 @@ def test_plateau(soma, dends_locs, stims):
 	# Record
 	secs = {'soma': soma, 'dend': dendsec}
 	traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
+
+	# Membrane voltages
 	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
-	# Na currents
-	traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'}
-	traceSpecs['I_NaL'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'}
-	# K currents
-	traceSpecs['I_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'ik'}
-	traceSpecs['I_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'ik'}
-	traceSpecs['I_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'isKCa'}
-	traceSpecs['I_h'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'ih'}
+	for i, (dend,loc) in enumerate(dends_locs):
+		dendname = 'dend%i' % i
+		secs[dendname] = dend
+		traceSpecs['V_'+dendname] = {'sec':dendname,'loc':loc,'var':'v'}
+
+	# Record ionic currents, open fractions, (in)activation variables
+	rec_currents_activations(traceSpecs)
+
 	# K currents (dendrite)
-	traceSpecs['dI_KCa'] = {'sec':'dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
-	# Ca currents (soma)
-	traceSpecs['I_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iLCa'}
-	traceSpecs['I_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iNCa'}
-	traceSpecs['I_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'iCaT'}
+	traceSpecs['I_KCa_d'] = {'sec':'dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
 	# Ca currents (dendrite)
-	traceSpecs['dI_CaL'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iLCa'}
-	traceSpecs['dI_CaN'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
-	traceSpecs['dI_CaT'] = {'sec':'dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
+	traceSpecs['I_CaL_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iLCa'}
+	traceSpecs['I_CaN_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
+	traceSpecs['I_CaT_d'] = {'sec':'dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
+
 	# Start recording
 	recordStep = 0.05
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
-
-	# Set fixed ranges for comparison
-	traceYLims = {'V_soma': (-80, 40), 'I_Na': (-0.7, 0.1), 'I_NaL': (-2e-3, 0),
-				'I_KDR': (0, 0.1), 'I_Kv3': (-1e-2, 0.1), 'I_KCa': (-1e-3, 8e-3),
-				'I_h': (-2e-3, 6e-3), 'I_CaL': (-1.5e-2, 1e-3), 'I_CaN': (-2e-2, 1e-3),
-				'I_CaT': (-6e-2, 6e-2)}
 
 	# Simulate
 	h.tstop = dur
 	h.init() # calls finitialize() and fcurrent()
 	h.run()
 
-	# Analyze
-	burst_time = [del_depol-50, del_depol+200]
-	# Soma currents
-	recSoma = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if not k.startswith('d'): recSoma[k] = recData[k]
-	analysis.plotTraces(recSoma, recordStep, timeRange=burst_time, yRange=traceYLims)
-	# Soma currents (relative)
-	recSoma.pop('V_soma')
-	analysis.cumulPlotTraces(recSoma, recordStep, cumulate=False, timeRange=burst_time)
-	# Dendrite currents
-	recDend = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if k.startswith('d'): recDend[k] = recData[k]
-	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False, timeRange=burst_time)
-	return recData
+	# Plot membrane voltages
+	recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
+	figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), traceSharex=True)
+	vm_fig = figs_vm[0]
+	vm_ax = figs_vm[0].axes[0]
+
+	# Plot ionic currents, (in)activation variables
+	figs, cursors = plot_currents_activations(recData, recordStep)
+
+	# # Soma currents
+	# recSoma = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if not k.endswith('_d')])
+	# Set fixed ranges for comparison
+	# traceYLims = {'V_soma': (-80, 40), 'I_Na': (-0.7, 0.1), 'I_NaL': (-2e-3, 0),
+	# 			'I_KDR': (0, 0.1), 'I_Kv3': (-1e-2, 0.1), 'I_KCa': (-1e-3, 8e-3),
+	# 			'I_h': (-2e-3, 6e-3), 'I_CaL': (-1.5e-2, 1e-3), 'I_CaN': (-2e-2, 1e-3),
+	# 			'I_CaT': (-6e-2, 6e-2)}
+	# analysis.plotTraces(recSoma, recordStep, timeRange=burst_time, yRange=traceYLims)
+
+	# # Soma currents (relative)
+	# recSoma.pop('V_soma')
+	# analysis.cumulPlotTraces(recSoma, recordStep, cumulate=False, timeRange=burst_time)
+
+	# Dendrite currents during burst
+	recDend = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.endswith('_d')])
+	analysis.cumulPlotTraces(recDend, recordStep, timeRange=burst_time)
+	
+	return recData, figs, cursors
 
 def test_reboundburst(soma, dends_locs, stims):
 	""" Run rebound burst experiment from original Hoc file
@@ -841,7 +846,7 @@ def test_reboundburst(soma, dends_locs, stims):
 
 	stim2.delay = 500
 	stim2.dur = 500
-	stim2.amp = -0.25
+	stim2.amp = -0.15 # -0.25 in full model
 
 	stim3.delay = 1000
 	stim3.dur = 1000
@@ -850,59 +855,48 @@ def test_reboundburst(soma, dends_locs, stims):
 	# Record
 	secs = {'soma': soma, 'dend': dendsec}
 	traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
+
+	# Membrane voltages
 	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
-	# Na currents
-	traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'}
-	traceSpecs['I_NaL'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'}
-	# K currents
-	traceSpecs['I_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'ik'}
-	traceSpecs['I_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'ik'}
-	traceSpecs['I_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'isKCa'}
-	traceSpecs['I_h'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'ih'}
+	for i, (dend,loc) in enumerate(dends_locs):
+		dendname = 'dend%i' % i
+		secs[dendname] = dend
+		traceSpecs['V_'+dendname] = {'sec':dendname,'loc':loc,'var':'v'}
+
+	# Record ionic currents, open fractions, (in)activation variables
+	rec_currents_activations(traceSpecs)
+
 	# K currents (dendrite)
-	traceSpecs['dI_KCa'] = {'sec':'dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
-	# Ca currents (soma)
-	traceSpecs['I_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iLCa'}
-	traceSpecs['I_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iNCa'}
-	traceSpecs['I_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'iCaT'}
+	traceSpecs['I_KCa_d'] = {'sec':'dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
 	# Ca currents (dendrite)
-	traceSpecs['dI_CaL'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iLCa'}
-	traceSpecs['dI_CaN'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
-	traceSpecs['dI_CaT'] = {'sec':'dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
+	traceSpecs['I_CaL_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iLCa'}
+	traceSpecs['I_CaN_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
+	traceSpecs['I_CaT_d'] = {'sec':'dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
+
+	# Start recording
 	recordStep = 0.05
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
-
-	# Set fixed ranges for comparison
-	traceYLims = {'V_soma': (-100, 20), 'I_Na': (-1., 2e-2), 'I_NaL': (-3e-3, -5e-4),
-				'I_KDR': (0, 0.12), 'I_Kv3': (0, 0.20), 'I_KCa': (0, 0.012),
-				'I_h': (-4e-3, 0.012), 'I_CaL': (-3e-2, 1e-2), 'I_CaN': (-3e-2, 1e-2),
-				'I_CaT': (-6e-2, 6e-2)}
 
 	# Simulate
 	h.tstop = dur
 	h.init() # calls finitialize() and fcurrent()
 	h.run()
 
-	# Analyze
+	# Plot membrane voltages
+	recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
+	figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), traceSharex=True)
+	vm_fig = figs_vm[0]
+	vm_ax = figs_vm[0].axes[0]
+
+	# Plot ionic currents, (in)activation variables
+	figs, cursors = plot_currents_activations(recData, recordStep)
+
+	# Dendrite currents during burst
 	burst_time = [980, 1120]
-	# Soma currents
-	recSoma = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if not k.startswith('d'): recSoma[k] = recData[k]
-	analysis.plotTraces(recSoma, recordStep, yRange=traceYLims)
-	# Soma currents (relative)
-	recSoma.pop('V_soma')
-	analysis.cumulPlotTraces(recSoma, recordStep, cumulate=False)
-	# Dendrite currents
-	recDend = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if k.startswith('d'): recDend[k] = recData[k]
-	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False)
-	# Overlay voltage signal
-	# plt.plot(np.arange(0, dur, recordStep), recData['V_soma'].as_numpy()*1e-3, color='r')
-	# plt.show(block=False)
-	# Plot dendrite currentds
-	return soma, recData
+	recDend = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.endswith('_d')])
+	analysis.cumulPlotTraces(recDend, recordStep, timeRange=burst_time)
+
+	return recData, figs, cursors
 
 def test_slowbursting(soma, dends_locs, stims):
 	""" Test slow rhythmic bursting mode under conditions of constant 
@@ -1105,21 +1099,20 @@ if __name__ == '__main__':
 	# Cell adjustments
 	soma.Ra = 2*soma.Ra # correct incorrect calculation for Ra soma cluster
 
+	# Adjust ionic conductances
+	for sec in h.allsec():
+		for seg in sec:
+			seg.gpas_STh = 0.75 * seg.gpas_STh
+			seg.cm = 3.0 * seg.cm
+			seg.gna_NaL = 0.6 * seg.gna_NaL
+
 	# Attach duplicate of one tree
-	from marasco_ported import dupe_subtree
-	copy_mechs = {'STh': ['gpas']} # use var gillies_gdict for full copy
-	trunk_copy = dupe_subtree(h.trunk_0, copy_mechs	, [])
-	trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
+	# from marasco_ported import dupe_subtree
+	# copy_mechs = {'STh': ['gpas']} # use var gillies_gdict for full copy
+	# trunk_copy = dupe_subtree(h.trunk_0, copy_mechs	, [])
+	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
-	# Adjust Cm and ionic/leak conductances
-	# for sec in h.allsec():
-	# 	for seg in sec:
-	# 		if seg is h.soma:
-	# 			seg.gna_NaL = 0.55*seg.gna_NaL
-	# 		else:
-	# 			seg.gna_NaL = 0.55*seg.gna_NaL
-
-	# Adjust scaling factors
+	# Adjust passive electric ppties/scaling factors
 	# surffact = 1. # f=1 => T=37 ms ; f=2 => T=64 ms
 	# soma.cm = 2.0 * soma.cm
 	# soma.gpas_STh = 6.0 * soma.gpas_STh
@@ -1131,13 +1124,13 @@ if __name__ == '__main__':
 	# [x] simulated full model
 	# [x] Simulated using average axial resistance (Marasco method)
 	# [x] Simulated using conservation of Rin (no averaging of trees)
-	recData = test_spontaneous(soma, dends_locs, stims)
+	# recData = test_spontaneous(soma, dends_locs, stims)
 	
 	# Test rebound burst simulator protocol
 	# [x] simulated full model
 	# [x] Simulated using average axial resistance (Marasco method)
 	# [x] Simulated using conservation of Rin (no averaging of trees)
-	# recData = test_reboundburst(soma, dends_locs, stims)
+	recData = test_reboundburst(soma, dends_locs, stims)
 
 	# Test generation of plateau potential
 	# [x] simulated full model

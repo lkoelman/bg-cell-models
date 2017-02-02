@@ -201,6 +201,7 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 	if twinFilter is not None:
 		ax2 = ax1.twinx()
 	else:
+		ax2 = None
 		twinFilter = lambda x: False
 
 	t = np.arange(timeRange[0], timeRange[1]+recordStep, recordStep)
@@ -237,7 +238,8 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 		elif match:
 			L_prefixes.append(match.group()[:-1])
 	ax1.set_ylabel(', '.join(set(L_prefixes)), fontsize=fontsiz)
-	ax2.set_ylabel(', '.join(set(R_prefixes)), fontsize=fontsiz)
+	if ax2:
+		ax2.set_ylabel(', '.join(set(R_prefixes)), fontsize=fontsiz)
 
 	# legend for lines plotted in all axes
 	ax1.legend(lines, [l.get_label() for l in lines])
