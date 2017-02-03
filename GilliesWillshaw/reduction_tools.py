@@ -28,7 +28,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 ################################################################################
 
 def lambda_DC(sec, gleak):
-	""" Compute electrotonic length in units of micron [um]"""
+	""" Compute electrotonic length of section in units of micron [um]"""
 	# Convert membrane resistance to same units as Ra
 	# R_m = 1./(gleak*math.pi*sec.diam*1e-4) # r_m = R_m [Ohm*cm^2] /(pi*d) [Ohm*cm]
 	R_m = 1./gleak # units [Ohm*cm^2]
@@ -36,13 +36,29 @@ def lambda_DC(sec, gleak):
 
 def lambda_AC(sec, f):
 	""" Compute electrotonic length (taken from stdlib.hoc) """
-	return 1e5*math.sqrt(sec.diam/(4*math.pi*f*sec.Ra*sec.cm))
+	return 1e5 * math.sqrt(sec.diam/(4*math.pi*f*sec.Ra*sec.cm))
 
 def electrotonic_length(sec, gleak, f):
 	if f <= 0:
 		return lambda_DC(sec, gleak)
 	else:
 		return lambda_AC(sec, f)
+
+def seg_lambda(seg, gleak, f):
+	""" Compute length constant of segment """
+	Ra = seg.sec.Ra # Ra is section property
+	if f <= 0:
+		if isinstance(gleak, str):
+			Rm = 1./getattr(seg, gleak)
+		else:
+			Rm = 1./gleak # units [Ohm*cm^2]
+		return 1e2 * math.sqrt(seg.diam*Rm/(4*Ra)) # units: ([um]*[Ohm*cm^2]/(Ohm*cm))^1/2 = [um*1e2]
+	else:
+		return 1e5 * math.sqrt(seg.diam/(4*math.pi*f*Ra*seg.cm))
+
+def min_nseg_hines(sec, f=100.):
+	""" Minimum number of segments based on electrotonic length """
+	return int(sec.L/(0.1*lambda_AC(sec, f))) + 1
 
 def inputresistance_inf(sec, gleak, f):
 	""" Input resistance for semi-infinite cable in units of [Ohm*1e6] """
@@ -80,9 +96,11 @@ def inputresistance_tree(rootsec, f, glname):
 	return inputresistance_leaky(rootsec, gleak, f, 1./g_end)
 
 def calc_path_ri(secref):
-	""" Calculate axial path resistance from root to 0 and 1 end of each section 
+	""" Calculate axial path resistance from root to 0 and 1 end of each section
+
 	@effect		calculate axial path resistance from root to 0/1 end of sections
 				and set as properties pathri0/pathri1 on secref
+
 	@return		tuple pathri0, pathri1
 	"""
 	# Get path from root node to this sections
@@ -109,6 +127,48 @@ def calc_path_ri(secref):
 				secref.pathri0 += seg.ri()
 
 	return secref.pathri0, secref.pathri1
+
+def path_L_electrotonic(secref, f, gleak_name):
+	""" Calculate electrotonic path length from root to 0 and 1 end of section.
+
+	ALGORITHM
+	- walk each segment from root section (e.g. soma) to the given
+	  section and sum L/lambda for each segment
+
+	@return		tuple pathL0, pathL1
+	@post		pathL0 and pathL1 are available as attributes on secref
+
+	FIXME: in root node, start walking segments only from midpoint
+	"""
+
+	# Get path from root node to this sections
+	rootsec = treeroot(secref)
+	calc_path = h.RangeVarPlot('v')
+	rootsec.push()
+	calc_path.begin(0.5)
+	secref.sec.push()
+	calc_path.end(0.5)
+	root_path = h.SectionList() # SectionList structure to store path
+	calc_path.list(root_path) # copy path sections to SectionList
+	h.pop_section()
+	h.pop_section()
+
+	# Compute electrotonic path length
+	secref.pathL1 = 0 # path length from root sec to 1 end of this sec
+	secref.pathL0 = 0 # path length from root sec to 0 end of this sec
+	path_secs = list(root_path)
+	path_len = len(path_secs)
+	for i, psec in enumerate(path_secs):
+		L_seg = psec.L/psec.nseg # segment length
+		for seg in psec:
+			lamb_seg = seg_lambda(seg, gleak_name, f)
+			L_elec = L_seg/lamb_seg
+			secref.pathL1 += L_elec
+			if i < path_len-1:
+				secref.pathL0 += L_elec
+
+	return secref.pathL0, secref.pathL1
+
 
 ################################################################################
 # Clustering & Topology
@@ -263,8 +323,14 @@ def assign_strahler_order(noderef, secrefs, par_order):
 	""" Assign strahler's numbers and order/distance from root
 		(infer topology from parent/child relationships)
 
-	@noderef	SectionRef to current node
-	@secrefs	list of mutable SectionRef
+	@type	noderef		SectionRef
+	@param	noderef		Section reference to current node
+
+	@type	secrefs		list(SectionRef)
+	@param	secrefs		references to all sections in the cell
+
+	@type	par_order	int
+	@param	par_order	order of parent sections (distance in #sections from soma)
 	"""
 	if noderef is None: return
 
@@ -295,17 +361,75 @@ def assign_strahler_order(noderef, secrefs, par_order):
 		# nonzero and equal: increment
 		noderef.strahlernumber = leftref.strahlernumber + 1
 
-def clusterize_custom(noderef, allsecrefs, clusterfun, clusterlist, labelsuffix='', parent_pos=1.0):
-	""" Cluster dendritic tree based on custom criterion
+def assign_electrotonic_length(noderef, allsecrefs, f, gleak_name):
+	""" Assign length constant and electrotonic path length to 0-end and
+		1-end for each section in tree, starting from the given parent section
 
-	@param clusterfun	function mapping a SectionRef to cluster label
+	@type	noderef		SectionRef
+	@param	noderef		Section reference to current node
+
+	@type	allsecrefs	list(SectionRef)
+	@param	allsecrefs	references to all sections in the cell
+
+	@post				all section references have the following attributes:
+						- 'f_lambda': frequency at which length constant is computed
+						- 'lambda_f': section's length constant at given frequency
+						- 'pathL0': electrotonic path length to 0-end
+						- 'pathL1': Electrotonic path length to 1-end
 	"""
-	if noderef is None: return
+	if noderef is None:
+		return
 
-	# Cluster label based on custom criterion
-	noderef.cluster_label = clusterfun(noderef) + labelsuffix
+	# Compute length constant
+	gleak = sum([getattr(seg, gleak_name) for seg in noderef.sec])
+	gleak /= noderef.sec.nseg # average gleak of segments in section
+	lambda_f = electrotonic_length(noderef.sec, gleak, f)
+	noderef.lambda_f = lambda_f
+	noderef.f_lambda = f
 
-	# Parent cluster
+	# Compute electrotonic path length
+	path_L_electrotonic(noderef, f, gleak_name) # assigns attributed pathL0 and pathL1
+
+	# Assign to children
+	for childsec in noderef.sec.children():
+		childref = getsecref(childsec, allsecrefs)
+		assign_electrotonic_length(childref, allsecrefs, f, gleak_name)
+
+def clusterize_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix='', parent_pos=1.0):
+	""" Cluster dendritic tree based on length divided by length constant
+		(i.e. length in terms of its electrotonic length) measured from
+		soma section.
+
+	@type	noderef		SectionRef
+	@param	noderef		Section reference to current node
+
+	@type	allsecrefs	list(SectionRef)
+	@param	allsecrefs	references to all sections in the cell
+
+	@type	thresholds	tuple(float)
+	@param	thresholds	one or two thresholds on electrotonic path length 
+						to distinguish between trunk/smooth/spiny sections
+
+	@type	clusterlist	list(Cluster)
+	@param	clusterlist	list of existing Clusters
+
+	@pre				all section references must have their length constant
+						set using assign_electrotonic_length
+	"""
+	if noderef is None:
+		return
+
+	# Cluster based on electronic path length at midpoint
+	L_mid = noderef.pathL0 + (noderef.pathL1 - noderef.pathL0)/2.
+	labels = ['trunk', 'smooth', 'spiny']
+	if L_mid <= thresholds[0]:
+		noderef.clusterlabel = 'trunk' + labelsuffix
+	elif len(thresholds) > 1 and L_mid <= thresholds[1]:
+		noderef.clusterlabel = 'smooth' + labelsuffix
+	else:
+		noderef.clusterlabel = 'spiny' + labelsuffix
+
+	# Determine relation to parent cluster
 	parref = getsecref(noderef.parent, allsecrefs)
 	if parref.cluster_label != noderef.cluster_label:
 		noderef.parent_label = parref.cluster_label
@@ -313,7 +437,52 @@ def clusterize_custom(noderef, allsecrefs, clusterfun, clusterlist, labelsuffix=
 		noderef.parent_label = parref.parent_label
 	noderef.parent_pos = parent_pos # by default at end of section
 
-	# Add new cluster
+	# If first section belonging to this cluster, add new Cluster object
+	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
+		newclu = Cluster(noderef.cluster_label)
+		parclu = next(clu for clu in clusterlist if clu.label==noderef.parent_label)
+		newclu.parent_label = noderef.parent_label
+		newclu.parent_pos = noderef.parent_pos
+		newclu.order = parclu.order + 1
+		clusterlist.append(newclu)
+
+	# Cluster children (iteratively)
+	for childsec in noderef.sec.children():
+		childref = getsecref(childsec, allsecrefs)
+		clusterize_electrotonic(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
+
+def clusterize_custom(noderef, allsecrefs, clusterfun, clusterlist, labelsuffix='', parent_pos=1.0):
+	""" Cluster dendritic tree based on custom criterion
+
+	@type	noderef		SectionRef
+	@param	noderef		Section reference to current node
+
+	@type	allsecrefs	list(SectionRef)
+	@param	allsecrefs	references to all sections in the cell
+
+	@type	par_order	int
+	@param	par_order	order of parent sections (distance in #sections from soma)
+
+	@type	clusterfun	function(SectionRef) -> string
+	@param	clusterfun	function mapping a SectionRef to cluster label
+
+	@type	clusterlist	list(Cluster)
+	@param	clusterlist	list of existing Clusters
+	"""
+	if noderef is None: return
+
+	# Cluster section based on custom criterion
+	noderef.cluster_label = clusterfun(noderef) + labelsuffix
+
+	# Determine relation to parent cluster
+	parref = getsecref(noderef.parent, allsecrefs)
+	if parref.cluster_label != noderef.cluster_label:
+		noderef.parent_label = parref.cluster_label
+	else:
+		noderef.parent_label = parref.parent_label
+	noderef.parent_pos = parent_pos # by default at end of section
+
+	# Add new Cluster object if necessary
 	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
 		newclu = Cluster(noderef.cluster_label)
 		parclu = next(clu for clu in clusterlist if clu.label==noderef.parent_label)
@@ -333,7 +502,9 @@ def clusterize_strahler(noderef, allsecrefs, thresholds, clusterlist, labelsuffi
 	""" Cluster a tree based on strahler numbers alone
 
 	@param noderef		any section starting from but not equal to soma
+
 	@param parent_pos	position on parent cluster of noderef
+
 	@effect			assign label 'trunk'/'smooth'/spiny' to sections
 					based on their Strahler number
 	"""

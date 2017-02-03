@@ -36,7 +36,6 @@ NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Own modules
-import reduction_tools
 import reduction_tools as redtools
 from reduction_tools import ExtSecRef, Cluster, getsecref # for convenience
 import reduction_analysis as analysis
@@ -335,7 +334,8 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 	"""
 	# Create equivalent section for each clusters
 	# eq_secs = [h.Section() for clu in clusters]
-	for clu in clusters: h("create %s" % clu.label) # ensures references are not destroyed and names are clear
+	for clu in clusters:
+		h("create %s" % clu.label) # ensures references are not destroyed and names are clear
 	eq_secs = [getattr(h, clu.label) for clu in clusters]
 	eq_secrefs = [ExtSecRef(sec=sec) for sec in eq_secs]
 
@@ -391,7 +391,7 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 					gval = cluster.gtot_sum[gname] / sec_area # yields same sum(gbar*area) as in full model
 				seg.__setattr__(gname, gval)
 		
-		# correct non-uniform gbar to yield same total gbar (sum(gbar*area))
+		# Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
 		if gradients:
 			for gname in glist():
 				gtot_eq = sum(getattr(seg, gname)*seg.area() for seg in sec)
@@ -424,6 +424,7 @@ def cluster_sections(rootrefs, allsecrefs, custom=True):
 					for clustering dendritic sections. If True, use a custom
 					clustering method/criterion defined in local function
 					clusterfun().
+
 	@return			list of Cluster objects that store each cluster's label,
 					parent label, position on parent, order
 	"""
@@ -510,7 +511,7 @@ def reduce_gillies(customclustering, average_trees):
 	# i.e. calculate properties of equivalent section for each cluster
 	logger.info("Merging within-cluster sections...")
 	for cluster in clusters:
-		merge_cluster(cluster, allsecrefs, average_trees) # stores equivalent properties in cluster
+		merge_cluster(cluster, allsecrefs, average_trees) # store equivalent properties on Cluster objects
 
 	# Create equivalent section for each cluster
 	logger.info("Creating equivalent sections...")
