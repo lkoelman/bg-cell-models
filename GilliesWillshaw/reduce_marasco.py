@@ -385,7 +385,7 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 			for gname in glist():
 				if gradients:
 					# Look for average gbar value at points with same path resistance
-					seg_pathri = secref.pathri0 + seg.x*(secref.pathri1-secref.pathri0)
+					seg_pathri = pathri0 + seg.x*(pathri1-pathri0)
 					gval = calc_gbar(cluster, gname, seg_pathri)
 				else:
 					gval = cluster.gtot_sum[gname] / sec_area # yields same sum(gbar*area) as in full model

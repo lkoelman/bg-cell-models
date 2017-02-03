@@ -129,10 +129,11 @@ def calc_path_ri(secref):
 	return secref.pathri0, secref.pathri1
 
 def path_L_electrotonic(secref, f, gleak_name):
-	""" Calculate electrotonic path length from root to 0 and 1 end of section.
+	""" Calculate electrotonic path length from start of the root section
+		of the subtree that the given section is in
 
 	ALGORITHM
-	- walk each segment from root section (e.g. soma) to the given
+	- walk each segment from root section (child of top root) to the given
 	  section and sum L/lambda for each segment
 
 	@return		tuple pathL0, pathL1
@@ -154,8 +155,8 @@ def path_L_electrotonic(secref, f, gleak_name):
 	h.pop_section()
 
 	# Compute electrotonic path length
-	secref.pathL1 = 0 # path length from root sec to 1 end of this sec
-	secref.pathL0 = 0 # path length from root sec to 0 end of this sec
+	secref.pathL1 = 0. # path length from root sec to 1 end of this sec
+	secref.pathL0 = 0. # path length from root sec to 0 end of this sec
 	path_secs = list(root_path)
 	path_len = len(path_secs)
 	for i, psec in enumerate(path_secs):
@@ -168,6 +169,41 @@ def path_L_electrotonic(secref, f, gleak_name):
 				secref.pathL0 += L_elec
 
 	return secref.pathL0, secref.pathL1
+
+def seg_path_L_elec(endseg, f, gleak_name):
+	""" Calculate electrotonic path length from start of the root section
+		of the subtree that the given segment is in
+
+	ALGORITHM
+	- walk each segment from root section (child of top root) to the given
+	  segment and sum L/lambda for each segment
+
+	@return		electrotonic path length
+	"""
+	# Get path from root node to this sections
+	secref = h.SectionRef(sec=endseg.sec)
+	rootsec = treeroot(secref)
+	calc_path = h.RangeVarPlot('v')
+	rootsec.push()
+	calc_path.begin(0.5)
+	secref.sec.push()
+	calc_path.end(0.5)
+	root_path = h.SectionList() # SectionList structure to store path
+	calc_path.list(root_path) # copy path sections to SectionList
+	h.pop_section()
+	h.pop_section()
+
+	# Compute electrotonic path length
+	path_L_elec = 0.0
+	path_secs = list(root_path)
+	for i, psec in enumerate(path_secs):
+		L_seg = psec.L/psec.nseg # segment length
+		for seg in psec:
+			lamb_seg = seg_lambda(seg, gleak_name, f)
+			L_elec = L_seg/lamb_seg
+			path_L_elec += L_elec
+
+	return path_L_elec
 
 
 ################################################################################
@@ -191,7 +227,7 @@ class ExtSecRef(neuron.hclass(h.SectionRef)):
 		else:
 			desc = super(ExtSecRef, self).__repr__()
 			desc += '\n\t|- hocname: ' + self.sec.hoc_internal_name()
-			printable = ['sec', 'strahlernumber', 'order', 'clusterlabel', 
+			printable = ['sec', 'strahlernumber', 'order', 'cluster_label', 
 						 'secri', 'pathri0', 'pathri1', 'secSurf', 'mrgL',
 						 'mrgdiam', 'mrgri', 'mrgSurf', 'visited', 'doMerge']
 			for ppty in printable:
@@ -395,7 +431,7 @@ def assign_electrotonic_length(noderef, allsecrefs, f, gleak_name):
 		childref = getsecref(childsec, allsecrefs)
 		assign_electrotonic_length(childref, allsecrefs, f, gleak_name)
 
-def clusterize_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix='', parent_pos=1.0):
+def clusterize_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix=''):
 	""" Cluster dendritic tree based on length divided by length constant
 		(i.e. length in terms of its electrotonic length) measured from
 		soma section.
@@ -423,27 +459,29 @@ def clusterize_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labels
 	L_mid = noderef.pathL0 + (noderef.pathL1 - noderef.pathL0)/2.
 	labels = ['trunk', 'smooth', 'spiny']
 	if L_mid <= thresholds[0]:
-		noderef.clusterlabel = 'trunk' + labelsuffix
+		noderef.cluster_label = 'trunk' + labelsuffix
 	elif len(thresholds) > 1 and L_mid <= thresholds[1]:
-		noderef.clusterlabel = 'smooth' + labelsuffix
+		noderef.cluster_label = 'smooth' + labelsuffix
 	else:
-		noderef.clusterlabel = 'spiny' + labelsuffix
+		noderef.cluster_label = 'spiny' + labelsuffix
 
 	# Determine relation to parent cluster
-	parref = getsecref(noderef.parent, allsecrefs)
-	if parref.cluster_label != noderef.cluster_label:
-		noderef.parent_label = parref.cluster_label
-	else:
-		noderef.parent_label = parref.parent_label
-	noderef.parent_pos = parent_pos # by default at end of section
+	# parref = getsecref(noderef.parent, allsecrefs)
+	# if parref.cluster_label != noderef.cluster_label:
+	# 	noderef.parent_label = parref.cluster_label
+	# else:
+	# 	noderef.parent_label = parref.parent_label
+	# noderef.parent_pos = parent_pos # by default at end of section
+
+	logger.debug("Section with index {} assigned to cluster {}".format(
+					noderef.table_index, noderef.cluster_label))
 
 	# If first section belonging to this cluster, add new Cluster object
 	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
 		newclu = Cluster(noderef.cluster_label)
-		parclu = next(clu for clu in clusterlist if clu.label==noderef.parent_label)
-		newclu.parent_label = noderef.parent_label
-		newclu.parent_pos = noderef.parent_pos
-		newclu.order = parclu.order + 1
+		# parclu = next(clu for clu in clusterlist if clu.label==noderef.parent_label)
+		# newclu.parent_label = noderef.parent_label
+		# newclu.parent_pos = noderef.parent_pos
 		clusterlist.append(newclu)
 
 	# Cluster children (iteratively)
@@ -580,6 +618,7 @@ def clusterize_strahler_trunks(allsecrefs, thresholds=None):
 
 def cluster_topology(rootref, allsecrefs, relations):
 	""" Determine cluster topology from list of clustered section references
+
 	@param relations	a container for relations of the form (parentlabel, childlabel)
 						if this is a set, the entries are guaranteed to be unique
 	"""
