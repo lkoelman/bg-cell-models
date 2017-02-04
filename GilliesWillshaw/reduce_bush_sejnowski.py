@@ -18,7 +18,7 @@ sys.path.append(modulesbase)
 
 # Enable logging
 import logging
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
 
 # Load NEURON
@@ -45,12 +45,12 @@ mechs_chans = gillies_mechs_chans
 gleak_name = 'gpas_STh'
 glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
 
-def interp_gbar_electrotonic(seg, gname, gleak_name, f, orsecrefs):
+def interp_gbar_electrotonic(tarseg, gname, gleak_name, f, orsecrefs):
 	""" Interpolate channel density (max conductance) according
 		to electrotonic path.
 
-	@type	seg			Segment
-	@param	seg			segment in reduced model for which gbar is desired
+	@type	tarseg			Segment
+	@param	tarseg			segment in reduced model for which gbar is desired
 
 	@type	gname		str
 	@param	gname		full conductance name (including mechanism suffix)
@@ -74,7 +74,7 @@ def interp_gbar_electrotonic(seg, gname, gleak_name, f, orsecrefs):
 	- take average gbar of all sections in original model that meet this criterion
 	"""
 	# calculate electrotonic path length of given segment
-	L_elec = redtools.seg_path_L_elec(seg, f, gleak_name)
+	L_elec = redtools.seg_path_L_elec(tarseg, f, gleak_name)
 
 	# find original sections with similar electrotonic path length
 	or_path_secs = [secref for secref in orsecrefs if (secref.pathL0 <= L_elec <= secref.pathL1)]
@@ -83,13 +83,56 @@ def interp_gbar_electrotonic(seg, gname, gleak_name, f, orsecrefs):
 	# find corresponding segments and compute average gbar
 	gbar_interp = 0.0
 	for secref in or_path_secs:
-		x_path = (L_elec - secref.pathL0)/(secref.pathL1 - secref.pathL0)
-		or_path_seg = secref.sec(x_path) # segment at corresponding electrotonic length
-		gbar_interp += getattr(or_path_seg, gname)
-	gbar_interp /= len(or_path_secs)
+		if L_elec <= secref.pathL0:
+			gbar_interp += getattr(secref.sec(0.0), gname)
+		elif L_elec >= secref.pathL1:
+			gbar_interp += getattr(secref.sec(1.0), gname)
+		else: # interpolate
+			segs = [seg for seg in secref.sec] # all sections
+
+			if len(segs) == 1:
+				# single segment: just use midpoint
+				gbar_interp += getattr(secref.sec(0.5), gname)
+
+			else: # INTERPOLATE
+				# Get lower bound
+				lower = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec >= pathL)
+				i_a, L_a = next(lower, (0, secref.pathL_elec[0]))
+				if L_elec <= L_a:
+					gbar_interp += getattr(segs[i_a], gname)
+					continue
+
+				# Get higher bound
+				higher = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec <= pathL)
+				i_b, L_b = next(higher, (-1, secref.pathL_elec[-1]))
+				if L_elec >= L_b:
+					gbar_interp += getattr(segs[i_b], gname)
+					continue
+
+				# case L_a < L_elec < L_b
+				if L_b == L_a:
+					delta == 0.5
+				else:
+					delta = (L_elec - L_a)/(L_b - L_a)
+				if delta > 1.0:
+					delta = 1.0 # if too close to eachother
+				gbar_a = getattr(segs[i_a], gname)
+				gbar_b = getattr(segs[i_b], gname)
+				gbar_interp += (gbar_a + delta * (gbar_b - gbar_a))
+
+	gbar_interp /= len(or_path_secs) # take average
+
+	# find corresponding segments and compute average gbar
+	# gbar_interp = 0.0
+	# for secref in or_path_secs:
+	# 	x_path = (L_elec - secref.pathL0)/(secref.pathL1 - secref.pathL0)
+	# 	or_path_seg = secref.sec(x_path) # segment at corresponding electrotonic length
+	# 	gbar_interp += getattr(or_path_seg, gname)
+	# gbar_interp /= len(or_path_secs)
+
 	return gbar_interp
 
-def equivalent_sections(clusters, orsecrefs, f_lambda):
+def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 	""" Compute properties of equivalent section for cluster
 		from its member sections.
 
@@ -103,31 +146,50 @@ def equivalent_sections(clusters, orsecrefs, f_lambda):
 	@post				Equivalent section properties are available as
 						attributed on given Cluster object
 	"""
-	eq_secs = []
-	eq_secrefs = []
+	# List with equivalent section for each cluster
+	eq_secs = [None] * len(clusters)
+	eq_secrefs = [None] * len(clusters)
+
+	# Calculate cluster properties
+	logger.debug("Calculating cluster properties...")
+	for cluster in clusters:
+		if use_segments: # SEGMENT-BASED CLUSTERING
+			# Gather member segments
+			clu_filter = lambda secref, iseg: secref.cluster_labels[iseg] == cluster.label
+			clu_segs = [seg for ref in orsecrefs for i, seg in enumerate(ref.sec) if clu_filter(ref, i)]
+
+			# Compute equivalent properties
+			cluster.eqL = math.sqrt(sum(seg.sec.L/seg.sec.nseg for seg in clu_segs)) / len(clu_segs)
+			cluster.eqdiam = math.sqrt(sum(seg.diam**2 for seg in clu_segs))
+			cluster.eqRa = sum(seg.sec.Ra for seg in clu_segs)/len(clu_segs)
+			cluster.or_area = sum(seg.area() for seg in clu_segs)
+			cluster.or_cmtot = sum(seg.cm*seg.area() for seg in clu_segs)
+			cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
+			for gname in glist:
+				cluster.or_gtot[gname] += sum(getattr(seg, gname)*seg.area() for seg in clu_segs)
+
+		else: # SECTION-BASECD CLUSTERING
+			# Gather member sections
+			clu_secs = [secref for secref in orsecrefs if secref.cluster_label==cluster.label]
+
+			# Compute equivalent properties
+			cluster.eqL = math.sqrt(sum(secref.sec.L for secref in clu_secs)) / len(clu_secs)
+			cluster.eqdiam = math.sqrt(sum(secref.sec.diam**2 for secref in clu_secs))
+			cluster.eqRa = sum(secref.sec.Ra for secref in clu_secs)/len(clu_secs)
+			cluster.or_area = sum(sum(seg.area() for seg in secref.sec) for secref in clu_secs)
+			cluster.or_cmtot = sum(sum(seg.cm*seg.area() for seg in secref.sec) for secref in clu_secs)
+			cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
+			for gname in glist:
+				cluster.or_gtot[gname] += sum(sum(getattr(seg, gname)*seg.area() for seg in secref.sec) for secref in clu_secs)
 
 	# Create equivalent sections and passive electric structure
-	for cluster in clusters:
-		# Gather member sections
-		clu_secs = [secref for secref in orsecrefs if secref.cluster_label==cluster.label]
-
-		# Compute equivalent properties
-		cluster.eqL = math.sqrt(sum(secref.sec.L for secref in clu_secs)) / len(clu_secs)
-		cluster.eqdiam = math.sqrt(sum(secref.sec.diam**2 for secref in clu_secs))
-		cluster.eqRa = sum(secref.sec.Ra for secref in clu_secs)/len(clu_secs)
-		cluster.or_area = sum(sum(seg.area() for seg in secref.sec) for secref in clu_secs)
-		cluster.or_cmtot = sum(sum(seg.cm*seg.area() for seg in secref.sec) for secref in clu_secs)
-		cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
-		for gname in glist:
-			cluster.or_gtot[gname] += sum(sum(getattr(seg, gname)*seg.area() for seg in secref.sec) for secref in clu_secs)
-
+	logger.debug("Building passive section topology...")
+	for i, cluster in enumerate(clusters):
 		# Create equivalent section
 		if cluster.label in [sec.name() for sec in h.allsec()]:
 			raise Exception('Section named {} already exists'.format(cluster.label))
 		h("create %s" % cluster.label)
 		sec = getattr(h, cluster.label)
-		eq_secs.append(sec)
-		eq_secrefs.append(ExtSecRef(sec=sec))
 
 		# Set geometry 
 		sec.L = cluster.eqL
@@ -141,11 +203,19 @@ def equivalent_sections(clusters, orsecrefs, f_lambda):
 		# Set number of segments based on rule of thumb electrotonic length
 		sec.nseg = redtools.min_nseg_hines(sec, f=100.)
 
+		# Append to list of equivalent sections
+		eq_secs[i] = sec
+		eq_secrefs[i] = ExtSecRef(sec=sec)
+
+		logger.debug("Created section '%s' with nseg=%d" % (cluster.label, sec.nseg))
+
 	# Connect equivalent sections
 	for i, clu_i in enumerate(clusters):
 		for j, clu_j in enumerate(clusters):
 			if clu_j is not clu_i and clu_j.parent_label == clu_i.label:
 				eq_secs[j].connect(eq_secs[i], clu_j.parent_pos, 0)
+	logger.info("Connected equivalent sections, topology is as follows:")
+	h.topology() # prints tree topology
 
 	# Set active properties and finetune
 	for i, sec in enumerate(eq_secs):
@@ -197,34 +267,46 @@ if __name__ == '__main__':
 	############################################################################
 	# 1. Cluster into functional regions/according to electrotonic length
 
+	# Compute properties used for clustering
 	logger.info("Computing electrotonic path lengths...")
 	f_lambda = 100. # frequency for electrotonic length
-	for secref in allsecrefs:
-		redtools.assign_electrotonic_length(secref, allsecrefs, f_lambda, gleak_name)
+	redtools.assign_electrotonic_length(somaref, allsecrefs, f_lambda, 
+										gleak_name, allseg=True)
 
 	# Cluster soma
 	somaclu = Cluster('soma')
-	somaref.cluster_label = 'soma'
+	somaref.cluster_labels = ['soma'] * somaref.sec.nseg
 	somaref.table_index = 0
 	somaclu.parent_label = 'soma'
 	somaclu.parent_pos = 0.0
 	clusters = [somaclu]
 
-	# Cluster dendritic trees
-	logger.info("Clustering sections...")
+	# Cluster segments in each dendritic tree
 	thresholds = (0.4, 1.0) # (0.4, 1.0) determine empirically for f=100Hz
 	logger.info("Clustering left tree (dend0)...")
-	redtools.clusterize_electrotonic(dendLrefs[0], allsecrefs, thresholds, clusters)
+	redtools.clusterize_seg_electrotonic(dendLrefs[0], allsecrefs, thresholds, clusters)
+
 	logger.info("Clustering right tree (dend1)...")
-	redtools.clusterize_electrotonic(dendRrefs[0], allsecrefs, thresholds, clusters)
-	cluster_relations = set()
-	redtools.cluster_topology(somaref, allsecrefs, cluster_relations)
-	raise Exception('breakpoint')
+	redtools.clusterize_seg_electrotonic(dendRrefs[0], allsecrefs, thresholds, clusters)
+
+	# Determine cluster topology
+	redtools.assign_topology(clusters, ['soma', 'trunk', 'smooth', 'spiny'])
 
 	############################################################################
 	# 2. Create equivalent sections (compute ppties from cluster sections)
+
+	# Create new sections
 	logger.info("Creating equivalent sections...")
 	eq_secrefs = equivalent_sections(clusters, allsecrefs, f_lambda)
+	
+	# Delete original model sections & set ion styles
+	for sec in h.allsec(): # makes each section the CAS
+		if sec.name().startswith('SThcell'): # original model sections
+			h.delete_section()
+		else: # equivalent model sections
+			h.ion_style("na_ion",1,2,1,0,1)
+			h.ion_style("k_ion",1,2,1,0,1)
+			h.ion_style("ca_ion",3,2,1,1,1)
 
 	############################################################################
 	# 3. Finetuning/fitting of active properties

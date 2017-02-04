@@ -11,10 +11,11 @@ Cell reduction helper functions.
 import numpy as np
 import matplotlib.pyplot as plt
 import math
+import re
 
 import logging
+logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
-logger.setLevel(logging.DEBUG)
 
 import neuron
 from neuron import h
@@ -128,7 +129,7 @@ def calc_path_ri(secref):
 
 	return secref.pathri0, secref.pathri1
 
-def path_L_electrotonic(secref, f, gleak_name):
+def sec_path_L_elec(secref, f, gleak_name):
 	""" Calculate electrotonic path length from start of the root section
 		of the subtree that the given section is in
 
@@ -143,6 +144,8 @@ def path_L_electrotonic(secref, f, gleak_name):
 	"""
 
 	# Get path from root node to this sections
+	# I.e. all sections starting from root of this subtree (first child of topmost root)
+	# up to and including the current section
 	rootsec = treeroot(secref)
 	calc_path = h.RangeVarPlot('v')
 	rootsec.push()
@@ -181,6 +184,8 @@ def seg_path_L_elec(endseg, f, gleak_name):
 	@return		electrotonic path length
 	"""
 	# Get path from root node to this sections
+	# I.e. all sections starting from root of this subtree (first child of topmost root)
+	# up to and including the current section
 	secref = h.SectionRef(sec=endseg.sec)
 	rootsec = treeroot(secref)
 	calc_path = h.RangeVarPlot('v')
@@ -196,14 +201,18 @@ def seg_path_L_elec(endseg, f, gleak_name):
 	# Compute electrotonic path length
 	path_L_elec = 0.0
 	path_secs = list(root_path)
+	assert(endseg.sec in path_secs)
 	for i, psec in enumerate(path_secs):
 		L_seg = psec.L/psec.nseg # segment length
 		for seg in psec:
+			# Check if we have reached our target segment
+			if seg.sec.same(endseg.sec) and (seg.x == endseg.x):
+				return path_L_elec
 			lamb_seg = seg_lambda(seg, gleak_name, f)
 			L_elec = L_seg/lamb_seg
 			path_L_elec += L_elec
 
-	return path_L_elec
+	raise Exception('End segment not reached')
 
 
 ################################################################################
@@ -242,14 +251,20 @@ def getsecref(sec, refs):
 
 def sameparent(secrefA, secrefB):
 	""" Check if sections have same parent section """
-	return secrefA.has_parent() and secrefB.has_parent() and (
-		secrefA.parent is secrefB.parent)
+	if not (secrefA.has_parent() and secrefB.has_parent()):
+		return False
+	apar = secrefA.parent # changes CAS
+	bpar = secrefB.parent # changes CAS
+	h.pop_section()
+	h.pop_section()
+	return apar.same(bpar)
 
 def treeroot(secref):
 	""" Find the root section of the tree that given sections belongs to.
 		I.e. the first section after the root of the entire cell.
 	"""
-	orig = secref.root
+	orig = secref.root # changes the cas
+	h.pop_section()
 	for root in orig.children():
 		# Get subtree of the current root
 		roottree = h.SectionList()
@@ -397,12 +412,12 @@ def assign_strahler_order(noderef, secrefs, par_order):
 		# nonzero and equal: increment
 		noderef.strahlernumber = leftref.strahlernumber + 1
 
-def assign_electrotonic_length(noderef, allsecrefs, f, gleak_name):
+def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False):
 	""" Assign length constant and electrotonic path length to 0-end and
-		1-end for each section in tree, starting from the given parent section
+		1-end for each section in subtree of given root section.
 
-	@type	noderef		SectionRef
-	@param	noderef		Section reference to current node
+	@type	rootref		SectionRef
+	@param	rootref		Section reference to current node
 
 	@type	allsecrefs	list(SectionRef)
 	@param	allsecrefs	references to all sections in the cell
@@ -413,25 +428,80 @@ def assign_electrotonic_length(noderef, allsecrefs, f, gleak_name):
 						- 'pathL0': electrotonic path length to 0-end
 						- 'pathL1': Electrotonic path length to 1-end
 	"""
-	if noderef is None:
+	if rootref is None:
 		return
 
 	# Compute length constant
-	gleak = sum([getattr(seg, gleak_name) for seg in noderef.sec])
-	gleak /= noderef.sec.nseg # average gleak of segments in section
-	lambda_f = electrotonic_length(noderef.sec, gleak, f)
-	noderef.lambda_f = lambda_f
-	noderef.f_lambda = f
+	gleak = sum([getattr(seg, gleak_name) for seg in rootref.sec])
+	gleak /= rootref.sec.nseg # average gleak of segments in section
+	lambda_f = electrotonic_length(rootref.sec, gleak, f)
+	rootref.lambda_f = lambda_f
+	rootref.f_lambda = f
 
 	# Compute electrotonic path length
-	path_L_electrotonic(noderef, f, gleak_name) # assigns attributed pathL0 and pathL1
+	if allseg:
+		rootref.pathL_elec = [0.0]*rootref.sec.nseg
+		for i, seg in enumerate(rootref.sec):
+			# visit every segment expcent 0/1 end zero-area segments
+			pathL = seg_path_L_elec(seg, f, gleak_name)
+			rootref.pathL_elec[i] = pathL
+	pathL0, pathL1 = sec_path_L_elec(rootref, f, gleak_name)
+	rootref.pathL0 = pathL0
+	rootref.pathL1 = pathL1
 
 	# Assign to children
+	for childsec in rootref.sec.children():
+		childref = getsecref(childsec, allsecrefs)
+		assign_electrotonic_length(childref, allsecrefs, f, gleak_name, allseg=allseg)
+
+def clusterize_seg_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix=''):
+	""" Cluster segments in dendritic tree based on length divided by 
+		length constant (i.e. length in terms of its electrotonic length) 
+		measured from soma section.
+
+	@type	noderef		SectionRef
+	@param	noderef		Section reference to current node
+
+	@type	allsecrefs	list(SectionRef)
+	@param	allsecrefs	references to all sections in the cell
+
+	@type	thresholds	tuple(float)
+	@param	thresholds	one or two thresholds on electrotonic path length 
+						to distinguish between trunk/smooth/spiny sections
+
+	@type	clusterlist	list(Cluster)
+	@param	clusterlist	list of existing Clusters
+
+	@pre				all section references must have their length constant
+						set using assign_electrotonic_length
+	"""
+	if noderef is None:
+		return
+
+	# Cluster each segment
+	noderef.cluster_labels = ['unassigned'] * noderef.sec.nseg
+	for i in xrange(noderef.sec.nseg):
+		pathL = noderef.pathL_elec[i] # electrotonic path length of segment i
+		if pathL <= thresholds[0]:
+			noderef.cluster_labels[i] = 'trunk' + labelsuffix
+		elif len(thresholds) > 1 and pathL <= thresholds[1]:
+			noderef.cluster_labels[i] = 'smooth' + labelsuffix
+		else:
+			noderef.cluster_labels[i] = 'spiny' + labelsuffix
+
+	# If any new clusters created, create Cluster objects
+	for label in noderef.cluster_labels:
+		if not any(clu.label == label for clu in clusterlist):
+			newclu = Cluster(label)
+			clusterlist.append(newclu)
+
+	# Cluster children (iteratively)
 	for childsec in noderef.sec.children():
 		childref = getsecref(childsec, allsecrefs)
-		assign_electrotonic_length(childref, allsecrefs, f, gleak_name)
+		clusterize_seg_electrotonic(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
 
-def clusterize_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix=''):
+
+def clusterize_sec_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix=''):
 	""" Cluster dendritic tree based on length divided by length constant
 		(i.e. length in terms of its electrotonic length) measured from
 		soma section.
@@ -487,7 +557,7 @@ def clusterize_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labels
 	# Cluster children (iteratively)
 	for childsec in noderef.sec.children():
 		childref = getsecref(childsec, allsecrefs)
-		clusterize_electrotonic(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
+		clusterize_sec_electrotonic(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
 
 def clusterize_custom(noderef, allsecrefs, clusterfun, clusterlist, labelsuffix='', parent_pos=1.0):
 	""" Cluster dendritic tree based on custom criterion
@@ -630,6 +700,36 @@ def cluster_topology(rootref, allsecrefs, relations):
 			relations.add((rootref.cluster_label, childref.cluster_label))
 		# determine topology of subtree
 		cluster_topology(childref, allsecrefs, relations)
+
+def assign_topology(clusters, radial_prefixes):
+	""" Assign parent_label and parent_pos for each Cluster in clusters
+		based on the order of prefixes, which should be given in radial
+		order starting from soma
+	"""
+	for clu in clusters:
+		prepat = re.compile(r'^[a-zA-Z0-9]+') # same as ^[^\W_]+ : matches anything before first underscore
+		match = re.search(prepat, clu.label) 
+		clu_prefix = match.group()
+
+		# Defaults
+		clu.parent_label = clu.label # if no parent found it is root cluster
+		clu.parent_pos = 1.0
+
+		# look for next prefix in anti-radial direction that is available
+		prefix_index = radial_prefixes.index(clu_prefix)
+		parent_index = prefix_index
+		while parent_index > 0:
+			parent_prefix = radial_prefixes[parent_index-1]
+			parent_clu = next((clu for clu in clusters if clu.label.startswith(parent_prefix)), None)
+			if parent_clu is not None:
+				logger.debug("Found parent <%s> for cluster <%s>" % (parent_clu.label, clu.label))
+				clu.parent_label = parent_clu.label
+				break
+			parent_index -= 1
+
+		# Sanity check
+		assert(prefix_index==0 or clu.parent_label!=clu.label)
+
 
 if __name__ == '__main__':
 	plotconductances(treestruct()[1], 1, loadgstruct('gcaT_CaT'), includebranches=[1,2,5])
