@@ -28,6 +28,7 @@ import re
 from common import analysis
 import reduction_tools
 from reduction_tools import lambda_AC
+import reduction_analysis
 import reduce_marasco as marasco
 
 # Load NEURON mechanisms
@@ -274,7 +275,8 @@ def stn_cell(cellmodel):
 			number of segments is determined from the electrotonic
 			length to yield sufficient accuracy
 
-	3		Same as 2, except only one segment per secion is used
+	3		Reduced Gillies & Willshaw STN model using Bush & Sejnowski 
+			reduction method.
 
 	4		Gillies & Willshaw STN cell model reduced using
 			Marasco's reduction method with a custom clustering
@@ -291,6 +293,7 @@ def stn_cell(cellmodel):
 			qualitatively similar behaviour to the full model.
 	"""
 	stims = None
+
 	if cellmodel==1: # Full model
 		soma, dends, stims = stn_cell_gillies()
 		# Load section indicated with arrow in fig. 5C
@@ -299,16 +302,20 @@ def stn_cell(cellmodel):
 		dendsec = h.SThcell[0].dend1[7]
 		dendloc = 0.8 # approximate location along dendrite in fig. 5C
 		allsecs = [soma] + list(dends[0]) + list(dends[1])
+
 	elif cellmodel==2: # Rall - optimal nseg
 		soma, dends, stims = stn_cell_Rall()
 		dendsec = dends[1]
 		dendloc = 0.9
 		allsecs = [soma] + list(dends)
-	elif cellmodel==3: # Rall - one segment
-		soma, dends, stims = stn_cell_Rall(oneseg=True)
-		dendsec = dends[1]
+
+	elif cellmodel==3: # Bush & Sejnowski method
+		clusters, eq_secs = bush.reduce_bush_sejnowski()
+		soma = next(sec for sec in eq_secs if sec.name().startswith('soma'))
+		dendsec = next(sec for sec in eq_secs if sec.name().startswith('spiny'))
 		dendloc = 0.9
-		allsecs = [soma] + list(dends)
+		allsecs = eq_secs
+
 	elif cellmodel==4 or cellmodel==5: # Marasco - custom clustering
 		marasco_method = True # whether trees will be averaged (True, as in paper) or Rin conserved (False)
 		if cellmodel==5:
@@ -1139,18 +1146,23 @@ def test_burstresurgent(soma, dends_locs, stims):
 	# plt.show(block=False)
 
 if __name__ == '__main__':
+	reduction_analysis.plot_path_ppty('gk_sKCa')
+
 	# Make cell
-	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=4)
+	reduction_method = 4
+	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Cell adjustments
-	soma.Ra = 2*soma.Ra # correct incorrect calculation for Ra soma cluster
+	if reduction_method == 4: # manual adjustments to Marasco reduction
+		soma.Ra = 2*soma.Ra # correct incorrect calculation for Ra soma cluster
+		for sec in h.allsec():
+			for seg in sec:
+				seg.gpas_STh = 0.75 * seg.gpas_STh
+				seg.cm = 3.0 * seg.cm
+				seg.gna_NaL = 0.6 * seg.gna_NaL
+	elif reduction_method == 3: # manual adjustments to Bush & Sejnowski method
+		pass
 
-	# Adjust ionic conductances
-	for sec in h.allsec():
-		for seg in sec:
-			seg.gpas_STh = 0.75 * seg.gpas_STh
-			seg.cm = 3.0 * seg.cm
-			seg.gna_NaL = 0.6 * seg.gna_NaL
 
 	# Attach duplicate of one tree
 	# from reduction_tools import dupe_subtree
@@ -1158,25 +1170,17 @@ if __name__ == '__main__':
 	# trunk_copy = dupe_subtree(h.trunk_0, copy_mechs	, [])
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
-	# Adjust passive electric ppties/scaling factors
-	# surffact = 1. # f=1 => T=37 ms ; f=2 => T=64 ms
-	# soma.cm = 2.0 * soma.cm
-	# soma.gpas_STh = 6.0 * soma.gpas_STh
-	# for gname in marasco.glist():
-	# 	for seg in soma:
-	# 		seg.__setattr__(gname, getattr(seg, gname)*surffact)
-
 	# Test spontaneous firing
 	# [x] simulated full model
 	# [x] Simulated using average axial resistance (Marasco method)
 	# [x] Simulated using conservation of Rin (no averaging of trees)
-	# recData = test_spontaneous(soma, dends_locs, stims)
+	recData = test_spontaneous(soma, dends_locs, stims)
 	
 	# Test rebound burst simulator protocol
 	# [x] simulated full model
 	# [x] Simulated using average axial resistance (Marasco method)
 	# [x] Simulated using conservation of Rin (no averaging of trees)
-	recData = test_reboundburst(soma, dends_locs, stims)
+	# recData = test_reboundburst(soma, dends_locs, stims)
 
 	# Test generation of plateau potential
 	# [x] simulated full model

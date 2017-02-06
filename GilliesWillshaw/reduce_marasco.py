@@ -485,7 +485,11 @@ def reduce_gillies(customclustering, average_trees):
 	"""
 
 	# Initialize Gillies model
-	h.xopen("createcell.hoc")
+	for sec in h.allsec():
+		if not sec.name().startswith('SThcell'): # original model sections
+			h.delete_section()
+	if not hasattr(h, 'SThcells'):
+		h.xopen("createcell.hoc")
 
 	# Make sections accesible by both name and index + allow to add attributes
 	somaref = ExtSecRef(sec=h.SThcell[0].soma)

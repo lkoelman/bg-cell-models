@@ -33,6 +33,7 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 # Our own modules
 import reduction_tools as redtools
 from reduction_tools import ExtSecRef, Cluster, getsecref # for convenience
+import reduction_analysis as analysis
 
 # Gillies & Willshaw model mechanisms
 gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel
@@ -166,10 +167,12 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 
 	@post				Equivalent section properties are available as
 						attributed on given Cluster object
+
+	@return	eq_refs		list(SectionRef) with references to equivalent section
+						for each cluster (in same order as param clusters)
 	"""
 	# List with equivalent section for each cluster
 	eq_secs = [None] * len(clusters)
-	eq_secrefs = [None] * len(clusters)
 
 	# Calculate cluster properties
 	logger.debug("Calculating cluster properties...")
@@ -224,7 +227,6 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 
 		# Append to list of equivalent sections
 		eq_secs[i] = sec
-		eq_secrefs[i] = ExtSecRef(sec=sec)
 
 		logger.debug("Summary for cluster '%s' : L=%f \tdiam=%f \tRa=%f" % (cluster.label,
 							cluster.eqL, cluster.eqdiam, cluster.eqRa))
@@ -251,11 +253,11 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 		# Scale Cm
 		eq_cm1 = sec.cm * area_ratio
 		eq_cm2 = cluster.or_cmtot / cluster.eq_area # more accurate than cm * or_area/eq_area
-		eq_cm = eq_cm1
+		eq_cm = eq_cm2
 		logger.debug("Cm scaled by ratio is %f (equivalently, cmtot/eq_area=%f)" % (eq_cm1, eq_cm2))
 
 		# Scale Rm
-		or_gleak = cluster.or_gtot[gleak_name]/cluster.or_area
+		or_gleak = cluster.or_gtot[gleak_name] / cluster.or_area
 		eq_gleak = or_gleak * area_ratio # same as reducing Rm by area_new/area_old
 		logger.debug("gleak scaled by ratio is %f (old gleak is %f)" % (eq_gleak, or_gleak))
 
@@ -297,16 +299,20 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 		# Debugging info:
 		logger.debug("Created equivalent section '%s' with \n\tL\tdiam\tcm\tRa\tnseg\
 		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n\n", clusters[i].label, sec.L, sec.diam, sec.cm, sec.Ra, sec.nseg)
-	h.topology() # prints tree topology
+	
+	return eq_secs
 
 
-# def reduce_bush_sejnowski():
-#	""" Reduce STN cell according to Bush & Sejnowski (2016) method """
-if __name__ == '__main__':
+def reduce_bush_sejnowski():
+	""" Reduce STN cell according to Bush & Sejnowski (2016) method """
 
 	############################################################################
 	# 0. Load full model to be reduced (Gillies & Willshaw STN)
-	h.xopen("createcell.hoc")
+	for sec in h.allsec():
+		if not sec.name().startswith('SThcell'): # original model sections
+			h.delete_section()
+	if not hasattr(h, 'SThcells'):
+		h.xopen("createcell.hoc")
 
 	# Make sections accesible by name and index
 	somaref = ExtSecRef(sec=h.SThcell[0].soma)
@@ -350,7 +356,7 @@ if __name__ == '__main__':
 
 	# Create new sections
 	logger.info("Creating equivalent sections...")
-	eq_secrefs = equivalent_sections(clusters, allsecrefs, f_lambda, use_segments=False)
+	eq_secs = equivalent_sections(clusters, allsecrefs, f_lambda, use_segments=False)
 	
 	# Delete original model sections & set ion styles
 	for sec in h.allsec(): # makes each section the CAS
@@ -361,11 +367,17 @@ if __name__ == '__main__':
 			h.ion_style("k_ion",1,2,1,0,1)
 			h.ion_style("ca_ion",3,2,1,1,1)
 
+	# Plot some conductances (compare with full model)
+	# eq_refs = [ExtSecRef(sec=sec) for sec in eq_secs]
+	# eq_somaref = next(ref for ref in eq_refs if ref.sec.name().startswith('soma'))
+	# analysis.plot_tree_ppty(eq_somaref, eq_refs, 'gk_sKCa', 
+	# 			lambda ref:True, lambda ref:ref.sec.name())
+
 	############################################################################
 	# 3. Finetuning/fitting of active properties
 
 	# TODO: fitting using neurotune
-	# return clusters, eq_secrefs
+	return clusters, eq_secs
 
-# if __name__ == '__main__':
-# 	reduce_bush_sejnowski()
+if __name__ == '__main__':
+	reduce_bush_sejnowski()

@@ -9,6 +9,8 @@ Analysis utilities for Marasco reduction
 import math
 import matplotlib.pyplot as plt
 
+from neuron import h
+
 # Own modules
 import reduction_tools
 from reduction_tools import ExtSecRef, Cluster, getsecref
@@ -28,8 +30,13 @@ def plotconductance(secref, gname, titleattr):
 def plot_chan_dist(rootref, allsecrefs, gname, titleattr, plotted=None):
 	""" Recursively plot conductances in each branch by descending the tree.
 		Makes only one plot per cluster per order number (nb. secs from soma).
+
 	@param rootref		SectionRef to root section
+
 	@param titleattr	name of attribute on SectionRef to use as figure title
+
+	EXAMPLE
+	fig, axes = plt.subplots(len(ionchans), 1, sharex=True) # one plot for each channel
 	"""
 	if rootref is None: return
 	if plotted is None: plotted={}
@@ -44,6 +51,95 @@ def plot_chan_dist(rootref, allsecrefs, gname, titleattr, plotted=None):
 	for childsec in rootref.sec.children():
 		childref = getsecref(childsec, allsecrefs)
 		plot_chan_dist(childref, allsecrefs, gname, titleattr, plotted)
+
+def plot_path_ppty(propname, secfilter=None, labelfunc=None):
+	# Initialize Gillies model
+	if not hasattr(h, 'SThcells'):
+		h.xopen("createcell.hoc")
+
+	if secfilter is None:
+		path_indices = (1,2,4,6,8)
+		secfilter = lambda secref: secref.table_index in path_indices
+	
+	if labelfunc is None:
+		labelfunc = lambda secref: "sec {}".format(secref.table_index)
+
+	# Make sections accesible by both name and index + allow to add attributes
+	somaref = ExtSecRef(sec=h.SThcell[0].soma)
+	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0]
+	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1]
+	allsecrefs = [somaref] + dendLrefs + dendRrefs
+
+	# Assign indices
+	somaref.table_index = 0
+	for j, dendlist in enumerate((dendLrefs, dendRrefs)):
+		for i, secref in enumerate(dendlist):
+			secref.table_tree = j
+			secref.table_index = i+1
+
+	# Plot conductance along path
+	plot_tree_ppty(somaref, [somaref]+dendLrefs, propname, secfilter, labelfunc)
+
+def plot_tree_ppty(secref, allsecrefs, propname, secfilter, labelfunc, y_range=None, fig=None, ax=None):
+	""" Descend the given dendritic tree start from the given root section
+		and plot the given propertie.
+
+	@param	secref		SectionRef to root section
+
+	@param	allsecrefs	list(SectionRef) with references to all sections
+						in tree
+
+	@param	propname	segment property to plot
+
+	@param	secfilter	filter function applied to each SectionRef
+	"""
+	if secref is None:
+		return
+	first_call = fig is None
+	if first_call:
+		fig = plt.figure()
+	if y_range is None:
+		y_range = [float('inf'), float('-inf')]
+
+	# Plot current node
+	if secfilter(secref):
+		if not ax:
+			nax = len(fig.axes)
+			for i, ax in enumerate(fig.axes):
+				ax.change_geometry(nax+1, 1, i+1) # change grid and position in grid
+			ax = fig.add_subplot(nax+1, 1, nax+1)
+
+		# get data to plot
+		sec = secref.sec
+		xg = [(seg.x, getattr(seg, propname)) for seg in sec]
+		xvals, gvals = zip(*xg)
+		if min(gvals) < y_range[0]:
+			y_range[0] = min(gvals)
+		if max(gvals) > y_range[1]:
+			y_range[1] = max(gvals)
+
+		# plot it
+		ax.plot(xvals, gvals, 'o')
+		ax.plot(xvals, gvals, '-')
+		# ax.set_xlabel('x')
+		ax.set_ylabel(labelfunc(secref))
+
+		if y_range is not None:
+			ax.set_ylim(y_range)
+
+	# plot children
+	for childsec in secref.sec.children():
+		childref = getsecref(childsec, allsecrefs)
+		plot_tree_ppty(childref, allsecrefs, propname, secfilter, labelfunc, y_range, fig)
+
+	if first_call:
+		plt.suptitle(propname)
+		y_span = y_range[1]-y_range[0]
+		for ax in fig.axes:
+			ax.set_ylim((y_range[0]-0.1*y_span, y_range[1]+0.1*y_span))
+		plt.show(block=False)
+	return fig
+
 
 def compare_models(or_secrefs, eq_secrefs, plot_glist):
 	""" Compare model properties """
