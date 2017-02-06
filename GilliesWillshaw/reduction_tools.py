@@ -61,6 +61,10 @@ def min_nseg_hines(sec, f=100.):
 	""" Minimum number of segments based on electrotonic length """
 	return int(sec.L/(0.1*lambda_AC(sec, f))) + 1
 
+def calc_min_nseg_hines(f, L, diam, Ra, cm):
+	lamb_AC = 1e5 * math.sqrt(diam/(4*math.pi*f*Ra*cm))
+	return int(L/(0.1*lamb_AC)) + 1
+
 def inputresistance_inf(sec, gleak, f):
 	""" Input resistance for semi-infinite cable in units of [Ohm*1e6] """
 	lamb = electrotonic_length(sec, gleak, f)
@@ -105,7 +109,7 @@ def calc_path_ri(secref):
 	@return		tuple pathri0, pathri1
 	"""
 	# Get path from root node to this sections
-	rootsec = treeroot(secref)
+	rootsec = subtreeroot(secref)
 	calc_path = h.RangeVarPlot('v')
 	rootsec.push()
 	calc_path.begin(0.5)
@@ -130,8 +134,8 @@ def calc_path_ri(secref):
 	return secref.pathri0, secref.pathri1
 
 def sec_path_L_elec(secref, f, gleak_name):
-	""" Calculate electrotonic path length from start of the root section
-		of the subtree that the given section is in
+	""" Calculate electrotonic path length up to but not including soma
+		section (the topmost root section).
 
 	ALGORITHM
 	- walk each segment from root section (child of top root) to the given
@@ -142,11 +146,14 @@ def sec_path_L_elec(secref, f, gleak_name):
 
 	FIXME: in root node, start walking segments only from midpoint
 	"""
+	rootsec = subtreeroot(secref)
+	rootparent = rootsec.parentseg()
+	if rootparent is None:
+		secref.pathL0 = 0.0
+		secref.pathL1 = 0.0
+		return 0.0, 0.0 # if we are soma/topmost root: path length is zero
 
-	# Get path from root node to this sections
-	# I.e. all sections starting from root of this subtree (first child of topmost root)
-	# up to and including the current section
-	rootsec = treeroot(secref)
+	# Get path from soma (not including) up to and including this section
 	calc_path = h.RangeVarPlot('v')
 	rootsec.push()
 	calc_path.begin(0.5)
@@ -158,8 +165,8 @@ def sec_path_L_elec(secref, f, gleak_name):
 	h.pop_section()
 
 	# Compute electrotonic path length
-	secref.pathL1 = 0. # path length from root sec to 1 end of this sec
-	secref.pathL0 = 0. # path length from root sec to 0 end of this sec
+	secref.pathL1 = 0.0 # path length from root sec to 1 end of this sec
+	secref.pathL0 = 0.0 # path length from root sec to 0 end of this sec
 	path_secs = list(root_path)
 	path_len = len(path_secs)
 	for i, psec in enumerate(path_secs):
@@ -174,8 +181,8 @@ def sec_path_L_elec(secref, f, gleak_name):
 	return secref.pathL0, secref.pathL1
 
 def seg_path_L_elec(endseg, f, gleak_name):
-	""" Calculate electrotonic path length from start of the root section
-		of the subtree that the given segment is in
+	""" Calculate electrotonic path length from start of segment up to but 
+		not including soma section (the topmost root section).
 
 	ALGORITHM
 	- walk each segment from root section (child of top root) to the given
@@ -183,11 +190,13 @@ def seg_path_L_elec(endseg, f, gleak_name):
 
 	@return		electrotonic path length
 	"""
-	# Get path from root node to this sections
-	# I.e. all sections starting from root of this subtree (first child of topmost root)
-	# up to and including the current section
 	secref = h.SectionRef(sec=endseg.sec)
-	rootsec = treeroot(secref)
+	rootsec = subtreeroot(secref)
+	rootparent = rootsec.parentseg()
+	if rootparent is None:
+		return 0.0 # if we are soma/topmost root: path length is zero
+
+	# Get path from soma (not including) up to and including this section
 	calc_path = h.RangeVarPlot('v')
 	rootsec.push()
 	calc_path.begin(0.5)
@@ -259,7 +268,7 @@ def sameparent(secrefA, secrefB):
 	h.pop_section()
 	return apar.same(bpar)
 
-def treeroot(secref):
+def subtreeroot(secref):
 	""" Find the root section of the tree that given sections belongs to.
 		I.e. the first section after the root of the entire cell.
 	"""
@@ -535,6 +544,9 @@ def clusterize_sec_electrotonic(noderef, allsecrefs, thresholds, clusterlist, la
 	else:
 		noderef.cluster_label = 'spiny' + labelsuffix
 
+	logger.debug("Section with index {} assigned to cluster {}".format(
+					noderef.table_index, noderef.cluster_label))
+
 	# Determine relation to parent cluster
 	# parref = getsecref(noderef.parent, allsecrefs)
 	# if parref.cluster_label != noderef.cluster_label:
@@ -542,9 +554,6 @@ def clusterize_sec_electrotonic(noderef, allsecrefs, thresholds, clusterlist, la
 	# else:
 	# 	noderef.parent_label = parref.parent_label
 	# noderef.parent_pos = parent_pos # by default at end of section
-
-	logger.debug("Section with index {} assigned to cluster {}".format(
-					noderef.table_index, noderef.cluster_label))
 
 	# If first section belonging to this cluster, add new Cluster object
 	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
