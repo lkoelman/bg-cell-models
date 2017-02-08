@@ -9,6 +9,7 @@ described in Bush & Sejnowski (1993)
 
 # Python modules
 import math
+import pickle
 
 # Make sure other modules are on Python path
 import sys, os.path
@@ -381,11 +382,22 @@ def rebuild_sections(clusters):
 				eq_secs[j].connect(eq_secs[i], clu_j.parent_pos, 0)
 	return eq_secs
 
-def save_clusters(clusters, path):
-	pass
+def save_clusters(clusters, filepath):
+	""" Save list of Cluster objects to file """
+	clu_file = open(filepath, "wb")
+	try:
+		pickle.dump(clusters, clu_file)
+	finally:
+		clu_file.close()
 
-def load_clusters(path):
-	pass
+def load_clusters(filepath):
+	""" Load list of Cluster objects from file """
+	clu_file = open(filepath, "rb")
+	try:
+		clusters = pickle.load(clu_file)
+		return clusters
+	finally:
+		clu_file.close()
 
 def reduce_bush_sejnowski():
 	""" Reduce STN cell according to Bush & Sejnowski (2016) method """
