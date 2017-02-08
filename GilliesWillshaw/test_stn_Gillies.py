@@ -24,12 +24,14 @@ modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
 sys.path.append(modulesbase)
 import collections
 import re
+import math
 
 from common import analysis
 import reduction_tools
 from reduction_tools import lambda_AC
 import reduction_analysis
 import reduce_marasco as marasco
+import reduce_bush_sejnowski as bush
 
 # Load NEURON mechanisms
 # add this line to nrn/lib/python/neuron/__init__.py/load_mechanisms()
@@ -899,7 +901,7 @@ def test_reboundburst(soma, dends_locs, stims):
 
 	stim2.delay = 500
 	stim2.dur = 500
-	stim2.amp = -0.15 # -0.25 in full model
+	stim2.amp = -0.25 # -0.25 in full model
 
 	stim3.delay = 1000
 	stim3.dur = 1000
@@ -1146,10 +1148,11 @@ def test_burstresurgent(soma, dends_locs, stims):
 	# plt.show(block=False)
 
 if __name__ == '__main__':
-	reduction_analysis.plot_path_ppty('gk_sKCa')
+	# Plot channel distribution in full model
+	# reduction_analysis.plot_path_ppty('gk_sKCa')
 
 	# Make cell
-	reduction_method = 4
+	reduction_method = 3
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Cell adjustments
@@ -1161,7 +1164,15 @@ if __name__ == '__main__':
 				seg.cm = 3.0 * seg.cm
 				seg.gna_NaL = 0.6 * seg.gna_NaL
 	elif reduction_method == 3: # manual adjustments to Bush & Sejnowski method
-		pass
+		Rm_factor = math.sqrt(1.)
+		Cm_factor = math.sqrt(1.)
+		rc_factor = Rm_factor*Cm_factor
+		for sec in h.allsec():
+			print("Scaling RC of section {} by factor {:.3f}".format(sec.name(), rc_factor))
+			for seg in sec:
+				seg.gpas_STh = seg.gpas_STh / Rm_factor # multiply Rm is divide gpas
+				seg.cm = seg.cm * Cm_factor
+				seg.gna_NaL = 0.75 * seg.gna_NaL
 
 
 	# Attach duplicate of one tree
@@ -1174,13 +1185,13 @@ if __name__ == '__main__':
 	# [x] simulated full model
 	# [x] Simulated using average axial resistance (Marasco method)
 	# [x] Simulated using conservation of Rin (no averaging of trees)
-	recData = test_spontaneous(soma, dends_locs, stims)
+	# recData = test_spontaneous(soma, dends_locs, stims)
 	
 	# Test rebound burst simulator protocol
 	# [x] simulated full model
 	# [x] Simulated using average axial resistance (Marasco method)
 	# [x] Simulated using conservation of Rin (no averaging of trees)
-	# recData = test_reboundburst(soma, dends_locs, stims)
+	recData = test_reboundburst(soma, dends_locs, stims)
 
 	# Test generation of plateau potential
 	# [x] simulated full model

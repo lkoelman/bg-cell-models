@@ -4,7 +4,7 @@ described in Bush & Sejnowski (1993)
 
 
 @author Lucas Koelman
-@date	02-02-2016
+@date	02-02-2017
 """
 
 # Python modules
@@ -154,7 +154,7 @@ def interp_gbar(L_elec, gname, bound_segs, bound_L):
 	gbar_interp /= len(bound_segs) # take average
 	return gbar_interp
 
-def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
+def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True, area_scaling=True):
 	""" Compute properties of equivalent section for cluster
 		from its member sections.
 
@@ -164,6 +164,12 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 
 	@type	orsecrefs	list(SectionRef)
 	@param	orsecrefs	references to all  sections in the cell
+
+	@type	area_scaling	bool
+	@param	area_scaling	If true: use the ratio of original area to new area
+							to scale Cm and all conductances (including gpas) in
+							each section so their total value from the full model
+							is conserved
 
 	@post				Equivalent section properties are available as
 						attributed on given Cluster object
@@ -188,6 +194,7 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 			cluster.eqRa = sum(seg.sec.Ra for seg in clu_segs) / len(clu_segs)
 			cluster.or_area = sum(seg.area() for seg in clu_segs)
 			cluster.or_cmtot = sum(seg.cm*seg.area() for seg in clu_segs)
+			cluster.or_cm = cluster.or_cmtot / cluster.or_area
 			cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
 			for gname in glist:
 				cluster.or_gtot[gname] += sum(getattr(seg, gname)*seg.area() for seg in clu_segs)
@@ -251,7 +258,7 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 		logger.debug("Ratio of areas is %f" % area_ratio)
 
 		# Scale Cm
-		eq_cm1 = sec.cm * area_ratio
+		eq_cm1 = cluster.or_cm * area_ratio
 		eq_cm2 = cluster.or_cmtot / cluster.eq_area # more accurate than cm * or_area/eq_area
 		eq_cm = eq_cm2
 		logger.debug("Cm scaled by ratio is %f (equivalently, cmtot/eq_area=%f)" % (eq_cm1, eq_cm2))
@@ -263,34 +270,49 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 
 		# Set number of segments based on rule of thumb electrotonic length
 		sec.nseg = redtools.calc_min_nseg_hines(100., sec.L, sec.diam, sec.Ra, eq_cm)
-		for seg in sec:
-			setattr(seg, 'cm', eq_cm)
-			setattr(seg, gleak_name, eq_gleak)
 
-		# Scale active conductances
+		# Save Cm and conductances for each section for reconstruction
+		cluster.nseg = sec.nseg # save for reconstruction
+		cluster.eq_gbar = dict((gname, [float('NaN')]*cluster.nseg) for gname in glist)
+		cluster.eq_cm = [float('NaN')]*cluster.nseg
+
+		# Set Cm and gleak (Rm) for each segment
+		if area_scaling:
+			for j, seg in enumerate(sec):
+				setattr(seg, 'cm', eq_cm)
+				setattr(seg, gleak_name, eq_gleak)
+				cluster.eq_cm[j] = eq_cm
+				cluster.eq_gbar[gleak_name][j] = eq_gleak
+
+		# Get active conductances
 		active_glist = list(glist)
 		active_glist.remove(gleak_name) # get list of active conductances
 
 		# Set initial conductances by interpolation
-		for seg in sec:
+		for j, seg in enumerate(sec):
 			L_elec = redtools.seg_path_L_elec(seg, f_lambda, gleak_name)
 			bound_segs, bound_L = findseg_L_elec(L_elec, orsecrefs)
 			for gname in active_glist:
 				gval = interp_gbar(L_elec, gname, bound_segs, bound_L)
 				seg.__setattr__(gname, gval)
+				cluster.eq_gbar[gname][j] = gval
 
 		# Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
-		for gname in active_glist:
-			eq_gtot = sum(getattr(seg, gname)*seg.area() for seg in sec)
-			if eq_gtot <= 0.:
-				eq_gtot = 1.
-			or_gtot = cluster.or_gtot[gname]
-			for seg in sec:
-				# conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
-				# seg.__setattr__(gname, getattr(seg, gname)*clusters[i].or_area/clusters[i].eq_area)
-				seg.__setattr__(gname, getattr(seg, gname)*or_gtot/eq_gtot)
+		if area_scaling:
+			for gname in active_glist:
+				eq_gtot = sum(getattr(seg, gname)*seg.area() for seg in sec)
+				if eq_gtot <= 0.:
+					eq_gtot = 1.
+				or_gtot = cluster.or_gtot[gname]
+				for j, seg in enumerate(sec):
+					# conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
+					# seg.__setattr__(gname, getattr(seg, gname)*clusters[i].or_area/clusters[i].eq_area)
+					gval = getattr(seg, gname) * or_gtot/eq_gtot
+					seg.__setattr__(gname, gval)
+					cluster.eq_gbar[gname][j] = gval # save for reconstruction
 
-			# Check calculation
+		# Check gbar calculation
+		for gname in active_glist:
 			gtot_or = cluster.or_gtot[gname]
 			gtot_eq_scaled = sum(getattr(seg, gname)*seg.area() for seg in sec)
 			logger.debug("conductance %s : gtot_or = %.3f ; gtot_eq = %.3f",
@@ -302,6 +324,68 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True):
 	
 	return eq_secs
 
+def rebuild_sections(clusters):
+	""" Build the reduced model from a previous reduction where the equivalent
+		section properties are stored in each Cluster object.
+	"""
+	eq_secs = [None] * len(clusters)
+
+	# Create equivalent section for each cluster
+	for i, cluster in enumerate(clusters):
+		# Create equivalent section
+		if cluster.label in [sec.name() for sec in h.allsec()]:
+			raise Exception('Section named {} already exists'.format(cluster.label))
+		h("create %s" % cluster.label)
+		sec = getattr(h, cluster.label)
+		eq_secs[i] = sec
+
+		# Set geometry & global passive properties
+		sec.L = cluster.eqL
+		sec.diam = cluster.eqdiam
+		sec.Ra = cluster.eqRa
+		sec.nseg = cluster.nseg
+		logger.debug("Summary for cluster '%s' : L=%f \tdiam=%f \tRa=%f" % (cluster.label,
+							cluster.eqL, cluster.eqdiam, cluster.eqRa))
+
+		# Insert all mechanisms
+		for mech in mechs_chans.keys():
+			sec.insert(mech)
+		# Get active conductances
+		active_glist = list(glist)
+		active_glist.remove(gleak_name) # get list of active conductances
+
+		# Set ion styles
+		sec.push()
+		h.ion_style("na_ion",1,2,1,0,1)
+		h.ion_style("k_ion",1,2,1,0,1)
+		h.ion_style("ca_ion",3,2,1,1,1)
+		h.pop_section()
+
+		# Set Cm and conductances for each section (RANGE variables)
+		for j, seg in enumerate(sec):
+			# passive properties
+			setattr(seg, 'cm', cluster.eq_cm[j])
+			setattr(seg, gleak_name, cluster.eq_gbar[gleak_name][j])
+			# active conductances
+			for gname in active_glist:
+				if len(cluster.eq_gbar[gname] != cluster.nseg):
+					raise Exception("Number of gbar values does not match number of segments")
+				if any(math.isnan(g) for g in cluster.eq_gbar[gname]):
+					raise Exception("Conductance vector contains NaN values")
+				seg.__setattr__(gname, cluster.eq_gbar[gname][j])
+
+	# Connect equivalent sections
+	for i, clu_i in enumerate(clusters):
+		for j, clu_j in enumerate(clusters):
+			if clu_j is not clu_i and clu_j.parent_label == clu_i.label:
+				eq_secs[j].connect(eq_secs[i], clu_j.parent_pos, 0)
+	return eq_secs
+
+def save_clusters(clusters, path):
+	pass
+
+def load_clusters(path):
+	pass
 
 def reduce_bush_sejnowski():
 	""" Reduce STN cell according to Bush & Sejnowski (2016) method """
@@ -356,7 +440,8 @@ def reduce_bush_sejnowski():
 
 	# Create new sections
 	logger.info("Creating equivalent sections...")
-	eq_secs = equivalent_sections(clusters, allsecrefs, f_lambda, use_segments=False)
+	eq_secs = equivalent_sections(clusters, allsecrefs, f_lambda, 
+				use_segments=False, area_scaling=True)
 	
 	# Delete original model sections & set ion styles
 	for sec in h.allsec(): # makes each section the CAS
