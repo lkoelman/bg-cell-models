@@ -53,12 +53,21 @@ def plot_chan_dist(rootref, allsecrefs, gname, titleattr, plotted=None):
 		plot_chan_dist(childref, allsecrefs, gname, titleattr, plotted)
 
 def plot_path_ppty(propname, secfilter=None, labelfunc=None):
+	""" Plot segment property along a given dendritic path in the full
+		Gillies & Willshaw STN model
+
+	@param	secfilter	function that maps a SectionRef to a bool indicating
+						whether it should be plotted or not
+
+	@param	labelfunc	function that maps a SectionRef to a label for the
+						plot that is generated for this section
+	"""
 	# Initialize Gillies model
 	if not hasattr(h, 'SThcells'):
 		h.xopen("createcell.hoc")
 
 	if secfilter is None:
-		path_indices = (1,2,4,6,8)
+		path_indices = (1,2,4,6,8) # longest path in tree
 		secfilter = lambda secref: secref.table_index in path_indices
 	
 	if labelfunc is None:

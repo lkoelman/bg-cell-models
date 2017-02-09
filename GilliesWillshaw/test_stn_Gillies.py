@@ -28,7 +28,7 @@ import math
 
 from common import analysis
 import reduction_tools
-from reduction_tools import lambda_AC
+from reduction_tools import lambda_AC, ExtSecRef, Cluster, getsecref
 import reduction_analysis
 import reduce_marasco as marasco
 import reduce_bush_sejnowski as bush
@@ -571,68 +571,98 @@ def applyApamin(soma, dends):
 # Recording & Analysis functions
 ################################################################################
 
-def rec_currents_activations(traceSpecs):
+def rec_currents_activations(traceSpecs, sec_tag, sec_loc, ion_species=None, 
+								currents=True, chan_states=True, ion_conc=True):
 	""" Specify trace recordings for all ionic currents
 		and activation variables 
 
 	@param traceSpecs	collections.OrderedDict of trace specifications
 
+	@param	sec_tag		tag for the section in the section dictionary passed
+						to analysis.recordTraces. Note that the first two
+						characters must be unique
+
+	@param	sec_loc		location in the section to record the variable
+						(location maps to a segment where the var is recorded)
+
 	@effect				for each ionic current, insert a trace specification
 						for the current, open fractions, activation, 
 						and inactivation variables
 	"""
-	# Na currents
-	traceSpecs['I_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'} # transient sodium
-	traceSpecs['I_NaP'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'} # persistent sodium
-	# K currents
-	traceSpecs['I_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'ik'}
-	traceSpecs['I_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'ik'}
-	traceSpecs['I_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'isKCa'}
-	# Ca currents
-	traceSpecs['I_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iLCa'}
-	traceSpecs['I_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iNCa'}
-	traceSpecs['I_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'iCaT'}
-	# Nonspecific currents
-	traceSpecs['I_HCN'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'ih'}
+	if ion_species is None:
+		ion_species = ['na', 'k', 'ca', 'nonspecific']
 
-	# Na Channel open fractions
-	traceSpecs['O_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'o'}
-	# NOTE: leak currents such as I_NaL and gpas_STh are always open
-	# K channel open fractions
-	traceSpecs['O_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'n'}
-	traceSpecs['O_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'p'}
-	traceSpecs['O_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'w'}
-	# Ca channel open fractions
-	traceSpecs['O_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'o_L'}
-	traceSpecs['O_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'o_N'}
-	traceSpecs['O_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'o'}
-	# Nonspecific channel open fractions
-	traceSpecs['O_HCN'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'f'}
+	# Derive suffix for traces from section tag
+	suf = '_' + sec_tag[0:2]
+	ts = traceSpecs
 
-	# Na channel activated fractions
-	traceSpecs['A_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'m'}
-	# K channels activated fractions - same as open fractions (single state variable)
-	traceSpecs['A_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'n'}
-	traceSpecs['A_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'p'}
-	traceSpecs['A_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'w'}
-	# Ca channels activated fractions
-	traceSpecs['A_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'q'} # shared activation var for L/N
-	traceSpecs['A_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'q'} # shared activation var for L/N
-	traceSpecs['A_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'r'}
-	# Nonspecific channels activated fractions - same as open fractions (single state variable)
-	traceSpecs['A_HCN'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'f'}
+	if 'na' in ion_species:
+		if currents:
+			# Na currents
+			ts['I_NaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Na','var':'ina'} # transient sodium
+			ts['I_NaP'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'NaL','var':'inaL'} # persistent sodium
+		if chan_states:
+			# Na Channel open fractions
+			ts['O_NaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Na','var':'o'}
+			# NOTE: leak currents such as I_NaL and gpas_STh are always open
+			# Na channel activated fractions
+			ts['A_NaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Na','var':'m'}
+			# Na channel inactivated fractions
+			ts['B_NaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Na','var':'h'}
 
-	# Na channel inactivated fractions
-	traceSpecs['B_NaT'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'h'}
-	# K channels inactivated fractions - not present (single state variable)
-	# Ca channels inactivated fractions
-	traceSpecs['B_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'h'} # Ca-depentdent inactivation
-	traceSpecs['B_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'u'} # V-dependent inactivation
-	traceSpecs['B_CaT_f'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'s'} # fast inactivation
-	traceSpecs['B_CaT_s'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'d'} # slow inactivation
-	# Nonspecific channels activated fractions - not present (single state variable)
+	if 'k' in ion_species:
+		if currents:
+			# K currents
+			ts['I_KDR'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'KDR','var':'ik'}
+			ts['I_Kv3'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Kv31','var':'ik'}
+			ts['I_KCa'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'sKCa','var':'isKCa'}
+		if chan_states:
+			# K channel open fractions
+			ts['O_KDR'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'KDR','var':'n'}
+			ts['O_Kv3'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Kv31','var':'p'}
+			ts['O_KCa'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'sKCa','var':'w'}
+			# K channels activated fractions - same as open fractions (single state variable)
+			ts['A_KDR'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'KDR','var':'n'}
+			ts['A_Kv3'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Kv31','var':'p'}
+			ts['A_KCa'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'sKCa','var':'w'}
+			# K channels inactivated fractions - not present (single state variable)
 
-def plot_currents_activations(recData, recordStep, timeRange=None):
+	if 'ca' in ion_species:
+		# Ions
+		ts['C_CaL_cai'+suf] = {'sec':sec_tag,'loc':sec_loc,'var':'cai'} # intracellular calcium concentration
+		ts['C_CaT_cai'+suf] = {'sec':sec_tag,'loc':sec_loc,'var':'cai'} # intracellular calcium concentration
+		if currents:
+			# Ca currents
+			ts['I_CaL'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'iLCa'}
+			ts['I_CaN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'iNCa'}
+			ts['I_CaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'iCaT'}
+		if chan_states:
+			# Ca channel open fractions
+			ts['O_CaL'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'o_L'}
+			ts['O_CaN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'o_N'}
+			ts['O_CaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'o'}
+			# Ca channels activated fractions
+			ts['A_CaL'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'q'} # shared activation var for L/N
+			ts['A_CaN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'q'} # shared activation var for L/N
+			ts['A_CaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'r'}
+			# Ca channels inactivated fractions
+			ts['B_CaL'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'h'} # Ca-depentdent inactivation
+			ts['B_CaN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'u'} # V-dependent inactivation
+			ts['B_CaTf'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'s'} # fast inactivation
+			ts['B_CaTs'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'d'} # slow inactivation
+
+	if 'nonspecific' in ion_species:
+		if currents:
+			# Nonspecific currents
+			ts['I_HCN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Ih','var':'ih'}
+		if chan_states:
+			# Nonspecific channel open fractions
+			ts['O_HCN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Ih','var':'f'}
+			# Nonspecific channels activated fractions - same as open fractions (single state variable)
+			ts['A_HCN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Ih','var':'f'}
+			# Nonspecific channels activated fractions - not present (single state variable)
+
+def plot_currents_activations(recData, recordStep, timeRange=None, sec_tag=None):
 	""" Plot currents and (in)activation variable for each ionic
 		current in the same axis. Ionic currents are grouped per ion
 		in one figure, and the x-axes are synchronized for zooming
@@ -649,13 +679,17 @@ def plot_currents_activations(recData, recordStep, timeRange=None):
 
 	# Plot activations-currents on same axis per current
 	ions_chans = [('NaT', 'NaP', 'HCN'), ('KDR', 'Kv3', 'KCa'), ('CaL', 'CaN', 'CaT')]
-	for ionchans in ions_chans: # one figure for each ion
-		fig, axrows = plt.subplots(len(ionchans), 1, sharex=True) # one plot for each channel
-		for i, chan in enumerate(ionchans):
-			# Which traces need to be plotted
-			pat = re.compile(r'^\w_' + chan)
-			chanFilter = lambda x: re.search(pat, x)
-			twinFilter = lambda	x: x.startswith('I_')
+	for iontraces in ions_chans: # one figure for each ion
+		fig, axrows = plt.subplots(len(iontraces), 1, sharex=True) # one plot for each channel
+		for i, trace_abbr in enumerate(iontraces):
+			# Find traces that are marked with the tracee abbreviation (e.g. 'CaT')
+			if sec_tag is None:
+				pat = re.compile(r'^[A-Z]_' +trace_abbr) # find 'char+_+abbr' at beginning of word
+			else:
+				sec_suffix = sec_tag[0:2]
+				pat = re.compile(r'^[A-Z]_' + trace_abbr + r'\w+' + sec_suffix + r'$')
+			chanFilter = lambda x: re.search(pat, x) # variables plotted on left axis match this filter
+			twinFilter = lambda	x: x.startswith('I_') # vars plotted on right axis match this filter
 			# Plot traces that match pattern
 			analysis.cumulPlotTraces(recData, recordStep, showFig=False, 
 								fig=None, ax1=axrows[i], yRange=(-0.1,1.1), timeRange=timeRange,
@@ -718,7 +752,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 		traceSpecs['V_'+dendname] = {'sec':dendname,'loc':loc,'var':'v'}
 
 	# Record ionic currents, open fractions, (in)activation variables
-	rec_currents_activations(traceSpecs)
+	rec_currents_activations(traceSpecs, 'soma', 0.5)
 
 	# Set up recording vectors
 	recordStep = 0.05
@@ -816,7 +850,7 @@ def test_plateau(soma, dends_locs, stims):
 		traceSpecs['V_'+dendname] = {'sec':dendname,'loc':loc,'var':'v'}
 
 	# Record ionic currents, open fractions, (in)activation variables
-	rec_currents_activations(traceSpecs)
+	rec_currents_activations(traceSpecs, 'soma', 0.5)
 
 	# K currents (dendrite)
 	traceSpecs['I_KCa_d'] = {'sec':'dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
@@ -919,14 +953,15 @@ def test_reboundburst(soma, dends_locs, stims):
 		traceSpecs['V_'+dendname] = {'sec':dendname,'loc':loc,'var':'v'}
 
 	# Record ionic currents, open fractions, (in)activation variables
-	rec_currents_activations(traceSpecs)
+	rec_currents_activations(traceSpecs, 'soma', 0.5)
+	rec_currents_activations(traceSpecs, 'dend', dendloc, ion_species=['ca','k'])
 
-	# K currents (dendrite)
-	traceSpecs['I_KCa_d'] = {'sec':'dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
-	# Ca currents (dendrite)
-	traceSpecs['I_CaL_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iLCa'}
-	traceSpecs['I_CaN_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
-	traceSpecs['I_CaT_d'] = {'sec':'dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
+	# # K currents (dendrite)
+	# traceSpecs['I_KCa_d'] = {'sec':'dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
+	# # Ca currents (dendrite)
+	# traceSpecs['I_CaL_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iLCa'}
+	# traceSpecs['I_CaN_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
+	# traceSpecs['I_CaT_d'] = {'sec':'dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
 
 	# Start recording
 	recordStep = 0.05
@@ -944,12 +979,16 @@ def test_reboundburst(soma, dends_locs, stims):
 	vm_ax = figs_vm[0].axes[0]
 
 	# Plot ionic currents, (in)activation variables
-	figs, cursors = plot_currents_activations(recData, recordStep)
+	figs_soma, cursors_soma = plot_currents_activations(recData, recordStep, sec_tag='soma')
+	figs_dend, cursors_dend = plot_currents_activations(recData, recordStep, sec_tag='dend')
+	figs = figs_soma + figs_dend
+	cursors = cursors_soma + cursors_dend
+	plt.show(block=False)
 
 	# Dendrite currents during burst
-	burst_time = [980, 1120]
-	recDend = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.endswith('_d')])
-	analysis.cumulPlotTraces(recDend, recordStep, timeRange=burst_time)
+	# burst_time = [980, 1120]
+	# recDend = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.endswith('_d')])
+	# analysis.cumulPlotTraces(recDend, recordStep, timeRange=burst_time)
 
 	return recData, figs, cursors
 
@@ -1047,112 +1086,25 @@ def test_slowbursting(soma, dends_locs, stims):
 	analysis.cumulPlotTraces(recDend, recordStep, cumulate=False)
 	return recData
 
-def test_burstresurgent(soma, dends_locs, stims):
-	""" Run rebound burst experiment from original Hoc file
+def compare_conductance_dist(gnames):
+	""" Compare conductance distribution betweel full and reduced model """
+	# Plot conductances in full model
+	for gname in gnames:
+		reduction_analysis.plot_path_ppty(gname)
 
-	EXPECTED BEHAVIOUR
-	- INa_rsg slowly inactivated during long firing period
-	- INa_rsg deinactivated during hyperpolarization
-
-	TODO: 
-	- test replacement of Na mechanism with Narsg modified like in Akemann to match the
-	  timing of the two components of Na current
-	- test shorter, more realistic hyperpolarization period (corresponding to volley of IPSPs)
-	  to see if there the difference is greated between situation with and without Narsg
-	"""
-	# Get electrodes and sections to record from
-	dendsec = dends_locs[0][0]
-	dendloc = dends_locs[0][1]
-	stim1, stim2, stim3 = stims[0], stims[1], stims[2]
-
-	# Set simulation parameters
-	dur = 3500
-	h.dt = 0.025
-	h.celsius = 35 # different temp from paper
-	h.v_init = -60 # paper simulations sue default v_init
-	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
-
-	# Set up stimulation
-	stim1.delay = 0
-	stim1.dur = 2000
-	stim1.amp = 0.025 # evoke fast spiking -> slow inactivation
-
-	stim2.delay = 2000
-	stim2.dur = 500
-	stim2.amp = -0.25 # hyperpolarizing pulse -> recovery from inactivation (deinactivation)
-
-	stim3.delay = 2500
-	stim3.dur = 1000
-	stim3.amp = 0.0
-
-	# Record
-	secs = {'soma': soma, 'dend': dendsec}
-	traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
-	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
-
-	# Na currents
-	traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'}
-	traceSpecs['I_NaL'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'}
-	# Na resurgent current related
-	if resurgent:
-		traceSpecs['I_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'ina'}
-		# traceSpecs['sI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'Itot'} # inactivated fraction
-		# traceSpecs['sC_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'Ctot'} # closed fraction
-		# traceSpecs['sB_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'B'} # blocked fraction
-		# traceSpecs['sO_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'O'} # open fraction
-	natrans=True
-	if natrans:
-		traceSpecs['sO_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'O'} # open state
-		traceSpecs['sI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'I6'} # inactivated
-		traceSpecs['sC_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'Ctot'} # closed state
-		traceSpecs['sCI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'Itot'} # closed+inactivated
-
-	# K currents
-	traceSpecs['I_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'ik'}
-	traceSpecs['I_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'ik'}
-	traceSpecs['I_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'isKCa'}
-	traceSpecs['I_h'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'ih'}
-	# Ca currents (soma)
-	traceSpecs['I_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iLCa'}
-	traceSpecs['I_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iNCa'}
-	traceSpecs['I_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'iCaT'}
-	recordStep = 0.05
-	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
-
-	# Simulate
-	h.tstop = dur
-	h.init() # calls finitialize() and fcurrent()
-	h.run()
-
-	# Analyze
-	burst_time = [980, 1120]
-
-	# Soma voltage
-	recV = {'V_soma':recData['V_soma']}
-	analysis.plotTraces(recV, recordStep)
-
-	# Soma currents (relative)
-	recI = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if k.startswith('I'): recI[k] = recData[k]
-	analysis.cumulPlotTraces(recI, recordStep, cumulate=False)
-
-	# Na channel states
-	recStates = collections.OrderedDict()
-	for k, v in recData.iteritems():
-		if k.startswith('s'): recStates[k] = recData[k]
-	analysis.cumulPlotTraces(recStates, recordStep, cumulate=False)
-
-	# Overlay voltage signal
-	# plt.plot(np.arange(0, dur, recordStep), recData['V_soma'].as_numpy()*1e-3, color='r')
-	# plt.show(block=False)
+	# Plot conductances in reduced model
+	clusters, eq_secs = bush.reduce_bush_sejnowski(delete_old_cells=False)
+	eq_refs = [ExtSecRef(sec=sec) for sec in eq_secs]
+	eq_somaref = next(ref for ref in eq_refs if ref.sec.name().startswith('soma'))
+	for gname in gnames:
+		filter_func = lambda ref: True # plot all sections
+		label_func = lambda ref: ref.sec.name() + '_bush'
+		reduction_analysis.plot_tree_ppty(eq_somaref, eq_refs, gname, 
+					filter_func, label_func)
 
 if __name__ == '__main__':
-	# Plot channel distribution in full model
-	# reduction_analysis.plot_path_ppty('gk_sKCa')
-
 	# Make cell
-	reduction_method = 3
+	reduction_method = 1
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Cell adjustments

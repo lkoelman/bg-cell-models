@@ -162,6 +162,106 @@ def compare_na_channels():
 
     plt.show(block=False)
 
+def test_burstresurgent(soma, dends_locs, stims):
+    """ Run rebound burst experiment from original Hoc file
+
+    EXPECTED BEHAVIOUR
+    - INa_rsg slowly inactivated during long firing period
+    - INa_rsg deinactivated during hyperpolarization
+
+    TODO: 
+    - test replacement of Na mechanism with Narsg modified like in Akemann to match the
+      timing of the two components of Na current
+    - test shorter, more realistic hyperpolarization period (corresponding to volley of IPSPs)
+      to see if there the difference is greated between situation with and without Narsg
+    """
+    # Get electrodes and sections to record from
+    dendsec = dends_locs[0][0]
+    dendloc = dends_locs[0][1]
+    stim1, stim2, stim3 = stims[0], stims[1], stims[2]
+
+    # Set simulation parameters
+    dur = 3500
+    h.dt = 0.025
+    h.celsius = 35 # different temp from paper
+    h.v_init = -60 # paper simulations sue default v_init
+    set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+
+    # Set up stimulation
+    stim1.delay = 0
+    stim1.dur = 2000
+    stim1.amp = 0.025 # evoke fast spiking -> slow inactivation
+
+    stim2.delay = 2000
+    stim2.dur = 500
+    stim2.amp = -0.25 # hyperpolarizing pulse -> recovery from inactivation (deinactivation)
+
+    stim3.delay = 2500
+    stim3.dur = 1000
+    stim3.amp = 0.0
+
+    # Record
+    secs = {'soma': soma, 'dend': dendsec}
+    traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
+    traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
+
+    # Na currents
+    traceSpecs['I_Na'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'ina'}
+    traceSpecs['I_NaL'] = {'sec':'soma','loc':0.5,'mech':'NaL','var':'inaL'}
+    # Na resurgent current related
+    if resurgent:
+        traceSpecs['I_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'ina'}
+        # traceSpecs['sI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'Itot'} # inactivated fraction
+        # traceSpecs['sC_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'Ctot'} # closed fraction
+        # traceSpecs['sB_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'B'} # blocked fraction
+        # traceSpecs['sO_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Narsg','var':'O'} # open fraction
+    natrans=True
+    if natrans:
+        traceSpecs['sO_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'O'} # open state
+        traceSpecs['sI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'I6'} # inactivated
+        traceSpecs['sC_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'Ctot'} # closed state
+        traceSpecs['sCI_Narsg'] = {'sec':'soma','loc':0.5,'mech':'Na','var':'Itot'} # closed+inactivated
+
+    # K currents
+    traceSpecs['I_KDR'] = {'sec':'soma','loc':0.5,'mech':'KDR','var':'ik'}
+    traceSpecs['I_Kv3'] = {'sec':'soma','loc':0.5,'mech':'Kv31','var':'ik'}
+    traceSpecs['I_KCa'] = {'sec':'soma','loc':0.5,'mech':'sKCa','var':'isKCa'}
+    traceSpecs['I_h'] = {'sec':'soma','loc':0.5,'mech':'Ih','var':'ih'}
+    # Ca currents (soma)
+    traceSpecs['I_CaL'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iLCa'}
+    traceSpecs['I_CaN'] = {'sec':'soma','loc':0.5,'mech':'HVA','var':'iNCa'}
+    traceSpecs['I_CaT'] = {'sec':'soma','loc':0.5,'mech':'CaT','var':'iCaT'}
+    recordStep = 0.05
+    recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+
+    # Simulate
+    h.tstop = dur
+    h.init() # calls finitialize() and fcurrent()
+    h.run()
+
+    # Analyze
+    burst_time = [980, 1120]
+
+    # Soma voltage
+    recV = {'V_soma':recData['V_soma']}
+    analysis.plotTraces(recV, recordStep)
+
+    # Soma currents (relative)
+    recI = collections.OrderedDict()
+    for k, v in recData.iteritems():
+        if k.startswith('I'): recI[k] = recData[k]
+    analysis.cumulPlotTraces(recI, recordStep, cumulate=False)
+
+    # Na channel states
+    recStates = collections.OrderedDict()
+    for k, v in recData.iteritems():
+        if k.startswith('s'): recStates[k] = recData[k]
+    analysis.cumulPlotTraces(recStates, recordStep, cumulate=False)
+
+    # Overlay voltage signal
+    # plt.plot(np.arange(0, dur, recordStep), recData['V_soma'].as_numpy()*1e-3, color='r')
+    # plt.show(block=False)
+
 
 if __name__ == '__main__':
     compare_na_channels()

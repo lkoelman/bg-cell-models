@@ -138,6 +138,59 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		plt.show(block=False)
 	return figs
 
+allcolors = [
+	'#7742f4', # Dark purple
+	[0.90,0.76,0.00], # Ochre
+	[0.42,0.83,0.59], # soft pastel green
+	[0.90,0.32,0.00], # pastel red brick
+	[0.90,0.59,0.00], # OrangeBrown
+	'#f442c5', # Pink
+	'#c2f442', # Lime
+	[1.00,0.85,0.00], # hard yellow
+	[0.33,0.67,0.47], # dark pastel green
+	[1.00,0.38,0.60], [0.57,0.67,0.33], [0.5,0.2,0.0],
+	[0.71,0.82,0.41], [0.0,0.2,0.5],
+]
+greenish = [
+	[0.42,0.83,0.59], # soft pastel green
+	'#c2f442', # Lime
+	[0.33,0.67,0.47], # dark pastel green
+]
+redish = [
+	[0.90,0.32,0.00], # pastel red brick
+	'#f442c5', # Bright pink
+	[0.90,0.59,0.00], # OrangeBrown
+]
+blueish = [
+	'#7742f4', # Dark purple
+	'#c2f442', # Soft cyan blue
+	'#0066FF', # pastel blue
+]
+solid_styles = ['-']
+broken_styles = ['--', '-.', ':']
+
+def pick_line(trace_name, trace_index):
+	""" Pick a line style and color based on the trace name """
+	style_map = {
+		'I': (allcolors, solid_styles),
+		'V': (allcolors, solid_styles),
+		'C': (allcolors, solid_styles),
+		'A': (greenish, broken_styles),
+		'B': (redish, broken_styles),
+		'O': (blueish, broken_styles),
+	}
+	default_style = (allcolors, broken_styles)
+
+	# pick a line style
+	match_prefix = re.search(r'^[a-zA-Z]', trace_name) # first letter
+	if match_prefix:
+		prefix = match_prefix.group()
+		colors, styles = style_map.get(prefix, default_style)
+	else:
+		colors, styles = default_style
+	return colors[trace_index%len(colors)], styles[trace_index%len(styles)]
+	
+
 def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 					includeTraces=None, excludeTraces=None,
 					showFig=True, colorList=None, lineList=None, 
@@ -164,26 +217,11 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 	if excludeTraces is not None:
 		tracesList = [trace for trace in tracesList if trace not in excludeTraces]
 	if len(tracesList) == 0:
-		raise Exception('No traces left for plotting after applying filter!')
+		print('WARNING: No traces left for plotting after applying filter! Empty figure will be returned.')
+		return fig
 
 	if timeRange is None:
 		timeRange = [0, traceData[tracesList[0]].size()*recordStep]
-
-	if colorList is None:
-		colorList = ['#7742f4', # Dark purple
-					[0.90,0.76,0.00], # Ochre
-					[0.42,0.83,0.59], 
-					[0.90,0.32,0.00],
-					[0.90,0.59,0.00], # OrangeBrown
-					'#f442c5', # Pink
-					'#c2f442', # Lime
-					[1.00,0.85,0.00],
-					[0.33,0.67,0.47], 
-					[1.00,0.38,0.60], [0.57,0.67,0.33], [0.5,0.2,0.0],
-					[0.71,0.82,0.41], [0.0,0.2,0.5]]
-
-	if lineList is None:
-		lineList = ['-', '--', '-.', ':']
 
 	fontsiz=12
 
@@ -216,8 +254,9 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 			pax = ax2
 		else:
 			pax = ax1
-		li, = pax.plot(t[:len(data)], data+cumulTrace, label=tracename	, 
-					color=colorList[itrace%len(colorList)], linestyle=lineList[itrace%len(lineList)])
+		line_color, line_style = pick_line(tracename, itrace)
+		li, = pax.plot(t[:len(data)], data+cumulTrace, label=tracename, 
+						color=line_color, linestyle=line_style)
 		lines.append(li)
 		if cumulate: cumulTrace += data
 

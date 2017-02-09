@@ -211,6 +211,7 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True, area_s
 			cluster.eqRa = sum(secref.sec.Ra for secref in clu_secs) / len(clu_secs)
 			cluster.or_area = sum(sum(seg.area() for seg in secref.sec) for secref in clu_secs)
 			cluster.or_cmtot = sum(sum(seg.cm*seg.area() for seg in secref.sec) for secref in clu_secs)
+			cluster.or_cm = cluster.or_cmtot / cluster.or_area
 			cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
 			for gname in glist:
 				cluster.or_gtot[gname] += sum(sum(getattr(seg, gname)*seg.area() for seg in secref.sec) for secref in clu_secs)
@@ -399,14 +400,14 @@ def load_clusters(filepath):
 	finally:
 		clu_file.close()
 
-def reduce_bush_sejnowski():
+def reduce_bush_sejnowski(delete_old_cells=True):
 	""" Reduce STN cell according to Bush & Sejnowski (2016) method """
 
 	############################################################################
 	# 0. Load full model to be reduced (Gillies & Willshaw STN)
 	for sec in h.allsec():
-		if not sec.name().startswith('SThcell'): # original model sections
-			h.delete_section()
+		if not sec.name().startswith('SThcell') and delete_old_cells:
+			h.delete_section() # delete existing cells
 	if not hasattr(h, 'SThcells'):
 		h.xopen("createcell.hoc")
 
@@ -457,18 +458,12 @@ def reduce_bush_sejnowski():
 	
 	# Delete original model sections & set ion styles
 	for sec in h.allsec(): # makes each section the CAS
-		if sec.name().startswith('SThcell'): # original model sections
+		if sec.name().startswith('SThcell') and delete_old_cells: # original model sections
 			h.delete_section()
 		else: # equivalent model sections
 			h.ion_style("na_ion",1,2,1,0,1)
 			h.ion_style("k_ion",1,2,1,0,1)
 			h.ion_style("ca_ion",3,2,1,1,1)
-
-	# Plot some conductances (compare with full model)
-	# eq_refs = [ExtSecRef(sec=sec) for sec in eq_secs]
-	# eq_somaref = next(ref for ref in eq_refs if ref.sec.name().startswith('soma'))
-	# analysis.plot_tree_ppty(eq_somaref, eq_refs, 'gk_sKCa', 
-	# 			lambda ref:True, lambda ref:ref.sec.name())
 
 	############################################################################
 	# 3. Finetuning/fitting of active properties
