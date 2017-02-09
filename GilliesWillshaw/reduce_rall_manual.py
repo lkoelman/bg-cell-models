@@ -34,6 +34,8 @@ sys.path.append(modulesbase)
 NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
 
+from interpolation import loadgstruct, gillies_gstructs
+
 # Global variables
 soma = None
 
@@ -95,21 +97,7 @@ def gillies_treestruct():
 	return dend0tree, dend1tree
 
 
-def loadgstruct(gext):
-	""" Return structured array with conductance values for given
-		channel.
-		@param gext	channel name/file extension in sth-data folder
-	"""
-	gfile = os.path.normpath(os.path.join(scriptdir, 'sth-data', 'cell-'+gext))
-	gstruct = np.loadtxt(gfile, dtype={'names': ('dendidx', 'branchidx', 'x', 'g'),
-									   'formats': ('i4', 'i4', 'f4', 'f4')})
-	return np.unique(gstruct) # unique and sorted rows
 
-def gillies_gstructs():
-	""" Load all structured arrays with conductance values """
-	allgnames = ["gk_KDR", "gk_Kv31", "gk_Ih", "gk_sKCa", "gcaT_CaT", "gcaN_HVA", "gcaL_HVA"]
-	gmats = {gname: loadgstruct(gname) for gname in allgnames}
-	return gmats
 
 def treechannelstruct():
 	""" Return tree structure containing channel distributions.

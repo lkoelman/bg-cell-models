@@ -34,6 +34,7 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 # Our own modules
 import reduction_tools as redtools
 from reduction_tools import ExtSecRef, Cluster, getsecref # for convenience
+import interpolation as interp
 import reduction_analysis as analysis
 
 # Gillies & Willshaw model mechanisms
@@ -47,115 +48,9 @@ mechs_chans = gillies_mechs_chans
 gleak_name = 'gpas_STh'
 glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
 
-def findseg_L_elec(L_elec, orsecrefs):
-	""" Find segments with similar electrotonic path length
 
-	@type	L_elec		float
-	@param	L_elec		electrotonic path length
-
-	@type	orsecrefs	list(h.SectionRef)
-	@param	orsecrefs	references to sections in original model with
-						electrotonic path lengths to 0 and 1 ends assigned
-
-	@return				two lists bound_segs, bound_L containing pairs of 
-						boundary segments, and their electrotonic lengths
-	"""
-	# find original sections with L_elec(0.0) <= L_elec <= L_elec(1.0)
-	or_path_secs = [secref for secref in orsecrefs if (secref.pathL0 <= L_elec <= secref.pathL1)]
-	if len(or_path_secs) == 0:
-		# find section where L(1.0) is closest to L_elec
-		L_closest = min([abs(L_elec-secref.pathL1) for secref in orsecrefs])
-		# all sections where L_elec-L(1.0) is within 5% of this
-		or_path_secs = [secref for secref in orsecrefs if (0.95*L_closest <= abs(L_elec-secref.pathL1) <= 1.05*L_closest)]
-		logger.debug("Electrotonic path length %f dit not map onto any original section:" + 
-						" extrapolating from sections {} sections".format(len(or_path_secs)))
-	logger.debug("Found {} sections in original model with same path length".format(len(or_path_secs)))
-
-	# in each section: find segment at same elecrotonic length and average gbar
-	bound_segs = [] # bounding segments
-	bound_L = [] # electrotonic path length of bounding segments
-	for secref in or_path_secs:
-		# in each section find the two segments with L_elec(seg_a) <= L_elec <= L_elec(seg_b)
-		segs_internal = [seg for seg in secref.sec]
-
-		if L_elec <= secref.pathL_elec[0]:
-			first_seg = segs_internal[0] # first segment after zero-area start node
-			first_L = secref.pathL_elec[0]
-			bound_segs.append((first_seg, first_seg))
-			bound_L.append((first_L, first_L))
-
-		elif L_elec >= secref.pathL_elec[-1]:
-			last_seg = segs_internal[-1]
-			last_L = secref.pathL_elec[-1]
-			bound_segs.append((last_seg, last_seg))
-			bound_L.append((last_L, last_L))
-
-		else: # interpolate
-			segs_internal = [seg for seg in secref.sec] # all sections
-
-			if len(segs_internal) == 1: # single segment: just use midpoint
-				midseg = segs_internal[0]
-				midL = secref.pathL_elec[0]
-				bound_segs.append((midseg, midseg))
-				bound_L.append((midL, midL))
-
-			else: # INTERPOLATE
-				# Get lower bound
-				lower = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec >= pathL)
-				i_a, L_a = next(lower, (0, secref.pathL_elec[0]))
-				# Get higher bound
-				higher = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec <= pathL)
-				i_b, L_b = next(higher, (-1, secref.pathL_elec[-1]))
-				# Append bounds
-				bound_segs.append((segs_internal[i_a], segs_internal[i_b]))
-				bound_L.append((L_a, L_b))
-	# Return pairs of boundary segments and boundary electrotonic lengths
-	return bound_segs, bound_L
-
-def interp_gbar(L_elec, gname, bound_segs, bound_L):
-	""" For each pair of boundary segments (and corresponding electrotonic
-		length), do a linear interpolation of gbar in the segments according
-		to the given electrotonic length. Return the average of these
-		interpolated values.
-
-	@type	gname		str
-	@param	gname		full conductance name (including mechanism suffix)
-
-	@type	bound_segs	list(tuple(Segment,Segment))
-	@param	bound_segs	pairs of boundary segments
-
-	@type	bound_L		list(tuple(float, float))
-	@param	bound_segs	electrotonic lengths of boundary segments
-
-	@return		gbar_interp: the average interpolated gbar over all boundary
-				pairs
-	"""
-	gbar_interp = 0.0
-	for i, segs in enumerate(bound_segs):
-		seg_a, seg_b = segs
-		L_a, L_b = bound_L[i]
-
-		# Linear interpolation of gbar in seg_a and seg_b according to electrotonic length
-		if L_elec <= L_a:
-			gbar_interp += getattr(seg_a, gname)
-			continue
-		if L_elec >= L_b:
-			gbar_interp += getattr(seg_b, gname)
-			continue
-		if L_b == L_a:
-			alpha == 0.5
-		else:
-			alpha = (L_elec - L_a)/(L_b - L_a)
-		if alpha > 1.0:
-			alpha = 1.0 # if too close to eachother
-		gbar_a = getattr(seg_a, gname)
-		gbar_b = getattr(seg_b, gname)
-		gbar_interp += gbar_a + alpha * (gbar_b - gbar_a)
-
-	gbar_interp /= len(bound_segs) # take average
-	return gbar_interp
-
-def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True, area_scaling=True):
+def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True, 
+						area_scaling=True, interp_method='neighbors'):
 	""" Compute properties of equivalent section for cluster
 		from its member sections.
 
@@ -164,13 +59,21 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True, area_s
 						and properties)
 
 	@type	orsecrefs	list(SectionRef)
-	@param	orsecrefs	references to all  sections in the cell
+	@param	orsecrefs	references to all sections in the cell
 
 	@type	area_scaling	bool
 	@param	area_scaling	If true: use the ratio of original area to new area
 							to scale Cm and all conductances (including gpas) in
 							each section so their total value from the full model
-							is conserved
+							is conserved. This method is used in the Bush &
+							Sejnowski algorithm.
+
+	@type	interp_method	string
+	@param	interp_method	interpolation method: specify 'neighbors' to
+							interpolate gbar of  segments with equivalent
+							electrotonic path length in full model, or 'linear_dist'
+							to sample the linear distribution at the same
+							electrotonic path length in the full model.
 
 	@post				Equivalent section properties are available as
 						attributed on given Cluster object
@@ -291,13 +194,23 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True, area_s
 		active_glist.remove(gleak_name) # get list of active conductances
 
 		# Set initial conductances by interpolation
-		for j, seg in enumerate(sec):
-			L_elec = redtools.seg_path_L_elec(seg, f_lambda, gleak_name)
-			bound_segs, bound_L = findseg_L_elec(L_elec, orsecrefs)
-			for gname in active_glist:
-				gval = interp_gbar(L_elec, gname, bound_segs, bound_L)
-				seg.__setattr__(gname, gval)
-				cluster.eq_gbar[gname][j] = gval
+		if interp_method == 'neighbors':
+			for j, seg in enumerate(sec):
+				L_elec = redtools.seg_path_L_elec(seg, f_lambda, gleak_name)
+				bound_segs, bound_L = findseg_L_elec(L_elec, orsecrefs)
+				for gname in active_glist:
+					gval = interp.interp_gbar_neighbors(L_elec, gname, bound_segs, bound_L)
+					seg.__setattr__(gname, gval)
+					cluster.eq_gbar[gname][j] = gval
+
+		elif interp_method == 'linear_dist':
+			# TODO: handle soma section separately
+			if cluster.name.startswith('soma'):
+			else:
+				# TODO: adapt path/filter in calc_gdist_params to accept tree and path
+				#		-> start from soma but skip soma cause table_tree doesnt match
+				for gname in active_glist:
+					bounds = interp.calc_gdist_params(gname, )
 
 		# Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
 		if area_scaling:
