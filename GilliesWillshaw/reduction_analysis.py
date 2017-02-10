@@ -67,8 +67,9 @@ def plot_path_ppty(propname, secfilter=None, labelfunc=None):
 		h.xopen("createcell.hoc")
 
 	if secfilter is None:
+		tree_index = 0
 		path_indices = (1,2,4,6,8) # longest path in tree
-		secfilter = lambda secref: secref.table_index in path_indices
+		secfilter = lambda secref: (secref.tree_index==tree_index) and (secref.table_index in path_indices)
 	
 	if labelfunc is None:
 		labelfunc = lambda secref: "sec {}".format(secref.table_index)
@@ -80,10 +81,11 @@ def plot_path_ppty(propname, secfilter=None, labelfunc=None):
 	allsecrefs = [somaref] + dendLrefs + dendRrefs
 
 	# Assign indices
+	somaref.tree_index = -1
 	somaref.table_index = 0
 	for j, dendlist in enumerate((dendLrefs, dendRrefs)):
 		for i, secref in enumerate(dendlist):
-			secref.table_tree = j
+			secref.tree_index = j
 			secref.table_index = i+1
 
 	# Plot conductance along path

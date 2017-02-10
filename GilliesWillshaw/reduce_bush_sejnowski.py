@@ -10,6 +10,7 @@ described in Bush & Sejnowski (1993)
 # Python modules
 import math
 import pickle
+import re
 
 # Make sure other modules are on Python path
 import sys, os.path
@@ -49,8 +50,8 @@ gleak_name = 'gpas_STh'
 glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
 
 
-def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True, 
-						area_scaling=True, interp_method='neighbors'):
+def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False, 
+						area_scaling=True, interp_method='linear_neighbors'):
 	""" Compute properties of equivalent section for cluster
 		from its member sections.
 
@@ -69,11 +70,10 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True,
 							Sejnowski algorithm.
 
 	@type	interp_method	string
-	@param	interp_method	interpolation method: specify 'neighbors' to
-							interpolate gbar of  segments with equivalent
-							electrotonic path length in full model, or 'linear_dist'
-							to sample the linear distribution at the same
-							electrotonic path length in the full model.
+	@param	interp_method	Specify 'linear_neighbors' for linear interpolation of 'adjacent'
+							segments in full model (i.e. next lower and higher electrotonic
+							path length). Other options are: 'left_neighbor', 'right_neighbor', 
+							'nearest_neighbor'
 
 	@post				Equivalent section properties are available as
 						attributed on given Cluster object
@@ -194,23 +194,25 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=True,
 		active_glist.remove(gleak_name) # get list of active conductances
 
 		# Set initial conductances by interpolation
-		if interp_method == 'neighbors':
-			for j, seg in enumerate(sec):
-				L_elec = redtools.seg_path_L_elec(seg, f_lambda, gleak_name)
-				bound_segs, bound_L = findseg_L_elec(L_elec, orsecrefs)
-				for gname in active_glist:
-					gval = interp.interp_gbar_neighbors(L_elec, gname, bound_segs, bound_L)
-					seg.__setattr__(gname, gval)
-					cluster.eq_gbar[gname][j] = gval
-
-		elif interp_method == 'linear_dist':
-			# TODO: handle soma section separately
-			if cluster.name.startswith('soma'):
+		for j, seg in enumerate(sec):
+			L_elec = redtools.seg_path_L_elec(seg, f_lambda, gleak_name)
+			if cluster.label.startswith('soma'):
+				tree_id, path_ids = -1, (0,)
 			else:
-				# TODO: adapt path/filter in calc_gdist_params to accept tree and path
-				#		-> start from soma but skip soma cause table_tree doesnt match
-				for gname in active_glist:
-					bounds = interp.calc_gdist_params(gname, )
+				tree_id, path_ids = 0, (1,2,4,6,8)
+			bound_segs, bound_L = interp.find_segs_adj_Lelec(L_elec, orsecrefs, 
+									tree_id, path_ids)
+			for gname in active_glist:
+				if interp_method == 'linear_neighbors':
+					gval = interp.interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L)
+				else:
+					match_method = re.search(r'^[a-z]+', interp_method)
+					method = match_method.group() # should be nearest, left, or right
+					assert(len(bound_segs)==1, "Found more than two boundary segments along path")
+					gval = interp.interp_gbar_pick_neighbor(L_elec, gname, bound_segs[0], bound_L[0])
+				seg.__setattr__(gname, gval)
+				cluster.eq_gbar[gname][j] = gval
+
 
 		# Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
 		if area_scaling:
@@ -329,9 +331,11 @@ def reduce_bush_sejnowski(delete_old_cells=True):
 	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
 	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree
 	allsecrefs = [somaref] + dendLrefs + dendRrefs
+	somaref.tree_index = -1
+	somaref.table_index = 0
 	for j, dendlist in enumerate((dendLrefs, dendRrefs)):
 		for i, secref in enumerate(dendlist):
-			secref.table_tree = j
+			secref.tree_index = j
 			secref.table_index = i+1
 
 	############################################################################
@@ -347,7 +351,6 @@ def reduce_bush_sejnowski(delete_old_cells=True):
 	somaclu = Cluster('soma')
 	somaref.cluster_label = 'soma'
 	somaref.cluster_labels = ['soma'] * somaref.sec.nseg
-	somaref.table_index = 0
 	clusters = [somaclu]
 
 	# Cluster segments in each dendritic tree
@@ -367,7 +370,7 @@ def reduce_bush_sejnowski(delete_old_cells=True):
 	# Create new sections
 	logger.info("Creating equivalent sections...")
 	eq_secs = equivalent_sections(clusters, allsecrefs, f_lambda, 
-				use_segments=False, area_scaling=True)
+				use_segments=False, interp_method='left_neighbor')
 	
 	# Delete original model sections & set ion styles
 	for sec in h.allsec(): # makes each section the CAS
@@ -385,4 +388,4 @@ def reduce_bush_sejnowski(delete_old_cells=True):
 	return clusters, eq_secs
 
 if __name__ == '__main__':
-	reduce_bush_sejnowski()
+	clusters, eq_secs = reduce_bush_sejnowski(delete_old_cells=False)

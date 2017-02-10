@@ -100,9 +100,74 @@ def calc_gdist_params(gname, secref, orsecrefs, path_indices=None, xgvals=None):
 		xvals, gvals = zip(*xgvals)
 		gmin = min(gvals)
 		gmax = max(gvals)
-		xg0 = next(xg for xg in xgvals if xg[1] > gmin, xgvals[0])
-		xg1 = next(xg for xg in reversed(xgvals) if xg[1] > gmin, xgvals[-1])
+		xg0 = next((xg for xg in xgvals if xg[1] > gmin), xgvals[0])
+		xg1 = next((xg for xg in reversed(xgvals) if xg[1] > gmin), xgvals[-1])
 		return xg0, xg1, xgvals[0], xgvals[-1], (gmin, gmax)
+
+
+def find_segs_adj_Lelec(L_elec, orsecrefs, tree_index=None, path_indices=None):
+	""" Find adjacent segments in terms of electrotonic path length
+
+	@type	L_elec		float
+	@param	L_elec		electrotonic path length
+
+	@type	orsecrefs	list(h.SectionRef)
+	@param	orsecrefs	references to sections in original model with
+						electrotonic path lengths to 0 and 1 ends assigned
+
+	@return				two lists bound_segs, bound_L containing pairs of 
+						boundary segments, and their electrotonic lengths
+	"""
+	# 1. Find all sections that L_elec maps to (i.e. with L_elec(0.0) <= L_elec <= L_elec(1.0))
+	filter_L = lambda secref: (secref.pathL0 <= L_elec <= secref.pathL1)
+	if tree_index is None and path_indices is None:
+		filter_path = lambda secref: True
+	else:
+		if tree_index is None or path_indices is None:
+			raise Exception("Must provide both tree and path indices for dendritic path")
+		filter_path = lambda secref: ((secref.tree_index==tree_index) 
+									and (secref.table_index in path_indices))
+	path_secs = [secref for secref in orsecrefs if filter_path(secref)]
+	map_secs = [secref for secref in path_secs if filter_L(secref)]
+
+	# If none found: extrapolate
+	if len(map_secs) == 0:
+		# find section where L(1.0) is closest to L_elec
+		L_closest = min([abs(L_elec-secref.pathL1) for secref in path_secs])
+		# all sections where L_elec-L(1.0) is within 5% of this
+		map_secs = [secref for secref in path_secs if (0.95*L_closest <= abs(L_elec-secref.pathL1) <= 1.05*L_closest)]
+		logger.debug("Electrotonic path length %f dit not map onto any original section:" + 
+						" extrapolating from {} sections".format(len(map_secs)))
+	logger.debug("Found {} sections in original model with same path length".format(len(map_secs)))
+
+	# 2. In each section that was found: find boundary segments
+	bound_segs = [] # bounding segments
+	bound_L = [] # electrotonic path length of bounding segments
+	for secref in map_secs:
+		# in each section find the two segments with L_elec(seg_a) <= L_elec <= L_elec(seg_b)
+		segs_internal = [seg for seg in secref.sec]
+
+		if len(segs_internal) == 1: # single segment: just use midpoint
+				midseg = segs_internal[0]
+				midL = secref.pathL_elec[0]
+				bound_segs.append((midseg, midseg))
+				bound_L.append((midL, midL))
+
+		else:
+			# Get lower bound
+			lower = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec >= pathL)
+			i_a, L_a = next(lower, (0, secref.pathL_elec[0])) # default is first seg
+
+			# Get higher bound
+			higher = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec <= pathL)
+			i_b, L_b = next(higher, (-1, secref.pathL_elec[-1])) # default is last seg
+
+			# Append bounds
+			bound_segs.append((segs_internal[i_a], segs_internal[i_b]))
+			bound_L.append((L_a, L_b))
+
+	# Return pairs of boundary segments and boundary electrotonic lengths
+	return bound_segs, bound_L
 
 def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):
 	""" Linear interpolation of gbar according to the given
@@ -133,7 +198,7 @@ def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):
 			alpha = (L_elec - L_a)/(L_b - L_a)
 		if alpha > 1.0:
 			alpha = 1.0
-		if alpha < 0.0
+		if alpha < 0.0:
 			alpha = 0.0
 		return g_a + alpha * (g_b - g_a)
 	elif L_elec < L_a:
@@ -147,73 +212,7 @@ def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):
 		else:
 			return gmin # proximal distribution, after bounds
 
-def findseg_L_elec(L_elec, orsecrefs):
-	""" Find segments with similar electrotonic path length
-
-	@type	L_elec		float
-	@param	L_elec		electrotonic path length
-
-	@type	orsecrefs	list(h.SectionRef)
-	@param	orsecrefs	references to sections in original model with
-						electrotonic path lengths to 0 and 1 ends assigned
-
-	@return				two lists bound_segs, bound_L containing pairs of 
-						boundary segments, and their electrotonic lengths
-	"""
-	# find original sections with L_elec(0.0) <= L_elec <= L_elec(1.0)
-	or_path_secs = [secref for secref in orsecrefs if (secref.pathL0 <= L_elec <= secref.pathL1)]
-	if len(or_path_secs) == 0:
-		# find section where L(1.0) is closest to L_elec
-		L_closest = min([abs(L_elec-secref.pathL1) for secref in orsecrefs])
-		# all sections where L_elec-L(1.0) is within 5% of this
-		or_path_secs = [secref for secref in orsecrefs if (0.95*L_closest <= abs(L_elec-secref.pathL1) <= 1.05*L_closest)]
-		logger.debug("Electrotonic path length %f dit not map onto any original section:" + 
-						" extrapolating from sections {} sections".format(len(or_path_secs)))
-	logger.debug("Found {} sections in original model with same path length".format(len(or_path_secs)))
-
-	# in each section: find segment at same elecrotonic length and average gbar
-	bound_segs = [] # bounding segments
-	bound_L = [] # electrotonic path length of bounding segments
-	for secref in or_path_secs:
-		# in each section find the two segments with L_elec(seg_a) <= L_elec <= L_elec(seg_b)
-		segs_internal = [seg for seg in secref.sec]
-
-		if L_elec <= secref.pathL_elec[0]:
-			first_seg = segs_internal[0] # first segment after zero-area start node
-			first_L = secref.pathL_elec[0]
-			bound_segs.append((first_seg, first_seg))
-			bound_L.append((first_L, first_L))
-
-		elif L_elec >= secref.pathL_elec[-1]:
-			last_seg = segs_internal[-1]
-			last_L = secref.pathL_elec[-1]
-			bound_segs.append((last_seg, last_seg))
-			bound_L.append((last_L, last_L))
-
-		else: # interpolate
-			segs_internal = [seg for seg in secref.sec] # all sections
-
-			if len(segs_internal) == 1: # single segment: just use midpoint
-				midseg = segs_internal[0]
-				midL = secref.pathL_elec[0]
-				bound_segs.append((midseg, midseg))
-				bound_L.append((midL, midL))
-
-			else: # INTERPOLATE
-				# Get lower bound
-				lower = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec >= pathL)
-				i_a, L_a = next(lower, (0, secref.pathL_elec[0]))
-				# Get higher bound
-				higher = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec <= pathL)
-				i_b, L_b = next(higher, (-1, secref.pathL_elec[-1]))
-				# Append bounds
-				bound_segs.append((segs_internal[i_a], segs_internal[i_b]))
-				bound_L.append((L_a, L_b))
-	# Return pairs of boundary segments and boundary electrotonic lengths
-	return bound_segs, bound_L
-
-
-def interp_gbar_neighbors(L_elec, gname, bound_segs, bound_L):
+def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
 	""" For each pair of boundary segments (and corresponding electrotonic
 		length), do a linear interpolation of gbar in the segments according
 		to the given electrotonic length. Return the average of these
@@ -256,17 +255,40 @@ def interp_gbar_neighbors(L_elec, gname, bound_segs, bound_L):
 	gbar_interp /= len(bound_segs) # take average
 	return gbar_interp
 
-def interpconductances(sec, dendidx, path, glist=None):
-	""" Interpolate conductances along given path of branches 
+def interp_gbar_pick_neighbor(L_elec, gname, bound_segs, bound_L, method='nearest'):
+	""" Nearest/left/right neighbor interpolation 
+
+	@param	method	interpolation method: 'nearest'/'left'/'right'
+
+	@see	interp_gbar_linear_neighbors() for other parameters
+	"""
+	seg_a, seg_b = bound_segs
+	L_a, L_b = bound_L
+	if method == 'left':
+		return getattr(seg_a, gname)
+	elif method == 'right':
+		return getattr(seg_b, gname)
+	elif method == 'nearest':
+		if abs(L_elec-L_a) <= abs(L_elec-L_b):
+			return getattr(seg_a, gname)
+		else:
+			return getattr(seg_b, gname)
+	else:
+		raise Exception("Unknown interpolation method '{}'".format(method))
+
+
+def interpconductances(sec, tree_index, path_indices, glist=None):
+	""" Interpolate conductances along given path of branches using
+		tabular data provided with Gillies & Willshaw paper
 
 	@type	sec			Hoc.Section()
 	@param	sec			section to set conductances for
 
-	@type	dendidx		int
-	@param	dendidx		index of the dendritic tree
+	@type	tree_index		int
+	@param	tree_index		index of the dendritic tree
 
-	@type	path		sequence of int
-	@param	path		indices of branches in full model, specifying path
+	@type	path_indices		sequence of int
+	@param	path_indices		indices of branches in full model, specifying path
 						along dendritic tree from soma outward
 
 	@type	glist		dict<str, str>
@@ -285,8 +307,8 @@ def interpconductances(sec, dendidx, path, glist=None):
 	h("default_gNaL_dend = 0.81e-5")
 
 	# branch indices along longest path
-	geostruct = reduction_tools.loadgeotopostruct(dendidx)
-	pathL = np.array([geostruct[i-1]['L'] for i in path]) # length of each branch along path
+	geostruct = reduction_tools.loadgeotopostruct(tree_index)
+	pathL = np.array([geostruct[i-1]['L'] for i in path_indices]) # length of each branch along path
 
 	# Distributed conductances: interpolate each conductance along longest path
 	for seg in sec:
@@ -295,7 +317,7 @@ def interpconductances(sec, dendidx, path, glist=None):
 		# first determine on which branch we are and how far on it
 		nodebranch = np.NaN # invalid branch
 		xonbranch = 0
-		for i, branchidx in enumerate(path): # map node to branch and location
+		for i, branchidx in enumerate(path_indices): # map node to branch and location
 			if lnode <= pathL[0:i+1].sum(): # location maps to this branch
 				begL = pathL[0:i].sum()
 				endL = pathL[0:i+1].sum()
@@ -310,13 +332,13 @@ def interpconductances(sec, dendidx, path, glist=None):
 			if gname not in glist:
 				print('Skipping conductance: '+gname)
 				continue
-			branchrows = (gmat['dendidx']==dendidx) & (gmat['branchidx']==nodebranch-1)
+			branchrows = (gmat['dendidx']==tree_index) & (gmat['branchidx']==nodebranch-1)
 			gnode = np.interp(xonbranch, gmat[branchrows]['x'], gmat[branchrows]['g'])
 			sec(xnode).__setattr__(gname, gnode)
 
 		# Conductances with constant value (vals: see tools.hoc/washTTX)
-		gNa = 1.483419823e-02 if dendidx==-1 else 1.0e-7 # see h.default_gNa_soma/dend in .hoc file
-		gNaL = 1.108670852e-05 if dendidx==-1 else 0.81e-5 # see h.default_gNaL_soma/dend in .hoc file
+		gNa = 1.483419823e-02 if tree_index==-1 else 1.0e-7 # see h.default_gNa_soma/dend in .hoc file
+		gNaL = 1.108670852e-05 if tree_index==-1 else 0.81e-5 # see h.default_gNaL_soma/dend in .hoc file
 		gNarsg = 0.016 # same as in .mod file and Akeman papeer
 		g_fixed = {'gna_Na':gNa, 'gna_NaL':gNaL, 'gbar_Narsg':gNarsg} # NOTE: Narsg is NOT in Gillies model
 		for gname, gval in g_fixed.iteritems():

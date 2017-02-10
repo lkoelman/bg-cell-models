@@ -935,9 +935,9 @@ def compare_conductance_dist(gnames):
 	clusters, eq_secs = bush.reduce_bush_sejnowski(delete_old_cells=False)
 	eq_refs = [ExtSecRef(sec=sec) for sec in eq_secs]
 	eq_somaref = next(ref for ref in eq_refs if ref.sec.name().startswith('soma'))
+	filter_func = lambda ref: True # plot all sections
+	label_func = lambda ref: ref.sec.name() + '_bush'
 	for gname in gnames:
-		filter_func = lambda ref: True # plot all sections
-		label_func = lambda ref: ref.sec.name() + '_bush'
 		reduction_analysis.plot_tree_ppty(eq_somaref, eq_refs, gname, 
 					filter_func, label_func)
 
