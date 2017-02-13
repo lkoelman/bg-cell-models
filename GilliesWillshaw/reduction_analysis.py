@@ -15,6 +15,25 @@ from neuron import h
 import reduction_tools
 from reduction_tools import ExtSecRef, Cluster, getsecref
 
+def get_gillies_cells():
+	""" Get references to cells in Gillies & Willshaw models, annotated
+		with their indices in the original publication and code """
+	if not hasattr(h, 'SThcells'):
+		h.xopen("createcell.hoc")
+
+	# Make sections accesible by name and index
+	somaref = ExtSecRef(sec=h.SThcell[0].soma)
+	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
+	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree
+	allsecrefs = [somaref] + dendLrefs + dendRrefs
+	somaref.tree_index = -1
+	somaref.table_index = 0
+	for j, dendlist in enumerate((dendLrefs, dendRrefs)):
+		for i, secref in enumerate(dendlist):
+			secref.tree_index = j
+			secref.table_index = i+1
+	return somaref, dendLrefs, dendRrefs
+
 def plotconductance(secref, gname, titleattr):
 	sec = secref.sec
 	xg = [(seg.x, getattr(seg, gname)) for seg in sec]

@@ -57,7 +57,7 @@ def gillies_gstructs():
 	gmats = {gname: loadgstruct(gname) for gname in gfromfile}
 	return gmats
 
-def calc_gdist_params(gname, secref, orsecrefs, path_indices=None, xgvals=None):
+def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals=None):
 	""" Calculate parameters of the linear conductance distribution
 		as defined in the Gillies & Willshaw paper (A/B/C/D)
 
@@ -75,34 +75,33 @@ def calc_gdist_params(gname, secref, orsecrefs, path_indices=None, xgvals=None):
 					Lstart:	electrotonic length of first segment on path
 					Lend:	electrotonic length of last segment on path
 	"""
-	# First descent along the dendritic path and save pairs (L_elec, gval)
 	if secref is None:
 		return
 	first_call = xgvals is None
 	if first_call:
 		xgvals = []
-	if path_indices is None:
-		path_indices = (1,2,4,6,8) # longest path in tree
-	secfilter = lambda secref: secref.table_index in path_indices
+	secfilter = lambda secref: ((secref.tree_index==tree_index) 
+								and (secref.table_index in path_indices))
 
 	# Measure current section
 	if secfilter(secref):
-		for i, seg in enumerate(secref.sec):
+		for i, seg in enumerate(secref.sec): # for each segment: save electrotonic path length & gbar
 			xgvals.append((secref.pathL_elec[i], getattr(seg, gname)))
 	
-	# Measure children
+	# Collect x and gbar values from chidlren
 	for childsec in secref.sec.children():
 		childref = getsecref(childsec, orsecrefs)
-		calc_gdist_params(gname, childref, orsecrefs, path_indices, xgvals=xgvals) # this updates xgvals
+		calc_gdist_params(gname, childref, orsecrefs, tree_index, path_indices, xgvals=xgvals) # this updates xgvals
 
+	# Calculate parameters from gbar distribution
 	if first_call:
 		xgvals = sorted(xgvals, key=lambda xg: xg[0]) # sort by ascending x (L_elec)
 		xvals, gvals = zip(*xgvals)
 		gmin = min(gvals)
 		gmax = max(gvals)
-		xg0 = next((xg for xg in xgvals if xg[1] > gmin), xgvals[0])
-		xg1 = next((xg for xg in reversed(xgvals) if xg[1] > gmin), xgvals[-1])
-		return xg0, xg1, xgvals[0], xgvals[-1], (gmin, gmax)
+		xg0 = next((xg for xg in xgvals if xg[1] > gmin), xgvals[0]) # first g > gmin
+		xg1 = next((xg for xg in reversed(xgvals) if xg[1] > gmin), xgvals[-1]) # last g > gmin
+		return (xg0, xg1), (xgvals[0], xgvals[-1]), (gmin, gmax)
 
 
 def find_segs_adj_Lelec(L_elec, orsecrefs, tree_index=None, path_indices=None):
@@ -193,7 +192,7 @@ def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):
 
 	if L_a <= L_elec <= L_b:
 		if L_b == L_a:
-			alpha == 0.5
+			alpha = 0.5
 		else:
 			alpha = (L_elec - L_a)/(L_b - L_a)
 		if alpha > 1.0:
@@ -205,7 +204,7 @@ def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):
 		if L_a == L_min:
 			return g_a # proximal distribution, before bounds
 		else:
-			return g_min # distal distribution, before bounds
+			return gmin # distal distribution, before bounds
 	else: #L_elec > L_b:
 		if L_b == L_max:
 			return g_b # distal distribution, after bounds

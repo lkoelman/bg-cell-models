@@ -10,22 +10,30 @@ for the different features of STN cell dynamics
 
 """
 
-import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
-
-import neuron
-from neuron import h
-
-import sys
-import os.path
-scriptdir, scriptfile = os.path.split(__file__)
-modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
-sys.path.append(modulesbase)
 import collections
 import re
 import math
 
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+
+# Make sure other modules are on Python path
+import sys, os.path
+scriptdir, scriptfile = os.path.split(__file__)
+modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
+sys.path.append(modulesbase)
+
+# Load NEURON
+import neuron
+from neuron import h
+h.load_file("stdlib.hoc") # Load the standard library
+h.load_file("stdrun.hoc") # Load the standard run library
+# Load own NEURON mechanisms
+NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
+neuron.load_mechanisms(NRN_MECH_PATH)
+
+# Our own modules
 from common import analysis
 import reduction_tools
 from reduction_tools import lambda_AC, ExtSecRef, Cluster, getsecref
@@ -33,19 +41,6 @@ from interpolation import *
 import reduction_analysis
 import reduce_marasco as marasco
 import reduce_bush_sejnowski as bush
-
-# Load NEURON mechanisms
-# add this line to nrn/lib/python/neuron/__init__.py/load_mechanisms()
-# from sys import platform as osplatform
-# if osplatform == 'win32':
-# 	lib_path = os.path.join(path, 'nrnmech.dll')
-NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
-neuron.load_mechanisms(NRN_MECH_PATH)
-	
-
-# Load NEURON function libraries
-h.load_file("stdlib.hoc") # Load the standard library
-h.load_file("stdrun.hoc") # Load the standard run library
 
 # Global variables
 soma = None
@@ -927,14 +922,35 @@ def test_slowbursting(soma, dends_locs, stims):
 
 def compare_conductance_dist(gnames):
 	""" Compare conductance distribution betweel full and reduced model """
-	# Plot conductances in full model
-	for gname in gnames:
-		reduction_analysis.plot_path_ppty(gname)
 
-	# Plot conductances in reduced model
+	# Get cells of original model
+	or_somaref, or_treeL, or_treeR = reduction_analysis.get_gillies_cells()
+	or_secrefs = [or_somaref] + or_treeL + or_treeR
+	or_spinysec = next(ref for ref in or_treeR if ref.table_index==8)
+	seg = or_spinysec.sec(0.9)
+	plateau_gnames = ['gk_sKCa', 'gcaL_HVA', 'gcaN_HVA', 'gcaT_CaT']
+	baseline = getattr(seg, 'gk_sKCa')
+	for gname in plateau_gnames:
+		print("OR ({}) Relative {} = {}".format(seg.sec.name(), gname, getattr(seg, gname)/baseline))
+
+	# Plot conductances in original model
+	filter_func = lambda secref: (secref.tree_index==1) and (secref.table_index in (1,3,8))
+	label_func = lambda secref: "sec {}".format(secref.table_index)
+	for gname in gnames:
+		reduction_analysis.plot_tree_ppty(or_somaref, or_secrefs, gname, 
+					filter_func, label_func)
+
+	# Get cells of reduced model
 	clusters, eq_secs = bush.reduce_bush_sejnowski(delete_old_cells=False)
 	eq_refs = [ExtSecRef(sec=sec) for sec in eq_secs]
 	eq_somaref = next(ref for ref in eq_refs if ref.sec.name().startswith('soma'))
+	eq_spinyref = next(ref for ref in eq_refs if ref.sec.name().startswith('spiny'))
+	seg = eq_spinyref.sec(0.9)
+	baseline = getattr(seg, 'gk_sKCa')
+	for gname in plateau_gnames:
+		print("EQ ({}) Relative {} = {}".format(seg.sec.name(), gname, getattr(seg, gname)/baseline))
+
+	# Plot conductances in reduced model
 	filter_func = lambda ref: True # plot all sections
 	label_func = lambda ref: ref.sec.name() + '_bush'
 	for gname in gnames:
@@ -943,7 +959,7 @@ def compare_conductance_dist(gnames):
 
 if __name__ == '__main__':
 	# Make cell
-	reduction_method = 1
+	reduction_method = 3
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Cell adjustments
@@ -954,6 +970,7 @@ if __name__ == '__main__':
 				seg.gpas_STh = 0.75 * seg.gpas_STh
 				seg.cm = 3.0 * seg.cm
 				seg.gna_NaL = 0.6 * seg.gna_NaL
+
 	elif reduction_method == 3: # manual adjustments to Bush & Sejnowski method
 		Rm_factor = math.sqrt(1.)
 		Cm_factor = math.sqrt(1.)
@@ -963,7 +980,10 @@ if __name__ == '__main__':
 			for seg in sec:
 				seg.gpas_STh = seg.gpas_STh / Rm_factor # multiply Rm is divide gpas
 				seg.cm = seg.cm * Cm_factor
-				seg.gna_NaL = 0.75 * seg.gna_NaL
+				if sec.same(soma):
+					seg.gna_NaL = 2.0 * seg.gna_NaL
+				else:
+					seg.gna_NaL = 1.25 * seg.gna_NaL
 
 
 	# Attach duplicate of one tree
@@ -976,13 +996,13 @@ if __name__ == '__main__':
 	# [x] simulated full model
 	# [x] Simulated using average axial resistance (Marasco method)
 	# [x] Simulated using conservation of Rin (no averaging of trees)
-	# recData = test_spontaneous(soma, dends_locs, stims)
+	recData = test_spontaneous(soma, dends_locs, stims)
 	
 	# Test rebound burst simulator protocol
 	# [x] simulated full model
 	# [x] Simulated using average axial resistance (Marasco method)
 	# [x] Simulated using conservation of Rin (no averaging of trees)
-	recData = test_reboundburst(soma, dends_locs, stims)
+	# recData = test_reboundburst(soma, dends_locs, stims)
 
 	# Test generation of plateau potential
 	# [x] simulated full model

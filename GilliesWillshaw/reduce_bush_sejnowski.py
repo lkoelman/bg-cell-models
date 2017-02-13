@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__) # create logger for this module
 
 # Load NEURON
 import neuron
-h = neuron.h
+from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 # Load own NEURON mechanisms
@@ -51,7 +51,8 @@ glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in c
 
 
 def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False, 
-						area_scaling=True, interp_method='linear_neighbors'):
+						density_scaling='area', interp_method='linear_neighbors',
+						interp_path=None, conserve_gbar_ratios=True):
 	""" Compute properties of equivalent section for cluster
 		from its member sections.
 
@@ -62,12 +63,20 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 	@type	orsecrefs	list(SectionRef)
 	@param	orsecrefs	references to all sections in the cell
 
-	@type	area_scaling	bool
-	@param	area_scaling	If true: use the ratio of original area to new area
+	@type	density_scaling	string
+	@param	density_scaling	
+							- 'area': use the ratio of original area to new area
 							to scale Cm and all conductances (including gpas) in
 							each section so their total value from the full model
 							is conserved. This method is used in the Bush &
 							Sejnowski algorithm.
+
+							- 'gbar_total': use ratio or original total conductance
+							to new total conductance to scale gbar in each section.
+							This conserves the total conductance but not the ration
+							of conductances in each segment
+
+							- None: don't use scaling
 
 	@type	interp_method	string
 	@param	interp_method	Specify 'linear_neighbors' for linear interpolation of 'adjacent'
@@ -182,7 +191,7 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 		cluster.eq_cm = [float('NaN')]*cluster.nseg
 
 		# Set Cm and gleak (Rm) for each segment
-		if area_scaling:
+		if density_scaling is not None:
 			for j, seg in enumerate(sec):
 				setattr(seg, 'cm', eq_cm)
 				setattr(seg, gleak_name, eq_gleak)
@@ -194,37 +203,70 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 		active_glist.remove(gleak_name) # get list of active conductances
 
 		# Set initial conductances by interpolation
-		for j, seg in enumerate(sec):
-			L_elec = redtools.seg_path_L_elec(seg, f_lambda, gleak_name)
-			if cluster.label.startswith('soma'):
-				tree_id, path_ids = -1, (0,)
-			else:
-				tree_id, path_ids = 0, (1,2,4,6,8)
-			bound_segs, bound_L = interp.find_segs_adj_Lelec(L_elec, orsecrefs, 
-									tree_id, path_ids)
+		if interp_path is None:
+			interp_path = (1, (1,3,8)) # dendritic path (default: right tree (1,2,4,6,8))
+
+		if interp_method == 'linear_dist':
+			# First calculate parameters of distribution
+			gdist_params = {}
 			for gname in active_glist:
-				if interp_method == 'linear_neighbors':
-					gval = interp.interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L)
+				gdist_params[gname] = interp.calc_gdist_params(gname, 
+							orsecrefs[0], orsecrefs, interp_path[0], interp_path[1])
+
+			# Then set segment conductances by interpolating/sampling distribution
+			for j, seg in enumerate(sec):
+				L_elec = redtools.seg_path_L_elec(seg, f_lambda, gleak_name)
+				for gname in active_glist:
+					if cluster.label.startswith('soma'):
+						ibounds, pbounds, gbounds = interp.calc_gdist_params(gname, 
+							orsecrefs[0], orsecrefs, -1, (0,))
+						logger.debug("Calculated parameters of {} conductace distribution for soma".format(gname))
+					else:
+						ibounds, pbounds, gbounds = gdist_params[gname]
+					gval = interp.interp_gbar_linear_dist(L_elec, ibounds, pbounds, gbounds)
+					seg.__setattr__(gname, gval) # Set segment conductance
+					cluster.eq_gbar[gname][j] = gval
+
+		else: # linear/nearest/left/right neighbor
+			for j, seg in enumerate(sec):
+				# First calculate electrotonic path length to segment
+				L_elec = redtools.seg_path_L_elec(seg, f_lambda, gleak_name)
+				if cluster.label.startswith('soma'):
+					tree_id, path_ids = -1, (0,)
 				else:
-					match_method = re.search(r'^[a-z]+', interp_method)
-					method = match_method.group() # should be nearest, left, or right
-					assert(len(bound_segs)==1, "Found more than two boundary segments along path")
-					gval = interp.interp_gbar_pick_neighbor(L_elec, gname, bound_segs[0], bound_L[0])
-				seg.__setattr__(gname, gval)
-				cluster.eq_gbar[gname][j] = gval
+					tree_id, path_ids = interp_path
+
+				# Then get 'neighbor segments'
+				bound_segs, bound_L = interp.find_segs_adj_Lelec(L_elec, orsecrefs, 
+										tree_id, path_ids)
+
+				# Set conductances by interpolating neighbors
+				for gname in active_glist:
+					if interp_method == 'linear_neighbors':
+						gval = interp.interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L)
+					else:
+						match_method = re.search(r'^[a-z]+', interp_method)
+						method = match_method.group() # should be nearest, left, or right
+						assert len(bound_segs)==1, "Found more than two boundary segments along path"
+						gval = interp.interp_gbar_pick_neighbor(L_elec, gname, bound_segs[0], bound_L[0])
+					seg.__setattr__(gname, gval)
+					cluster.eq_gbar[gname][j] = gval
 
 
 		# Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
-		if area_scaling:
+		if density_scaling is not None:
 			for gname in active_glist:
 				eq_gtot = sum(getattr(seg, gname)*seg.area() for seg in sec)
 				if eq_gtot <= 0.:
 					eq_gtot = 1.
 				or_gtot = cluster.or_gtot[gname]
 				for j, seg in enumerate(sec):
-					# conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
-					# seg.__setattr__(gname, getattr(seg, gname)*clusters[i].or_area/clusters[i].eq_area)
-					gval = getattr(seg, gname) * or_gtot/eq_gtot
+					# conserves ratio in each segment but not total original conductance
+					if density_scaling == 'area':
+						gval = getattr(seg, gname)*clusters[i].or_area/clusters[i].eq_area
+					else:
+						# does not conserve ratio but conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
+						gval = getattr(seg, gname) * or_gtot/eq_gtot
 					seg.__setattr__(gname, gval)
 					cluster.eq_gbar[gname][j] = gval # save for reconstruction
 
@@ -370,7 +412,8 @@ def reduce_bush_sejnowski(delete_old_cells=True):
 	# Create new sections
 	logger.info("Creating equivalent sections...")
 	eq_secs = equivalent_sections(clusters, allsecrefs, f_lambda, 
-				use_segments=False, interp_method='left_neighbor')
+				use_segments=False, density_scaling='area', 
+				interp_path=(1, (1,3,8)), interp_method='left_neighbor')
 	
 	# Delete original model sections & set ion styles
 	for sec in h.allsec(): # makes each section the CAS
