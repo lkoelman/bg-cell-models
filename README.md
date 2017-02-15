@@ -85,22 +85,49 @@
 	- see Encyclopedia of Computational Neuroscience, p. 2909 (pdf p. 2961)
 
 ## Na channel inactivation ##
+- All components of Na current are susceptible to inactivation
+- Option 1
+	- use Raman & Bean model to implement transient + resurgent
+	- use NaL to implement persistent as leak
+	- PROBLEM
+		- NaL has no inactivation
+- Option 2
+	- Use Taddese & Bean model to implement transient + persistent
+	- Use Raman & Bean model to implement transient + resurgent
+	- PROBLEM
+		- have to use two separate mechanisms
+
+
 - voltage dependence of resurgent Na current is similar in STN and Purkinje neurons
 	- stated in [Do & Bean (2004)](Sodium currents in subthalamic nucleus neurons from Nav1.6-null mice.)
 
 
-- Papers/model _slow inactivation_ of Na currents
+- Papers/model _slow inactivation_ of Na currents:
+
 	- [Kuo & Bean (1994)](Na Channels Must Deactivate to Recover from Inactivation)
-	- "the Kuo & Bean (1994) Markov state model gives reasonable simulations of the voltage-dependence of development of inactivation and recovery from inactation for sodium channels that do not give resurgent current"
-		- mentioned in [Raman & Bean (2001)]()
-	- [Do & Bean (2003)](Subthreshold Na currents and pacemaking of STN neurons: modulation by slow inactivation) 
-		- say in Discussion that mechanism of slow inactivation is same as in [Taddese & Bean (2002)](Subthreshold sodium current from rapidly inactivating sodium channels drives spontaneous firing of tuberomammillary neurons) - gating/Markov model and parameters in Fig. 7A
-	- TOCHECK: [Blair & Bean (2003)](Role of Tetrodotoxin-Resistant Na Current Slow Inactivation in Adaptation of Action Potential Firing in Small-Diameter Dorsal Root Ganglion Neurons)
+		- fig 7A shows first formulation of markov model that captures detailed interaction between activation and inactivation variabled
+		- [Raman & Bean (2001)](Inactivation and Recovery of Sodium Currents Neurons in Cerebellar Purkinje Neurons: Evidence for Two Mechanisms) mentions:
+			- "the [Kuo & Bean](1994) Markov state model gives reasonable simulations of the voltage-dependence of development of inactivation and recovery from inactivation for sodium channels that do not give resurgent current"
+	
+	- [Do & Bean (2003)](Subthreshold Na currents and pacemaking of STN neurons: modulation by slow inactivation)
+		- only experiments, no model or parameters
+		- say in Discussion that mechanism of slow inactivation is same as in:
+		- [Taddese & Bean (2002)](Subthreshold sodium current from rapidly inactivating sodium channels drives spontaneous firing of tuberomammillary neurons)
+			- gating/Markov model and parameters in Taddese & Bean (2002) - Fig. 7A
+
+	
+	- [Akemann W, Knopfel T. (2006)](Interaction of Kv3 K channels & I_Na_rsg Influences the Rate of Spontaneous Firing of Purkinje Neurons)
+		- _Transient_ and _Resurgent_ component of Na current implemented in two separate mechanisms
+		- They both have the Markov scheme implementing slow inactivation of original Kuo & Bean paper
+
+
 
 - Papers/model of _resurgent_ Na current (`I_Na_rsg`)
+	
 	- [Raman & Bean (2001)](Inactivation and Recovery of Sodium Currents Neurons in Cerebellar Purkinje Neurons: Evidence for Two Mechanisms)
 		- ONLY models INa_rsg compoment of INa
 			- i.e. you will still have to account of transient and persistent components
 			- this is confirmed by plotting INa and INarsg in code supplied with Akemann and Knoepfel, J.Neurosci. 26 (2006) 4602
+	
 	- [Khaliq, Raman (2003)](The Contribution of Na_rsg to HF Firing in Purkinje Neurons) & [Akeman (2006)](Interaction of Kv3 K channels & I_Na_rsg Influences the Rate of Spontaneous Firing of Purkinje Neurons) models published on ModelDB
 		- => see paper fig. 7, Khaliq & Raman model is tuned specifically for the resurgent current, doen NOT model slow inactivation

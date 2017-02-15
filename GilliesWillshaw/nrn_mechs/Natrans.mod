@@ -7,20 +7,24 @@ slow inactivation and recovery from inactivation (Kuo and Bean 1994)
 Modified by Lucas Koelman, UCD Neuromuscular Systems group (November 2016)
 	- Q10 correction of maximum conductance
 	- use tables for rates
+
 Modified by Akemann and Knoepfel, J.Neurosci. 26 (2006) 4602
 	- Q10 correction of all rate constants
-	- updated kinetic parameters to model the transient Na current with
-	  slow ianctivation + recovery instead of resurgent current
+	- changed kinetic parameters to model the transient Na current with
+	  slow inactivation + recovery instead of resurgent current
 		a) epsilon = 1e-12 1/ms (from epsilon = 1.75 1/ms in Narsg)
 			- prevents transition to 'open channel block' state 'OB'
 		b) Oon = 2.3 1/ms (from Oon = 0.75 1/ms in Narsg)
 			- rapid inactivation of transient Na current
 		c) gbar = 0.008 mho/cm2 (from 0.015 mho/cm2)
+
 Khaliq & Raman (2003), J.Neurosci. 23 (2003) 4899
 	- implementation of model of resurgent Na current and publication to ModelDB
 	- updated kinetic parameters
+
 Raman & Bean (2001), Biophys.J. 80 (2001) 729 
 	- addition of blocking particle to model resurgent Na current
+
 Kuo & Bean (1994)
 	- initial formulation of Markov-type gating model for sodium current
 	  with slow inactivation and recovery/deinactivation
@@ -69,6 +73,9 @@ PARAMETER {
 	beta = 3			(1/ms)		: deactivation
 	gamma = 150			(1/ms)		: opening
 	delta = 40			(1/ms)		: closing, greater than BEAN/KUO = 0.2
+	: NOTE: by setting epsilon so low, transition to the 'B' state (resurgent current)
+	:       is disabled in this mechanism (set this greater to implement resurgent current).
+	:       This makes the state diagram
 	epsilon = 1e-12		(1/ms)		: open -> Iplus for tau = 0.3 ms at +30 with x5
 	zeta = 0.03			(1/ms)		: Iplus -> open for tau = 25 ms at -30 with x6
 
@@ -182,7 +189,7 @@ INITIAL {
 KINETIC activation
 {
 	rates(v)
-	~ C1 <-> C2					(f01,b01)
+	~ C1 <-> C2					(f01,b01) : first is A->B, second is A<-B
 	~ C2 <-> C3					(f02,b02)
 	~ C3 <-> C4					(f03,b03)
 	~ C4 <-> C5					(f04,b04)
@@ -204,19 +211,19 @@ CONSERVE C1 + C2 + C3 + C4 + C5 + O + B + I1 + I2 + I3 + I4 + I5 + I6 = 1
 }
 
 LINEAR seqinitial { : sets initial equilibrium
- ~          I1*bi1 + C2*b01 - C1*(    fi1+f01) = 0
- ~ C1*f01 + I2*bi2 + C3*b02 - C2*(b01+fi2+f02) = 0
- ~ C2*f02 + I3*bi3 + C4*b03 - C3*(b02+fi3+f03) = 0
- ~ C3*f03 + I4*bi4 + C5*b04 - C4*(b03+fi4+f04) = 0
- ~ C4*f04 + I5*bi5 + O*b0O - C5*(b04+fi5+f0O) = 0
- ~ C5*f0O + B*bip + I6*bin - O*(b0O+fip+fin) = 0
- ~ O*fip + B*bip = 0
+ ~          I1*bi1 + C2*b01 - C1*(    fi1+f01) = 0 : equilibrium for C1
+ ~ C1*f01 + I2*bi2 + C3*b02 - C2*(b01+fi2+f02) = 0 : equilibrium for C2
+ ~ C2*f02 + I3*bi3 + C4*b03 - C3*(b02+fi3+f03) = 0 : equilibrium for C3
+ ~ C3*f03 + I4*bi4 + C5*b04 - C4*(b03+fi4+f04) = 0 : equilibrium for C4
+ ~ C4*f04 + I5*bi5 + O*b0O - C5*(b04+fi5+f0O) = 0  : equilibrium for C5
+ ~ C5*f0O + B*bip + I6*bin - O*(b0O+fip+fin) = 0   : equilibrium for O
+ ~ O*fip + B*bip = 0 :                               equilibrium for B
 
- ~          C1*fi1 + I2*b11 - I1*(    bi1+f11) = 0
- ~ I1*f11 + C2*fi2 + I3*b12 - I2*(b11+bi2+f12) = 0
- ~ I2*f12 + C3*fi3 + I4*bi3 - I3*(b12+bi3+f13) = 0
- ~ I3*f13 + C4*fi4 + I5*b14 - I4*(b13+bi4+f14) = 0
- ~ I4*f14 + C5*fi5 + I6*b1n - I5*(b14+bi5+f1n) = 0
+ ~          C1*fi1 + I2*b11 - I1*(    bi1+f11) = 0 : equilibrium for I1
+ ~ I1*f11 + C2*fi2 + I3*b12 - I2*(b11+bi2+f12) = 0 : equilibrium for I2
+ ~ I2*f12 + C3*fi3 + I4*bi3 - I3*(b12+bi3+f13) = 0 : equilibrium for I3
+ ~ I3*f13 + C4*fi4 + I5*b14 - I4*(b13+bi4+f14) = 0 : equilibrium for I4
+ ~ I4*f14 + C5*fi5 + I6*b1n - I5*(b14+bi5+f1n) = 0 : equilibrium for I5
  
  ~ C1 + C2 + C3 + C4 + C5 + O + B + I1 + I2 + I3 + I4 + I5 + I6 = 1
 }
