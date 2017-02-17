@@ -105,7 +105,7 @@
 - Papers/model _slow inactivation_ of Na currents:
 
 	- [Kuo & Bean (1994)](Na Channels Must Deactivate to Recover from Inactivation)
-		- fig 7A shows first formulation of markov model that captures detailed interaction between activation and inactivation variabled
+		- fig 7A shows first formulation of markov model that captures detailed interaction between activation and inactivation variables
 		- [Raman & Bean (2001)](Inactivation and Recovery of Sodium Currents Neurons in Cerebellar Purkinje Neurons: Evidence for Two Mechanisms) mentions:
 			- "the [Kuo & Bean](1994) Markov state model gives reasonable simulations of the voltage-dependence of development of inactivation and recovery from inactivation for sodium channels that do not give resurgent current"
 	
@@ -114,7 +114,6 @@
 		- say in Discussion that mechanism of slow inactivation is same as in:
 		- [Taddese & Bean (2002)](Subthreshold sodium current from rapidly inactivating sodium channels drives spontaneous firing of tuberomammillary neurons)
 			- gating/Markov model and parameters in Taddese & Bean (2002) - Fig. 7A
-
 	
 	- [Akemann W, Knopfel T. (2006)](Interaction of Kv3 K channels & I_Na_rsg Influences the Rate of Spontaneous Firing of Purkinje Neurons)
 		- _Transient_ and _Resurgent_ component of Na current implemented in two separate mechanisms

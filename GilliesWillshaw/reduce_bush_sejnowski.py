@@ -342,16 +342,17 @@ def rebuild_sections(clusters):
 
 def save_clusters(clusters, filepath):
 	""" Save list of Cluster objects to file """
-	clu_file = open(filepath, "wb")
 	try:
+		clu_file = open(filepath, "wb")
 		pickle.dump(clusters, clu_file)
 	finally:
 		clu_file.close()
+		print("Successfully saved file as " + filepath)
 
 def load_clusters(filepath):
 	""" Load list of Cluster objects from file """
-	clu_file = open(filepath, "rb")
 	try:
+		clu_file = open(filepath, "rb")
 		clusters = pickle.load(clu_file)
 		return clusters
 	finally:
@@ -424,11 +425,9 @@ def reduce_bush_sejnowski(delete_old_cells=True):
 			h.ion_style("k_ion",1,2,1,0,1)
 			h.ion_style("ca_ion",3,2,1,1,1)
 
-	############################################################################
-	# 3. Finetuning/fitting of active properties
-
-	# TODO: fitting using neurotune
 	return clusters, eq_secs
 
 if __name__ == '__main__':
-	clusters, eq_secs = reduce_bush_sejnowski(delete_old_cells=False)
+	clusters, eq_secs = reduce_bush_sejnowski(delete_old_cells=True)
+	filepath = "C:\\Users\\lkoelman\\cloudstore_m\\simdata\\bush_sejnowski\\stn_reduced_bush.p"
+	save_clusters(clusters, filepath)

@@ -606,6 +606,13 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	# Plot ionic currents, (in)activation variables
 	figs, cursors = plot_currents_activations(recData, recordStep)
 
+	# Save trace to file
+	# V_soma = np.array(recData['V_soma'], ndmin=2)
+	# T_soma = np.array(t_rec, ndmin=2)
+	# TV_soma = np.concatenate(T_soma, V_soma, axis=0)
+	# fpath = 'C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv'
+	# np.savetxt(fpath, TV_soma, delimiter=',')
+
 	# Plot ionic currents in separate axes
 	# recI = collections.OrderedDict()
 	# for k, v in recData.iteritems():
@@ -957,12 +964,14 @@ def compare_conductance_dist(gnames):
 		reduction_analysis.plot_tree_ppty(eq_somaref, eq_refs, gname, 
 					filter_func, label_func)
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
+def run_experimental_protocol():
+	""" Run one of the experiments using full or reduced STN model """
 	# Make cell
-	reduction_method = 3
+	reduction_method = 1
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
-	# Cell adjustments
+	# Manual cell adjustments
 	if reduction_method == 4: # manual adjustments to Marasco reduction
 		soma.Ra = 2*soma.Ra # correct incorrect calculation for Ra soma cluster
 		for sec in h.allsec():
@@ -992,23 +1001,16 @@ if __name__ == '__main__':
 	# trunk_copy = dupe_subtree(h.trunk_0, copy_mechs	, [])
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
-	# Test spontaneous firing
-	# [x] simulated full model
-	# [x] Simulated using average axial resistance (Marasco method)
-	# [x] Simulated using conservation of Rin (no averaging of trees)
+	# Run experimental protocol
 	recData = test_spontaneous(soma, dends_locs, stims)
-	
-	# Test rebound burst simulator protocol
-	# [x] simulated full model
-	# [x] Simulated using average axial resistance (Marasco method)
-	# [x] Simulated using conservation of Rin (no averaging of trees)
 	# recData = test_reboundburst(soma, dends_locs, stims)
-
-	# Test generation of plateau potential
-	# [x] simulated full model
-	# [x] Simulated using average axial resistance (Marasco method)
-	# [x] Simulated using conservation of Rin (no averaging of trees)
 	# recData = test_plateau(soma, dends_locs, stims)
+	# recData = test_slowbursting()
 
-	# test_slowbursting()
+	# If run as function, uncomment to make variables available
+	globals().update(locals())
 	
+
+if __name__ == '__main__':
+	run_experimental_protocol()
+	# compare_conductance_dist(gillies_glist)

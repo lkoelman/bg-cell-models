@@ -46,6 +46,8 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 				if spec['pointp'] in secs:
 					pp = secs[spec['pointp']]
 					ptr = pp.__getattribute__('_ref_'+spec['var'])
+			else:
+				ptr = h.__getattribute__('_ref_'+spec['var'])
 
 		if ptr:  # if pointer has been created, then setup recording
 			if duration is not None:
