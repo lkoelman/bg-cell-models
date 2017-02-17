@@ -27,6 +27,7 @@ from neurotune import optimizers
 from neurotune import evaluators
 from neurotune import controllers
 
+from common import analysis
 import reduce_bush_sejnowski as bush
 	
 # Load NEURON function libraries
@@ -71,8 +72,6 @@ class Simulation(object):
 	def __init__(self, rec_section, dt=0.025):
 		self.sec = rec_section
 		self.dt = dt
-		self.v_init = v_init
-		self.celsius = celsius
 
 	def set_aCSF(self, req):
 		""" Set global initial ion concentrations (artificial CSF properties) """
@@ -129,7 +128,7 @@ class Simulation(object):
 		self.rec_dt = recordStep
 		self.recData = analysis.recordTraces(secs, traceSpecs, self.rec_dt)
 
-	def simulate_protocol(protocol):
+	def simulate_protocol(self, protocol):
 		""" Simulate the given experimental protocol """
 
 		if protocol == Protocol.SPONTANEOUS:
@@ -406,8 +405,8 @@ def optimization_routine():
 
 	# Parameters for calculation of voltage trace metrics
 	trace_analysis_params = {
-		'peak_delta':		0, # the value by which a peak or trough has to exceed its neighbours to be considered outside of the noise
-		'baseline':			-40., # voltage at which AP width is measured
+		'peak_delta':		1e-4, # the value by which a peak or trough has to exceed its neighbours to be considered outside of the noise
+		'baseline':			-10., # voltage at which AP width is measured
 		'dvdt_threshold':	0, # used in PPTD method described by Van Geit 2007
 	}
 
@@ -443,8 +442,8 @@ def optimization_routine():
 												parameters = final_params,
 												analysis_var = trace_analysis_params,
 												weights = final_error_weights,
-												targets = None, # because we're using automatic
-												automatic = True)
+												targets = None, # self-computed metrics
+												automatic = True) # automatic: compute metrics from target trace
 
 	#make an optimizer
 	min_constraints = [all_params_bounds[par][0] for par in final_params]

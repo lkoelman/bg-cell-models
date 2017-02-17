@@ -580,6 +580,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 
 	# Membrane voltages
 	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
+	traceSpecs['t_global'] = {'var':'t'}
 	for i, (dend,loc) in enumerate(dends_locs):
 		dendname = 'dend%i' % i
 		secs[dendname] = dend
@@ -589,7 +590,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	rec_currents_activations(traceSpecs, 'soma', 0.5)
 
 	# Set up recording vectors
-	recordStep = 0.05
+	recordStep = 0.025
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Simulate
@@ -607,11 +608,11 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	figs, cursors = plot_currents_activations(recData, recordStep)
 
 	# Save trace to file
-	# V_soma = np.array(recData['V_soma'], ndmin=2)
-	# T_soma = np.array(t_rec, ndmin=2)
-	# TV_soma = np.concatenate(T_soma, V_soma, axis=0)
-	# fpath = 'C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv'
-	# np.savetxt(fpath, TV_soma, delimiter=',')
+	V_soma = np.array(recData['V_soma'], ndmin=2)
+	T_soma = np.array(recData['t_global'], ndmin=2)
+	TV_soma = np.concatenate((T_soma, V_soma), axis=0) * 1e-3 # pyelectro expects SI units: seconds, Volts
+	fpath = 'C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv'
+	np.savetxt(fpath, TV_soma.T, delimiter=',', fmt=['%.3E', '%.7E'])
 
 	# Plot ionic currents in separate axes
 	# recI = collections.OrderedDict()

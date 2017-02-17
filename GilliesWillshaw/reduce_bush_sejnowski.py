@@ -327,7 +327,7 @@ def rebuild_sections(clusters):
 			setattr(seg, gleak_name, cluster.eq_gbar[gleak_name][j])
 			# active conductances
 			for gname in active_glist:
-				if len(cluster.eq_gbar[gname] != cluster.nseg):
+				if len(cluster.eq_gbar[gname]) != cluster.nseg:
 					raise Exception("Number of gbar values does not match number of segments")
 				if any(math.isnan(g) for g in cluster.eq_gbar[gname]):
 					raise Exception("Conductance vector contains NaN values")
