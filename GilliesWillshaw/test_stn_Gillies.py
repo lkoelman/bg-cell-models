@@ -308,7 +308,11 @@ def stn_cell(cellmodel):
 		allsecs = [soma] + list(dends)
 
 	elif cellmodel==3: # Bush & Sejnowski method
-		clusters, eq_secs = bush.reduce_bush_sejnowski()
+		# clusters, eq_secs = bush.reduce_bush_sejnowski()
+		filepath = "C:\\Users\\lkoelman\\Downloads\\stn_reduced_bush.p"
+		# bush.save_clusters(clusters, filepath)
+		clusters = bush.load_clusters(filepath)
+		eq_secs = bush.rebuild_sections(clusters)
 		soma = next(sec for sec in eq_secs if sec.name().startswith('soma'))
 		dendsec = next(sec for sec in eq_secs if sec.name().startswith('spiny'))
 		dendloc = 0.9
@@ -590,7 +594,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	rec_currents_activations(traceSpecs, 'soma', 0.5)
 
 	# Set up recording vectors
-	recordStep = 0.025
+	recordStep = 0.05
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Simulate
@@ -608,22 +612,11 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	figs, cursors = plot_currents_activations(recData, recordStep)
 
 	# Save trace to file
-	V_soma = np.array(recData['V_soma'], ndmin=2)
-	T_soma = np.array(recData['t_global'], ndmin=2)
-	TV_soma = np.concatenate((T_soma, V_soma), axis=0) * 1e-3 # pyelectro expects SI units: seconds, Volts
-	fpath = 'C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv'
-	np.savetxt(fpath, TV_soma.T, delimiter=',', fmt=['%.3E', '%.7E'])
-
-	# Plot ionic currents in separate axes
-	# recI = collections.OrderedDict()
-	# for k, v in recData.iteritems():
-	# 	if k.startswith('I_'): recI[k] = v
-	# traceYLims = {'I_Na': (-1., 0.1), 'I_NaL': (-2.5e-3, -5e-4),
-	# 			'I_KDR': (0, 0.12), 'I_Kv3': (0, 0.20), 'I_KCa': (0, 0.014),
-	# 			'I_h': (-5e-4, 2.5e-3), 'I_CaL': (-3.5e-2, 0), 'I_CaN': (-3e-2, 0),
-	# 			'I_CaT': (-6e-2, 6e-2)}
-	# figs_I = analysis.plotTraces(recI, recordStep, yRange=traceYLims, 
-	# 							traceSharex=vm_ax, showFig=False)
+	# V_soma = np.array(recData['V_soma'], ndmin=2)
+	# T_soma = np.array(recData['t_global'], ndmin=2)
+	# TV_soma = np.concatenate((T_soma, V_soma), axis=0) * 1e-3 # pyelectro expects SI units: seconds, Volts
+	# fpath = 'C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv'
+	# np.savetxt(fpath, TV_soma.T, delimiter=',', fmt=['%.3E', '%.7E'])
 
 	plt.show(block=False)
 	return recData, figs, cursors
@@ -969,7 +962,7 @@ def compare_conductance_dist(gnames):
 def run_experimental_protocol():
 	""" Run one of the experiments using full or reduced STN model """
 	# Make cell
-	reduction_method = 1
+	reduction_method = 3 # 1=full / 2=Rall reduction / 3=Bush / 4=Marasco (clusterdiam) / 5=Marasco (Rin)
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Manual cell adjustments

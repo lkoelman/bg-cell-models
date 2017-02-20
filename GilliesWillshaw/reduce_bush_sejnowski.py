@@ -283,28 +283,37 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 	
 	return eq_secs
 
-def rebuild_sections(clusters):
+def rebuild_sections(clusters, eq_secs=None):
 	""" Build the reduced model from a previous reduction where the equivalent
 		section properties are stored in each Cluster object.
+
+	@param	eq_secs		Section list (if already created)
 	"""
-	eq_secs = [None] * len(clusters)
+	if eq_secs is None:
+		existing_sections = False
+		eq_secs = [None] * len(clusters)
+	else:
+		# order according to clusters
+		clu_sec = lambda clu: next(sec for sec in eq_secs if sec.name().startswith(clu.label))
+		eq_secs = [clu_sec(cluster) for cluster in clusters]
+		existing_sections = True
 
 	# Create equivalent section for each cluster
 	for i, cluster in enumerate(clusters):
-		# Create equivalent section
-		if cluster.label in [sec.name() for sec in h.allsec()]:
-			raise Exception('Section named {} already exists'.format(cluster.label))
-		h("create %s" % cluster.label)
-		sec = getattr(h, cluster.label)
-		eq_secs[i] = sec
+		sec = eq_secs[i]
+		if sec is None:
+			# Create equivalent section
+			if cluster.label in [sec.name() for sec in h.allsec()]:
+				raise Exception('Section named {} already exists'.format(cluster.label))
+			h("create %s" % cluster.label)
+			sec = getattr(h, cluster.label)
+			eq_secs[i] = sec
 
 		# Set geometry & global passive properties
 		sec.L = cluster.eqL
 		sec.diam = cluster.eqdiam
 		sec.Ra = cluster.eqRa
 		sec.nseg = cluster.nseg
-		logger.debug("Summary for cluster '%s' : L=%f \tdiam=%f \tRa=%f" % (cluster.label,
-							cluster.eqL, cluster.eqdiam, cluster.eqRa))
 
 		# Insert all mechanisms
 		for mech in mechs_chans.keys():
@@ -314,11 +323,12 @@ def rebuild_sections(clusters):
 		active_glist.remove(gleak_name) # get list of active conductances
 
 		# Set ion styles
-		sec.push()
-		h.ion_style("na_ion",1,2,1,0,1)
-		h.ion_style("k_ion",1,2,1,0,1)
-		h.ion_style("ca_ion",3,2,1,1,1)
-		h.pop_section()
+		if not existing_sections:
+			sec.push()
+			h.ion_style("na_ion",1,2,1,0,1)
+			h.ion_style("k_ion",1,2,1,0,1)
+			h.ion_style("ca_ion",3,2,1,1,1)
+			h.pop_section()
 
 		# Set Cm and conductances for each section (RANGE variables)
 		for j, seg in enumerate(sec):
@@ -334,10 +344,12 @@ def rebuild_sections(clusters):
 				seg.__setattr__(gname, cluster.eq_gbar[gname][j])
 
 	# Connect equivalent sections
-	for i, clu_i in enumerate(clusters):
-		for j, clu_j in enumerate(clusters):
-			if clu_j is not clu_i and clu_j.parent_label == clu_i.label:
-				eq_secs[j].connect(eq_secs[i], clu_j.parent_pos, 0)
+	if not existing_sections:
+		for i, clu_i in enumerate(clusters):
+			for j, clu_j in enumerate(clusters):
+				if clu_j is not clu_i and clu_j.parent_label == clu_i.label:
+					eq_secs[j].connect(eq_secs[i], clu_j.parent_pos, 0)
+	
 	return eq_secs
 
 def save_clusters(clusters, filepath):

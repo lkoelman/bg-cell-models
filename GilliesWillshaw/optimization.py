@@ -23,12 +23,21 @@ NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
 
 import numpy as np
+import pyelectro, neurotune
+from pyelectro import analysis
 from neurotune import optimizers
 from neurotune import evaluators
 from neurotune import controllers
 
-from common import analysis
+from common import analysis as recording
 import reduce_bush_sejnowski as bush
+
+# Print which modules we are using
+for module in [neuron, pyelectro, neurotune]:
+	mod_path = os.path.abspath(module.__file__)
+	mod_name = module.__name__
+	mod_version = 'N/A' if not hasattr(module, '__version__') else module.__version__
+	print("Using module {} - version {} at {}".format(mod_name, mod_version, mod_path))
 	
 # Load NEURON function libraries
 h.load_file("stdlib.hoc") # Load the standard library
@@ -115,7 +124,9 @@ class Simulation(object):
 			h('clo0_cl_ion = 0')
 
 	def set_recording(self, recordStep=0.025):
-		""" Set up recording Vectors to record from relevant pointers """
+		"""
+		Set up recording Vectors to record from relevant pointers
+		"""
 		# Named sections to record from
 		secs = {'soma': self.sec}
 
@@ -126,7 +137,24 @@ class Simulation(object):
 
 		# Make trace record Vectors
 		self.rec_dt = recordStep
-		self.recData = analysis.recordTraces(secs, traceSpecs, self.rec_dt)
+		self.recData = recording.recordTraces(secs, traceSpecs, self.rec_dt)
+
+	def show(self, candidate):
+		"""
+		Plot the result of the simulation once it's been intialized
+		"""
+		from matplotlib import pyplot as plt
+
+		v_rec = np.array(self.recData['V_soma'])
+		t_rec = np.array(self.recData['t_global'])
+
+		plt.plot(t_rec, v_rec)
+		cand_params = ["{:.2f}".format(par) for par in candidate.values()]
+		plt.title("Simulation for cand: [{}]".format(';'.join(cand_params)))
+		plt.xlabel("Time [ms]")
+		plt.ylabel("Voltage [mV]")
+
+		plt.show(block=True)
 
 	def simulate_protocol(self, protocol):
 		""" Simulate the given experimental protocol """
@@ -183,7 +211,7 @@ class Simulation(object):
 		# Run simulation
 		h.init() # calls finitialize() and fcurrent()
 		t_interval = protocol_intervals[protocol]
-		neuron.run(t_interval[1] + 5.0)
+		neuron.run(t_interval[1] + 5.0) # do not need to simulate further than end of protocol
 
 		# Return time and voltage traces
 		# NOTE: do not extract segment, time axes must match with target trace!
@@ -219,6 +247,8 @@ class STNCellController(object):
 		self.target_protocol = protocol
 		self.reduced_model_path = reduced_model_path
 		self.clusters = bush.load_clusters(self.reduced_model_path)
+		self.eq_secs = None
+		self.gbar_adjust_allsec = False
 
 	def run(self, candidates, parameters):
 		"""
@@ -250,13 +280,11 @@ class STNCellController(object):
 		"""
 		Run simulation for an individual candidate.
 		"""
-
-		# Create all Sections
-		for sec in h.allsec():
-			h.delete_section() # delete existing cells
-		eq_secs = bush.rebuild_sections(self.clusters) # stores refs on neuron.h object
-		soma_sec = next(sec for sec in eq_secs if sec.name().startswith('soma'))
-		dend_secs = [sec for sec in eq_secs if sec is not soma_sec]
+		# for sec in h.allsec():
+		# 	h.delete_section() # delete existing cells
+		self.eq_secs = bush.rebuild_sections(self.clusters, self.eq_secs) # initialize from cluster data
+		soma_sec = next(sec for sec in self.eq_secs if sec.name().startswith('soma'))
+		dend_secs = [sec for sec in self.eq_secs if sec is not soma_sec]
 
 		# Pattern matching for gbar factors
 		scale_prefix = r'^gbar_sca_'
@@ -271,7 +299,17 @@ class STNCellController(object):
 			scale_match = re.search(scale_pattern, par_name)
 			gmin_match = re.search(gmin_pattern, par_name)
 			gmax_match = re.search(gmax_pattern, par_name)
-			if par_name == 'soma_Ra':
+
+			if par_name == 'soma_cm_factor':
+				for seg in soma_sec:
+					seg.cm = seg.cm * par_value
+
+			elif par_name == 'soma_Rm_factor':
+				for seg in soma_sec:
+					gleak_val = getattr(seg, gleak_name) / par_value
+					setattr(seg, gleak_name, gleak_val)
+
+			elif par_name == 'soma_Ra':
 				soma_sec.Ra = par_value
 
 			elif par_name == 'soma_diam_factor':
@@ -301,7 +339,8 @@ class STNCellController(object):
 			elif scale_match:
 				prefix_suffix = re.split(scale_prefix, par_name)
 				gname = prefix_suffix[1]
-				for sec in dend_secs:
+				secs = self.eq_secs if self.gbar_adjust_allsec else dend_secs
+				for sec in secs:
 					for seg in sec:
 						gval = getattr(seg, gname) * par_value
 						setattr(seg, gname, gval)
@@ -312,7 +351,157 @@ class STNCellController(object):
 		# Simulate experimental protocol with new cell
 		sim = Simulation(soma_sec)
 		t_trace, v_trace = sim.simulate_protocol(self.target_protocol)
+		# sim.show(cand_params)
 		return t_trace, v_trace
+
+class CustomIClampEvaluator(evaluators.__Evaluator):
+	"""
+	Evaluate the fitness value of candidates by calculating and comparing
+	metrics on the simulation results.
+
+	Based on neurotune.IClampEvaluator
+	"""
+	def __init__(self,
+				 analysis_start_time,
+				 controller,
+				 analysis_end_time,
+				 target_data_path,
+				 parameters,
+				 analysis_var,
+				 weights,
+				 targets=None,
+				 automatic=False):
+
+		super(CustomIClampEvaluator, self).__init__(parameters,
+											  weights,
+											  targets,
+											  controller)
+	  
+		self.analysis_start_time = analysis_start_time
+		self.analysis_end_time = analysis_end_time
+		self.target_data_path = target_data_path
+		self.analysis_var = analysis_var
+
+		print('target data path in evaluator:' + target_data_path)
+		
+		if automatic == True:
+			t , v_raw = analysis.load_csv_data(target_data_path)
+			v = np.array(v_raw)
+
+			v_smooth = list(analysis.smooth(v))
+
+			ic_analysis = analysis.IClampAnalysis(
+							v_smooth,
+							t,
+							analysis_var,
+							start_analysis = analysis_start_time,
+							end_analysis = analysis_end_time,
+							show_smoothed_data = False
+						) 
+
+			ic_analysis.analyse()
+
+			self.targets = ic_analysis.analysis_results
+
+			print('Obtained targets are:')
+			print(self.targets)
+		
+	def evaluate(self,candidates,args):
+		
+		print("\n>>>>>  Evaluating: ")
+		for cand in candidates: print(">>>>>       %s"%cand)
+		
+		simulations_data = self.controller.run(candidates,
+											   self.parameters)
+
+		fitness = []
+		
+		for times, samples in simulations_data:
+			# Calculate metrics for each trace
+			data_analysis = analysis.IClampAnalysis(
+								samples,
+								times,
+								self.analysis_var,
+								start_analysis = self.analysis_start_time,
+								end_analysis = self.analysis_end_time,
+								target_data_path = self.target_data_path,
+								show_smoothed_data = False,
+							)
+
+			
+			try:
+				data_analysis.analyse()
+			except:
+				data_analysis.analysable_data = False
+				
+				
+			fitness_value = self.evaluate_fitness(
+								data_analysis,
+								self.targets,
+								self.weights,
+								cost_function=evaluators.normalised_cost_function
+							)
+			fitness.append(fitness_value)
+
+			print('Fitness: %s\n'%fitness_value)
+			
+		return fitness
+	
+
+	def evaluate_fitness(self,
+						 data_analysis,
+						 target_dict={},
+						 target_weights=None,
+						 cost_function=evaluators.normalised_cost_function):
+		"""
+		Return the estimated fitness of the data, based on the cost function being used.
+			:param data_analysis: IClampAnalysis instance
+			:param target_dict: key-value pairs for targets
+			:param target_weights: key-value pairs for target weights
+			:param cost_function: cost function (callback) to assign individual targets sub-fitness.
+		"""
+	
+		#calculate max fitness value (TODO: there may be a more pythonic way to do this..)
+		worst_cumulative_fitness=0
+		for target in target_dict.keys():
+			if target_weights == None: 
+				target_weight = 1
+			else:
+				if target in target_weights.keys():
+					target_weight = target_weights[target]
+				else:
+					target_weight = 1.0
+	
+			worst_cumulative_fitness += target_weight
+
+		#if we have 1 or 0 peaks we won't conduct any analysis
+		if data_analysis.analysable_data == False:
+			print('Data is non-analysable')
+			return worst_cumulative_fitness
+
+		else:
+			fitness = 0
+
+			for target in target_dict.keys():
+
+				target_value=target_dict[target]
+
+				if target_weights == None: 
+					target_weight = 1
+				else:
+					if target in target_weights.keys():
+						target_weight = target_weights[target]
+					else:
+						target_weight = 1.0
+				if target_weight > 0:
+					value = data_analysis.analysis_results[target]
+					#let function pick Q automatically
+					inc = target_weight*cost_function(value,target_value)
+					fitness += inc
+
+					print('Target %s (weight %s): target val: %s, actual: %s, fitness increment: %s'%(target, target_weight, target_value, value, inc))
+
+			return fitness
 
 def optimization_routine():
 	""" Main method for the optimization routine """
@@ -322,19 +511,22 @@ def optimization_routine():
 	# Voltage trace of original model for comparison
 	target_protocol = Protocol.SPONTANEOUS
 	target_Vm_path = protocol_Vm_paths[target_protocol]
+
+	# Create controller to run simulations
 	stn_controller = STNCellController(target_protocol, reduced_model_path)
+	stn_controller.gbar_adjust_allsec = True # whether gbar scaling wil apply to all sections
 
 	# Parameters that constitute a candidate ('DNA') and their bounds
 	# NOTE: based on fitting routine described in Gillies & Willshaw (2006)
 	passive_params_bounds = {
 		# soma properties
-		'soma_cm_factor': 		(1.0,5.0),
+		'soma_cm_factor': 		(1.0,2.0),
 		'soma_Rm_factor': 		(0.5,5.0),
 		'soma_Ra':				(100.,300.), # 150 in full model
-		'soma_diam_factor':		(0.1,1.0),
+		'soma_diam_factor':		(0.5,1.0),
 		# dendrite properties
-		'dend_cm_factor':		(1.0,5.0),
-		'dend_Rm_factor':		(0.5,5.0),
+		'dend_cm_factor':		(1.0,2.0),
+		'dend_Rm_factor':		(0.5,2.0),
 		'dend_Ra':				(100.,300.), # 150 in full model
 		'dend_diam_factor':		(0.5,2.0),
 	}
@@ -365,7 +557,7 @@ def optimization_routine():
 		'gbar_sca_gcaL_HVA':	(0.5,2.0), # distal linear dist
 		'gbar_sca_gcaN_HVA':	(0.5,2.0), # proximal linear dist
 		'gbar_sca_gcaT_CaT':	(0.5,2.0), # distal linear dist
-		'gbar_sca_gna_NaL':		(0.5,2.0), # constant dist
+		'gbar_sca_gna_NaL':		(0.5,1.0), # constant dist
 		# 'gbar_sca_gna_Na_factor', # constant dist (negligibly small)
 	}
 
@@ -376,13 +568,15 @@ def optimization_routine():
 	# Parameters to tune spontaneous firing
 	spont_params = [
 		# soma properties
-		'soma_Ra', # 150 in full model
 		'soma_diam_factor',
+		'soma_cm_factor',
+		# 'soma_Ra', # 150 in full model
 		# dendrite properties
 		'dend_cm_factor',
 		'dend_Rm_factor',
 		'dend_Ra', # 150 in full model
 		'dend_diam_factor',
+		'gbar_sca_gna_NaL',
 	]
 	# Parameters to tune bursts
 	burst_params = [
@@ -403,6 +597,13 @@ def optimization_routine():
 	# Final parameters for current optimization (subset of all parameters)
 	final_params = spont_params
 
+	# Seeds (initial candidates), e.g. from previous optimization
+	spont_seeds = [ # soma_diam, soma_cm, dend_cm, dend_Rm, dend_Ra, dend_diam, gna_NaL
+		[1.0, 1.0, 1.0, 1.0, 150., 1.0, 1.0], # default after model reduction
+		[0.5573267195761666, 1.252340068894955, 1.8412707861542312, 2.0, 228.62780124436583, 0.6617425835741709, 1.0],
+		[0.563915223257359, 1.4561344744499622, 2.0, 2.0, 228.0626727668688, 0.6617425835741709, 1.0],
+	]
+
 	# Parameters for calculation of voltage trace metrics
 	trace_analysis_params = {
 		'peak_delta':		1e-4, # the value by which a peak or trough has to exceed its neighbours to be considered outside of the noise
@@ -416,11 +617,11 @@ def optimization_routine():
 	spont_error_weights = {
 		# Spike timing/frequency related
 		'first_spike_time': 1.0,		# time of first AP
-		'max_peak_no': 1.0,				# number of AP peaks
+		'max_peak_no': 2.0,				# number of AP peaks
 		'min_peak_no': 1.0,				# number of AP throughs
 		'spike_frequency_adaptation': 1.0,	# slope of exp fit to initial & final frequency
 		'trough_phase_adaptation': 1.0,	# slope of exp fit to phase of first and last through
-		'mean_spike_frequency': 1.0,	# mean AP frequency
+		'mean_spike_frequency': 2.0,	# mean AP frequency
 		'interspike_time_covar': 1.0,	# coefficient of variation of ISIs
 		'average_maximum': 1.0,			# average value of AP peaks
 		'average_minimum': 1.0,			# average value of AP throughs
@@ -429,36 +630,40 @@ def optimization_routine():
 		'spike_width_adaptation': 1.0,	# slope of exp fit to first & last AP width
 		'peak_decay_exponent': 1.0,		# Decay of AP peaks
 		'trough_decay_exponent': 1.0,	# Decay of AP throughs
-		'pptd_error':1.0				# Phase-plane trajectory density (see Van Geit (2008))
+		'pptd_error':2.0				# Phase-plane trajectory density (see Van Geit (2008))
 	}
 
 	final_error_weights = spont_error_weights
 
 	# Make evaluator to map candidate parameter sets to fitness values
-	stn_evaluator = evaluators.IClampEvaluator(controller = stn_controller,
-												analysis_start_time = protocol_intervals[target_protocol][0],
-												analysis_end_time = protocol_intervals[target_protocol][1],
-												target_data_path = target_Vm_path,
-												parameters = final_params,
-												analysis_var = trace_analysis_params,
-												weights = final_error_weights,
-												targets = None, # self-computed metrics
-												automatic = True) # automatic: compute metrics from target trace
+	stn_evaluator = CustomIClampEvaluator(
+						controller = stn_controller,
+						analysis_start_time = protocol_intervals[target_protocol][0],
+						analysis_end_time = protocol_intervals[target_protocol][1],
+						target_data_path = target_Vm_path,
+						parameters = final_params,
+						analysis_var = trace_analysis_params,
+						weights = final_error_weights,
+						targets = None, # if not None: provide self-computed metrics
+						automatic = True # if automatic: metrics computed from target trace
+					)
 
 	#make an optimizer
 	min_constraints = [all_params_bounds[par][0] for par in final_params]
 	max_constraints = [all_params_bounds[par][1] for par in final_params]
 	# The optimizer creates an inspyred.ec.EvolutionaryComputation() algorithm
 	# and calls its evolve() method (see docs at http://pythonhosted.org/inspyred/reference.html#inspyred.ec.EvolutionaryComputation)
-	my_optimizer = optimizers.CustomOptimizerA(max_constraints,
-											min_constraints,
-											stn_evaluator,
-											population_size = 3, # initial number of candidates
-											max_evaluations = 100,
-											num_selected = 3,
-											num_offspring = 3,
-											num_elites = 1,
-											seeds = None)
+	my_optimizer = optimizers.CustomOptimizerA(
+						max_constraints,
+						min_constraints,
+						stn_evaluator,
+						population_size = 15, # initial number of individuals/candidates
+						max_evaluations = 400,
+						num_selected = 3, # how many individuals should become parents
+						num_offspring = 6, # total number of offspring (default = pop size)
+						num_elites = 1,
+						seeds = spont_seeds #  iterable collection of candidate solutions to include in the initial population
+					)
 
 	#run the optimizer
 	my_optimizer.optimize()
