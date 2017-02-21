@@ -41,6 +41,7 @@ from interpolation import *
 import reduction_analysis
 import reduce_marasco as marasco
 import reduce_bush_sejnowski as bush
+from optimization import STNCellController, Protocol
 
 # Global variables
 soma = None
@@ -308,15 +309,50 @@ def stn_cell(cellmodel):
 		allsecs = [soma] + list(dends)
 
 	elif cellmodel==3: # Bush & Sejnowski method
-		# clusters, eq_secs = bush.reduce_bush_sejnowski()
-		filepath = "C:\\Users\\lkoelman\\Downloads\\stn_reduced_bush.p"
+		clusters, eq_secs = bush.reduce_bush_sejnowski()
+		# filepath = "C:\\Users\\lkoelman\\Downloads\\stn_reduced_bush.p"
 		# bush.save_clusters(clusters, filepath)
-		clusters = bush.load_clusters(filepath)
-		eq_secs = bush.rebuild_sections(clusters)
+		# clusters = bush.load_clusters(filepath)
+		# eq_secs = bush.rebuild_sections(clusters)
 		soma = next(sec for sec in eq_secs if sec.name().startswith('soma'))
 		dendsec = next(sec for sec in eq_secs if sec.name().startswith('spiny'))
 		dendloc = 0.9
 		allsecs = eq_secs
+
+	elif cellmodel==6: # Optimized Bush model
+		reduced_model_path = "C:\\Users\\lkoelman\\cloudstore_m\\simdata\\bush_sejnowski\\stn_reduced_bush.p"
+		stn_controller = STNCellController(Protocol.SPONTANEOUS, reduced_model_path)
+		# Fittest candidate for SPONTANEOUS optimization
+		# stn_controller.gbar_adjust_allsec = True # whether gbar scaling wil apply to all sections
+		# fittest_candidate = [
+		# 	'soma_diam_factor': 0.563915223257359,
+		# 	'soma_cm_factor': 1.4561344744499622,
+		# 	'dend_cm_factor': 2.0,
+		# 	'dend_Rm_factor': 2.0,
+		# 	'dend_Ra': 228.0626727668688, # 150 in full model
+		# 	'dend_diam_factor': 0.6617425835741709,
+		# 	'gbar_sca_gna_NaL': 1.0,
+		# ]
+		# Fittest candidate for REBOUND optimization
+		stn_controller.gbar_adjust_allsec = False
+		fittest_candidate = {
+			# soma properties
+			'soma_diam_factor': 0.5166409889357284,
+			'soma_cm_factor': 1.0,
+			# dendrite passive properties
+			'dend_cm_factor': 1.0046280491823951,
+			'dend_Rm_factor': 1.9313327747357878,
+			'dend_Ra': 193.88153564188488,
+			'dend_diam_factor': 0.7810045138119329,
+			# dendrite active properties
+			'gbar_sca_gk_sKCa': 1.0052884459348173, # distal double step dist
+			'gbar_sca_gcaL_HVA': 1.4765306846140291, # distal linear dist
+			'gbar_sca_gcaT_CaT': 1.4500118248990195, # distal linear dist
+		}
+		soma, dendsecs = stn_controller.build_candidate(fittest_candidate)
+		dendsec = next(sec for sec in dendsecs if sec.name().startswith('spiny'))
+		dendloc = 0.9
+		allsecs = [soma] + dendsecs
 
 	elif cellmodel==4 or cellmodel==5: # Marasco - custom clustering
 		marasco_method = True # whether trees will be averaged (True, as in paper) or Rin conserved (False)
@@ -768,9 +804,16 @@ def test_reboundburst(soma, dends_locs, stims):
 	stim1.dur = 500
 	stim1.amp = 0.0
 
-	stim2.delay = 500
-	stim2.dur = 500
-	stim2.amp = -0.25 # -0.25 in full model
+	# stim2.delay = 200
+	# stim2.dur = 500
+	# stim2.amp = -0.11 # -0.25 in full model (hyperpolarize to -75 mV steady state)
+
+	stim2.amp = 0
+	clamp = h.SEClamp(soma(0.5))
+	clamp.dur1 = 0
+	clamp.dur2 = 0
+	clamp.dur3 = 500
+	clamp.amp3 = -75
 
 	stim3.delay = 1000
 	stim3.dur = 1000
@@ -782,6 +825,7 @@ def test_reboundburst(soma, dends_locs, stims):
 
 	# Membrane voltages
 	traceSpecs['V_soma'] = {'sec':'soma','loc':0.5,'var':'v'}
+	traceSpecs['t_global'] = {'var':'t'}
 	for i, (dend,loc) in enumerate(dends_locs):
 		dendname = 'dend%i' % i
 		secs[dendname] = dend
@@ -791,15 +835,8 @@ def test_reboundburst(soma, dends_locs, stims):
 	rec_currents_activations(traceSpecs, 'soma', 0.5)
 	rec_currents_activations(traceSpecs, 'dend', dendloc, ion_species=['ca','k'])
 
-	# # K currents (dendrite)
-	# traceSpecs['I_KCa_d'] = {'sec':'dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
-	# # Ca currents (dendrite)
-	# traceSpecs['I_CaL_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iLCa'}
-	# traceSpecs['I_CaN_d'] = {'sec':'dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
-	# traceSpecs['I_CaT_d'] = {'sec':'dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
-
 	# Start recording
-	recordStep = 0.05
+	recordStep = 0.025
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Simulate
@@ -812,6 +849,13 @@ def test_reboundburst(soma, dends_locs, stims):
 	figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), traceSharex=True)
 	vm_fig = figs_vm[0]
 	vm_ax = figs_vm[0].axes[0]
+
+	# Save trace to file
+	V_soma = np.array(recData['V_soma'], ndmin=2)
+	T_soma = np.array(recData['t_global'], ndmin=2)
+	TV_soma = np.concatenate((T_soma, V_soma), axis=0) * 1e-3 # pyelectro expects SI units: seconds, Volts
+	fpath = 'C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\rebound_full_SEClamp_Vm_dt25e-3_0-2000_ms.csv'
+	np.savetxt(fpath, TV_soma.T, delimiter=',', fmt=['%.3E', '%.7E'])
 
 	# Plot ionic currents, (in)activation variables
 	figs_soma, cursors_soma = plot_currents_activations(recData, recordStep, sec_tag='soma')
@@ -962,7 +1006,7 @@ def compare_conductance_dist(gnames):
 def run_experimental_protocol():
 	""" Run one of the experiments using full or reduced STN model """
 	# Make cell
-	reduction_method = 3 # 1=full / 2=Rall reduction / 3=Bush / 4=Marasco (clusterdiam) / 5=Marasco (Rin)
+	reduction_method = 6 # 1=full / 2=Rall reduction / 3=Bush / 6=optimized Bush / 4&5=Marasco
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Manual cell adjustments
@@ -996,8 +1040,8 @@ def run_experimental_protocol():
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
 	# Run experimental protocol
-	recData = test_spontaneous(soma, dends_locs, stims)
-	# recData = test_reboundburst(soma, dends_locs, stims)
+	# recData = test_spontaneous(soma, dends_locs, stims)
+	recData = test_reboundburst(soma, dends_locs, stims)
 	# recData = test_plateau(soma, dends_locs, stims)
 	# recData = test_slowbursting()
 

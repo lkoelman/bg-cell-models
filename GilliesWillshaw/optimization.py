@@ -61,14 +61,15 @@ class Protocol:
 	PLATEAU = 3
 
 # Saved voltage trace for each protocol
-protocol_Vm_paths = {
-	Protocol.SPONTANEOUS:"C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv"
+protocol_Vm_paths = { # ADJUSTME
+	Protocol.SPONTANEOUS:"C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv",
+	Protocol.REBOUND:"C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\rebound_full_SEClamp_Vm_dt25e-3_0-2000_ms.csv",
 }
 
 # Time interval where voltage traces should be compared for each protocol
-protocol_intervals = {
-	Protocol.SPONTANEOUS:	(200.0, 1000.0),
-	Protocol.REBOUND:		(200.0, 1000.0),
+protocol_intervals = { # ADJUSTME
+	Protocol.SPONTANEOUS:	(200.0, 1000.0), # representative interval
+	Protocol.REBOUND:		(500.0, 700.0), # interval of rebound burst
 	Protocol.PLATEAU:		(200.0, 1000.0),
 }
 
@@ -166,41 +167,22 @@ class Simulation(object):
 			h.v_init = -60 # paper simulations use default v_init
 			self.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
-		elif protocol == Protocol.REBOUND:
-			# Plateau potential: short depolarizing pulse at hyperpolarized level
-			h.dt = self.dt
-			h.celsius = 30 # different temp from paper
-			h.v_init = -60 # paper simulations sue default v_init
-			set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
-
-			# Stimulation: depolarizing pulse at hyperpolarized level
-			stim = h.IClamp(self.sec(0.5))
-			self.stim = stim
-			I_hyper = -0.17 # hyperpolarize to -70 mV (see fig. 10C)
-			I_depol = I_hyper + 0.2 # see fig. 10D: 0.2 nA (=stim.amp) over hyperpolarizing current
-			dur_depol = 50 # see fig. 10D, top right
-			del_depol = 1000
-			self.i_ampvec = h.Vector([I_hyper, I_depol, I_hyper])
-			self.i_tvec = h.Vector([0, del_depol, del_depol+dur_depol])
-			self.i_ampvec.play(stim, stim._ref_amp, self.i_tvec)
-
 		elif protocol == Protocol.PLATEAU:
-			# Rebound burst: response to bried hyperpolarizing pulse
+			raise NotImplementedError("Implement PLATEAU protocol")
+
+		elif protocol == Protocol.REBOUND:
+			# Rebound burst: response to brief hyperpolarizing pulse
 			h.dt = self.dt
 			h.celsius = 35 # different temp from paper
 			h.v_init = -60 # paper simulations sue default v_init
-			set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+			self.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
-			# Stimulation: brief hyperpolarizing pulse, then release
-			stim = h.IClamp(self.sec(0.5))
-			self.stim = stim
-			I_hyper = -0.25 # hyperpolarize to -70 mV (see fig. 10C)
-			dur_hyper = 500
-			del_hyper = 500
-			del_depol = 1000
-			stim.amp = I_hyper
-			stim.delay = del_hyper
-			stim.dur = dur_hyper
+			# Stimulation: hyperpolarize to -75, wait for steady state, then release
+			clamp = h.SEClamp(self.sec(0.5)) # NOTE: use SEClamp instead of IClamp to hyperpolarize to same level independent of passive parameters
+			clamp.dur1 = 0
+			clamp.dur2 = 0
+			clamp.dur3 = 500
+			clamp.amp3 = -75
 
 		else:
 			raise Exception("Unrecognized protocol {0}".format(protocol))
@@ -270,15 +252,26 @@ class STNCellController(object):
 		"""
 		traces = []
 		for candidate in candidates:
+			# Build simulation for candidate
 			cand_params = dict(zip(parameters,candidate))
-			t,v = self.run_candidate(cand_params)
+			soma_sec, dend_secs = self.build_candidate(cand_params)
+			sim = Simulation(soma_sec)
+
+			# Simulate candidate
+			t, v = sim.simulate_protocol(self.target_protocol)
 			traces.append([t,v])
+			# sim.show(cand_params)
 
 		return traces
 
-	def run_candidate(self, cand_params, show=False):
+	def build_candidate(self, cand_params):
 		"""
-		Run simulation for an individual candidate.
+		Build simulation for given candidate parameter set
+
+		@post		self.eq_secs is updated to contain the NEURON Sections
+					representing the given candidate
+
+		@return		tuple (soma section, list(dendrite sections))
 		"""
 		# for sec in h.allsec():
 		# 	h.delete_section() # delete existing cells
@@ -348,11 +341,7 @@ class STNCellController(object):
 				raise Exception("Unrecognized parameter '{}' with value <{}>".format(
 								par_name, par_value))
 
-		# Simulate experimental protocol with new cell
-		sim = Simulation(soma_sec)
-		t_trace, v_trace = sim.simulate_protocol(self.target_protocol)
-		# sim.show(cand_params)
-		return t_trace, v_trace
+		return soma_sec, dend_secs
 
 class CustomIClampEvaluator(evaluators.__Evaluator):
 	"""
@@ -455,13 +444,13 @@ class CustomIClampEvaluator(evaluators.__Evaluator):
 						 cost_function=evaluators.normalised_cost_function):
 		"""
 		Return the estimated fitness of the data, based on the cost function being used.
-			:param data_analysis: IClampAnalysis instance
-			:param target_dict: key-value pairs for targets
-			:param target_weights: key-value pairs for target weights
-			:param cost_function: cost function (callback) to assign individual targets sub-fitness.
+			:param data_analysis:	IClampAnalysis instance
+			:param target_dict:		key-value pairs for targets
+			:param target_weights: 	key-value pairs for target weights
+			:param cost_function: 	cost function (callback) to assign individual targets sub-fitness.
 		"""
 	
-		#calculate max fitness value (TODO: there may be a more pythonic way to do this..)
+		# calculate max fitness value (TODO: there may be a more pythonic way to do this..)
 		worst_cumulative_fitness=0
 		for target in target_dict.keys():
 			if target_weights == None: 
@@ -504,17 +493,26 @@ class CustomIClampEvaluator(evaluators.__Evaluator):
 			return fitness
 
 def optimization_routine():
-	""" Main method for the optimization routine """
+	""" Main method for the optimization routine
+
+	HOWTO adjust for optimization:
+		- Simulate protocol with full model and save trace with same time step
+		- Adjust protocol for reduced model (stim timing + adjust stim current to polarize to same level)
+		- Adjust optimization parameters (see ADJUSTME tags):
+			- adjust parameters to optimize ('chromosome')
+			- adjust seed candidates
+			- adjust targets and their weights based on protocol
+	"""
 
 	# Make a controller to simulate candidates
 	reduced_model_path = "C:\\Users\\lkoelman\\cloudstore_m\\simdata\\bush_sejnowski\\stn_reduced_bush.p"
 	# Voltage trace of original model for comparison
-	target_protocol = Protocol.SPONTANEOUS
+	target_protocol = Protocol.REBOUND # ADJUSTME
 	target_Vm_path = protocol_Vm_paths[target_protocol]
 
 	# Create controller to run simulations
 	stn_controller = STNCellController(target_protocol, reduced_model_path)
-	stn_controller.gbar_adjust_allsec = True # whether gbar scaling wil apply to all sections
+	stn_controller.gbar_adjust_allsec = False # whether gbar scaling wil apply to all sections (ADJUSTME)
 
 	# Parameters that constitute a candidate ('DNA') and their bounds
 	# NOTE: based on fitting routine described in Gillies & Willshaw (2006)
@@ -567,41 +565,48 @@ def optimization_routine():
 
 	# Parameters to tune spontaneous firing
 	spont_params = [
-		# soma properties
+		# soma passive properties
 		'soma_diam_factor',
 		'soma_cm_factor',
 		# 'soma_Ra', # 150 in full model
-		# dendrite properties
+		# dendrite passive properties
 		'dend_cm_factor',
 		'dend_Rm_factor',
 		'dend_Ra', # 150 in full model
 		'dend_diam_factor',
+		# active properties
 		'gbar_sca_gna_NaL',
 	]
 	# Parameters to tune bursts
 	burst_params = [
 		# soma properties
-		'soma_gNaL_factor'
+		'soma_diam_factor',
+		'soma_cm_factor',
 		# dendrite passive properties
 		'dend_cm_factor',
 		'dend_Rm_factor',
 		'dend_Ra',
 		'dend_diam_factor',
 		# dendrite active properties
-		'gbar_sca_gna_NaL',
-		'gbar_sca_gk_Ih', # distal linear dist
 		'gbar_sca_gk_sKCa', # distal double step dist
 		'gbar_sca_gcaL_HVA', # distal linear dist
 		'gbar_sca_gcaT_CaT', # distal linear dist
 	]
-	# Final parameters for current optimization (subset of all parameters)
-	final_params = spont_params
+	
 
 	# Seeds (initial candidates), e.g. from previous optimization
 	spont_seeds = [ # soma_diam, soma_cm, dend_cm, dend_Rm, dend_Ra, dend_diam, gna_NaL
 		[1.0, 1.0, 1.0, 1.0, 150., 1.0, 1.0], # default after model reduction
 		[0.5573267195761666, 1.252340068894955, 1.8412707861542312, 2.0, 228.62780124436583, 0.6617425835741709, 1.0],
 		[0.563915223257359, 1.4561344744499622, 2.0, 2.0, 228.0626727668688, 0.6617425835741709, 1.0],
+	]
+
+	burst_seeds = [ # soma_diam, soma_cm, dend_cm, dend_Rm, dend_Ra, dend_diam, gsKCa, gcaL, gcaT
+		[1.0, 1.0, 1.0, 1.0, 150., 1.0, 1.0, 1.0, 1.0], # default after model reduction
+		[0.5573267195761666, 1.252340068894955, 1.8412707861542312, 2.0, 228.62780124436583, 0.6617425835741709, 1.0, 1.0, 1.0],
+		[0.563915223257359, 1.4561344744499622, 2.0, 2.0, 228.0626727668688, 0.6617425835741709, 1.0, 1.0, 1.0],
+		[0.5040251966091115, 1.282989976, 1.30888976, 1.143723054, 195.2667889, 0.782315645, 1.063518297, 1.644093284, 1.4511723121050117],
+		[0.5166409889357284, 1.0, 1.0046280491823951, 1.9313327747357878, 193.88153564188488, 0.7810045138119329, 1.0052884459348173, 1.4765306846140291, 1.4500118248990195] 
 	]
 
 	# Parameters for calculation of voltage trace metrics
@@ -628,12 +633,34 @@ def optimization_routine():
 		# Spike shape related
 		'spike_broadening': 1.0,		# ratio first AP width to avg of following AP widths
 		'spike_width_adaptation': 1.0,	# slope of exp fit to first & last AP width
-		'peak_decay_exponent': 1.0,		# Decay of AP peaks
-		'trough_decay_exponent': 1.0,	# Decay of AP throughs
-		'pptd_error':2.0				# Phase-plane trajectory density (see Van Geit (2008))
+		'peak_decay_exponent': 1.0,		# Decay of AP peak height
+		'trough_decay_exponent': 1.0,	# Decay of AP through height
+		'pptd_error': 2.0				# Phase-plane trajectory density (see Van Geit (2008))
 	}
 
-	final_error_weights = spont_error_weights
+	burst_error_weights = {
+		# Spike timing/frequency related
+		'first_spike_time': 0.0,		# time of first AP
+		'max_peak_no': 1.0,				# number of AP peaks
+		'min_peak_no': 1.0,				# number of AP throughs
+		'spike_frequency_adaptation': 1.0,	# slope of exp fit to initial & final frequency
+		'trough_phase_adaptation': 1.0,	# slope of exp fit to phase of first and last through
+		'mean_spike_frequency': 0.0,	# mean AP frequency
+		'interspike_time_covar': 1.0,	# coefficient of variation of ISIs
+		'average_maximum': 1.0,			# average value of AP peaks
+		'average_minimum': 1.0,			# average value of AP throughs
+		# Spike shape related
+		'spike_broadening': 0.0,		# ratio first AP width to avg of following AP widths
+		'spike_width_adaptation': 1.0,	# slope of exp fit to first & last AP width
+		'peak_decay_exponent': 1.0,		# Decay of AP peak height
+		'trough_decay_exponent': 1.0,	# Decay of AP through height
+		'pptd_error': 1.0				# Phase-plane trajectory density (see Van Geit (2008))
+	}
+
+	# Final parameters for current optimization (ADJUSTME)
+	final_params = burst_params
+	final_error_weights = burst_error_weights
+	final_seeds = burst_seeds
 
 	# Make evaluator to map candidate parameter sets to fitness values
 	stn_evaluator = CustomIClampEvaluator(
@@ -662,7 +689,7 @@ def optimization_routine():
 						num_selected = 3, # how many individuals should become parents
 						num_offspring = 6, # total number of offspring (default = pop size)
 						num_elites = 1,
-						seeds = spont_seeds #  iterable collection of candidate solutions to include in the initial population
+						seeds = final_seeds #  iterable collection of candidate solutions to include in the initial population
 					)
 
 	#run the optimizer
