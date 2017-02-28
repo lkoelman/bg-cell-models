@@ -157,7 +157,7 @@ def plot_Na_vars_MSM(voltage, celsius=22, version='KuoBean1994_transient'):
     ############################################################################
     ### Do & Bean (2003) ###
 
-    - provides no model, only experiments
+    - provides NO MODEL, only experiments
 
     - see summary in PDF bookmarks
 
@@ -183,7 +183,7 @@ def plot_Na_vars_MSM(voltage, celsius=22, version='KuoBean1994_transient'):
     """
 
     # v-dependence of rate coefficients
-    q10 = 3.
+    q10 = 3. # Q10 for rates
     qt = q10**((celsius-22.)/10.) # Room temperature defined as 22 degrees Celsius
 
     if 'KuoBean1994_transient':
@@ -291,7 +291,7 @@ def plot_Na_vars_MSM(voltage, celsius=22, version='KuoBean1994_transient'):
     
     # SET FINAL TRANSITION RATES
     v = voltage
-    a_factor = ((Coff_func(v)/Con_func(v))/(Ooff_func(v)/Oon_func(v)))**(1./8.) # In Kui & Bean
+    a_factor = ((Coff_func(v)/Con_func(v))/(Ooff_func(v)/Oon_func(v)))**(1./8.) # In Kuo & Bean
     if 'KuoBean1994_transient':
         alfac = a_factor
         btfac = 1./a_factor

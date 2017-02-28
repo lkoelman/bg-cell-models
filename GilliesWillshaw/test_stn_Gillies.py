@@ -334,7 +334,7 @@ def stn_cell(cellmodel):
 		# 	'gbar_sca_gna_NaL': 1.0,
 		# ]
 		# Fittest candidate for REBOUND optimization
-		stn_controller.gbar_adjust_allsec = False
+		stn_controller.gbar_adjust_allsec = False # don't adjust gbar in soma
 		fittest_candidate = {
 			# soma properties
 			'soma_diam_factor': 0.5166409889357284,

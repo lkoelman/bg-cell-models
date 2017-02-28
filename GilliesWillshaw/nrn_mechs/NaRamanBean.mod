@@ -5,8 +5,11 @@ Sodium channel for transient sodium current including voltage-dependent
 slow inactivation and recovery from inactivation (Kuo and Bean 1994) 
 
 Modified by Lucas Koelman, UCD Neuromuscular Systems group (November 2016)
-	- Q10 correction of maximum conductance
-	- use tables for rates
+	- Technical improvements:
+		- Q10 correction of maximum conductance
+		- use tables for rates
+	- Mechanism:
+		- see parameters in analyze_stn_channels.py to implement a specific channel model
 
 Modified by Akemann and Knoepfel, J.Neurosci. 26 (2006) 4602
 	- Q10 correction of all rate constants
@@ -33,7 +36,7 @@ Kuo & Bean (1994)
 ENDCOMMENT
 
 NEURON {
-  SUFFIX Natrans : NOTE: change Natrans->Na and gbar->gna for interoperability with default Na mechanism
+  SUFFIX NaRB : NOTE: change Natrans->Na and gbar->gna for interoperability with default Na mechanism
   USEION na READ ena WRITE ina
   RANGE g, gbar, ina
   GLOBAL activate_Q10_rates, activate_Q10_gbar
@@ -59,38 +62,40 @@ CONSTANT {
 
 PARAMETER {
 	activate_Q10_rates = 1
-	activate_Q10_gbar = 1
+	activate_Q10_gbar = 0
 
 	gbar = 0.014 (S/cm2) 
 	celsius (degC)			
 
-	: kinetic parameters
+	: On and Off rates for inactivating particle
 	Con = 0.005			(1/ms)		: closed -> inactivated transitions
 	Coff = 0.5			(1/ms)		: inactivated -> closed transitions
-	Oon = 2.3			(1/ms)		: open -> Ineg transition
+	Oon = 0.75			(1/ms)		: open -> Ineg transition
 	Ooff = 0.005		(1/ms)		: Ineg -> open transition
+
+	: Transition rates between weakly/tightly bound states
 	alpha = 150			(1/ms)		: activation
 	beta = 3			(1/ms)		: deactivation
 	gamma = 150			(1/ms)		: opening
 	delta = 40			(1/ms)		: closing, greater than BEAN/KUO = 0.2
+	epsilon = 1.75		(1/ms)		: open -> Iplus for tau = 0.3 ms at +30 with x5
+	zeta = 0.03			(1/ms)		: Iplus -> open for tau = 25 ms at -30 with x6
 	: NOTE: by setting epsilon so low, transition to the 'B' state (resurgent current)
 	:       is disabled in this mechanism (set this greater to implement resurgent current).
 	:       This makes the state diagram
-	epsilon = 1e-12		(1/ms)		: open -> Iplus for tau = 0.3 ms at +30 with x5
-	zeta = 0.03			(1/ms)		: Iplus -> open for tau = 25 ms at -30 with x6
 
-	: Vdep
+	: Slopes for voltage dependence of transition rates
 	x1 = 20				(mV)								: Vdep of activation (alpha)
 	x2 = -20			(mV)								: Vdep of deactivation (beta)
 	x3 = 1e12			(mV)								: Vdep of opening (gamma)
-	x4 = -1e12			(mV)								: Vdep of closing (delta)
+	x4 = 1e12			(mV)								: Vdep of closing (delta)
 	x5 = 1e12			(mV)								: Vdep into Ipos (epsilon)
 	x6 = -25			(mV)								: Vdep out of Ipos (zeta)
 }
 
 ASSIGNED {
 	alfac   				: microscopic reversibility factors
-	btfac				
+	btfac
 
 	: rates
 	f01  		(/ms)
@@ -178,9 +183,10 @@ INITIAL {
 	} else {
 		gqt = 1
 	}
+
+	alfac = ((Coff/Con)/(Ooff/Oon))^(1.0/8.0)
+	btfac = 1.0/alfac
 	
-	alfac = (Oon/Con)^(1/4)
-	btfac = (Ooff/Coff)^(1/4) 
 	rates(v)
 
 	SOLVE seqinitial
@@ -232,17 +238,37 @@ PROCEDURE rates(v(mV) )
 {
  TABLE f01,f02,f03,f04,f0O,fip,f11,f12,f13,f14,f1n,fi1,fi2,fi3,fi4,fi5,fin,b01,b02,b03,b04,b0O,bip,b11,b12,b13,b14,b1n,bi1,bi2,bi3,bi4,bi5,bin DEPEND celsius FROM -100 TO 100 WITH 400
  
+ : Top row, right direction: C(i) -> C(i+1) (weaker binding)
  f01 = 4 * alpha * exp(v/x1) * qt
  f02 = 3 * alpha * exp(v/x1) * qt
  f03 = 2 * alpha * exp(v/x1) * qt
  f04 = 1 * alpha * exp(v/x1) * qt
  f0O = gamma * exp(v/x3) * qt
- fip = epsilon * exp(v/x5) * qt
+ fip = epsilon * exp(v/x5) * qt : Open -> Blocked
+
+ : Top row, left direction: C(i) -> C(i-1) (tighter binding)
+ b01 = 1 * beta * exp(v/x2) * qt
+ b02 = 2 * beta * exp(v/x2) * qt
+ b03 = 3 * beta * exp(v/x2) * qt
+ b04 = 4 * beta * exp(v/x2) * qt
+ b0O = delta * exp(v/x4) * qt
+ bip = zeta * exp(v/x6) * qt
+
+ : Bottom row, right direction: I(i) -> I(i+1) (weaker binding)
  f11 = 4 * alpha * alfac * exp(v/x1) * qt
  f12 = 3 * alpha * alfac * exp(v/x1) * qt
  f13 = 2 * alpha * alfac * exp(v/x1) * qt
  f14 = 1 * alpha * alfac * exp(v/x1) * qt
  f1n = gamma * exp(v/x3) * qt
+
+ : Bottom row, left direction: I(i) -> I(i-1) (tighter binding)
+ b11 = 1 * beta * btfac * exp(v/x2) * qt
+ b12 = 2 * beta * btfac * exp(v/x2) * qt
+ b13 = 3 * beta * btfac * exp(v/x2) * qt
+ b14 = 4 * beta * btfac * exp(v/x2) * qt
+ b1n = delta * exp(v/x4) * qt
+
+ : Vertical down (inactivation)
  fi1 = Con * qt
  fi2 = Con * alfac * qt
  fi3 = Con * alfac^2 * qt
@@ -250,17 +276,7 @@ PROCEDURE rates(v(mV) )
  fi5 = Con * alfac^4 * qt
  fin = Oon * qt
 
- b01 = 1 * beta * exp(v/x2) * qt
- b02 = 2 * beta * exp(v/x2) * qt
- b03 = 3 * beta * exp(v/x2) * qt
- b04 = 4 * beta * exp(v/x2) * qt
- b0O = delta * exp(v/x4) * qt
- bip = zeta * exp(v/x6) * qt
- b11 = 1 * beta * btfac * exp(v/x2) * qt
- b12 = 2 * beta * btfac * exp(v/x2) * qt
- b13 = 3 * beta * btfac * exp(v/x2) * qt
- b14 = 4 * beta * btfac * exp(v/x2) * qt
- b1n = delta * exp(v/x4) * qt
+ : Vertical up (deinactivation)
  bi1 = Coff * qt
  bi2 = Coff * btfac * qt
  bi3 = Coff * btfac^2 * qt
@@ -268,4 +284,3 @@ PROCEDURE rates(v(mV) )
  bi5 = Coff * btfac^4 * qt
  bin = Ooff * qt
 }
-
