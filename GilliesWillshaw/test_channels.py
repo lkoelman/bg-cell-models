@@ -88,6 +88,20 @@ def test_spontaneous():
     """
     Play back spontaneous action potentials through a voltage clamp and record
     how channels react.
+
+    OBSERVATIONS
+    - for voltage protocol to trigger slow inactivation, you see the following
+      in the transient_resurgent models: during the 5 ms step to +30mV the occupation
+      of the B state and Itot states saturates. Then when you drop to -40mV, occupation
+      of the B state decreases exponentially while occupation of Itot rises to a new
+      saturation level. This is the transition B->O->Ii, i.e. recovery from the blocked
+      state through the open state (accompanied by a sizeable resurgent current) into
+      the 'slow'/'tight' inactivated states.
+
+    TODO
+    - test natural firing under depolarizing stimulation, then bring to -40 to trigger
+      transition into tight inactivated state, then stimulate again and see if firing
+      is slower (less excitable)
     """
     # Make dummy cell - will be voltage clamped so channels unimportant for dynamics
     all_Ra = 150.224
@@ -135,11 +149,17 @@ def test_spontaneous():
     ptr_parent = clamp
 
     # Play vector into voltage clamp
-    # csv_path = "C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv"
-    csv_path = "C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\cstim_fullmodel_Vm_dt25e-3_0ms_2000ms.csv"
-    tv = np.loadtxt(csv_path, delimiter=',', usecols=(0, 1), unpack=False)
-    t = tv[:,0] * 1e3
-    v = tv[:,1] * 1e3
+    replay = False
+    if replay:
+        # csv_path = "C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv"
+        csv_path = "C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\cstim_fullmodel_Vm_dt25e-3_0ms_2000ms.csv"
+        tv = np.loadtxt(csv_path, delimiter=',', usecols=(0, 1), unpack=False)
+        t = tv[:,0] * 1e3
+        v = tv[:,1] * 1e3
+    else:
+        # See protocols in Do & Bean (2003) Figs. 4A & 7A
+        v = [-90, +30, -40, -90]
+        t = [0, 700, 705, 805]
     amp_vec = h.Vector(v)
     t_vec = h.Vector(t)
     amp_vec.play(ptr_parent, ptr, t_vec)
@@ -175,7 +195,7 @@ def test_spontaneous():
     vm_ax = figs_vm[0].axes[0]
 
     # Plot ionic currents, (in)activation variables
-    figs, cursors = plot_currents_states(recData, recordStep, test_mechs, timeRange=[0.,750.])
+    figs, cursors = plot_currents_states(recData, recordStep, test_mechs, timeRange=[0.,1000.])
     plt.show(block=False)
 
     globals().update(locals())

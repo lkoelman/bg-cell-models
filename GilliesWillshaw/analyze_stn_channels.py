@@ -168,8 +168,8 @@ def plot_Na_vars_MSM(voltage, celsius=22, version='KuoBean1994_transient'):
 
     - all three components of Na current are strongly regulated by process of slow inactivation
         - 'slow inactivaton' = upon maintainted or repeated depolarization, a fraction of 
-           Na channels enter an inactivation state from which recovery is slower than for 
-           normal fast inactivation
+           Na channels enter a strong inactivation state from which recovery is slower than 
+           for normal fast inactivation
         - performs role of spike-rate adaptation: promotes a constant frequency
 
     ############################################################################
