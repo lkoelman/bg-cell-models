@@ -45,12 +45,15 @@ from optimization import STNCellController, Protocol
 
 # Global variables
 soma = None
-gillies_mechs = ['STh', 'Na', 'NaL', 'KDR', 'Kv31', 'Ih', 'Cacum', 'sKCa', 'CaT', 'HVA'] # all mechanisms
-gillies_gdict = {'STh': ['gpas'], # passive/leak channel
-				'Na': ['gna'], 'NaL':['gna'], # Na channels
-				'KDR':['gk'], 'Kv31':['gk'], 'sKCa':['gk'], # K channels
-				'Ih':['gk'], # nonspecific channels
-				'CaT':['gcaT'], 'HVA':['gcaL', 'gcaN']} # Ca channels
+gillies_gdict = {
+	'STh':	['gpas'], 								# passive/leak channel
+	'Na':	['gna'], 'NaL':['gna'],					# Na channels
+	'KDR':	['gk'], 'Kv31':['gk'], 'sKCa':['gk'],	# K channels
+	'Ih':	['gk'], 								# nonspecific channels
+	'CaT':	['gcaT'], 'HVA':['gcaL', 'gcaN'], 		# Ca channels
+	'Cacum': [],									# No channels
+}
+gillies_mechs = list(gillies_gdict.keys()) # all mechanisms
 gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
 
 
@@ -651,7 +654,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	# V_soma = np.array(recData['V_soma'], ndmin=2)
 	# T_soma = np.array(recData['t_global'], ndmin=2)
 	# TV_soma = np.concatenate((T_soma, V_soma), axis=0) * 1e-3 # pyelectro expects SI units: seconds, Volts
-	# fpath = 'C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\spont_fullmodel_Vm_dt25e-3_0ms_2000ms.csv'
+	# fpath = 'C:\\Users\\lkoelman\\cloudstore_m\\simdata\\fullmodel\\cstim_fullmodel_Vm_dt25e-3_0ms_2000ms.csv'
 	# np.savetxt(fpath, TV_soma.T, delimiter=',', fmt=['%.3E', '%.7E'])
 
 	plt.show(block=False)
@@ -1006,7 +1009,7 @@ def compare_conductance_dist(gnames):
 def run_experimental_protocol():
 	""" Run one of the experiments using full or reduced STN model """
 	# Make cell
-	reduction_method = 6 # 1=full / 2=Rall reduction / 3=Bush / 6=optimized Bush / 4&5=Marasco
+	reduction_method = 1 # 1=full / 2=Rall reduction / 3=Bush / 6=optimized Bush / 4&5=Marasco
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Manual cell adjustments
@@ -1040,8 +1043,8 @@ def run_experimental_protocol():
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
 	# Run experimental protocol
-	# recData = test_spontaneous(soma, dends_locs, stims)
-	recData = test_reboundburst(soma, dends_locs, stims)
+	recData = test_spontaneous(soma, dends_locs, stims)
+	# recData = test_reboundburst(soma, dends_locs, stims)
 	# recData = test_plateau(soma, dends_locs, stims)
 	# recData = test_slowbursting()
 

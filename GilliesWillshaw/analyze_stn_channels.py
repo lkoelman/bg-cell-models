@@ -167,6 +167,9 @@ def plot_Na_vars_MSM(voltage, celsius=22, version='KuoBean1994_transient'):
           (i.e. a 're-surge' in Na current after the AP depolarizing surge)
 
     - all three components of Na current are strongly regulated by process of slow inactivation
+        - 'slow inactivaton' = upon maintainted or repeated depolarization, a fraction of 
+           Na channels enter an inactivation state from which recovery is slower than for 
+           normal fast inactivation
         - performs role of spike-rate adaptation: promotes a constant frequency
 
     ############################################################################
@@ -266,7 +269,7 @@ def plot_Na_vars_MSM(voltage, celsius=22, version='KuoBean1994_transient'):
     if 'KuoBean1994' or 'TaddeseBean2002_transient_persistent':
         # RESURGENT CURRENT NOT MODELED
         epsilon = 1e-12
-        zeta = 1e-12
+        zeta = 0.03
         epsilon_func = lambda v: epsilon * qt # no voltage dependence
         zeta_func = lambda v: zeta * qt
     

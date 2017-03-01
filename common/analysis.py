@@ -171,7 +171,7 @@ blueish = [
 solid_styles = ['-']
 broken_styles = ['--', '-.', ':']
 
-def pick_line(trace_name, trace_index):
+def pick_line(trace_name, trace_index, solid_only=False):
 	""" Pick a line style and color based on the trace name """
 	style_map = {
 		'I': (allcolors, solid_styles),
@@ -181,6 +181,10 @@ def pick_line(trace_name, trace_index):
 		'B': (redish, broken_styles),
 		'O': (blueish, broken_styles),
 	}
+	if solid_only:
+		style_map['A'] = (greenish, solid_styles)
+		style_map['B'] = (redish, solid_styles)
+		style_map['O'] = (blueish, solid_styles)
 	default_style = (allcolors, broken_styles)
 
 	# pick a line style
@@ -198,7 +202,7 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 					showFig=True, colorList=None, lineList=None, 
 					traceSharex=None, fig=None, showGrid=True,
 					yRange=None, twinFilter=None, includeFilter=None,
-					yRangeR=None, ax1=None):
+					yRangeR=None, ax1=None, solid_only=False):
 	""" Cumulative plot of traces
 
 	@param fig 				if provided, add axs as subplot to this fig
@@ -256,7 +260,7 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 			pax = ax2
 		else:
 			pax = ax1
-		line_color, line_style = pick_line(tracename, itrace)
+		line_color, line_style = pick_line(tracename, itrace, solid_only=solid_only)
 		li, = pax.plot(t[:len(data)], data+cumulTrace, label=tracename, 
 						color=line_color, linestyle=line_style)
 		lines.append(li)

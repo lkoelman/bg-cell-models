@@ -190,8 +190,8 @@ INITIAL {
 	Coff1 = 9.0 : recovery rate at tightest level (1)
 	Con5 = 0.05 : inactivation rate at weakest bound level (5)
 	Coff5 = 0.00025  : recovery rate at weakest bound level (5)
-	alfac = (Con5/Con1)^(1.0/4.0)
-	btfac = 1.0/((Coff1/Coff5)^(1.0/4.0))
+	alfac = (Con5/Con1)^(1.0/4.0) : alfac = 1.88 at room temperature
+	btfac = 1.0/((Coff1/Coff5)^(1.0/4.0)) : btfac = 1./13.8 at room temperature
 	
 	rates(v)
 
