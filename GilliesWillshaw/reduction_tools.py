@@ -254,7 +254,11 @@ class ExtSecRef(neuron.hclass(h.SectionRef)):
 		return desc
 
 def getsecref(sec, refs):
-	""" Return SectionRef in refs pointing to sec with same name as sec """
+	"""
+	Look for SectionRef pointing to Section sec in enumerable of SectionRef
+
+	@return		first SectionRef in refs with same section name as sec
+	"""
 	if sec is None: return None
 	return next((ref for ref in refs if ref.sec.name()==sec.name()), None)
 
@@ -285,36 +289,72 @@ def subtreeroot(secref):
 			return root
 	return orig
 
-def clusterroot(secref, allsecrefs):
-	""" Find the highest parent/ancestor of given section that is still
-		in the same cluster """
-	if not secref.has_parent():
-		return secref
-	else:
-		parref = getsecref(secref.parent, allsecrefs)
-		if parref is None: # case where parent is not in allsecrefs
-			return secref
-		elif parref.cluster_label != secref.cluster_label:
-			return secref
+def split_section(src_sec, mechs_pars, delete_src=False):
+	"""
+	Split section by deleting it and adding two sections in series
+
+	@param mechs_pars	dictionary of mechanism name -> [parameter names]
+						that need to be copied
+	"""
+	# Create two halves
+	halfA_name = src_sec.name() + "_A"
+	h("create %s" % halfA_name)
+	secA = getattr(h, halfA_name)
+
+	halfB_name = src_sec.name() + "_B"
+	h("create %s" % halfB_name)
+	secB = getattr(h, halfB_name)
+
+	# Copy properties
+	for tar_sec in [secA, secB]:
+		# Copy passive properties
+		tar_sec.L = src_sec.L / 2.
+		tar_sec.Ra = src_sec.Ra
+		if src_sec.nseg % 2 == 0:
+			tar_sec.nseg = src_sec.nseg / 2
 		else:
-			return clusterroot(parref)
+			logger.warning("Splitting section with uneven number of segments")
+			tar_sec.nseg = int(src_sec.nseg) / 2 + 1 # don't lose accuracy
 
-class Cluster(object):
-	""" A cluster representing merged sections """
+		# Copy mechanisms
+		for mechname in mechs_pars.keys():
+			if hasattr(src_sec(0.5), mechname):
+				tar_sec.insert(mechname)
 
-	def __init__(self, label):
-		self.label = label
+		# Copy range variables
+		for tar_seg in tar_sec:
+			src_seg = src_sec(tar_seg.x/2.) # segment that it maps to
+			tar_seg.diam = src_seg.diam
+			tar_seg.cm = src_seg.cm
+			for mech in mechs_pars.keys():
+				for par in mechs_pars[mech]:
+					prop = par+'_'+mech
+					setattr(tar_seg, prop, getattr(src_seg, prop))
 
-	def __repr__(self):
-		return '{0} ({1})'.format(self.label, super(Cluster, self).__repr__())
+		# Copy ion styles
+		copy_ion_styles(src_sec, tar_sec)
 
-	# def __repr__(self):
-	# 	desc = super(Cluster, self).__repr__()
-	# 	printable = ['label', 'eqL', 'eqdiam', 'eqSurf', 'totsurf', 'surfSum']
-	# 	for ppty in printable:
-	# 		if hasattr(self, ppty):
-	# 			desc += '\n\t|- {0}: {1}'.format(ppty, getattr(self, ppty))
-	# 	return desc
+	# Connect A to B
+	secB.connect(secA, 1, 0)
+
+	# Connect A to parent of src_sec
+	secA.connect(src_sec.parentseg().sec, src_sec.parentseg().x, 0)
+
+	# Connect children of src_sec to B
+	for childsec in src_sec.children():
+		xloc = childsec.parentseg().x
+		# NOTE: connecting section disconnects it from previous parent
+		if xloc >= 0.5:
+			childsec.connect(secB, 2*(xloc-0.5), 0)
+		else:
+			childsec.connect(secA, 2*xloc, 0)
+
+	# Disconnect and delete src_sec
+	src_sec.push()
+	h.disconnect()
+	if delete_src:
+		h.delete_section()
+	h.pop_section()
 
 def dupe_secprops(src_sec, tar_sec, mechs_pars):
 	""" Copy section properties """
@@ -327,17 +367,22 @@ def dupe_secprops(src_sec, tar_sec, mechs_pars):
 	# Geometry and passive properties
 	tar_sec.L = src_sec.L
 	tar_sec.Ra = src_sec.Ra
-	tar_sec.cm = src_sec.cm
+	# tar_sec.cm = src_sec.cm
 
 	# copy RANGE properties
 	for seg in src_sec:
 		tar_sec(seg.x).diam = seg.diam # diameter
+		tar_sec(seg.x).cm = seg.cm # capacitance
 		for mech in mechs_pars.keys():
 			for par in mechs_pars[mech]:
 				prop = par+'_'+mech
 				setattr(tar_sec(seg.x), prop, getattr(seg, prop))
 
 	# ion styles
+	copy_ion_styles(src_sec, tar_sec)
+
+def copy_ion_styles(src_sec, tar_sec):
+	""" Copy ion styles from source to target section """
 	src_sec.push()
 	ions = ['na', 'k', 'ca']
 	styles = [h.ion_style(ion+'_ion') for ion in ions]
@@ -379,51 +424,10 @@ def dupe_subtree(rootsec, mechs_pars, tree_copy):
 
 	return root_copy
 
-def assign_strahler_order(noderef, secrefs, par_order):
-	""" Assign strahler's numbers and order/distance from root
-		(infer topology from parent/child relationships)
-
-	@type	noderef		SectionRef
-	@param	noderef		Section reference to current node
-
-	@type	secrefs		list(SectionRef)
-	@param	secrefs		references to all sections in the cell
-
-	@type	par_order	int
-	@param	par_order	order of parent sections (distance in #sections from soma)
-	"""
-	if noderef is None: return
-
-	# assign order
-	noderef.order = par_order + 1
-
-	# Leaf nodes get Strahler's number 1
-	childsecs = noderef.sec.children()
-	if not any(childsecs):
-		noderef.strahlernumber = 1
-		return
-
-	# Non-leaf nodes: assign children first
-	childiter = iter(childsecs)
-	leftref = getsecref(next(childiter, None), secrefs)
-	rightref = getsecref(next(childiter, None), secrefs)
-	for childref in leftref, rightref:
-		assign_strahler_order(childref, secrefs, noderef.order)
-
-	# Assign based on children
-	if rightref is None:
-		# one child: inhert
-		noderef.strahlernumber = leftref.strahlernumber
-	elif leftref.strahlernumber != rightref.strahlernumber:
-		# nonzero and unequal: max
-		noderef.strahlernumber = max(leftref.strahlernumber, rightref.strahlernumber)
-	else:
-		# nonzero and equal: increment
-		noderef.strahlernumber = leftref.strahlernumber + 1
-
 def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False):
-	""" Assign length constant and electrotonic path length to 0-end and
-		1-end for each section in subtree of given root section.
+	""" 
+	Assign length constant (lambda) and electrotonic path length (L/lambda)
+	to 0- and 1-end for each section in subtree of given section.
 
 	@type	rootref		SectionRef
 	@param	rootref		Section reference to current node
@@ -463,285 +467,6 @@ def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False)
 		childref = getsecref(childsec, allsecrefs)
 		assign_electrotonic_length(childref, allsecrefs, f, gleak_name, allseg=allseg)
 
-def clusterize_seg_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix=''):
-	""" Cluster segments in dendritic tree based on length divided by 
-		length constant (i.e. length in terms of its electrotonic length) 
-		measured from soma section.
-
-	@type	noderef		SectionRef
-	@param	noderef		Section reference to current node
-
-	@type	allsecrefs	list(SectionRef)
-	@param	allsecrefs	references to all sections in the cell
-
-	@type	thresholds	tuple(float)
-	@param	thresholds	one or two thresholds on electrotonic path length 
-						to distinguish between trunk/smooth/spiny sections
-
-	@type	clusterlist	list(Cluster)
-	@param	clusterlist	list of existing Clusters
-
-	@pre				all section references must have their length constant
-						set using assign_electrotonic_length
-	"""
-	if noderef is None:
-		return
-
-	# Cluster each segment
-	noderef.cluster_labels = ['unassigned'] * noderef.sec.nseg
-	for i in xrange(noderef.sec.nseg):
-		pathL = noderef.pathL_elec[i] # electrotonic path length of segment i
-		if pathL <= thresholds[0]:
-			noderef.cluster_labels[i] = 'trunk' + labelsuffix
-		elif len(thresholds) > 1 and pathL <= thresholds[1]:
-			noderef.cluster_labels[i] = 'smooth' + labelsuffix
-		else:
-			noderef.cluster_labels[i] = 'spiny' + labelsuffix
-
-	# If any new clusters created, create Cluster objects
-	for label in noderef.cluster_labels:
-		if not any(clu.label == label for clu in clusterlist):
-			newclu = Cluster(label)
-			clusterlist.append(newclu)
-
-	# Cluster children (iteratively)
-	for childsec in noderef.sec.children():
-		childref = getsecref(childsec, allsecrefs)
-		clusterize_seg_electrotonic(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
-
-
-def clusterize_sec_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix=''):
-	""" Cluster dendritic tree based on length divided by length constant
-		(i.e. length in terms of its electrotonic length) measured from
-		soma section.
-
-	@type	noderef		SectionRef
-	@param	noderef		Section reference to current node
-
-	@type	allsecrefs	list(SectionRef)
-	@param	allsecrefs	references to all sections in the cell
-
-	@type	thresholds	tuple(float)
-	@param	thresholds	one or two thresholds on electrotonic path length 
-						to distinguish between trunk/smooth/spiny sections
-
-	@type	clusterlist	list(Cluster)
-	@param	clusterlist	list of existing Clusters
-
-	@pre				all section references must have their length constant
-						set using assign_electrotonic_length
-	"""
-	if noderef is None:
-		return
-
-	# Cluster based on electronic path length at midpoint
-	L_mid = noderef.pathL0 + (noderef.pathL1 - noderef.pathL0)/2.
-	labels = ['trunk', 'smooth', 'spiny']
-	if L_mid <= thresholds[0]:
-		noderef.cluster_label = 'trunk' + labelsuffix
-	elif len(thresholds) > 1 and L_mid <= thresholds[1]:
-		noderef.cluster_label = 'smooth' + labelsuffix
-	else:
-		noderef.cluster_label = 'spiny' + labelsuffix
-
-	logger.debug("Section with index {} assigned to cluster {}".format(
-					noderef.table_index, noderef.cluster_label))
-
-	# Determine relation to parent cluster
-	# parref = getsecref(noderef.parent, allsecrefs)
-	# if parref.cluster_label != noderef.cluster_label:
-	# 	noderef.parent_label = parref.cluster_label
-	# else:
-	# 	noderef.parent_label = parref.parent_label
-	# noderef.parent_pos = parent_pos # by default at end of section
-
-	# If first section belonging to this cluster, add new Cluster object
-	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
-		newclu = Cluster(noderef.cluster_label)
-		# parclu = next(clu for clu in clusterlist if clu.label==noderef.parent_label)
-		# newclu.parent_label = noderef.parent_label
-		# newclu.parent_pos = noderef.parent_pos
-		clusterlist.append(newclu)
-
-	# Cluster children (iteratively)
-	for childsec in noderef.sec.children():
-		childref = getsecref(childsec, allsecrefs)
-		clusterize_sec_electrotonic(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
-
-def clusterize_custom(noderef, allsecrefs, clusterfun, clusterlist, labelsuffix='', parent_pos=1.0):
-	""" Cluster dendritic tree based on custom criterion
-
-	@type	noderef		SectionRef
-	@param	noderef		Section reference to current node
-
-	@type	allsecrefs	list(SectionRef)
-	@param	allsecrefs	references to all sections in the cell
-
-	@type	par_order	int
-	@param	par_order	order of parent sections (distance in #sections from soma)
-
-	@type	clusterfun	function(SectionRef) -> string
-	@param	clusterfun	function mapping a SectionRef to cluster label
-
-	@type	clusterlist	list(Cluster)
-	@param	clusterlist	list of existing Clusters
-	"""
-	if noderef is None: return
-
-	# Cluster section based on custom criterion
-	noderef.cluster_label = clusterfun(noderef) + labelsuffix
-
-	# Determine relation to parent cluster
-	parref = getsecref(noderef.parent, allsecrefs)
-	if parref.cluster_label != noderef.cluster_label:
-		noderef.parent_label = parref.cluster_label
-	else:
-		noderef.parent_label = parref.parent_label
-	noderef.parent_pos = parent_pos # by default at end of section
-
-	# Add new Cluster object if necessary
-	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
-		newclu = Cluster(noderef.cluster_label)
-		parclu = next(clu for clu in clusterlist if clu.label==noderef.parent_label)
-		newclu.parent_label = noderef.parent_label
-		newclu.parent_pos = noderef.parent_pos
-		newclu.order = parclu.order + 1
-		clusterlist.append(newclu)
-
-	# Cluster children (iteratively)
-	childiter = iter(noderef.sec.children())
-	leftref = getsecref(next(childiter, None), allsecrefs)
-	rightref = getsecref(next(childiter, None), allsecrefs)
-	clusterize_custom(leftref, allsecrefs, clusterfun, clusterlist, labelsuffix)
-	clusterize_custom(rightref, allsecrefs, clusterfun, clusterlist, labelsuffix)
-
-def clusterize_strahler(noderef, allsecrefs, thresholds, clusterlist, labelsuffix='', parent_pos=1.0):
-	""" Cluster a tree based on strahler numbers alone
-
-	@param noderef		any section starting from but not equal to soma
-
-	@param parent_pos	position on parent cluster of noderef
-
-	@effect			assign label 'trunk'/'smooth'/spiny' to sections
-					based on their Strahler number
-	"""
-	if noderef is None: return
-
-	# Clustering thresholds
-	if thresholds is None:
-		thresholds = (3,5)
-
-	# Cluster label based on strahler's number
-	if noderef.strahlernumber <= thresholds[0]: # default: <= 3
-		noderef.cluster_label = 'spiny' + labelsuffix
-	elif noderef.strahlernumber <= thresholds[1]: # default: <= 5
-		noderef.cluster_label = 'smooth' + labelsuffix
-	else:
-		noderef.cluster_label = 'trunk' + labelsuffix
-
-	# Parent cluster
-	parref = getsecref(noderef.parent, allsecrefs)
-	if parref.cluster_label != noderef.cluster_label:
-		noderef.parent_label = parref.cluster_label
-	else:
-		noderef.parent_label = parref.parent_label
-	noderef.parent_pos = parent_pos # by default at end of section
-
-	# Add new cluster
-	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
-		newclu = Cluster(noderef.cluster_label)
-		parclu = next(clu for clu in clusterlist if clu.label==noderef.parent_label)
-		newclu.parent_label = noderef.parent_label
-		newclu.parent_pos = noderef.parent_pos
-		newclu.order = parclu.order + 1
-		clusterlist.append(newclu)
-
-	# Cluster children (iteratively)
-	childiter = iter(noderef.sec.children())
-	leftref = getsecref(next(childiter, None), allsecrefs)
-	rightref = getsecref(next(childiter, None), allsecrefs)
-	clusterize_strahler(leftref, allsecrefs, thresholds, clusterlist, labelsuffix)
-	clusterize_strahler(rightref, allsecrefs, thresholds, clusterlist, labelsuffix)
-
-def clusterize_strahler_trunks(allsecrefs, thresholds=None):
-	""" Cluster a tree based on strahler numbers and depending
-		on the trunk section it is attached to (trunk sections
-		are large dendritic sections attached to soma)
-
-	@param allsecrefs	list of SectionRef (mutable) with first element
-						a ref to root/soma section
-	@param thresholds	spiny: i <= tresholds[0] (default: 3)
-						smooth: i <= thresholds[1] (default: 5)
-						trunk: i > thresholds[1]
-
-	ALGORITHM: this is the algorithm used in Marasco (2012)
-	- each trunk section (neighbouring soma) gets its own cluster
-	- for each trunk, two clusters are created: one for smooth and
-	  one for spiny sections attached to that trunk
-	"""
-	# Clustering thresholds
-	if thresholds is None:
-		thresholds = (3,5)
-
-	# Cluster soma
-	somaref = allsecrefs[0]
-	somaref.cluster_label = 'soma'
-	somaref.parent_label = 'soma'
-	somaref.parent_pos = 0.0
-
-	# Cluster each trunk and its subtree
-	for i, trunksec in enumerate(somaref.sec.children()):
-		trunkref = getsecref(trunksec, allsecrefs)
-		clusterize_strahler(trunkref, allsecrefs, thresholds, labelsuffix='_'+str(i))
-		logger.debug("Using suffix '_%i' for subtree of section %s", i, trunksec.name())
-
-def cluster_topology(rootref, allsecrefs, relations):
-	""" Determine cluster topology from list of clustered section references
-
-	@param relations	a container for relations of the form (parentlabel, childlabel)
-						if this is a set, the entries are guaranteed to be unique
-	"""
-	# Depth-first recursion of tree
-	for childsec in rootref.sec.children():
-		childref = getsecref(childsec, allsecrefs)
-		# Add parent-child relationship
-		if childref.cluster_label != rootref.cluster_label:
-			relations.add((rootref.cluster_label, childref.cluster_label))
-		# determine topology of subtree
-		cluster_topology(childref, allsecrefs, relations)
-
-def assign_topology(clusters, radial_prefixes):
-	""" Assign parent_label and parent_pos for each Cluster in clusters
-		based on the order of prefixes, which should be given in radial
-		order starting from soma
-	"""
-	for clu in clusters:
-		prepat = re.compile(r'^[a-zA-Z0-9]+') # same as ^[^\W_]+ : matches anything before first underscore
-		match = re.search(prepat, clu.label) 
-		clu_prefix = match.group()
-
-		# Defaults
-		clu.parent_label = clu.label # if no parent found it is root cluster
-		clu.parent_pos = 1.0
-
-		# look for next prefix in anti-radial direction that is available
-		prefix_index = radial_prefixes.index(clu_prefix)
-		parent_index = prefix_index
-		while parent_index > 0:
-			parent_prefix = radial_prefixes[parent_index-1]
-			parent_clu = next((clu for clu in clusters if clu.label.startswith(parent_prefix)), None)
-			if parent_clu is not None:
-				logger.debug("Found parent <%s> for cluster <%s>" % (parent_clu.label, clu.label))
-				clu.parent_label = parent_clu.label
-				break
-			parent_index -= 1
-
-		# Sanity check
-		assert(prefix_index==0 or clu.parent_label!=clu.label)
-
 
 if __name__ == '__main__':
-	plotconductances(treestruct()[1], 1, loadgstruct('gcaT_CaT'), includebranches=[1,2,5])
-	# plotchanneldist(0, 'gcaL_HVA')
-	# dend0tree, dend1tree = treechannelstruct()
-	# gtstruct = loadgeotopostruct(0)
+	print("Main of reduction_tools.py: TODO: execute tests")

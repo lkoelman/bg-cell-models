@@ -272,23 +272,21 @@ def stn_cell(cellmodel):
 	-------------------------
 	1		Original Gillies & Willshaw STN cell model
 
-	2		Gilles & Willshaw model reduced using Rall's model
-			to one equivalent section per dendritic tree. The
-			number of segments is determined from the electrotonic
-			length to yield sufficient accuracy
+	2		Rall reduction of Gillies & Willshaw STN model
+			to one equivalent section per dendritic tree.
+			Number of segments is determined using lambda rule.
 
-	3		Reduced Gillies & Willshaw STN model using Bush & Sejnowski 
-			reduction method.
+	3		Bush & Sejnowski reduction of Gillies & Willshaw STN model
 
-	4		Gillies & Willshaw STN cell model reduced using
-			Marasco's reduction method with a custom clustering
-			criterion based on diameter
+	4		Marasco reduction of Gillies & Willshaw STN model
+			using custom clustering criterion based on diameter
 
-	5		Reduced Gillies & Willshaw STN model using Marasco's
-			reduction method except subtrees/axial resistance is not
-			averaged but compounded and input resistance is conserved.
+	5		Marasco reduction of Gillies & Willshaw STN model using
+			modified reduction algorithm where axial resistance is not
+			averaged over cluster subtrees but compounded and 
+			input resistance is conserved.
 
-	6		Custom reduction of Gillies & Willshaw STN model with a
+	6		Manual reduction of Gillies & Willshaw STN model with a
 			single equivalent denritic tree containing one equivalent
 			smooth and one spiny section next to the soma section.
 			Parameters are fitted or empirically determined to produce

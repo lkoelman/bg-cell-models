@@ -2,7 +2,7 @@
    
    // NOTE: set to 0 for no plots (e.g. if you want to plot using other library)
    // NOTE: I commented this out so you can set this externally, before calling the script
-   // graphics = 1     // go we do any graphics?
+   graphics = 1     // go we do any graphics?
    
    if (graphics>0) {load_file("nrngui.hoc")} else {load_file("stdgui.hoc")}
    

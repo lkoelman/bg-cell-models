@@ -49,12 +49,55 @@ mechs_chans = gillies_mechs_chans
 gleak_name = 'gpas_STh'
 glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
 
+def cluster_sec_properties(clusters, orsecrefs):
+	"""
+	Calculate cluster properties based on Sections
+
+	@post		properties are stored on each Cluster
+	"""
+	for cluster in clusters: # SECTION-BASED CLUSTERING
+		# Gather member sections
+		clu_secs = [secref for secref in orsecrefs if secref.cluster_label==cluster.label]
+		logger.debug("Cluster %s contains %i sections" % (cluster.label, len(clu_secs)))
+
+		# Compute equivalent properties
+		cluster.eqL = sum(secref.sec.L for secref in clu_secs) / len(clu_secs)
+		cluster.eqdiam = math.sqrt(sum(secref.sec.diam**2 for secref in clu_secs))
+		cluster.eqRa = sum(secref.sec.Ra for secref in clu_secs) / len(clu_secs)
+		cluster.or_area = sum(sum(seg.area() for seg in secref.sec) for secref in clu_secs)
+		cluster.or_cmtot = sum(sum(seg.cm*seg.area() for seg in secref.sec) for secref in clu_secs)
+		cluster.or_cm = cluster.or_cmtot / cluster.or_area
+		cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
+		for gname in glist:
+			cluster.or_gtot[gname] += sum(sum(getattr(seg, gname)*seg.area() for seg in secref.sec) for secref in clu_secs)
+
+def cluster_seg_properties(clusters, orsecrefs):
+	"""
+	Calculate cluster properties based on individual segments
+
+	@post		properties are stored on each Cluster
+	"""
+	for cluster in clusters: # SEGMENT-BASED CLUSTERING
+		# Gather member segments
+		clu_filter = lambda secref, iseg: secref.cluster_labels[iseg] == cluster.label
+		clu_segs = [seg for ref in orsecrefs for i, seg in enumerate(ref.sec) if clu_filter(ref, i)]
+
+		# Compute equivalent properties
+		cluster.eqL = sum(seg.sec.L/seg.sec.nseg for seg in clu_segs) / len(clu_segs)
+		cluster.eqdiam = math.sqrt(sum(seg.diam**2 for seg in clu_segs))
+		cluster.eqRa = sum(seg.sec.Ra for seg in clu_segs) / len(clu_segs)
+		cluster.or_area = sum(seg.area() for seg in clu_segs)
+		cluster.or_cmtot = sum(seg.cm*seg.area() for seg in clu_segs)
+		cluster.or_cm = cluster.or_cmtot / cluster.or_area
+		cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
+		for gname in glist:
+			cluster.or_gtot[gname] += sum(getattr(seg, gname)*seg.area() for seg in clu_segs)
 
 def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False, 
-						density_scaling='area', interp_method='linear_neighbors',
+						gbar_scaling='area', interp_method='linear_neighbors',
 						interp_path=None, conserve_gbar_ratios=True):
-	""" Compute properties of equivalent section for cluster
-		from its member sections.
+	"""
+	Create equivalent Section for each cluster.
 
 	@type	clusters	list(Cluster)
 	@param	clusters	list of Cluster objects (containing cluster label 
@@ -63,26 +106,32 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 	@type	orsecrefs	list(SectionRef)
 	@param	orsecrefs	references to all sections in the cell
 
-	@type	density_scaling	string
-	@param	density_scaling	
+	@type	gbar_scaling	string
+	@param	gbar_scaling	
 							- 'area': use the ratio of original area to new area
 							to scale Cm and all conductances (including gpas) in
 							each section so their total value from the full model
 							is conserved. This method is used in the Bush &
 							Sejnowski algorithm.
 
-							- 'gbar_total': use ratio or original total conductance
-							to new total conductance to scale gbar in each section.
+							- 'integral': use ratio or original to new total conductance
+							(integral of gbar*area) to scale gbar in each section.
 							This conserves the total conductance but not the ration
 							of conductances in each segment
 
 							- None: don't use scaling
 
 	@type	interp_method	string
-	@param	interp_method	Specify 'linear_neighbors' for linear interpolation of 'adjacent'
-							segments in full model (i.e. next lower and higher electrotonic
-							path length). Other options are: 'left_neighbor', 'right_neighbor', 
-							'nearest_neighbor'
+	@param	interp_method	
+							'linear_neighbors' 
+								= linear interpolation of 'adjacent' segments in full model 
+								(i.e. next lower and higher electrotonic path length). 
+							
+							'linear_dist' 
+								= estimate linear distribution and interpolate it
+							
+							'left_neighbor', 'right_neighbor', 'nearest_neighbor'
+								= extrapolation of 'neighoring' segments in terms of L/lambda
 
 	@post				Equivalent section properties are available as
 						attributed on given Cluster object
@@ -92,42 +141,6 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 	"""
 	# List with equivalent section for each cluster
 	eq_secs = [None] * len(clusters)
-
-	# Calculate cluster properties
-	logger.debug("Calculating cluster properties...")
-	for cluster in clusters:
-		if use_segments: # SEGMENT-BASED CLUSTERING
-			# Gather member segments
-			clu_filter = lambda secref, iseg: secref.cluster_labels[iseg] == cluster.label
-			clu_segs = [seg for ref in orsecrefs for i, seg in enumerate(ref.sec) if clu_filter(ref, i)]
-
-			# Compute equivalent properties
-			cluster.eqL = sum(seg.sec.L/seg.sec.nseg for seg in clu_segs) / len(clu_segs)
-			cluster.eqdiam = math.sqrt(sum(seg.diam**2 for seg in clu_segs))
-			cluster.eqRa = sum(seg.sec.Ra for seg in clu_segs) / len(clu_segs)
-			cluster.or_area = sum(seg.area() for seg in clu_segs)
-			cluster.or_cmtot = sum(seg.cm*seg.area() for seg in clu_segs)
-			cluster.or_cm = cluster.or_cmtot / cluster.or_area
-			cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
-			for gname in glist:
-				cluster.or_gtot[gname] += sum(getattr(seg, gname)*seg.area() for seg in clu_segs)
-
-		else: # SECTION-BASED CLUSTERING
-			# Gather member sections
-			clu_secs = [secref for secref in orsecrefs if secref.cluster_label==cluster.label]
-			logger.debug("Cluster %s contains %i sections" % (cluster.label, len(clu_secs)))
-
-			# Compute equivalent properties
-			cluster.eqL = sum(secref.sec.L for secref in clu_secs) / len(clu_secs)
-			cluster.eqdiam = math.sqrt(sum(secref.sec.diam**2 for secref in clu_secs))
-			cluster.eqRa = sum(secref.sec.Ra for secref in clu_secs) / len(clu_secs)
-			cluster.or_area = sum(sum(seg.area() for seg in secref.sec) for secref in clu_secs)
-			cluster.or_cmtot = sum(sum(seg.cm*seg.area() for seg in secref.sec) for secref in clu_secs)
-			cluster.or_cm = cluster.or_cmtot / cluster.or_area
-			cluster.or_gtot = dict((gname, 0.0) for gname in glist) # sum of gbar multiplied by area
-			for gname in glist:
-				cluster.or_gtot[gname] += sum(sum(getattr(seg, gname)*seg.area() for seg in secref.sec) for secref in clu_secs)
-	logger.debug("Done calculating cluster properties.\n\n")
 
 	# Create equivalent sections and passive electric structure
 	logger.debug("Building passive section topology...")
@@ -191,7 +204,7 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 		cluster.eq_cm = [float('NaN')]*cluster.nseg
 
 		# Set Cm and gleak (Rm) for each segment
-		if density_scaling is not None:
+		if gbar_scaling is not None:
 			for j, seg in enumerate(sec):
 				setattr(seg, 'cm', eq_cm)
 				setattr(seg, gleak_name, eq_gleak)
@@ -206,7 +219,7 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 		if interp_path is None:
 			interp_path = (1, (1,3,8)) # dendritic path (default: right tree (1,2,4,6,8))
 
-		if interp_method == 'linear_dist':
+		if interp_method == 'linear_dist': # estimate distribution and use that
 			# First calculate parameters of distribution
 			gdist_params = {}
 			for gname in active_glist:
@@ -254,19 +267,21 @@ def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False,
 
 
 		# Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
-		if density_scaling is not None:
+		if gbar_scaling is not None:
 			for gname in active_glist:
 				eq_gtot = sum(getattr(seg, gname)*seg.area() for seg in sec)
 				if eq_gtot <= 0.:
 					eq_gtot = 1.
 				or_gtot = cluster.or_gtot[gname]
 				for j, seg in enumerate(sec):
-					# conserves ratio in each segment but not total original conductance
-					if density_scaling == 'area':
+					if gbar_scaling == 'area':
+						# conserves ratio in each segment but not total original conductance
 						gval = getattr(seg, gname)*clusters[i].or_area/clusters[i].eq_area
-					else:
+					elif gbar_scaling == 'integral':
 						# does not conserve ratio but conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
 						gval = getattr(seg, gname) * or_gtot/eq_gtot
+					else:
+						raise Exception("Unknown gbar scaling method'{}'.".format(gbar_scaling))
 					seg.__setattr__(gname, gval)
 					cluster.eq_gbar[gname][j] = gval # save for reconstruction
 
@@ -421,11 +436,19 @@ def reduce_bush_sejnowski(delete_old_cells=True):
 
 	############################################################################
 	# 2. Create equivalent sections (compute ppties from cluster sections)
+	use_segments = False
+
+	# Calculate cluster properties
+	logger.debug("Calculating cluster properties...")
+	if use_segments:
+		cluster_seg_properties(clusters, orsecrefs)
+	else:
+		cluster_sec_properties(clusters, orsecrefs)
 
 	# Create new sections
 	logger.info("Creating equivalent sections...")
 	eq_secs = equivalent_sections(clusters, allsecrefs, f_lambda, 
-				use_segments=False, density_scaling='area', 
+				use_segments=use_segments, gbar_scaling='area', 
 				interp_path=(1, (1,3,8)), interp_method='left_neighbor')
 	
 	# Delete original model sections & set ion styles
