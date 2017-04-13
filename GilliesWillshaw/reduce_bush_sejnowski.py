@@ -419,8 +419,8 @@ def reduce_bush_sejnowski(delete_old_cells=True):
 
 	# Cluster soma
 	somaclu = Cluster('soma')
-	somaref.cluster_label = 'soma'
-	somaref.cluster_labels = ['soma'] * somaref.sec.nseg
+	somaref.cluster_label = 'soma' # used if section-based clustering
+	somaref.cluster_labels = ['soma'] * somaref.sec.nseg # used if segment-based clsutering
 	clusters = [somaclu]
 
 	# Cluster segments in each dendritic tree

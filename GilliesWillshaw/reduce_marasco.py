@@ -37,8 +37,9 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Own modules
 import reduction_tools as redtools
-from reduction_tools import ExtSecRef, Cluster, getsecref, lambda_AC # for convenience
+from reduction_tools import ExtSecRef, Cluster, getsecref, lambda_AC, prev_seg # for convenience
 import cluster as clutools
+from cluster import EqProps
 import reduce_bush_sejnowski as redbush
 import reduction_analysis as analysis
 
@@ -153,6 +154,71 @@ def collapse_subtree(rootref, allsecrefs):
 	# Collapse is equal to sequential merge of the root and equivalent parallel circuit of its children
 	return merge_sequential(rootref, allsecrefs)
 
+def collapse_seg_subtree(rootseg, allsecrefs):
+	""" 
+	Recursively merge within-cluster connected sections in subtree
+	of the given segment using equations <br> and <seq> in Marasco (2012).
+
+	@pre		in the tree, all connections between sections must be made
+				according to the convention that the 0-end of the child
+				connects to the 1-end of the parent
+
+	ALGORITHM
+	- recursively call `equivalent_properties = collapse_subtree(rootseg)`
+	- where rootseg are child segments of current rootseg
+	- then combine the equivalent properties: absorb into current rootseg and return
+	"""
+	# Get segment info
+	rootsec = rootseg.sec
+	rootref = getsecref(rootsec, allsecrefs)
+	neighbors = [seg for seg in rootsec]
+	i_rootseg = next(i for i, seg in enumerate(neighbors) if round(rootseg.x,3)==round(seg.x,3))
+	rootlabel = rootref.cluster_labels[i_rootseg]
+
+	# Get children
+	child_refs = [getsecref(sec, allsecrefs) for sec in rootsec.children()]
+	for secref in child_refs:
+		if round(secref.sec.parentseg().x,3) < round(neighbors[-1].x, 3):
+			raise Exception("Merging algorithm does not support topologies where "
+							"a child section is not connected to 1-end of parent.")
+
+	# Calculate properties of root segment
+	L_root = rootsec.L/rootsec.nseg
+	diam_root = rootseg.diam
+	Ra_root = rootsec.Ra
+	ri_root = rootseg.ri() # axial resistance between start-end (0-1)
+
+	# If end segment: add child segments if in same cluster
+	child_segs = []
+	if i_rootseg == rootsec.nseg-1 # or: rootseg.x >= neighbors[-1].x:
+		assert rootseg.x >= neighbors[-1].x:
+		# Gather child segments that are in same cluster
+		for secref in child_refs:
+			seg = next(seg for seg in secref.sec) # get the first segment
+			if secref.cluster_labels[0]==rootlabel:
+				child_segs.append(seg)
+
+	else: # If not end segment: add adjacent segment if in same cluster
+		if rootref.cluster_labels[i_rootseg+1] == rootlabel:
+			child_segs.append(neighbors[i_rootseg+1])
+
+	# Base Case: leaf segments (i.e. no child segments in same cluster)
+	if not any(child_segs):
+		eq_props = EqProps(L_eq=L_root, diam_eq=diam_root, Ra_eq=Ra_root, Ri_eq=ri_root)
+		return eq_props
+
+	# Get equivalent properties for each child
+	eq_props_children = []
+	for child in child_segs:
+		child_eq_props = collapse_seg_subtree(child, allsecrefs)
+		eq_props_children.append(child_eq_props)
+
+	# Do a parallel merge of child properties
+
+	# Do a sequential merge of root & child properties
+
+
+
 def map_pathri_gbar(cluster, allsecrefs):
 	"""
 	Map axial path resistance values to gbar values in the cluster
@@ -198,12 +264,104 @@ def calc_gbar(cluster, gname, pathri):
 			surr_pts = [pt for i, pt in enumerate(gbar_pts) if i < 2]
 		return sum(pt[1] for pt in surr_pts)/len(surr_pts) # take average
 
+def merge_seg_cluster(cluster, allsecrefs, average_Ri):
+	"""
+	Merge cluster of segments (use for segment-based clustering)
 
-def merge_cluster(cluster, allsecrefs, average_trees):
+	@param average_Ri	see param 'average_Ri' in merge_cluster()
+	"""
+	# Gather member segments
+	clu_secs = [secref for secref in allsecrefs if (cluster.label in secref.cluster_labels)]
+	clu_segs = []
+	for ref in allsecrefs:
+		# Flag all sections as unvisited
+		if not hasattr(ref, absorbed):
+			ref.absorbed = [False] * ref.sec.nseg
+		if not hasattr(ref, visited):
+			ref.visited = [False] * ref.sec.nseg
+
+		# Gather segments that are member of current cluster
+		for i, seg in enumerate(ref.sec):
+			if ref.cluster_labels[i] == cluster.label:
+				clu_segs.append(seg)
+
+	# Calculate axial path resistances
+	clu_seg_pathri = []
+	for secref in clu_secs:
+		# Assign axial path resistances
+		redtools.sec_path_ri(secref, store_seg_ri=True) # stores pathri on SectionRefs
+		# Store pathri to start of segments in cluster
+		segs_pathri = [pathri for i, pathri in enumerate(secref.pathri_seg) if (
+						secref.cluster_labels[i]==cluster.label)]
+		# Also store pathri to end of most distal segment
+		if secref.cluster_labels[-1]==cluster_label:
+			segs_pathri.append(secref.pathri1)
+		clu_seg_pathri.extend(segs_pathri)
+
+	# Get min & max path resistance in cluster (full model)
+	cluster.orMaxpathri = max(clu_seg_pathri)
+	cluster.orMinpathri = min(clu_seg_pathri)
+	
+	# Initialize equivalent properties
+	cluster.eqL = 0.
+	cluster.eqdiam = 0.
+	cluster.eqri = 0.
+	cluster.eq_area_sum = 0. # sum of surface calculated from equivalent dimensions
+
+	# Initialize original properties
+	cluster.or_area = sum(seg.area() for seg in clu_segs)
+	cluster.or_cmtot = sum(seg.cm*seg.area() for seg in clu_segs)
+	cluster.or_gtot = dict((gname, 0.0) for gname in glist)
+
+	# Local function to check if segment has parent segment in same cluster
+	def has_clusterparent(seg):
+		parseg = prev_seg(seg)
+		if parseg is None:
+			return False # no parent segment
+		parref = getsecref(parseg.sec, clu_secs)
+		if parref is None:
+			return False # parent section has no segments in same cluster
+		for j, seg in enumerate(parref.sec):
+			if (seg.x == parseg.x) and (parref.cluster_labels[j]==cluster.label): # TODO: FIXME: test this
+				return True
+		return False
+
+	# Make generator that finds root segments
+	root_gen = (seg for ref in clu_secs for i, seg in enumerate(ref.sec) if (
+					not ref.visited[i] and not has_clusterparent(seg)))
+
+	# Start merging algorithm
+	while True:
+		# Find next root segment in cluster (i.e. with no parent segment in same cluster)
+		rootseg = next(root_gen, None)
+		if rootseg is None:
+			break # No more root segment left
+
+		# Collapse subtree
+		logger.debug("Collapsing subtree of cluster root segment %s", repr(rootref))
+		L_eq, diam_eq, Ra_eq, ri_eq, cmtot_eq, gtot_eq = collapse_subtree(rootref, allsecrefs)
+
+		# Combine properties of collapse sections using <eq> expressions
+		surf_eq = L_eq*PI*diam_eq
+		cluster.eq_area_sum += surf_eq
+		cluster.eqL += L_eq * surf_eq
+		cluster.eqdiam += diam_eq**2
+		cluster.eqri += ri_eq
+
+		# Save distributed properties
+		cluster.or_cmtot += cmtot_eq
+		for gname in glist:
+			cluster.or_gtot[gname] += gtot_eq[gname]
+
+		# Mark as visited
+		rootref.visited = True
+
+
+def merge_cluster(cluster, allsecrefs, average_Ri):
 	"""
 	Merge sections in cluster
 
-	@param average_trees	If True, Ra is calculated so that Ri (absolute axial
+	@param average_Ri	If True, Ra is calculated so that Ri (absolute axial
 						resistance) of the equivalent section for each cluster is 
 						the average Ri of all disconnected subtrees merged into that
 						section. This does NOT conserve input resistance of the tree.
@@ -216,7 +374,7 @@ def merge_cluster(cluster, allsecrefs, average_trees):
 	ALGORITHM
 	- find the next root of a within-cluster connected subtree
 		- i.e. a section without a parent in the same cluster
-		- this can be an isolated sections (no mergeable children within cluster)
+		- this can be an isolated section (no mergeable children within cluster)
 	- collapse subtree of that root section
 	- update equivalent cluster properties using the <eq> expressions in Marasco (2012)
 
@@ -229,7 +387,7 @@ def merge_cluster(cluster, allsecrefs, average_trees):
 
 	# Assign axial path resistance (sum of Ri (seg.ri()) along path)
 	for sec in clu_secs:
-		redtools.calc_path_ri(sec) # assigns pathri0/pathri1
+		redtools.sec_path_ri(sec) # assigns pathri0/pathri1
 
 	# Get min & max path resistance in cluster (full model)
 	cluster.orMaxpathri = max(secref.pathri1 for secref in clu_secs)
@@ -286,7 +444,7 @@ def merge_cluster(cluster, allsecrefs, average_trees):
 	cluster.eqL /= cluster.eq_area_sum # LENGTH: equation L_eq
 	cluster.eqdiam = math.sqrt(cluster.eqdiam) # RADIUS: equation rho_eq
 	cluster.eqri /= sum(not sec.absorbed for sec in clu_secs) # ABSOLUTE AXIAL RESISTANCE: equation r_a,eq
-	if average_trees:
+	if average_Ri:
 		cluster.eqRa = PI*(cluster.eqdiam/2.)**2*cluster.eqri*100./cluster.eqL # conserve eqri as absolute axial resistance
 	else:
 		cluster.eqRa = sum(secref.sec.Ra for secref in clu_secs)/len(clu_secs) # average Ra in cluster
@@ -359,7 +517,7 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 		sec.nseg = redtools.min_nseg_hines(sec)
 
 		# calculate min/max path resistance in equivalent section (cluster)
-		pathri0, pathri1 = redtools.calc_path_ri(eq_secrefs[i])
+		pathri0, pathri1 = redtools.sec_path_ri(eq_secrefs[i])
 		cluster.pathri0 = pathri0
 		cluster.pathri1 = pathri1
 		sec_ri = sum(seg.ri() for seg in sec)
@@ -495,7 +653,7 @@ def reduce_gillies_pathLambda(delete_old_cells=True):
 	# i.e. calculate properties of equivalent section for each cluster
 	logger.info("Merging within-cluster sections...")
 	for cluster in clusters:
-		merge_cluster(cluster, allsecrefs, average_trees) # store equivalent properties on Cluster objects
+		merge_cluster(cluster, allsecrefs, average_Ri) # store equivalent properties on Cluster objects
 
 	# Create new sections
 	logger.info("Creating equivalent sections...")
@@ -517,7 +675,7 @@ def reduce_gillies_pathLambda(delete_old_cells=True):
 
 	return clusters, eq_secs
 
-def reduce_gillies_pathRi(customclustering, average_trees):
+def reduce_gillies_pathRi(customclustering, average_Ri):
 	""" Reduce Gillies & Willshaw STN neuron model
 
 	To set active conductances, interpolates using axial path resistance
@@ -525,7 +683,8 @@ def reduce_gillies_pathRi(customclustering, average_trees):
 
 	@param customclustering		see param 'customclustering' in function
 								cluster_sections()
-	@param average_trees		see param 'average_trees' in function
+
+	@param average_Ri			see param 'average_Ri' in function
 								merge_cluster
 	"""
 
@@ -598,7 +757,7 @@ def reduce_gillies_pathRi(customclustering, average_trees):
 	logger.info("Merging within-cluster sections...")
 	for cluster in clusters:
 		# Merge sections within each cluster: 
-		merge_cluster(cluster, allsecrefs, average_trees)
+		merge_cluster(cluster, allsecrefs, average_Ri)
 
 		# Map axial path resistance values to gbar values
 		map_pathri_gbar(cluster, allsecrefs)

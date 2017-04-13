@@ -100,7 +100,7 @@ def inputresistance_tree(rootsec, f, glname):
 		g_end += 1./inputresistance_tree(childsec, f, glname)
 	return inputresistance_leaky(rootsec, gleak, f, 1./g_end)
 
-def calc_path_ri(secref):
+def sec_path_ri(secref, store_seg_ri=False):
 	""" Calculate axial path resistance from root to 0 and 1 end of each section
 
 	@effect		calculate axial path resistance from root to 0/1 end of sections
@@ -108,8 +108,13 @@ def calc_path_ri(secref):
 
 	@return		tuple pathri0, pathri1
 	"""
-	# Get path from root node to this sections
 	rootsec = subtreeroot(secref)
+	rootsec = subtreeroot(secref)
+	rootparent = rootsec.parentseg()
+	if rootparent is None:
+		return 0.0 # if we are soma/topmost root: path length is zero
+
+	# Get path from root node to this sections
 	calc_path = h.RangeVarPlot('v')
 	rootsec.push()
 	calc_path.begin(0.5)
@@ -120,18 +125,68 @@ def calc_path_ri(secref):
 	h.pop_section()
 	h.pop_section()
 
+	# Store axial path resistance on section
+	if store_seg_ri and not(hasattr(secref, pathri_seg)):
+		secref.pathri_seg = [0.0] * secref.sec.nseg
+
 	# Compute axial path resistances
-	secref.pathri1 = 0 # axial path resistance from root sec to 1 end of this sec
-	secref.pathri0 = 0 # axial path resistance from root sec to 0 end of this sec
+	pathri0 = 0. # axial path resistance from root to start of target Section
+	pathri1 = 0. # axial path resistance from root to end of target Section
 	path_secs = list(root_path)
 	path_len = len(path_secs)
-	for i, psec in enumerate(path_secs):
-		for seg in psec:
-			secref.pathri1 += seg.ri()
-			if i < path_len-1:
-				secref.pathri0 += seg.ri()
+	for isec, psec in enumerate(path_secs):
+		arrived = bool(psec.same(secref.sec))
+		for jseg, seg in enumerate(psec):
+			# Axial path resistance to start of current segment
+			if store_seg_ri and arrived:
+				secref.pathri_seg[jseg] = pathri1
+			# Axial path resistance to end of current segment
+			pathri1 += seg.ri()
+			# Axial path resistance to start of target section
+			if isec < path_len-1:
+				pathri0 = pathri1
 
-	return secref.pathri0, secref.pathri1
+	secref.pathri0 = pathri0
+	secref.pathri1 = pathri1
+
+	return pathri0, pathri1
+
+def seg_path_ri(endseg, f, gleak_name):
+	""" 
+	Calculate axial path resistance from start of segment up to but 
+	not including soma section (the topmost root section).
+
+	@return		electrotonic path length
+	"""
+	secref = h.SectionRef(sec=endseg.sec)
+	rootsec = subtreeroot(secref)
+	rootparent = rootsec.parentseg()
+	if rootparent is None:
+		return 0.0 # if we are soma/topmost root: path length is zero
+
+	# Get path from soma (not including) up to and including this section
+	calc_path = h.RangeVarPlot('v')
+	rootsec.push()
+	calc_path.begin(0.5)
+	secref.sec.push()
+	calc_path.end(0.5)
+	root_path = h.SectionList() # SectionList structure to store path
+	calc_path.list(root_path) # copy path sections to SectionList
+	h.pop_section()
+	h.pop_section()
+
+	# Compute electrotonic path length
+	pathri0 = 0. # axial path resistance from root sec to 0 end of this sec
+	path_secs = list(root_path)
+	assert(endseg.sec in path_secs)
+	for i, psec in enumerate(path_secs): # walk sections
+		for seg in psec:				 # walk segments
+			if seg.sec.same(endseg.sec) and (seg.x == endseg.x): # reached end segment
+				pathri1 = pathri0 + seg.ri()
+				return pathri0, pathri1
+			pathri0 += seg.ri()
+
+	raise Exception('End segment not reached')
 
 def sec_path_L_elec(secref, f, gleak_name):
 	""" Calculate electrotonic path length up to but not including soma
@@ -260,7 +315,14 @@ def getsecref(sec, refs):
 	@return		first SectionRef in refs with same section name as sec
 	"""
 	if sec is None: return None
+	# Section names are unique, but alternatively use sec.same(ref.sec)
 	return next((ref for ref in refs if ref.sec.name()==sec.name()), None)
+
+def prev_seg(curseg):
+	""" Get segment preceding seg: this can be on same or parent Section """
+	# NOTE: cannot use seg.next() since this changed content of seg
+	allseg = reversed([seg for seg in curseg.sec if round(seg.x,3) < round(curseg.x,3)])
+	return next(allseg, curseg.sec.parentseg())
 
 def sameparent(secrefA, secrefB):
 	""" Check if sections have same parent section """

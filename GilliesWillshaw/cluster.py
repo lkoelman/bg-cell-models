@@ -25,6 +25,11 @@ class Cluster(object):
 	# 			desc += '\n\t|- {0}: {1}'.format(ppty, getattr(self, ppty))
 	# 	return desc
 
+class EqProps:
+	""" Equivalent properties of merged sections """
+	def __init__(self, **kwds):
+		self.__dict__.update(kwds)
+
 def clusterroot(secref, allsecrefs):
 	""" Find the highest parent/ancestor of given section that is still
 		in the same cluster """
@@ -72,13 +77,13 @@ def assign_strahler_order(noderef, secrefs, par_order):
 
 	# Assign based on children
 	if rightref is None:
-		# one child: inhert
+		# one child: inherit strahler number
 		noderef.strahlernumber = leftref.strahlernumber
 	elif leftref.strahlernumber != rightref.strahlernumber:
-		# nonzero and unequal: max
+		# nonzero and unequal: max strahler number of children
 		noderef.strahlernumber = max(leftref.strahlernumber, rightref.strahlernumber)
 	else:
-		# nonzero and equal: increment
+		# nonzero and equal: increment strahler number
 		noderef.strahlernumber = leftref.strahlernumber + 1
 
 def label_from_regions_gbar(secref):

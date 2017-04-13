@@ -52,7 +52,7 @@ def prep_merge(secrefs):
 			secref.secri += seg.ri()
 
 		# Axial path resistance
-		calc_path_ri(secref)
+		sec_path_ri(secref)
 		
 		# mutable properties for merging
 		secref.mrgL = abs(sec.L)
