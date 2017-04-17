@@ -351,9 +351,17 @@ def reduce_marasco():
 	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1]
 	alldendrefs = dendLrefs + dendRrefs
 	allsecrefs = [somaref] + alldendrefs
+
+	# Cluster Soma
+	somaref.cluster_label = 'soma'
+	somaref.parent_label = 'soma'
+	somaref.parent_pos = 0.0
 	
 	# Cluster subtree of each trunk section
-	clusterize_strahler_trunks(allsecrefs)
+	clu_fun = clutools.label_from_strahler
+	clu_args = {'thresholds':(3,5)}
+	clutools.clusterize_custom(dendLrefs[0], allsecrefs, clusters, '_0', clu_fun, clu_args)
+	clutools.clusterize_custom(dendRrefs[0], allsecrefs, clusters, '_1', clu_fun, clu_args)
 	cluster_labels = list(set(secref.cluster_label for secref in allsecrefs)) # unique labels
 	eq_clusters = [Cluster(label) for label in cluster_labels]
 

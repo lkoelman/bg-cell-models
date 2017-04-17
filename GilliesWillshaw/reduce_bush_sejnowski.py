@@ -34,7 +34,8 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Our own modules
 import reduction_tools as redtools
-from reduction_tools import ExtSecRef, Cluster, getsecref # for convenience
+from reduction_tools import ExtSecRef, getsecref # for convenience
+from cluster import Cluster
 import interpolation as interp
 import reduction_analysis as analysis
 

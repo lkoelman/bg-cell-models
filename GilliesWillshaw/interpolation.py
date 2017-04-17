@@ -27,7 +27,7 @@ h = neuron.h
 
 # Our own modules
 import reduction_tools as redtools
-from reduction_tools import ExtSecRef, Cluster, getsecref # for convenience
+from reduction_tools import ExtSecRef, getsecref # for convenience
 
 # Gillies & Willshaw model mechanisms
 gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel

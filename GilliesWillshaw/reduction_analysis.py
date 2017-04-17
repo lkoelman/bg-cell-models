@@ -13,7 +13,7 @@ from neuron import h
 
 # Own modules
 import reduction_tools
-from reduction_tools import ExtSecRef, Cluster, getsecref
+from reduction_tools import ExtSecRef, getsecref
 
 def get_gillies_cells():
 	""" Get references to cells in Gillies & Willshaw models, annotated

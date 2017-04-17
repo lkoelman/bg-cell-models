@@ -11,7 +11,6 @@ Cell reduction helper functions.
 import numpy as np
 import matplotlib.pyplot as plt
 import math
-import re
 
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
@@ -108,47 +107,48 @@ def sec_path_ri(secref, store_seg_ri=False):
 
 	@return		tuple pathri0, pathri1
 	"""
-	rootsec = subtreeroot(secref)
-	rootsec = subtreeroot(secref)
-	rootparent = rootsec.parentseg()
-	if rootparent is None:
-		return 0.0 # if we are soma/topmost root: path length is zero
-
-	# Get path from root node to this sections
-	calc_path = h.RangeVarPlot('v')
-	rootsec.push()
-	calc_path.begin(0.5)
-	secref.sec.push()
-	calc_path.end(0.5)
-	root_path = h.SectionList()
-	calc_path.list(root_path) # store path in list
-	h.pop_section()
-	h.pop_section()
-
-	# Store axial path resistance on section
-	if store_seg_ri and not(hasattr(secref, pathri_seg)):
+	# Create attribute for storing path resistance
+	if store_seg_ri and not(hasattr(secref, 'pathri_seg')):
 		secref.pathri_seg = [0.0] * secref.sec.nseg
 
-	# Compute axial path resistances
-	pathri0 = 0. # axial path resistance from root to start of target Section
-	pathri1 = 0. # axial path resistance from root to end of target Section
-	path_secs = list(root_path)
-	path_len = len(path_secs)
-	for isec, psec in enumerate(path_secs):
-		arrived = bool(psec.same(secref.sec))
-		for jseg, seg in enumerate(psec):
-			# Axial path resistance to start of current segment
-			if store_seg_ri and arrived:
-				secref.pathri_seg[jseg] = pathri1
-			# Axial path resistance to end of current segment
-			pathri1 += seg.ri()
-			# Axial path resistance to start of target section
-			if isec < path_len-1:
-				pathri0 = pathri1
+	# Get subtree root
+	rootsec = subtreeroot(secref)
+	rootparent = rootsec.parentseg()
+
+	# Calculate path Ri
+	if rootparent is None: # if we are soma/top root: path length is zero
+		pathri0, pathri1 = 0., 0.
+	else:
+		# Get path from root node to this sections
+		calc_path = h.RangeVarPlot('v')
+		rootsec.push()
+		calc_path.begin(0.5)
+		secref.sec.push()
+		calc_path.end(0.5)
+		root_path = h.SectionList()
+		calc_path.list(root_path) # store path in list
+		h.pop_section()
+		h.pop_section()
+
+		# Compute axial path resistances
+		pathri0 = 0. # axial path resistance from root to start of target Section
+		pathri1 = 0. # axial path resistance from root to end of target Section
+		path_secs = list(root_path)
+		path_len = len(path_secs)
+		for isec, psec in enumerate(path_secs):
+			arrived = bool(psec.same(secref.sec))
+			for jseg, seg in enumerate(psec):
+				# Axial path resistance to start of current segment
+				if store_seg_ri and arrived:
+					secref.pathri_seg[jseg] = pathri1
+				# Axial path resistance to end of current segment
+				pathri1 += seg.ri()
+				# Axial path resistance to start of target section
+				if isec < path_len-1:
+					pathri0 = pathri1
 
 	secref.pathri0 = pathri0
 	secref.pathri1 = pathri1
-
 	return pathri0, pathri1
 
 def seg_path_ri(endseg, f, gleak_name):
@@ -278,6 +278,71 @@ def seg_path_L_elec(endseg, f, gleak_name):
 
 	raise Exception('End segment not reached')
 
+def seg_path_L(endseg):
+	"""
+	Calculate path length from center of roto section to given segment
+	"""
+	secref = h.SectionRef(sec=endseg.sec)
+	secref.root # root of entire tree, modifies CAS
+
+	# Get path from root section to endseg
+	calc_path = h.RangeVarPlot('v')
+	# rootsec.push() # rootsec.root already set CAS
+	calc_path.begin(0.5)
+	secref.sec.push()
+	calc_path.end(endseg.x)
+	root_path = h.SectionList() # SectionList structure to store path
+	calc_path.list(root_path) # copy path sections to SectionList
+	h.pop_section()
+	h.pop_section()
+
+	# Compute electrotonic path length
+	path_secs = list(root_path)
+	return sum(sec.L/sec.nseg for sec in path_secs for seg in sec)
+
+def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False):
+	""" 
+	Assign length constant (lambda) and electrotonic path length (L/lambda)
+	to 0- and 1-end for each section in subtree of given section.
+
+	@type	rootref		SectionRef
+	@param	rootref		Section reference to current node
+
+	@type	allsecrefs	list(SectionRef)
+	@param	allsecrefs	references to all sections in the cell
+
+	@post				all section references have the following attributes:
+						- 'f_lambda': frequency at which length constant is computed
+						- 'lambda_f': section's length constant at given frequency
+						- 'pathL0': electrotonic path length to 0-end
+						- 'pathL1': Electrotonic path length to 1-end
+	"""
+	if rootref is None:
+		return
+
+	# Compute length constant
+	gleak = sum([getattr(seg, gleak_name) for seg in rootref.sec])
+	gleak /= rootref.sec.nseg # average gleak of segments in section
+	lambda_f = electrotonic_length(rootref.sec, gleak, f)
+	rootref.lambda_f = lambda_f
+	rootref.f_lambda = f
+
+	# Compute electrotonic path length
+	if allseg:
+		rootref.pathL_elec = [0.0]*rootref.sec.nseg
+		for i, seg in enumerate(rootref.sec):
+			# visit every segment expcent 0/1 end zero-area segments
+			pathL = seg_path_L_elec(seg, f, gleak_name)
+			rootref.pathL_elec[i] = pathL
+	pathL0, pathL1 = sec_path_L_elec(rootref, f, gleak_name)
+	rootref.pathL0 = pathL0
+	rootref.pathL1 = pathL1
+
+	# Assign to children
+	for childsec in rootref.sec.children():
+		childref = getsecref(childsec, allsecrefs)
+		assign_electrotonic_length(childref, allsecrefs, f, gleak_name, allseg=allseg)
+
 
 ################################################################################
 # Clustering & Topology
@@ -323,6 +388,14 @@ def prev_seg(curseg):
 	# NOTE: cannot use seg.next() since this changed content of seg
 	allseg = reversed([seg for seg in curseg.sec if round(seg.x,3) < round(curseg.x,3)])
 	return next(allseg, curseg.sec.parentseg())
+
+def get_seg(sec, iseg):
+	""" Get the i-th segment of Section """
+	return next(seg for i,seg in enumerate(sec) if i==iseg)
+
+def seg_index(tar_seg):
+	""" Get index of given segment on Section """
+	return next(i for i,seg in enumerate(tar_seg.sec) if seg.x==tar_seg.x)
 
 def sameparent(secrefA, secrefB):
 	""" Check if sections have same parent section """
@@ -485,49 +558,6 @@ def dupe_subtree(rootsec, mechs_pars, tree_copy):
 		child_copy.connect(root_copy, childsec.parentseg().x, 0)
 
 	return root_copy
-
-def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False):
-	""" 
-	Assign length constant (lambda) and electrotonic path length (L/lambda)
-	to 0- and 1-end for each section in subtree of given section.
-
-	@type	rootref		SectionRef
-	@param	rootref		Section reference to current node
-
-	@type	allsecrefs	list(SectionRef)
-	@param	allsecrefs	references to all sections in the cell
-
-	@post				all section references have the following attributes:
-						- 'f_lambda': frequency at which length constant is computed
-						- 'lambda_f': section's length constant at given frequency
-						- 'pathL0': electrotonic path length to 0-end
-						- 'pathL1': Electrotonic path length to 1-end
-	"""
-	if rootref is None:
-		return
-
-	# Compute length constant
-	gleak = sum([getattr(seg, gleak_name) for seg in rootref.sec])
-	gleak /= rootref.sec.nseg # average gleak of segments in section
-	lambda_f = electrotonic_length(rootref.sec, gleak, f)
-	rootref.lambda_f = lambda_f
-	rootref.f_lambda = f
-
-	# Compute electrotonic path length
-	if allseg:
-		rootref.pathL_elec = [0.0]*rootref.sec.nseg
-		for i, seg in enumerate(rootref.sec):
-			# visit every segment expcent 0/1 end zero-area segments
-			pathL = seg_path_L_elec(seg, f, gleak_name)
-			rootref.pathL_elec[i] = pathL
-	pathL0, pathL1 = sec_path_L_elec(rootref, f, gleak_name)
-	rootref.pathL0 = pathL0
-	rootref.pathL1 = pathL1
-
-	# Assign to children
-	for childsec in rootref.sec.children():
-		childref = getsecref(childsec, allsecrefs)
-		assign_electrotonic_length(childref, allsecrefs, f, gleak_name, allseg=allseg)
 
 
 if __name__ == '__main__':

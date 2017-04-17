@@ -10,9 +10,11 @@ described in Marasco & Migliore (2012)
 # Python modules
 import math
 PI = math.pi
+
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
+
 import sys
 import os.path
 scriptdir, scriptfile = os.path.split(__file__)
@@ -37,9 +39,9 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Own modules
 import reduction_tools as redtools
-from reduction_tools import ExtSecRef, Cluster, getsecref, lambda_AC, prev_seg # for convenience
+from reduction_tools import ExtSecRef, getsecref, lambda_AC, prev_seg, seg_index # for convenience
 import cluster as clutools
-from cluster import EqProps
+from cluster import Cluster, EqProps
 import reduce_bush_sejnowski as redbush
 import reduction_analysis as analysis
 
@@ -57,7 +59,12 @@ glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in c
 
 def merge_parallel(childrefs, allsecrefs):
 	"""
-	Merge parallel branched sections into one equivalent section
+	Merge parallel sections at branch point using <br> equations in Marasco (2012)
+
+	ALGORITHM
+	- `L_br = sum(S_i*L_i)/sum(S_i)` where S_I is the area of branch i
+	- `diam_br = sqrt(sum(diam_i^2))`
+	- `r_a,br = prod(r_a,i)/sum(r_a,i)` where r_a is the axial resistance Ri
 	"""
 	# Initialize combined properties of branched sections (children)
 	L_br = 0.
@@ -164,59 +171,98 @@ def collapse_seg_subtree(rootseg, allsecrefs):
 				connects to the 1-end of the parent
 
 	ALGORITHM
-	- recursively call `equivalent_properties = collapse_subtree(rootseg)`
-	- where rootseg are child segments of current rootseg
+	- for each child segment: recursively call `equivalent_properties = collapse_subtree(child)`
 	- then combine the equivalent properties: absorb into current rootseg and return
 	"""
 	# Get segment info
 	rootsec = rootseg.sec
 	rootref = getsecref(rootsec, allsecrefs)
 	neighbors = [seg for seg in rootsec]
-	i_rootseg = next(i for i, seg in enumerate(neighbors) if round(rootseg.x,3)==round(seg.x,3))
+	i_rootseg = seg_index(rootseg)
+	# i_rootseg = next(i for i, seg in enumerate(neighbors) if round(rootseg.x,3)==round(seg.x,3))
 	rootlabel = rootref.cluster_labels[i_rootseg]
-
-	# Get children
-	child_refs = [getsecref(sec, allsecrefs) for sec in rootsec.children()]
-	for secref in child_refs:
-		if round(secref.sec.parentseg().x,3) < round(neighbors[-1].x, 3):
-			raise Exception("Merging algorithm does not support topologies where "
-							"a child section is not connected to 1-end of parent.")
 
 	# Calculate properties of root segment
 	L_root = rootsec.L/rootsec.nseg
 	diam_root = rootseg.diam
 	Ra_root = rootsec.Ra
-	ri_root = rootseg.ri() # axial resistance between start-end (0-1)
+	Ri_root = rootseg.ri() # axial resistance between start-end (0-1)
+
+	# 1. Get Children to absorb ###############################################
+
+	# Get children
+	child_refs = [getsecref(sec, allsecrefs) for sec in rootsec.children()]
 
 	# If end segment: add child segments if in same cluster
 	child_segs = []
-	if i_rootseg == rootsec.nseg-1 # or: rootseg.x >= neighbors[-1].x:
-		assert rootseg.x >= neighbors[-1].x:
+	if i_rootseg == rootsec.nseg-1: # or: rootseg.x >= neighbors[-1].x:
+		assert rootseg.x >= neighbors[-1].x
 		# Gather child segments that are in same cluster
 		for secref in child_refs:
 			seg = next(seg for seg in secref.sec) # get the first segment
 			if secref.cluster_labels[0]==rootlabel:
+				# Check if attempting to merge children not connected to 1-end
+				if round(secref.sec.parentseg().x,3) < round(neighbors[-1].x, 3):
+					raise Exception("Merging algorithm does not support topologies where "
+									"a child section is not connected to 1-end of parent.")
 				child_segs.append(seg)
+				# mark segment
+				secref.visited[0] = True
+				secref.absorbed[0] = True
 
 	else: # If not end segment: add adjacent segment if in same cluster
 		if rootref.cluster_labels[i_rootseg+1] == rootlabel:
 			child_segs.append(neighbors[i_rootseg+1])
+			rootref.visited[i_rootseg+1] = True
+			rootref.absorbed[i_rootseg+1] = True
+
+
+	# 2. Use solution of recursive call to solve ##############################
 
 	# Base Case: leaf segments (i.e. no child segments in same cluster)
 	if not any(child_segs):
-		eq_props = EqProps(L_eq=L_root, diam_eq=diam_root, Ra_eq=Ra_root, Ri_eq=ri_root)
+		eq_props = EqProps(L_eq=L_root, diam_eq=diam_root, Ra_eq=Ra_root, Ri_eq=Ri_root)
 		return eq_props
 
-	# Get equivalent properties for each child
-	eq_props_children = []
+	# Parallel merge of child properties (use <br> equations Marasco (2012))
+	# NOTE: if only one child, <br> equations must yield properties of that child
+	L_br = 0.
+	diam_br = 0.
+	Ra_br = 0.
+	Ri_br = 1.
+	area_br = 0.
+	cross_area_br = 0.
+	Ri_br_sum = 0. # sum of axial resistances of parallel child branches
 	for child in child_segs:
-		child_eq_props = collapse_seg_subtree(child, allsecrefs)
-		eq_props_children.append(child_eq_props)
+		cp = collapse_seg_subtree(child, allsecrefs)
+		ch_area = PI*cp.diam_eq*cp.L_eq
 
-	# Do a parallel merge of child properties
+		# Update equivalent properties of all child branches in parallel
+		area_br += ch_area
+		L_br += ch_area*cp.L_eq		# Length: Eq. L_br
+		diam_br += cp.diam_eq**2	# Diameter: Eq. rho_br
+		Ra_br += cp.Ra_eq			# Axial resistivity: average Ra
+		Ri_br *= cp.Ri_eq			# Axial resistance: Eq. r_a,br
+		Ri_br_sum += cp.Ri_eq		# Sum of branch axial resistances
 
-	# Do a sequential merge of root & child properties
+	# Finalize <br> calculation
+	L_br /= area_br
+	diam_br = math.sqrt(diam_br)
+	Ra_br = Ra_br/len(child_segs) # NOTE: unused, cluster Ra calculated from equation Ra^{eq}
+	cross_area_br = PI*diam_br**2/4.
+	if len(child_segs) > 1:
+		Ri_br /= Ri_br_sum # Must be valid parallel circuit of Ri if only one child
+	Ri_br_eqgeom = Ra_br*L_br/cross_area_br/100. # Axial resistance of section with geometry equal to merged properties
 
+
+	# Sequential merge of root & merged child properties (use <seq> equations Marasco (2012))
+	L_seq = L_root + L_br			# Eq. L_seq
+	Ra_seq = (Ra_root + Ra_br)/2.	# for rho_seq calculation
+	Ri_seq = Ri_root + Ri_br		# Eq. r_a,seq
+	Ri_seq_eqgeom = Ri_root + Ri_br_eqgeom						# for diam_seq calculation
+	diam_seq = math.sqrt(Ra_seq*L_seq*4./PI/Ri_seq_eqgeom/100.)	# Eq. rho_seq
+	eq_props = EqProps(L_eq=L_seq, diam_eq=diam_seq, Ra_eq=Ra_seq, Ri_eq=Ri_seq)
+	return eq_props
 
 
 def map_pathri_gbar(cluster, allsecrefs):
@@ -264,20 +310,48 @@ def calc_gbar(cluster, gname, pathri):
 			surr_pts = [pt for i, pt in enumerate(gbar_pts) if i < 2]
 		return sum(pt[1] for pt in surr_pts)/len(surr_pts) # take average
 
+def has_cluster_parentseg(seg, cluster, clu_secs):
+	""" Utility function to check if segment has parent segment in same cluster """
+	parseg = prev_seg(seg)
+	if parseg is None:
+		return False # no parent segment
+	parref = getsecref(parseg.sec, clu_secs)
+	if parref is None:
+		return False # parent section has no segments in same cluster
+	for j, seg in enumerate(parref.sec):
+		if (seg.x==parseg.x) and (parref.cluster_labels[j]==cluster.label): # TODO: test this
+			return True
+	return False
+
 def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 	"""
 	Merge cluster of segments (use for segment-based clustering)
 
-	@param average_Ri	see param 'average_Ri' in merge_cluster()
+	@param average_Ri	see param 'average_Ri' in merge_sec_cluster()
+
+	@post	cluster will have following attributes, calculated from member segments:
+
+			or_area		original surface area of all member segments
+			or_cmtot	original summed capacitance (nonspecific) of all member segments
+			or_gtot		original maximum conductance (nonspecific) of all member segments,
+						for all inserted conductance mechanisms
+			
+			eqL			equivalent length
+			eqdiam		equivalent diameter
+			eqri		equivalent axial resistance Ri (absolute, in Mega Ohms)
+			eqRa		equivalent axial cytoplasmic resistivity
+			eq_area		equivalent area based on equivalent dimensions and passive properties
+			eq_area_sum	sum of equilvalent surfaces of 'islands' of segments
+
 	"""
 	# Gather member segments
 	clu_secs = [secref for secref in allsecrefs if (cluster.label in secref.cluster_labels)]
 	clu_segs = []
 	for ref in allsecrefs:
 		# Flag all sections as unvisited
-		if not hasattr(ref, absorbed):
+		if not hasattr(ref, 'absorbed'):
 			ref.absorbed = [False] * ref.sec.nseg
-		if not hasattr(ref, visited):
+		if not hasattr(ref, 'visited'):
 			ref.visited = [False] * ref.sec.nseg
 
 		# Gather segments that are member of current cluster
@@ -285,7 +359,7 @@ def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 			if ref.cluster_labels[i] == cluster.label:
 				clu_segs.append(seg)
 
-	# Calculate axial path resistances
+	# Calculate axial path resistance to all segments in cluster
 	clu_seg_pathri = []
 	for secref in clu_secs:
 		# Assign axial path resistances
@@ -294,7 +368,7 @@ def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 		segs_pathri = [pathri for i, pathri in enumerate(secref.pathri_seg) if (
 						secref.cluster_labels[i]==cluster.label)]
 		# Also store pathri to end of most distal segment
-		if secref.cluster_labels[-1]==cluster_label:
+		if secref.cluster_labels[-1]==cluster.label:
 			segs_pathri.append(secref.pathri1)
 		clu_seg_pathri.extend(segs_pathri)
 
@@ -312,52 +386,59 @@ def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 	cluster.or_area = sum(seg.area() for seg in clu_segs)
 	cluster.or_cmtot = sum(seg.cm*seg.area() for seg in clu_segs)
 	cluster.or_gtot = dict((gname, 0.0) for gname in glist)
-
-	# Local function to check if segment has parent segment in same cluster
-	def has_clusterparent(seg):
-		parseg = prev_seg(seg)
-		if parseg is None:
-			return False # no parent segment
-		parref = getsecref(parseg.sec, clu_secs)
-		if parref is None:
-			return False # parent section has no segments in same cluster
-		for j, seg in enumerate(parref.sec):
-			if (seg.x == parseg.x) and (parref.cluster_labels[j]==cluster.label): # TODO: FIXME: test this
-				return True
-		return False
+	for gname in glist:
+		cluster.or_gtot[gname] += sum(getattr(seg, gname)*seg.area() for seg in clu_segs)
 
 	# Make generator that finds root segments
 	root_gen = (seg for ref in clu_secs for i, seg in enumerate(ref.sec) if (
-					not ref.visited[i] and not has_clusterparent(seg)))
+					not ref.visited[i] and not has_cluster_parentseg(seg, cluster, clu_secs)))
 
 	# Start merging algorithm
+	num_roots = 0
 	while True:
 		# Find next root segment in cluster (i.e. with no parent segment in same cluster)
 		rootseg = next(root_gen, None)
 		if rootseg is None:
 			break # No more root segment left
+		rootref = getsecref(rootseg.sec, allsecrefs)
 
 		# Collapse subtree
-		logger.debug("Collapsing subtree of cluster root segment %s", repr(rootref))
-		L_eq, diam_eq, Ra_eq, ri_eq, cmtot_eq, gtot_eq = collapse_subtree(rootref, allsecrefs)
+		logger.debug("Collapsing subtree of cluster root segment %s", repr(rootseg))
+		eq_props = collapse_seg_subtree(rootseg, allsecrefs)
 
 		# Combine properties of collapse sections using <eq> expressions
-		surf_eq = L_eq*PI*diam_eq
-		cluster.eq_area_sum += surf_eq
-		cluster.eqL += L_eq * surf_eq
-		cluster.eqdiam += diam_eq**2
-		cluster.eqri += ri_eq
-
-		# Save distributed properties
-		cluster.or_cmtot += cmtot_eq
-		for gname in glist:
-			cluster.or_gtot[gname] += gtot_eq[gname]
+		eq_area = eq_props.L_eq * PI * eq_props.diam_eq
+		cluster.eq_area_sum += eq_area
+		cluster.eqL += eq_props.L_eq * eq_area	# eq. L^eq
+		cluster.eqdiam += eq_props.diam_eq**2	# eq. rho^eq
+		cluster.eqri += eq_props.Ri_eq			# eq. ra^eq
 
 		# Mark as visited
-		rootref.visited = True
+		i_seg = seg_index(rootseg)
+		rootref.visited[i_seg] = True
+		num_roots += 1
+
+	# Finalize <or> calculation
+	cluster.or_cm = cluster.or_cmtot / cluster.or_area
+
+	# Finalize <eq> calculation
+	cluster.eqL /= cluster.eq_area_sum			# eq. L^eq
+	cluster.eqdiam = math.sqrt(cluster.eqdiam)	# eq. rho^eq
+	cluster.eqri /= num_roots					# eq. ra^eq
+	if average_Ri:
+		cluster.eqRa = PI*(cluster.eqdiam/2.)**2*cluster.eqri*100./cluster.eqL # eq. Ra^eq
+	else:
+		cluster.eqRa = sum(seg.sec.Ra for seg in clu_segs)/len(clu_segs) # alternative Ra^eq: average in cluster
+	cluster.eq_area = cluster.eqL*PI*cluster.eqdiam # area_eq based on equivalent geometry
+
+	# Debugging info
+	logger.debug("Merged cluster '%s': equivalent properties are:\
+		\n\teqL\teqdiam\teqRa\teqri\teq_area\
+		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f",
+		cluster.label, cluster.eqL, cluster.eqdiam, cluster.eqRa, cluster.eqri, cluster.eq_area)
 
 
-def merge_cluster(cluster, allsecrefs, average_Ri):
+def merge_sec_cluster(cluster, allsecrefs, average_Ri):
 	"""
 	Merge sections in cluster
 
@@ -578,7 +659,7 @@ def label_order(label):
 	else:
 		return 4
 
-def reduce_gillies_pathLambda(delete_old_cells=True):
+def reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True):
 	"""
 	Reduce Gillies & Willshaw STN neuron model.
 
@@ -607,10 +688,6 @@ def reduce_gillies_pathLambda(delete_old_cells=True):
 			secref.tree_index = j # left tree is 0, right is 1
 			secref.table_index = i+1 # same as in /sth-data/treeX-nom.dat
 
-	# TODO: split sections
-	# - assign tree_index and table_index (is it used somewhere?)
-	# - check following functions for compatibility
-
 	############################################################################
 	# 0. Pre-clustering: calculate properties
 
@@ -633,15 +710,12 @@ def reduce_gillies_pathLambda(delete_old_cells=True):
 	clusters = [somaclu]
 
 	# Cluster dendritic trees
-	# TODO: write this function based on tree_index and table_index
-	cluster_fun = clutools.label_from_regions_gbar
-
+	clu_fun = clutools.label_from_custom_regions
+	clu_args = {}
 	logger.info("Clustering left tree (dend0)...")
-	clutools.clusterize_custom(dendLrefs[0], allsecrefs, cluster_fun, clusters, 
-								labelsuffix='_0')
+	clutools.clusterize_custom(dendLrefs[0], allsecrefs, clusters, '_0', clu_fun, clu_args)
 	logger.info("Clustering right tree (dend1)...")
-	clutools.clusterize_custom(dendRrefs[0], allsecrefs, cluster_fun, clusters, 
-								labelsuffix='_1', parent_pos=0.)
+	clutools.clusterize_custom(dendRrefs[0], allsecrefs, clusters, '_1', clu_fun, clu_args)
 
 	# Determine cluster relations/topology
 	clutools.assign_topology(clusters, ['soma', 'trunk', 'smooth', 'spiny'])
@@ -652,8 +726,12 @@ def reduce_gillies_pathLambda(delete_old_cells=True):
 	# Merge sections within each cluster: 
 	# i.e. calculate properties of equivalent section for each cluster
 	logger.info("Merging within-cluster sections...")
+	average_Ri = True # at branch point: average Ri rather than parallel circuit
 	for cluster in clusters:
-		merge_cluster(cluster, allsecrefs, average_Ri) # store equivalent properties on Cluster objects
+		if segment_based:
+			merge_seg_cluster(cluster, allsecrefs, average_Ri)
+		else:
+			merge_sec_cluster(cluster, allsecrefs, average_Ri)
 
 	# Create new sections
 	logger.info("Creating equivalent sections...")
@@ -685,7 +763,7 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 								cluster_sections()
 
 	@param average_Ri			see param 'average_Ri' in function
-								merge_cluster
+								merge_sec_cluster
 	"""
 
 	# Initialize Gillies model
@@ -718,7 +796,7 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 
 	# Cluster sections
 	logger.info("Clustering sections...")
-	dendLroot, dendRroot = dendLrefs[0], dendRrefs[0])
+	dendLroot, dendRroot = dendLrefs[0], dendRrefs[0]
 
 	# Cluster soma
 	somaref.cluster_label = 'soma'
@@ -731,17 +809,14 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 	# Cluster dendritic trees
 	if customclustering:
 		# Based on diameters: see Gilles & Willshaw (2006) fig. 1
-		clufun = lambda (ref): 'spiny' if ref.sec.diam <= 1.0 else 'trunk'
-
-		clutools.clusterize_custom(dendLroot, allsecrefs, clufun, clusters, 
-									labelsuffix='_0')
-		clutools.clusterize_custom(dendRroot, allsecrefs, clufun, clusters, 
-									labelsuffix='_1', parent_pos=0.)
+		clu_fun = lambda (ref): 'spiny' if ref.sec.diam <= 1.0 else 'trunk'
+		clu_args = {}
 	else:
-		clutools.clusterize_strahler(dendLroot, allsecrefs, thresholds=(1,2), 
-									clusterlist=clusters, labelsuffix='_0')
-		clutools.clusterize_strahler(dendRroot, allsecrefs, thresholds=(1,2),
-									clusterlist=clusters, labelsuffix='_1', parent_pos=0.)
+		clu_fun = clutools.label_from_strahler
+		clu_args = {'thresholds':(1,2)}
+
+	clutools.clusterize_custom(dendLroot, allsecrefs, clusters, '_0', clu_fun, clu_args)
+	clutools.clusterize_custom(dendRroot, allsecrefs, clusters, '_1', clu_fun, clu_args)
 
 	# Determine cluster relations/topology
 	clutools.assign_topology(clusters, ['soma', 'trunk', 'smooth', 'spiny'])
@@ -757,7 +832,7 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 	logger.info("Merging within-cluster sections...")
 	for cluster in clusters:
 		# Merge sections within each cluster: 
-		merge_cluster(cluster, allsecrefs, average_Ri)
+		merge_sec_cluster(cluster, allsecrefs, average_Ri)
 
 		# Map axial path resistance values to gbar values
 		map_pathri_gbar(cluster, allsecrefs)
@@ -800,4 +875,4 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 	return clusters, eq_secs, eq_refs
 
 if __name__ == '__main__':
-	clusters, eq_secs, eq_refs = reduce_gillies(True, False)
+	clusters, eq_secs = reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True)

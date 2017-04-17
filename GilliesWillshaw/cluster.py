@@ -2,10 +2,12 @@
 Functions for clustering sections in dendritic trees.
 """
 
+import re
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
 
+import reduction_tools as redtools
 from reduction_tools import getsecref
 
 class Cluster(object):
@@ -26,7 +28,12 @@ class Cluster(object):
 	# 	return desc
 
 class EqProps:
-	""" Equivalent properties of merged sections """
+	"""
+	Equivalent properties of merged sections
+
+	NOTE: this is the 'Bunch' recipe from the python cookbook
+		  al alternative would be `myobj = type('Bunch', (object,), {})()`
+	"""
 	def __init__(self, **kwds):
 		self.__dict__.update(kwds)
 
@@ -86,116 +93,7 @@ def assign_strahler_order(noderef, secrefs, par_order):
 		# nonzero and equal: increment strahler number
 		noderef.strahlernumber = leftref.strahlernumber + 1
 
-def label_from_regions_gbar(secref):
-	"""
-	Assign cluster label based on functional regions identified from
-	channel distribution (max conductance for each channel)
-	"""
-	if secref.tree_index == 0: # left tree
-		if secref.table_index == 1:
-			pass
-		else:
-			pass
-	elif secref.tree_index == 1: # right tree
-		pass
-	else:
-		raise Exception("Section has unknown tree index {}".format(secref.tree_index))
-
-def clusterize_seg_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix=''):
-	""" Cluster segments in dendritic tree based on length divided by 
-		length constant (i.e. length in terms of its electrotonic length) 
-		measured from soma section.
-
-	@type	noderef		SectionRef
-	@param	noderef		Section reference to current node
-
-	@type	allsecrefs	list(SectionRef)
-	@param	allsecrefs	references to all sections in the cell
-
-	@type	thresholds	tuple(float)
-	@param	thresholds	one or two thresholds on electrotonic path length 
-						to distinguish between trunk/smooth/spiny sections
-
-	@type	clusterlist	list(Cluster)
-	@param	clusterlist	list of existing Clusters
-
-	@pre				all section references must have their length constant
-						set using assign_electrotonic_length
-	"""
-	if noderef is None:
-		return
-
-	# Cluster each segment
-	noderef.cluster_labels = ['unassigned'] * noderef.sec.nseg
-	for i in xrange(noderef.sec.nseg):
-		pathL = noderef.pathL_elec[i] # electrotonic path length of segment i
-		if pathL <= thresholds[0]:
-			noderef.cluster_labels[i] = 'trunk' + labelsuffix
-		elif len(thresholds) > 1 and pathL <= thresholds[1]:
-			noderef.cluster_labels[i] = 'smooth' + labelsuffix
-		else:
-			noderef.cluster_labels[i] = 'spiny' + labelsuffix
-
-	# If any new clusters created, create Cluster objects
-	for label in noderef.cluster_labels:
-		if not any(clu.label == label for clu in clusterlist):
-			newclu = Cluster(label)
-			clusterlist.append(newclu)
-
-	# Cluster children (iteratively)
-	for childsec in noderef.sec.children():
-		childref = getsecref(childsec, allsecrefs)
-		clusterize_seg_electrotonic(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
-
-
-def clusterize_sec_electrotonic(noderef, allsecrefs, thresholds, clusterlist, labelsuffix=''):
-	""" Cluster dendritic tree based on length divided by length constant
-		(i.e. length in terms of its electrotonic length) measured from
-		soma section.
-
-	@type	noderef		SectionRef
-	@param	noderef		Section reference to current node
-
-	@type	allsecrefs	list(SectionRef)
-	@param	allsecrefs	references to all sections in the cell
-
-	@type	thresholds	tuple(float)
-	@param	thresholds	one or two thresholds on electrotonic path length 
-						to distinguish between trunk/smooth/spiny sections
-
-	@type	clusterlist	list(Cluster)
-	@param	clusterlist	list of existing Clusters
-
-	@pre				all section references must have their length constant
-						set using assign_electrotonic_length
-	"""
-	if noderef is None:
-		return
-
-	# Cluster based on electronic path length at midpoint
-	L_mid = noderef.pathL0 + (noderef.pathL1 - noderef.pathL0)/2.
-	labels = ['trunk', 'smooth', 'spiny']
-	if L_mid <= thresholds[0]:
-		noderef.cluster_label = 'trunk' + labelsuffix
-	elif len(thresholds) > 1 and L_mid <= thresholds[1]:
-		noderef.cluster_label = 'smooth' + labelsuffix
-	else:
-		noderef.cluster_label = 'spiny' + labelsuffix
-
-	logger.debug("Section with index {} assigned to cluster {}".format(
-					noderef.table_index, noderef.cluster_label))
-
-	# If first section belonging to this cluster, add new Cluster object
-	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
-		newclu = Cluster(noderef.cluster_label)
-		clusterlist.append(newclu)
-
-	# Cluster children (iteratively)
-	for childsec in noderef.sec.children():
-		childref = getsecref(childsec, allsecrefs)
-		clusterize_sec_electrotonic(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
-
-def clusterize_custom(noderef, allsecrefs, clusterfun, clusterlist, labelsuffix='', parent_pos=1.0):
+def clusterize_custom(noderef, allsecrefs, clusterlist, labelsuffix, clusterfun, cluster_args):
 	""" Cluster dendritic tree based on custom criterion
 
 	@type	noderef		SectionRef
@@ -216,24 +114,45 @@ def clusterize_custom(noderef, allsecrefs, clusterfun, clusterlist, labelsuffix=
 	if noderef is None: return
 
 	# Cluster section based on custom criterion
-	noderef.cluster_label = clusterfun(noderef) + labelsuffix
+	cluster_args['labelsuffix'] = labelsuffix
+	labels = clusterfun(noderef, **cluster_args)
 
 	# Add new Cluster object if necessary
-	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
-		newclu = Cluster(noderef.cluster_label)
-		clusterlist.append(newclu)
+	for label in labels:
+		if not any(clu.label==label for clu in clusterlist):
+			newclu = Cluster(label)
+			clusterlist.append(newclu)
 
 	# Cluster children (iteratively)
 	for childsec in noderef.sec.children():
 		childref = getsecref(childsec, allsecrefs)
-		clusterize_custom(childref, allsecrefs, clusterfun, clusterlist, labelsuffix)
+		clusterize_custom(childref, allsecrefs, clusterlist, labelsuffix, clusterfun, cluster_args)
 
-def clusterize_strahler(noderef, allsecrefs, thresholds, clusterlist, labelsuffix='', parent_pos=1.0):
-	""" Cluster a tree based on strahler numbers alone
+def label_from_custom_regions(noderef, label_seg=True, labelsuffix=''):
+	"""
+	Assign cluster label based on functional regions identified from
+	channel distribution (max conductance for each channel)
+	"""
+	if not hasattr(noderef, 'cluster_labels'):
+		noderef.cluster_labels = [None] * noderef.sec.nseg
+	for iseg, seg in enumerate(noderef.sec):
+		# Compute path length
+		path_L = redtools.seg_path_L(seg)
 
-	@param noderef		any section starting from but not equal to soma
+		# Determine label from threshold (see gbar plot)
+		if path_L >= 220.:
+			label = 'spiny' + labelsuffix
+		elif path_L >= 90.:
+			label = 'smooth' + labelsuffix
+		else:
+			label = 'trunk' + labelsuffix
+		noderef.cluster_labels[iseg] = label
+	return noderef.cluster_labels
 
-	@param parent_pos	position on parent cluster of noderef
+
+def label_from_strahler(noderef, thresholds=None, labelsuffix=''):
+	"""
+	Cluster a tree based on Strahler numbers alone
 
 	@effect			assign label 'trunk'/'smooth'/spiny' to sections
 					based on their Strahler number
@@ -246,53 +165,73 @@ def clusterize_strahler(noderef, allsecrefs, thresholds, clusterlist, labelsuffi
 
 	# Cluster label based on strahler's number
 	if noderef.strahlernumber <= thresholds[0]: # default: <= 3
-		noderef.cluster_label = 'spiny' + labelsuffix
+		label = 'spiny' + labelsuffix
 	elif noderef.strahlernumber <= thresholds[1]: # default: <= 5
-		noderef.cluster_label = 'smooth' + labelsuffix
+		label = 'smooth' + labelsuffix
 	else:
-		noderef.cluster_label = 'trunk' + labelsuffix
+		label = 'trunk' + labelsuffix
+	noderef.cluster_label = label
+	return [label]
 
-	# Add new cluster
-	if not any(clu.label==noderef.cluster_label for clu in clusterlist):
-		newclu = Cluster(noderef.cluster_label)
-		clusterlist.append(newclu)
 
-	# Cluster children (iteratively)
-	for childsec in noderef.sec.children():
-		childref = getsecref(childsec, allsecrefs)
-		clusterize_strahler(childref, allsecrefs, thresholds, clusterlist, labelsuffix)
+def label_sec_electrotonic(noderef, thresholds, labelsuffix=''):
+	""" 
+	Cluster dendritic tree based on length divided by length constant
+	(i.e. length in terms of its electrotonic length) measured from soma section.
 
-def clusterize_strahler_trunks(allsecrefs, thresholds=None):
-	""" Cluster a tree based on strahler numbers and depending
-		on the trunk section it is attached to (trunk sections
-		are large dendritic sections attached to soma)
+	@type	thresholds	tuple(float)
+	@param	thresholds	one or two thresholds on electrotonic path length 
+						to distinguish between trunk/smooth/spiny sections
 
-	@param allsecrefs	list of SectionRef (mutable) with first element
-						a ref to root/soma section
-	@param thresholds	spiny: i <= tresholds[0] (default: 3)
-						smooth: i <= thresholds[1] (default: 5)
-						trunk: i > thresholds[1]
-
-	ALGORITHM: this is the algorithm used in Marasco (2012)
-	- each trunk section (neighbouring soma) gets its own cluster
-	- for each trunk, two clusters are created: one for smooth and
-	  one for spiny sections attached to that trunk
+	@pre				all section references must have their length constant
+						set using assign_electrotonic_length
 	"""
-	# Clustering thresholds
-	if thresholds is None:
-		thresholds = (3,5)
+	if noderef is None:
+		return
 
-	# Cluster soma
-	somaref = allsecrefs[0]
-	somaref.cluster_label = 'soma'
-	somaref.parent_label = 'soma'
-	somaref.parent_pos = 0.0
+	# Cluster based on electronic path length at midpoint
+	L_mid = noderef.pathL0 + (noderef.pathL1 - noderef.pathL0)/2.
+	labels = ['trunk', 'smooth', 'spiny']
+	if L_mid <= thresholds[0]:
+		label = 'trunk' + labelsuffix
+	elif len(thresholds) > 1 and L_mid <= thresholds[1]:
+		label = 'smooth' + labelsuffix
+	else:
+		label = 'spiny' + labelsuffix
+	noderef.cluster_label = label
 
-	# Cluster each trunk and its subtree
-	for i, trunksec in enumerate(somaref.sec.children()):
-		trunkref = getsecref(trunksec, allsecrefs)
-		clusterize_strahler(trunkref, allsecrefs, thresholds, labelsuffix='_'+str(i))
-		logger.debug("Using suffix '_%i' for subtree of section %s", i, trunksec.name())
+	logger.debug("Section with index {} assigned to cluster {}".format(
+					noderef.table_index, noderef.cluster_label))
+	return [label]
+
+	
+def label_seg_electrotonic(noderef, thresholds, labelsuffix=''):
+	""" 
+	Cluster segments in dendritic tree based on length divided by 
+	length constant (i.e. length in terms of its electrotonic length) 
+	measured from soma section.
+
+	@type	thresholds	tuple(float)
+	@param	thresholds	one or two thresholds on electrotonic path length 
+						to distinguish between trunk/smooth/spiny sections
+
+	@pre				all section references must have their length constant
+						set using assign_electrotonic_length
+	"""
+	if noderef is None:
+		return
+
+	# Cluster each segment
+	noderef.cluster_labels = ['unassigned'] * noderef.sec.nseg
+	for i in xrange(noderef.sec.nseg):
+		pathL = noderef.pathL_elec[i] # electrotonic path length of segment i
+		if pathL <= thresholds[0]:
+			noderef.cluster_labels[i] = 'trunk' + labelsuffix
+		elif len(thresholds) > 1 and pathL <= thresholds[1]:
+			noderef.cluster_labels[i] = 'smooth' + labelsuffix
+		else:
+			noderef.cluster_labels[i] = 'spiny' + labelsuffix
+	return noderef.cluster_labels
 
 def cluster_topology(rootref, allsecrefs, relations):
 	""" Determine cluster topology from list of clustered section references
@@ -309,16 +248,23 @@ def cluster_topology(rootref, allsecrefs, relations):
 		# determine topology of subtree
 		cluster_topology(childref, allsecrefs, relations)
 
-def assign_topology(clusters, radial_prefixes):
+def assign_topology(clusters, radial_prefixes, prefix_pattern=r'^[a-zA-Z0-9]+', 
+						suffix_pattern=r'_[0-9]+$'):
 	""" 
 	Assign parent_label and parent_pos for each Cluster in clusters
 	based on the given prefixes, which should be ordered from
 	proximal to distal.
 	"""
+	# Assign defaults
+	for clu in clusters:
+		if not hasattr(clu, 'order'):
+			clu.order = next(i for i,prefix in enumerate(radial_prefixes) if clu.label.startswith(prefix))
+
+	# Assign based on topology
 	for clu in clusters:
 		# Get current cluster prefix
-		prepat = re.compile(r'^[a-zA-Z0-9]+') # same as ^[^\W_]+ : matches anything before first underscore
-		match = re.search(prepat, clu.label) 
+		prefix_find = re.compile(prefix_pattern) # same as ^[^\W_]+ : matches anything before first underscore
+		match = re.search(prefix_find, clu.label) 
 		clu_prefix = match.group()
 
 		# Defaults
@@ -326,24 +272,33 @@ def assign_topology(clusters, radial_prefixes):
 		clu.parent_pos = 1.0
 
 		# look for next prefix in anti-radial direction that is available
-		prefix_index = radial_prefixes.index(clu_prefix)
-		parent_index = prefix_index
+		parent_index = radial_prefixes.index(clu_prefix)
 
 		# Root cluster
-		if prefix_index == 0:
+		if parent_index == 0:
 			clu.parent_label = clu.label
 			clu.order = 0
-		
+
+		# utility function to find parent cluster
+		def parent_generator(child_clu, parent_index):
+			parent_prefix = radial_prefixes[parent_index]
+			for clu in clusters:
+				if clu.label.startswith(parent_prefix):
+					match_suffix = re.search(suffix_pattern, clu.label)
+					suffix_ok = (match_suffix is None) or child_clu.label.endswith(match_suffix.group())
+					if suffix_ok:
+						yield clu
+
 		# Non-root clusters
 		while parent_index > 0:
-			parent_prefix = radial_prefixes[parent_index-1]
-			parent_clu = next((clu for clu in clusters if clu.label.startswith(parent_prefix)), None)
+			parent_index -= 1
+			parent_gen = parent_generator(clu, parent_index)
+			parent_clu = next(parent_gen, None)
 			if parent_clu is not None:
 				logger.debug("Found parent <%s> for cluster <%s>" % (parent_clu.label, clu.label))
 				clu.parent_label = parent_clu.label
 				clu.order = parent_clu.order + 1
 				break
-			parent_index -= 1
 
 		# Sanity check
-		assert(prefix_index==0 or clu.parent_label!=clu.label)
+		assert(parent_index==0 or clu.parent_label!=clu.label)
