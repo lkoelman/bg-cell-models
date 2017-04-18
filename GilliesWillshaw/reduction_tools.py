@@ -283,22 +283,31 @@ def seg_path_L(endseg):
 	Calculate path length from center of roto section to given segment
 	"""
 	secref = h.SectionRef(sec=endseg.sec)
-	secref.root # root of entire tree, modifies CAS
-
+	rootsec = subtreeroot(secref)
+	rootparent = rootsec.parentseg()
+	if rootparent is None:
+		return 0.0 # if we are soma/topmost root: path length is zero
+	
 	# Get path from root section to endseg
 	calc_path = h.RangeVarPlot('v')
-	# rootsec.push() # rootsec.root already set CAS
-	calc_path.begin(0.5)
-	secref.sec.push()
+	rootsec.push()
+	calc_path.begin(0.0) # x doesn't matter since we only use path sections
+	endseg.sec.push()
 	calc_path.end(endseg.x)
 	root_path = h.SectionList() # SectionList structure to store path
 	calc_path.list(root_path) # copy path sections to SectionList
 	h.pop_section()
 	h.pop_section()
 
-	# Compute electrotonic path length
+	# Compute path length
 	path_secs = list(root_path)
-	return sum(sec.L/sec.nseg for sec in path_secs for seg in sec)
+	path_L = 0.0
+	for isec, psec in enumerate(path_secs):
+		arrived = bool(psec.same(endseg.sec))
+		for jseg, seg in enumerate(psec):
+			if arrived and seg.x==endseg.x:
+				return path_L
+			path_L += psec.L/psec.nseg 
 
 def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False):
 	""" 

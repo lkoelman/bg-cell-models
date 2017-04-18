@@ -319,7 +319,7 @@ def has_cluster_parentseg(seg, cluster, clu_secs):
 	if parref is None:
 		return False # parent section has no segments in same cluster
 	for j, seg in enumerate(parref.sec):
-		if (seg.x==parseg.x) and (parref.cluster_labels[j]==cluster.label): # TODO: test this
+		if (seg.x==parseg.x) and (parref.cluster_labels[j]==cluster.label):
 			return True
 	return False
 
@@ -711,7 +711,11 @@ def reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True):
 
 	# Cluster dendritic trees
 	clu_fun = clutools.label_from_custom_regions
-	clu_args = {}
+	clu_args = {'marker_mech': ('hh', 'gnabar')} # flag segments based on cluster label
+	somaref.sec.insert('hh')
+	for seg in somaref.sec:
+		seg.gnabar_hh = 5
+
 	logger.info("Clustering left tree (dend0)...")
 	clutools.clusterize_custom(dendLrefs[0], allsecrefs, clusters, '_0', clu_fun, clu_args)
 	logger.info("Clustering right tree (dend1)...")
@@ -723,10 +727,9 @@ def reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True):
 	############################################################################
 	# 2. Create equivalent sections
 
-	# Merge sections within each cluster: 
-	# i.e. calculate properties of equivalent section for each cluster
+	# Merge sections within each cluster: i.e. calculate properties of equivalent section
 	logger.info("Merging within-cluster sections...")
-	average_Ri = True # at branch point: average Ri rather than parallel circuit
+	average_Ri = True
 	for cluster in clusters:
 		if segment_based:
 			merge_seg_cluster(cluster, allsecrefs, average_Ri)
@@ -750,6 +753,11 @@ def reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True):
 			h.ion_style("na_ion",1,2,1,0,1)
 			h.ion_style("k_ion",1,2,1,0,1)
 			h.ion_style("ca_ion",3,2,1,1,1)
+
+	# Print tree structure
+	logger.info("Equivalent tree topology:")
+	if logger.getEffectiveLevel() >= logging.DEBUG:
+		h.topology()
 
 	return clusters, eq_secs
 
@@ -875,4 +883,5 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 	return clusters, eq_secs, eq_refs
 
 if __name__ == '__main__':
-	clusters, eq_secs = reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True)
+	clusters, eq_secs = reduce_gillies_pathLambda(segment_based=True, delete_old_cells=False)
+	from neuron import gui

@@ -29,8 +29,8 @@ from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 # Load own NEURON mechanisms
-NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
-neuron.load_mechanisms(NRN_MECH_PATH)
+# NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
+# neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Our own modules
 import reduction_tools as redtools

@@ -6,6 +6,11 @@ import re
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
+# Log to file
+# hdlr = logging.FileHandler('cluster.log')
+# fmtr = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
+# hdlr.setFormatter(fmtr)
+# logger.addHandler(hdlr) 
 
 import reduction_tools as redtools
 from reduction_tools import getsecref
@@ -94,7 +99,8 @@ def assign_strahler_order(noderef, secrefs, par_order):
 		noderef.strahlernumber = leftref.strahlernumber + 1
 
 def clusterize_custom(noderef, allsecrefs, clusterlist, labelsuffix, clusterfun, cluster_args):
-	""" Cluster dendritic tree based on custom criterion
+	"""
+	Cluster dendritic tree based on custom criterion
 
 	@type	noderef		SectionRef
 	@param	noderef		Section reference to current node
@@ -102,14 +108,11 @@ def clusterize_custom(noderef, allsecrefs, clusterlist, labelsuffix, clusterfun,
 	@type	allsecrefs	list(SectionRef)
 	@param	allsecrefs	references to all sections in the cell
 
-	@type	par_order	int
-	@param	par_order	order of parent sections (distance in #sections from soma)
+	@type	clusterlist	list(Cluster)
+	@param	clusterlist	list of existing Clusters
 
 	@type	clusterfun	function(SectionRef) -> string
 	@param	clusterfun	function mapping a SectionRef to cluster label
-
-	@type	clusterlist	list(Cluster)
-	@param	clusterlist	list of existing Clusters
 	"""
 	if noderef is None: return
 
@@ -128,13 +131,22 @@ def clusterize_custom(noderef, allsecrefs, clusterlist, labelsuffix, clusterfun,
 		childref = getsecref(childsec, allsecrefs)
 		clusterize_custom(childref, allsecrefs, clusterlist, labelsuffix, clusterfun, cluster_args)
 
-def label_from_custom_regions(noderef, label_seg=True, labelsuffix=''):
+def label_from_custom_regions(noderef, label_seg=True, labelsuffix='', marker_mech=None):
 	"""
 	Assign cluster label based on functional regions identified from
 	channel distribution (max conductance for each channel)
+
+	@param marker_mech	a pair (mechanism_name, mechanism_ppty) indicating
+						a mechanism that should be inserted to flag segments
+						with their cluster label. The property will be used
+						to set an integer determined by the label.
 	"""
 	if not hasattr(noderef, 'cluster_labels'):
 		noderef.cluster_labels = [None] * noderef.sec.nseg
+
+	if marker_mech is not None:
+		noderef.sec.insert(marker_mech[0])
+
 	for iseg, seg in enumerate(noderef.sec):
 		# Compute path length
 		path_L = redtools.seg_path_L(seg)
@@ -142,11 +154,20 @@ def label_from_custom_regions(noderef, label_seg=True, labelsuffix=''):
 		# Determine label from threshold (see gbar plot)
 		if path_L >= 220.:
 			label = 'spiny' + labelsuffix
+			flag = 3
 		elif path_L >= 90.:
 			label = 'smooth' + labelsuffix
+			flag = 2
 		else:
 			label = 'trunk' + labelsuffix
+			flag = 1
 		noderef.cluster_labels[iseg] = label
+
+		# Flag the segment based on its label
+		if marker_mech is not None:
+			propname = marker_mech[1] + '_' + marker_mech[0]
+			seg.__setattr__(propname, flag)
+
 	return noderef.cluster_labels
 
 
