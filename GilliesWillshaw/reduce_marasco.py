@@ -216,7 +216,6 @@ def collapse_seg_subtree(rootseg, allsecrefs):
 			rootref.visited[i_rootseg+1] = True
 			rootref.absorbed[i_rootseg+1] = True
 
-
 	# 2. Use solution of recursive call to solve ##############################
 
 	# Base Case: leaf segments (i.e. no child segments in same cluster)

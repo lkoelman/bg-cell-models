@@ -395,8 +395,21 @@ def getsecref(sec, refs):
 def prev_seg(curseg):
 	""" Get segment preceding seg: this can be on same or parent Section """
 	# NOTE: cannot use seg.next() since this changed content of seg
-	allseg = reversed([seg for seg in curseg.sec if round(seg.x,3) < round(curseg.x,3)])
+	allseg = reversed([seg for seg in curseg.sec if seg_index(seg) < seg_index(curseg)])
 	return next(allseg, curseg.sec.parentseg())
+
+def get_child_segs(curseg):
+	""" Get child segments of given segment """
+	cursec = curseg.sec
+	i_rootseg = seg_index(curseg)
+	child_segs = []
+
+	# find next segments
+	if i_rootseg < cursec.nseg-1: # Case 1: not end segment
+		child_segs.append(next((seg for seg in cursec if seg_index(seg)>i_rootseg)))
+	else: # Case 2: end segment
+		child_segs = [next((seg for seg in sec)) for sec in cursec.children()]
+	return child_segs
 
 def get_seg(sec, iseg):
 	""" Get the i-th segment of Section """
@@ -404,7 +417,10 @@ def get_seg(sec, iseg):
 
 def seg_index(tar_seg):
 	""" Get index of given segment on Section """
-	return next(i for i,seg in enumerate(tar_seg.sec) if seg.x==tar_seg.x)
+	# return next(i for i,seg in enumerate(tar_seg.sec) if seg.x==tar_seg.x) # DOES NOT WORK if you use a seg object obtained using sec(my_x)
+	seg_xwidth = 1.0/tar_seg.sec.nseg
+	seg_id = int(tar_seg.x/seg_xwidth)
+	return min(seg_id, tar_seg.sec.nseg-1)
 
 def sameparent(secrefA, secrefB):
 	""" Check if sections have same parent section """
@@ -417,8 +433,9 @@ def sameparent(secrefA, secrefB):
 	return apar.same(bpar)
 
 def subtreeroot(secref):
-	""" Find the root section of the tree that given sections belongs to.
-		I.e. the first section after the root of the entire cell.
+	"""
+	Find the root section of the tree that given sections belongs to.
+	I.e. the first section after the root of the entire cell.
 	"""
 	orig = secref.root # changes the cas
 	h.pop_section()
@@ -432,6 +449,205 @@ def subtreeroot(secref):
 		if secref.sec in roottree:
 			return root
 	return orig
+
+################################################################################
+# Editing cells/dendritic trees
+################################################################################
+
+# def find_first_cut(noderef):
+# 	""" Utility function to find first segment in cluster """
+# 	for jseg, seg in enumerate(noderef.sec):
+# 		if noderef.cluster_labels[jseg] == cluster.label:
+# 			return seg
+#
+# 	child_secs = noderef.sec.children()
+# 	if not any(child_secs):
+# 		return None
+#
+# 	next_cut = None
+# 	for childsec in child_secs:
+# 		childref = getsecref(childsec, allsecrefs)
+# 		next_cut = find_cut(childref)
+# 		if next_cut is not None:
+# 			break
+# 	return next_cut
+
+def find_prox_cuts(nodeseg, cuts, cluster, allsecrefs):
+	"""
+	Find proximal cuts for given cluster.
+
+	i.e. cluster boundaries given by pairs of segments where the first segment
+	is proximal to the root section and in a different cluster, and the second
+	segment is in the given cluster and distal to the first one.
+	"""
+	noderef = getsecref(nodeseg.sec, allsecrefs)
+	i_node = seg_index(nodeseg)
+	node_label = noderef.cluster_labels[i_node]
+
+	if node_label==cluster.label:
+		# return nodeseg
+		parseg = prev_seg(nodeseg)
+		parref = getsecref(parseg.sec, allsecrefs)
+		parlabel = parref.cluster_labels[seg_index(parseg)]
+		if parlabel != cluster.label:
+			cuts.add((parseg, nodeseg))
+		else:
+			return # don't descend any further
+	else:
+		chi_segs = get_child_segs(nodeseg)
+		for chiseg in chi_segs:
+			find_prox_cuts(chiseg, cuts, cluster, allsecrefs)
+
+def find_dist_cuts(nodeseg, cuts, cluster, allsecrefs):
+	"""
+	Find distal cuts for given cluster.
+
+	i.e. cluster boundaries given by pairs of segments where the first segment
+	is proximal to the root section and in the cluster, and the second
+	segment is in a different cluster and distal to the first one.
+	"""
+	noderef = getsecref(nodeseg.sec, allsecrefs)
+	i_node = seg_index(nodeseg)
+	node_label = noderef.cluster_labels[i_node]
+
+	if node_label != cluster.label:
+		return
+	else:
+		chi_segs = get_child_segs(aseg)
+		# if no child segs: this is a cut
+		if not any(chi_segs):
+			cuts.add((nodeseg,None))
+			return
+		# if child segs: check their labels
+		for chiseg in chi_segs:
+			chiref = getsecref(chiseg.sec, allsecrefs)
+			chilabel = chiref.cluster_labels[seg_index(chiseg)]
+			# if same label: continue searching
+			if chilabel == cluster.label:
+				find_dist_cuts(chiseg, cuts, cluster, allsecrefs)
+			else: # if different label: this is a cut
+				cuts.add((nodeseg,chiseg))
+
+def substitute_cluster(rootref, cluster, clu_eqsec, allsecrefs, mechs_pars, 
+						delete_substituted=False):
+	"""
+	Substitute equivalent section of cluster in dendritic tree.
+
+	@param rootref		SectionRef to root section where algorithm
+						should start to descend tree.
+
+	@param cluster		Cluster object containing information about
+						the cluster
+
+	@param clu_eqsec	equivalent Section for cluster
+
+	ALGORITHM
+	- descend tree from root:
+	- find first segment assigned to cluster
+	- descend tree along all children and find last segments assigned to cluster
+	- cut section of first segment (segments after first)
+	- cut sections of last segments (segments before last)
+	- fix the cut parts: re-set nseg, and active conductances
+	- substitution: connect everything
+	"""
+
+	# Mark all sections as uncut
+	for secref in allsecrefs:
+		if not hasattr(secref, 'is_cut'):
+			setattr(secref, 'is_cut', False)
+
+	# Find proximal cuts
+	prox_cuts = set()
+	find_prox_cuts(rootref.sec(0.0), prox_cuts, cluster, allsecrefs)
+	if not any(prox_cuts):
+		raise Exception("Could not find segment assigned to cluster in subtree of {}".format(rootref))
+	elif len(prox_cuts) > 1:
+		raise Exception("Inserting cluster at location where it has > 1 parent Section not supported")
+	first_cut_seg = prox_cuts[0][1]
+	
+	# Find distal cuts
+	dist_cuts = set()
+	find_dist_cuts(first_cut_seg, dist_cuts, cluster, allsecrefs)
+
+	# Sever tree at proximal cuts
+	cut_seg_index = seg_index(first_cut_seg)
+	if cut_seg_index > 0:
+		cut_sec = first_cut_seg.sec
+		
+		# Calculate new properties
+		pre_cut_L = cut_sec.L/cut_sec.nseg * cut_seg_index
+		cut_props = get_sec_properties(cut_sec, mechs_pars)
+		
+		# Set new properties
+		cut_sec.nseg = cut_seg_index
+		cut_sec.L = pre_cut_L
+		for jseg, seg in enumerate(cut_sec):
+			pseg = cut_props[jseg]
+			for pname, pval in pseg.iteritems():
+				seg.__setattr__(pname, pval)
+
+		# Mark as being cut
+		cut_ref = getsecref(cut_sec, allsecrefs)
+		cut_ref.is_cut = True
+
+		# Set parent for equivalent section
+		eqsec_parseg = cut_sec(1.0)
+	else:
+		eqsec_parseg = cut_sec.parentseg()
+
+	# Sever tree at distal cuts
+	eqsec_childsegs = []
+	for dist_cut in dist_cuts:
+		cut_seg = dist_cut[1] # Section will be cut before this segment
+		cut_sec = cut_seg.sec
+		cut_seg_index = seg_index(cut_seg)
+
+		# If Section cut in middle: need to resize
+		if cut_seg_index > 0:
+			# Check if not already cut
+			cut_ref = getsecref(cut_sec, allsecrefs)
+			if cut_ref.is_cut:
+				raise Exception('Section has already been cut before')
+
+			# Calculate new properties
+			new_nseg = cut_sec.nseg-(cut_seg_index+1)
+			post_cut_L = cut_sec.L/cut_sec.nseg * new_nseg
+			cut_props = get_sec_properties(cut_sec, mechs_pars)
+			
+			# Set new properties
+			cut_sec.nseg = new_nseg
+			cut_sec.L = post_cut_L
+			for jseg, seg in enumerate(cut_sec):
+				pseg = cut_props[cut_seg_index + jseg]
+				for pname, pval in pseg.iteritems():
+					seg.__setattr__(pname, pval)
+
+		# Set child segment for equivalent section
+		eqsec_childsegs.append(cut_sec(0.0))
+
+	# Connect the equivalent section
+	clu_eqsec.connect(eqsec_parseg, 0.0) # see help(sec.connect)
+	for chiseg in eqsec_childsegs:
+		chiseg.sec.connect(clu_eqsec, 1.0, chiseg.x) # this disconnects them
+
+	# Disconnect the substituted parts
+	for orig_child_sec in eqsec_parseg.sec.children():
+		chiref = getsecref(orig_child_sec, allsecrefs)
+		if chiref.cluster_labels[0] == cluster.label:
+			# NOTE: only need to disconnect proximal ends of the subtree: the distal ends have already been disconnected by connecting them to the equivalent section for the cluster
+			orig_child_sec.push()
+			h.disconnect()
+			h.pop_section()
+
+			# Delete disconnected subtree if requested
+			if delete_substituted:
+				child_tree = h.SectionList()
+				orig_child_sec.push()
+				child_tree.subtree()
+				h.pop_section()
+				for sec in child_tree: # iterates CAS
+					h.delete_section()
+
 
 def split_section(src_sec, mechs_pars, delete_src=False):
 	"""
@@ -500,8 +716,30 @@ def split_section(src_sec, mechs_pars, delete_src=False):
 		h.delete_section()
 	h.pop_section()
 
-def dupe_secprops(src_sec, tar_sec, mechs_pars):
-	""" Copy section properties """
+def get_sec_properties(src_sec, mechs_pars):
+	"""
+	Get RANGE properties for each segment in Section.
+
+	@return		a list props[nseg] of dictionaries mapping property
+				names to values for each segment in the source Section
+	"""
+	props = []
+	for seg in src_sec:
+		pseg = {}
+		pseg['diam'] = seg.diam
+		pseg['cm'] = seg.cm
+		for mech in mechs_pars.keys():
+			for par in mechs_pars[mech]:
+				prop = par+'_'+mech
+				pseg[prop] = getattr(seg, prop)
+		props.append(pseg)
+	return props
+
+
+def copy_sec_properties(src_sec, tar_sec, mechs_pars):
+	"""
+	Copy section properties
+	"""
 	# Number of segments and mechanisms
 	tar_sec.nseg = src_sec.nseg
 	for mech in mechs_pars.keys():
@@ -511,7 +749,6 @@ def dupe_secprops(src_sec, tar_sec, mechs_pars):
 	# Geometry and passive properties
 	tar_sec.L = src_sec.L
 	tar_sec.Ra = src_sec.Ra
-	# tar_sec.cm = src_sec.cm
 
 	# copy RANGE properties
 	for seg in src_sec:
@@ -526,7 +763,9 @@ def dupe_secprops(src_sec, tar_sec, mechs_pars):
 	copy_ion_styles(src_sec, tar_sec)
 
 def copy_ion_styles(src_sec, tar_sec):
-	""" Copy ion styles from source to target section """
+	"""
+	Copy ion styles from source to target section
+	"""
 	src_sec.push()
 	ions = ['na', 'k', 'ca']
 	styles = [h.ion_style(ion+'_ion') for ion in ions]
@@ -542,7 +781,7 @@ def copy_ion_styles(src_sec, tar_sec):
 	h.pop_section()
 	h.pop_section()
 
-def dupe_subtree(rootsec, mechs_pars, tree_copy):
+def duplicate_subtree(rootsec, mechs_pars, tree_copy):
 	""" Duplicate tree of given section
 	@param rootsec		root section of the subtree
 	@param mechs_pars	dictionary mechanism_name -> parameter_name
@@ -558,12 +797,12 @@ def dupe_subtree(rootsec, mechs_pars, tree_copy):
 		copyname = ('copy%iof' % i) + rootsec.name()
 	h("create %s" % copyname)
 	root_copy = getattr(h, copyname)
-	dupe_secprops(rootsec, root_copy, mechs_pars)
+	copy_sec_properties(rootsec, root_copy, mechs_pars)
 	tree_copy.append(root_copy)
 
 	# Copy children
 	for childsec in rootsec.children():
-		child_copy = dupe_subtree(childsec, mechs_pars, tree_copy)
+		child_copy = duplicate_subtree(childsec, mechs_pars, tree_copy)
 		child_copy.connect(root_copy, childsec.parentseg().x, 0)
 
 	return root_copy

@@ -1037,7 +1037,7 @@ def run_experimental_protocol():
 	# Attach duplicate of one tree
 	# from reduction_tools import dupe_subtree
 	# copy_mechs = {'STh': ['gpas']} # use var gillies_gdict for full copy
-	# trunk_copy = dupe_subtree(h.trunk_0, copy_mechs	, [])
+	# trunk_copy = duplicate_subtree(h.trunk_0, copy_mechs	, [])
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
 	# Run experimental protocol
