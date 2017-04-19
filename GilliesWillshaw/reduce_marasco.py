@@ -39,7 +39,7 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Own modules
 import reduction_tools as redtools
-from reduction_tools import ExtSecRef, getsecref, lambda_AC, prev_seg, seg_index # for convenience
+from reduction_tools import ExtSecRef, getsecref, lambda_AC, prev_seg, seg_index, same_seg # for convenience
 import cluster as clutools
 from cluster import Cluster, EqProps
 import reduce_bush_sejnowski as redbush
@@ -309,18 +309,18 @@ def calc_gbar(cluster, gname, pathri):
 			surr_pts = [pt for i, pt in enumerate(gbar_pts) if i < 2]
 		return sum(pt[1] for pt in surr_pts)/len(surr_pts) # take average
 
-def has_cluster_parentseg(seg, cluster, clu_secs):
-	""" Utility function to check if segment has parent segment in same cluster """
-	parseg = prev_seg(seg)
+def has_cluster_parentseg(aseg, cluster, clu_secs):
+	"""
+	Utility function to check if segment has parent segment in same cluster
+	"""
+	parseg = prev_seg(aseg)
 	if parseg is None:
 		return False # no parent segment
 	parref = getsecref(parseg.sec, clu_secs)
 	if parref is None:
 		return False # parent section has no segments in same cluster
-	for j, seg in enumerate(parref.sec):
-		if (seg.x==parseg.x) and (parref.cluster_labels[j]==cluster.label):
-			return True
-	return False
+	j_parseg = seg_index(parseg)
+	return parref.cluster_labels[j_parseg]==cluster.label
 
 def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 	"""
@@ -658,6 +658,123 @@ def label_order(label):
 	else:
 		return 4
 
+def reduce_gillies_partial(delete_old_cells=True):
+	"""
+	Reduce Gillies & Willshaw STN neuron model.
+
+	To set active conductances, interpolates using electrotonic path length
+	values (L/lambda).
+	"""
+	############################################################################
+	# 0. Load full model to be reduced (Gillies & Willshaw STN)
+	for sec in h.allsec():
+		if not sec.name().startswith('SThcell') and delete_old_cells:
+			h.delete_section() # delete existing cells
+	if not hasattr(h, 'SThcells'):
+		h.xopen("createcell.hoc")
+
+	# Make sections accesible by name and index
+	somaref = ExtSecRef(sec=h.SThcell[0].soma)
+	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
+	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree
+	allsecrefs = [somaref] + dendLrefs + dendRrefs
+
+	# Get references to root sections of the 3 identical trees
+	dendR_root = getsecref(h.SThcell[0].dend1[0], dendRrefs)
+	dendL_juction = getsecref(h.SThcell[0].dend0[0], dendLrefs)
+	dendL_upper_root = getsecref(h.SThcell[0].dend0[1], dendLrefs)
+	dendL_lower_root = getsecref(h.SThcell[0].dend0[2], dendLrefs)
+
+	# Assign indices used in Gillies code to read section properties from file
+	somaref.tree_index = -1
+	somaref.table_index = 0
+	for j, dendlist in enumerate((dendLrefs, dendRrefs)):
+		for i, secref in enumerate(dendlist):
+			secref.tree_index = j # left tree is 0, right is 1
+			secref.table_index = i+1 # same as in /sth-data/treeX-nom.dat
+
+	############################################################################
+	# 0. Pre-clustering: calculate properties
+
+	# Assign lambda and electrotonic path length to each section and segment
+	logger.info("Computing electrotonic path lengths...")
+	f_lambda = 100. # frequency for electrotonic length constant lambda
+	redtools.assign_electrotonic_length(somaref, allsecrefs, f_lambda, 
+										gleak_name, allseg=True)
+
+	############################################################################
+	# 1. Cluster based on identified functional regions
+	labels_by_order = ['soma', 'trunk', 'smooth', 'spiny']
+
+	# Manually do soma cluster
+	somaclu = Cluster('soma')
+	somaclu.parent_label = 'soma'
+	somaclu.parent_pos = 0.0
+	somaclu.order = 0
+	# Soma section
+	somaref.cluster_labels = ['soma'] * somaref.sec.nseg
+	# Junction sections
+	dendL_juction.cluster_labels = ['soma'] * dendL_juction.sec.nseg
+	clusters = [somaclu]
+
+	# Clustering parameters
+	clu_fun = clutools.label_from_custom_regions
+	clu_args = {'marker_mech': ('hh', 'gnabar')} # flag segments based on cluster label
+	# Mark soma
+	somaref.sec.insert('hh')
+	for seg in somaref.sec:
+		seg.gnabar_hh = 5
+
+	# Cluster dendritic trees
+	logger.info("Clustering left tree, upper...")
+	clutools.clusterize_custom(dendL_upper_root, allsecrefs, clusters, '_0', clu_fun, clu_args)
+
+	logger.info("Clustering left tree, lower...")
+	clutools.clusterize_custom(dendL_lower_root, allsecrefs, clusters, '_1', clu_fun, clu_args)
+
+	logger.info("Clustering right tree...")
+	clutools.clusterize_custom(dendR_root, allsecrefs, clusters, '_2', clu_fun, clu_args)
+
+	# Determine cluster relations/topology
+	clutools.assign_topology(clusters, labels_by_order)
+	# Manual edit
+	clu_dendR_trunk = next((clu for clu in clusters if clu.label=='trunk_2'))
+	clu_dendR_trunk.parent_pos = 0.0
+
+	############################################################################
+	# 2. Create equivalent sections
+
+	# Calculate equivalent properties by merging sections within each cluster
+	logger.info("Merging within-cluster sections...")
+	average_Ri = True
+	for cluster in clusters:
+		merge_seg_cluster(cluster, allsecrefs, average_Ri)
+
+	# Create new sections
+	logger.info("Creating equivalent sections...")
+	eq_secs = redbush.equivalent_sections(clusters, allsecrefs, f_lambda, 
+				use_segments=False, gbar_scaling='area', 
+				interp_path=(1, (1,3,8)), interp_method='left_neighbor')
+
+	############################################################################
+	# 3. Finalize & Analyze
+	
+	# Delete original model sections & set ion styles
+	for sec in h.allsec(): # makes each section the CAS
+		if sec.name().startswith('SThcell') and delete_old_cells: # original model sections
+			h.delete_section()
+		else: # equivalent model sections
+			h.ion_style("na_ion",1,2,1,0,1)
+			h.ion_style("k_ion",1,2,1,0,1)
+			h.ion_style("ca_ion",3,2,1,1,1)
+
+	# Print tree structure
+	logger.info("Equivalent tree topology:")
+	if logger.getEffectiveLevel() >= logging.DEBUG:
+		h.topology()
+
+	return clusters, eq_secs
+
 def reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True):
 	"""
 	Reduce Gillies & Willshaw STN neuron model.
@@ -698,6 +815,7 @@ def reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True):
 
 	############################################################################
 	# 1. Cluster based on identified functional regions
+	labels_by_order = ['soma', 'trunk', 'smooth', 'spiny']
 
 	# Cluster soma
 	somaclu = Cluster('soma')
@@ -721,12 +839,12 @@ def reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True):
 	clutools.clusterize_custom(dendRrefs[0], allsecrefs, clusters, '_1', clu_fun, clu_args)
 
 	# Determine cluster relations/topology
-	clutools.assign_topology(clusters, ['soma', 'trunk', 'smooth', 'spiny'])
+	clutools.assign_topology(clusters, labels_by_order)
 
 	############################################################################
 	# 2. Create equivalent sections
 
-	# Merge sections within each cluster: i.e. calculate properties of equivalent section
+	# Calculate equivalent properties by merging sections within each cluster
 	logger.info("Merging within-cluster sections...")
 	average_Ri = True
 	for cluster in clusters:
@@ -882,5 +1000,5 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 	return clusters, eq_secs, eq_refs
 
 if __name__ == '__main__':
-	clusters, eq_secs = reduce_gillies_pathLambda(segment_based=True, delete_old_cells=False)
+	clusters, eq_secs = reduce_gillies_partial(delete_old_cells=True)
 	from neuron import gui

@@ -149,13 +149,13 @@ def label_from_custom_regions(noderef, label_seg=True, labelsuffix='', marker_me
 
 	for iseg, seg in enumerate(noderef.sec):
 		# Compute path length
-		path_L = redtools.seg_path_L(seg)
+		path_L = redtools.seg_path_L(seg, to_end=True)
 
 		# Determine label from threshold (see gbar plot)
-		if path_L >= 220.:
+		if path_L > 220.:
 			label = 'spiny' + labelsuffix
 			flag = 3
-		elif path_L >= 90.:
+		elif path_L > 90.:
 			label = 'smooth' + labelsuffix
 			flag = 2
 		else:

@@ -160,6 +160,7 @@ def seg_path_ri(endseg, f, gleak_name):
 	"""
 	secref = h.SectionRef(sec=endseg.sec)
 	rootsec = subtreeroot(secref)
+	j_endseg = seg_index(endseg)
 	rootparent = rootsec.parentseg()
 	if rootparent is None:
 		return 0.0 # if we are soma/topmost root: path length is zero
@@ -180,8 +181,9 @@ def seg_path_ri(endseg, f, gleak_name):
 	path_secs = list(root_path)
 	assert(endseg.sec in path_secs)
 	for i, psec in enumerate(path_secs): # walk sections
-		for seg in psec:				 # walk segments
-			if seg.sec.same(endseg.sec) and (seg.x == endseg.x): # reached end segment
+		for j_seg, seg in enumerate(psec): # walk segments
+			if seg.sec.same(endseg.sec) and j_seg==j_endseg: # reached end segment
+				assert same_seg(seg, endseg)
 				pathri1 = pathri0 + seg.ri()
 				return pathri0, pathri1
 			pathri0 += seg.ri()
@@ -247,6 +249,7 @@ def seg_path_L_elec(endseg, f, gleak_name):
 	"""
 	secref = h.SectionRef(sec=endseg.sec)
 	rootsec = subtreeroot(secref)
+	j_endseg = seg_index(endseg)
 	rootparent = rootsec.parentseg()
 	if rootparent is None:
 		return 0.0 # if we are soma/topmost root: path length is zero
@@ -268,9 +271,10 @@ def seg_path_L_elec(endseg, f, gleak_name):
 	assert(endseg.sec in path_secs)
 	for i, psec in enumerate(path_secs):
 		L_seg = psec.L/psec.nseg # segment length
-		for seg in psec:
+		for j_seg, seg in enumerate(psec):
 			# Check if we have reached our target segment
-			if seg.sec.same(endseg.sec) and (seg.x == endseg.x):
+			if seg.sec.same(endseg.sec) and j_seg==j_endseg:
+				assert same_seg(seg, endseg)
 				return path_L_elec
 			lamb_seg = seg_lambda(seg, gleak_name, f)
 			L_elec = L_seg/lamb_seg
@@ -278,12 +282,16 @@ def seg_path_L_elec(endseg, f, gleak_name):
 
 	raise Exception('End segment not reached')
 
-def seg_path_L(endseg):
+def seg_path_L(endseg, to_end):
 	"""
-	Calculate path length from center of roto section to given segment
+	Calculate path length from center of root section to given segment
+
+	@param to_end	if True, return distance to end of segment, else
+					return distance to start of segment
 	"""
 	secref = h.SectionRef(sec=endseg.sec)
 	rootsec = subtreeroot(secref)
+	j_endseg = seg_index(endseg)
 	rootparent = rootsec.parentseg()
 	if rootparent is None:
 		return 0.0 # if we are soma/topmost root: path length is zero
@@ -304,10 +312,15 @@ def seg_path_L(endseg):
 	path_L = 0.0
 	for isec, psec in enumerate(path_secs):
 		arrived = bool(psec.same(endseg.sec))
-		for jseg, seg in enumerate(psec):
-			if arrived and seg.x==endseg.x:
-				return path_L
-			path_L += psec.L/psec.nseg 
+		seg_L = psec.L/psec.nseg 
+		for j_seg, seg in enumerate(psec):
+			if arrived and j_seg==j_endseg:
+				assert same_seg(seg, endseg)
+				if to_end:
+					return path_L + seg_L
+				else:
+					return path_L
+			path_L += seg_L
 
 def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False):
 	""" 
@@ -411,9 +424,11 @@ def get_child_segs(curseg):
 		child_segs = [next((seg for seg in sec)) for sec in cursec.children()]
 	return child_segs
 
-def get_seg(sec, iseg):
+def seg_at_index(sec, iseg):
 	""" Get the i-th segment of Section """
-	return next(seg for i,seg in enumerate(sec) if i==iseg)
+	xmid = (2.*(iseg+1)-1.)/(2.*sec.nseg) # See NEURON book p. 8
+	# return next(seg for i,seg in enumerate(sec) if i==iseg)
+	return sec(xmid)
 
 def seg_index(tar_seg):
 	""" Get index of given segment on Section """
@@ -421,6 +436,13 @@ def seg_index(tar_seg):
 	seg_xwidth = 1.0/tar_seg.sec.nseg
 	seg_id = int(tar_seg.x/seg_xwidth)
 	return min(seg_id, tar_seg.sec.nseg-1)
+
+def same_seg(seg_a, seg_b):
+	if not(seg_a.sec.same(seg_b.sec)):
+		return False
+	seg_xwidth = 1.0/seg_a.sec.nseg
+	# check if x locs map to same section
+	return int(seg_a.x/seg_xwidth) == int(seg_b.x/seg_xwidth)
 
 def sameparent(secrefA, secrefB):
 	""" Check if sections have same parent section """
