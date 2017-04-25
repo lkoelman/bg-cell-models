@@ -282,6 +282,49 @@ def seg_path_L_elec(endseg, f, gleak_name):
 
 	raise Exception('End segment not reached')
 
+def sec_path_L(secref):
+	"""
+	Assign path length to end of all segments and to 0 and 1-end of Section
+
+	@param to_end	if True, return distance to end of segment, else
+					return distance to start of segment
+	"""
+	rootsec = subtreeroot(secref)
+	j_endseg = seg_index(endseg)
+	rootparent = rootsec.parentseg()
+	if rootparent is None:
+		return 0.0 # if we are soma/topmost root: path length is zero
+
+	# Create attribute for storing path resistance
+	secref.pathL_seg = [0.0] * secref.sec.nseg
+	
+	# Get path from root section to endseg
+	calc_path = h.RangeVarPlot('v')
+	rootsec.push()
+	calc_path.begin(0.0) # x doesn't matter since we only use path sections
+	endseg.sec.push()
+	calc_path.end(endseg.x)
+	root_path = h.SectionList() # SectionList structure to store path
+	calc_path.list(root_path) # copy path sections to SectionList
+	h.pop_section()
+	h.pop_section()
+
+	# Compute path length
+	path_secs = list(root_path)
+	path_L = 0.0
+	for isec, psec in enumerate(path_secs):
+		arrived_sec = bool(psec.same(endseg.sec))
+		seg_L = psec.L/psec.nseg
+		for j_seg, seg in enumerate(psec):
+			if arrived_sec:
+				if j_seg==0:
+					secref.pathL0 = path_L
+				elif (j_seg==j_endseg):
+					secref.pathL1 = path_L + seg_L
+					return secref.pathL1
+			path_L += seg_L
+			secref.pathL_seg[j_seg] = path_L
+
 def seg_path_L(endseg, to_end):
 	"""
 	Calculate path length from center of root section to given segment
@@ -315,7 +358,7 @@ def seg_path_L(endseg, to_end):
 		seg_L = psec.L/psec.nseg 
 		for j_seg, seg in enumerate(psec):
 			if arrived and j_seg==j_endseg:
-				assert same_seg(seg, endseg)
+				# assert same_seg(seg, endseg)
 				if to_end:
 					return path_L + seg_L
 				else:

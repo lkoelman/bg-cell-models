@@ -94,7 +94,7 @@ def cluster_seg_properties(clusters, orsecrefs):
 		for gname in glist:
 			cluster.or_gtot[gname] += sum(getattr(seg, gname)*seg.area() for seg in clu_segs)
 
-def equivalent_sections(clusters, orsecrefs, f_lambda, use_segments=False, 
+def equivalent_sections(clusters, orsecrefs, f_lambda, 
 						gbar_scaling='area', interp_method='linear_neighbors',
 						interp_path=None, conserve_gbar_ratios=True):
 	"""

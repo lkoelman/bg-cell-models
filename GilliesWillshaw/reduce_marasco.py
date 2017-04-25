@@ -161,7 +161,7 @@ def collapse_subtree(rootref, allsecrefs):
 	# Collapse is equal to sequential merge of the root and equivalent parallel circuit of its children
 	return merge_sequential(rootref, allsecrefs)
 
-def collapse_seg_subtree(rootseg, allsecrefs):
+def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None):
 	""" 
 	Recursively merge within-cluster connected sections in subtree
 	of the given segment using equations <br> and <seq> in Marasco (2012).
@@ -169,6 +169,10 @@ def collapse_seg_subtree(rootseg, allsecrefs):
 	@pre		in the tree, all connections between sections must be made
 				according to the convention that the 0-end of the child
 				connects to the 1-end of the parent
+
+	@param eligfunc		function(seg,jseg,secref) -> bool indicating whether
+						the segment is eligible to be absorbed (seg is the segment,
+						jseg is its index, secref is a SectionRef to its section)
 
 	ALGORITHM
 	- for each child segment: recursively call `equivalent_properties = collapse_subtree(child)`
@@ -193,28 +197,35 @@ def collapse_seg_subtree(rootseg, allsecrefs):
 	# Get children
 	child_refs = [getsecref(sec, allsecrefs) for sec in rootsec.children()]
 
+	# Function for checking if segments are absorbable
+	if eligfunc is None:
+		absorbable = lambda seg, jseg, ref: ref.cluster_labels[jseg]==rootlabel
+	else:
+		absorbable = eligfunc
+
 	# If end segment: add child segments if in same cluster
 	child_segs = []
 	if i_rootseg == rootsec.nseg-1: # or: rootseg.x >= neighbors[-1].x:
-		assert rootseg.x >= neighbors[-1].x
 		# Gather child segments that are in same cluster
 		for secref in child_refs:
-			seg = next(seg for seg in secref.sec) # get the first segment
-			if secref.cluster_labels[0]==rootlabel:
+			childseg = next(seg for seg in secref.sec) # get the first segment
+			if absorbable(childseg, 0, secref):
 				# Check if attempting to merge children not connected to 1-end
 				if round(secref.sec.parentseg().x,3) < round(neighbors[-1].x, 3):
 					raise Exception("Merging algorithm does not support topologies where "
 									"a child section is not connected to 1-end of parent.")
-				child_segs.append(seg)
+				child_segs.append(childseg)
 				# mark segment
 				secref.visited[0] = True
 				secref.absorbed[0] = True
 
 	else: # If not end segment: add adjacent segment if in same cluster
-		if rootref.cluster_labels[i_rootseg+1] == rootlabel:
-			child_segs.append(neighbors[i_rootseg+1])
-			rootref.visited[i_rootseg+1] = True
-			rootref.absorbed[i_rootseg+1] = True
+		j_seg = i_rootseg+1
+		childseg = neighbors[j_seg]
+		if absorbable(childseg, j_seg, rootref):
+			child_segs.append(childseg)
+			rootref.visited[j_seg] = True
+			rootref.absorbed[j_seg] = True
 
 	# 2. Use solution of recursive call to solve ##############################
 
@@ -322,6 +333,40 @@ def has_cluster_parentseg(aseg, cluster, clu_secs):
 	j_parseg = seg_index(parseg)
 	return parref.cluster_labels[j_parseg]==cluster.label
 
+def merge_seg_incremental(clusters, allsecrefs, npass):
+	"""
+	Merge segments incrementally.
+
+	@param npass		number of passes
+	"""
+	# Calculate section statistics
+	for secref in allsecrefs:
+		redtools.sec_path_ri(secref, store_seg_ri=True) # stores pathri on SectionRefs
+		redtools.sec_path_L(secref) # stores path length to end of each sections
+
+	# Calculate cluster statistics
+	for cluster in clusters:
+		# Gather all cluster sections & segments
+		clu_secs = [secref for secref in allsecrefs if (cluster.label in secref.cluster_labels)]
+
+		# Store max/min
+		clu_path_L = [ref.pathL_seg[j] for ref in clu_secs for j,seg in enumerate(ref.sec) if (
+						ref.cluster_labels[j]==cluster.label)]
+		cluster.orMaxPathL = max(clu_path_L)
+		cluster.orMinPathL = min(clu_path_L)
+
+	# Find Y-sections with highest level in tree
+	max_level = max(ref.level for ref in allsecrefs)
+	highest_parents = [ref for ref in allsecrefs if (ref.level==max_level-1) and ref.end_branchpoint]
+
+	# Zip/collapse parallel unbranched sections (=one Section)
+	for parref in highest_parents:
+		# Collapse with depth of one section
+		# TODO: implement 'zipping' using merge_parallel (make Segment-based implementation)
+		childrefs = [getsecref(sec, allsecrefs) for sec in parref.sec.children()]
+		eligfunc = lambda (seg, jseg, ref): ref in childrefs # all segments in child section are absorbed
+		eq_props = collapse_seg_subtree(parref.sec(1.0), allsecrefs, eligfunc)
+
 def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 	"""
 	Merge cluster of segments (use for segment-based clustering)
@@ -342,8 +387,23 @@ def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 			eq_area		equivalent area based on equivalent dimensions and passive properties
 			eq_area_sum	sum of equilvalent surfaces of 'islands' of segments
 
+	ALGORITHM
+	
+	- find root segment of next subtree in cluster 
+		- subtree = set of connected segments with same cluster label
+		- root = segment without a parent in the same cluster
+	
+	- collapse subtree using <br> and <seq> expressions Marasco (2012)
+		- collapsing is a sequence of parallel-> sequential merge operations
+			- starting at leaf nodes and progressing to root
+		- first merge parallel branches at branch point (<br> expressions)
+		- then do sequential merge of equivalent section and parent section (<seq> expressions)
+	
+	- then combine equivalent sections for merge subtrees using <eq> expressions
+		- this yields final equivalent section properties for cluster
+
 	"""
-	# Gather member segments
+	# Gather all cluster sections & segments
 	clu_secs = [secref for secref in allsecrefs if (cluster.label in secref.cluster_labels)]
 	clu_segs = []
 	for ref in allsecrefs:
@@ -715,15 +775,18 @@ def reduce_gillies_partial(delete_old_cells=True):
 	somaref.cluster_labels = ['soma'] * somaref.sec.nseg
 	# Junction sections
 	dendL_juction.cluster_labels = ['soma'] * dendL_juction.sec.nseg
+	soma_clu_refs = [somaref, dendL_juction]
 	clusters = [somaclu]
 
 	# Clustering parameters
 	clu_fun = clutools.label_from_custom_regions
 	clu_args = {'marker_mech': ('hh', 'gnabar')} # flag segments based on cluster label
-	# Mark soma
-	somaref.sec.insert('hh')
-	for seg in somaref.sec:
-		seg.gnabar_hh = 5
+	
+	# Mark soma cluster manually
+	for ref in soma_clu_refs:
+		ref.sec.insert('hh')
+		for seg in ref.sec:
+			seg.gnabar_hh = 5
 
 	# Cluster dendritic trees
 	logger.info("Clustering left tree, upper...")
@@ -739,7 +802,7 @@ def reduce_gillies_partial(delete_old_cells=True):
 	clutools.assign_topology(clusters, labels_by_order)
 	# Manual edit
 	clu_dendR_trunk = next((clu for clu in clusters if clu.label=='trunk_2'))
-	clu_dendR_trunk.parent_pos = 0.0
+	clu_dendR_trunk.parent_pos = 0.0 # add to other end of soma
 
 	############################################################################
 	# 2. Create equivalent sections
@@ -753,111 +816,7 @@ def reduce_gillies_partial(delete_old_cells=True):
 	# Create new sections
 	logger.info("Creating equivalent sections...")
 	eq_secs = redbush.equivalent_sections(clusters, allsecrefs, f_lambda, 
-				use_segments=False, gbar_scaling='area', 
-				interp_path=(1, (1,3,8)), interp_method='left_neighbor')
-
-	############################################################################
-	# 3. Finalize & Analyze
-	
-	# Delete original model sections & set ion styles
-	for sec in h.allsec(): # makes each section the CAS
-		if sec.name().startswith('SThcell') and delete_old_cells: # original model sections
-			h.delete_section()
-		else: # equivalent model sections
-			h.ion_style("na_ion",1,2,1,0,1)
-			h.ion_style("k_ion",1,2,1,0,1)
-			h.ion_style("ca_ion",3,2,1,1,1)
-
-	# Print tree structure
-	logger.info("Equivalent tree topology:")
-	if logger.getEffectiveLevel() >= logging.DEBUG:
-		h.topology()
-
-	return clusters, eq_secs
-
-def reduce_gillies_pathLambda(segment_based=True, delete_old_cells=True):
-	"""
-	Reduce Gillies & Willshaw STN neuron model.
-
-	To set active conductances, interpolates using electrotonic path length
-	values (L/lambda).
-	"""
-	############################################################################
-	# 0. Load full model to be reduced (Gillies & Willshaw STN)
-	for sec in h.allsec():
-		if not sec.name().startswith('SThcell') and delete_old_cells:
-			h.delete_section() # delete existing cells
-	if not hasattr(h, 'SThcells'):
-		h.xopen("createcell.hoc")
-
-	# Make sections accesible by name and index
-	somaref = ExtSecRef(sec=h.SThcell[0].soma)
-	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
-	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree
-	allsecrefs = [somaref] + dendLrefs + dendRrefs
-
-	# Assign indices used in Gillies code to read section properties from file
-	somaref.tree_index = -1
-	somaref.table_index = 0
-	for j, dendlist in enumerate((dendLrefs, dendRrefs)):
-		for i, secref in enumerate(dendlist):
-			secref.tree_index = j # left tree is 0, right is 1
-			secref.table_index = i+1 # same as in /sth-data/treeX-nom.dat
-
-	############################################################################
-	# 0. Pre-clustering: calculate properties
-
-	# Assign lambda and electrotonic path length to each section and segment
-	logger.info("Computing electrotonic path lengths...")
-	f_lambda = 100. # frequency for electrotonic length constant lambda
-	redtools.assign_electrotonic_length(somaref, allsecrefs, f_lambda, 
-										gleak_name, allseg=True)
-
-	############################################################################
-	# 1. Cluster based on identified functional regions
-	labels_by_order = ['soma', 'trunk', 'smooth', 'spiny']
-
-	# Cluster soma
-	somaclu = Cluster('soma')
-	somaref.cluster_label = 'soma'
-	somaref.cluster_labels = ['soma'] * somaref.sec.nseg
-	somaclu.parent_label = 'soma'
-	somaclu.parent_pos = 0.0
-	somaclu.order = 0
-	clusters = [somaclu]
-
-	# Cluster dendritic trees
-	clu_fun = clutools.label_from_custom_regions
-	clu_args = {'marker_mech': ('hh', 'gnabar')} # flag segments based on cluster label
-	somaref.sec.insert('hh')
-	for seg in somaref.sec:
-		seg.gnabar_hh = 5
-
-	logger.info("Clustering left tree (dend0)...")
-	clutools.clusterize_custom(dendLrefs[0], allsecrefs, clusters, '_0', clu_fun, clu_args)
-	logger.info("Clustering right tree (dend1)...")
-	clutools.clusterize_custom(dendRrefs[0], allsecrefs, clusters, '_1', clu_fun, clu_args)
-
-	# Determine cluster relations/topology
-	clutools.assign_topology(clusters, labels_by_order)
-
-	############################################################################
-	# 2. Create equivalent sections
-
-	# Calculate equivalent properties by merging sections within each cluster
-	logger.info("Merging within-cluster sections...")
-	average_Ri = True
-	for cluster in clusters:
-		if segment_based:
-			merge_seg_cluster(cluster, allsecrefs, average_Ri)
-		else:
-			merge_sec_cluster(cluster, allsecrefs, average_Ri)
-
-	# Create new sections
-	logger.info("Creating equivalent sections...")
-	eq_secs = redbush.equivalent_sections(clusters, allsecrefs, f_lambda, 
-				use_segments=False, gbar_scaling='area', 
-				interp_path=(1, (1,3,8)), interp_method='left_neighbor')
+				gbar_scaling='area', interp_path=(1, (1,3,8)), interp_method='left_neighbor')
 
 	############################################################################
 	# 3. Finalize & Analyze
@@ -911,8 +870,8 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 
 	# Assign Strahler numbers
 	logger.info("Assingling Strahler's numbers...")
-	clutools.assign_strahler_order(dendLrefs[0], dendLrefs, 0)
-	clutools.assign_strahler_order(dendRrefs[0], dendRrefs, 0)
+	clutools.assign_topology_attrs(dendLrefs[0], dendLrefs)
+	clutools.assign_topology_attrs(dendRrefs[0], dendRrefs)
 	somaref.order = 0 # distance from soma
 	somaref.strahlernumber = dendLrefs[0].strahlernumber # same as root of left tree
 

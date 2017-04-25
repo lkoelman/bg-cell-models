@@ -56,47 +56,65 @@ def clusterroot(secref, allsecrefs):
 		else:
 			return clusterroot(parref)
 
-def assign_strahler_order(noderef, secrefs, par_order):
-	""" Assign strahler's numbers and order/distance from root
-		(infer topology from parent/child relationships)
+def assign_topology_attrs(noderef, secrefs, parref=None):
+	""" 
+	Assign numbers that reflect topological location of sections
 
-	@type	noderef		SectionRef
-	@param	noderef		Section reference to current node
+	@pre	a precondition/assumption for the procedure is that NEURON's
+			standard assumption that a Section = a continuous length of
+			UNBRANCHED cable is TRUE (i.e. branch points can only occur at 0/1 ends).
 
-	@type	secrefs		list(SectionRef)
-	@param	secrefs		references to all sections in the cell
+	@post	Each SectionRef has the following attributes:
+			
+			- 'order' = number of sections between root node and section
+			
+			- 'level' = number of branch points between root node and section
+			
+			- 'strahlernumber' = for leaf sections: n=1, for parent sections,
+			  n=max(n_i) for children i if n_i are different, n=n_i+1 if n_i equal
+			  (i.e. assign level starting from leaf nodes, and keep minimum)
 
-	@type	par_order	int
+	@param	noderef		SectionRef to current node
+
+	@param	secrefs		list(SectionRef) to all sections in the cell
+
 	@param	par_order	order of parent sections (distance in #sections from soma)
 	"""
 	if noderef is None: return
 
-	# assign order
-	noderef.order = par_order + 1
+	# assign order and level
+	if parref is None:
+		noderef.order = 1
+		noderef.level = 1
+	else:
+		noderef.order = parref.order + 1
+		if parref.end_branchpoint:
+			noderef.level = parref.level + 1
+		else:
+			noderef.level = parref.level
 
-	# Leaf nodes get Strahler's number 1
+	# LEAF NODE: strahler number = 1, stop descending
 	childsecs = noderef.sec.children()
 	if not any(childsecs):
 		noderef.strahlernumber = 1
+		noderef.end_branchpoint = False
 		return
-
-	# Non-leaf nodes: assign children first
-	childiter = iter(childsecs)
-	leftref = getsecref(next(childiter, None), secrefs)
-	rightref = getsecref(next(childiter, None), secrefs)
-	for childref in leftref, rightref:
-		assign_strahler_order(childref, secrefs, noderef.order)
-
-	# Assign based on children
-	if rightref is None:
-		# one child: inherit strahler number
-		noderef.strahlernumber = leftref.strahlernumber
-	elif leftref.strahlernumber != rightref.strahlernumber:
-		# nonzero and unequal: max strahler number of children
-		noderef.strahlernumber = max(leftref.strahlernumber, rightref.strahlernumber)
+	elif len(childsecs) > 1:
+		noderef.end_branchpoint = True
 	else:
-		# nonzero and equal: increment strahler number
-		noderef.strahlernumber = leftref.strahlernumber + 1
+		noderef.end_branchpoint = False
+	childrefs = [getsecref(sec) for sec in childsecs]
+
+	# NON LEAF NODE: descend tree and calculate strahler
+	for childref in childrefs:
+		assign_topology_attrs(childref, secrefs, parref=noderef)
+
+	strahler_numbers = [ref.strahlernumber for ref in childrefs]
+	max_strahler = max(strahler_numbers)
+	if all([ref.strahlernumber==max_strahler for ref in childrefs]):
+		noderef.strahlernumber = max_strahler + 1
+	else:
+		noderef.strahlernumber = max_strahler
 
 def clusterize_custom(noderef, allsecrefs, clusterlist, labelsuffix, clusterfun, cluster_args):
 	"""
