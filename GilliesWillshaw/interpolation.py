@@ -63,7 +63,7 @@ def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals
 
 	@type	orsecrefs	list(h.SectionRef)
 	@param	orsecrefs	References to sections in original model. Eac SectionRef
-						must have properties pathL0, pathL1, and pathL_elec
+						must have properties pathLelec0, pathLelec1, and pathL_elec
 						containing the electrotonic path length up to the 0 and
 						1-end, and up to each segment
 
@@ -118,7 +118,7 @@ def find_segs_adj_Lelec(L_elec, orsecrefs, tree_index=None, path_indices=None):
 						boundary segments, and their electrotonic lengths
 	"""
 	# 1. Find all sections that L_elec maps to (i.e. with L_elec(0.0) <= L_elec <= L_elec(1.0))
-	filter_L = lambda secref: (secref.pathL0 <= L_elec <= secref.pathL1)
+	filter_L = lambda secref: (secref.pathLelec0 <= L_elec <= secref.pathLelec1)
 	if tree_index is None and path_indices is None:
 		filter_path = lambda secref: True
 	else:
@@ -132,9 +132,9 @@ def find_segs_adj_Lelec(L_elec, orsecrefs, tree_index=None, path_indices=None):
 	# If none found: extrapolate
 	if len(map_secs) == 0:
 		# find section where L(1.0) is closest to L_elec
-		L_closest = min([abs(L_elec-secref.pathL1) for secref in path_secs])
+		L_closest = min([abs(L_elec-secref.pathLelec1) for secref in path_secs])
 		# all sections where L_elec-L(1.0) is within 5% of this
-		map_secs = [secref for secref in path_secs if (0.95*L_closest <= abs(L_elec-secref.pathL1) <= 1.05*L_closest)]
+		map_secs = [secref for secref in path_secs if (0.95*L_closest <= abs(L_elec-secref.pathLelec1) <= 1.05*L_closest)]
 		logger.debug("Electrotonic path length %f dit not map onto any original section:" + 
 						" extrapolating from {} sections".format(len(map_secs)))
 	logger.debug("Found {} sections in original model with same path length".format(len(map_secs)))

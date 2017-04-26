@@ -229,7 +229,7 @@ def label_sec_electrotonic(noderef, thresholds, labelsuffix=''):
 		return
 
 	# Cluster based on electronic path length at midpoint
-	L_mid = noderef.pathL0 + (noderef.pathL1 - noderef.pathL0)/2.
+	L_mid = noderef.pathLelec0 + (noderef.pathLelec1 - noderef.pathLelec0)/2.
 	labels = ['trunk', 'smooth', 'spiny']
 	if L_mid <= thresholds[0]:
 		label = 'trunk' + labelsuffix

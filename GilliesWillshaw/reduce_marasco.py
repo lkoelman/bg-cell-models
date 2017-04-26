@@ -181,9 +181,9 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None):
 	# Get segment info
 	rootsec = rootseg.sec
 	rootref = getsecref(rootsec, allsecrefs)
-	neighbors = [seg for seg in rootsec]
+	co_segs = [seg for seg in rootsec]
 	i_rootseg = seg_index(rootseg)
-	# i_rootseg = next(i for i, seg in enumerate(neighbors) if round(rootseg.x,3)==round(seg.x,3))
+	# i_rootseg = next(i for i, seg in enumerate(co_segs) if round(rootseg.x,3)==round(seg.x,3))
 	rootlabel = rootref.cluster_labels[i_rootseg]
 
 	# Calculate properties of root segment
@@ -192,9 +192,7 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None):
 	Ra_root = rootsec.Ra
 	Ri_root = rootseg.ri() # axial resistance between start-end (0-1)
 
-	# 1. Get Children to absorb ###############################################
-
-	# Get children
+	# 1. Gather children to absorb #############################################
 	child_refs = [getsecref(sec, allsecrefs) for sec in rootsec.children()]
 
 	# Function for checking if segments are absorbable
@@ -203,31 +201,27 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None):
 	else:
 		absorbable = eligfunc
 
-	# If end segment: add child segments if in same cluster
+	# Get aborbable child segments
 	child_segs = []
-	if i_rootseg == rootsec.nseg-1: # or: rootseg.x >= neighbors[-1].x:
+	if i_rootseg == rootsec.nseg-1: # IF END SEGMENT: add child segments if in same cluster
 		# Gather child segments that are in same cluster
 		for secref in child_refs:
 			childseg = next(seg for seg in secref.sec) # get the first segment
 			if absorbable(childseg, 0, secref):
-				# Check if attempting to merge children not connected to 1-end
-				if round(secref.sec.parentseg().x,3) < round(neighbors[-1].x, 3):
-					raise Exception("Merging algorithm does not support topologies where "
-									"a child section is not connected to 1-end of parent.")
 				child_segs.append(childseg)
 				# mark segment
 				secref.visited[0] = True
 				secref.absorbed[0] = True
 
-	else: # If not end segment: add adjacent segment if in same cluster
+	else: # IF NOT END SEGMENT: add adjacent segment if in same cluster
 		j_seg = i_rootseg+1
-		childseg = neighbors[j_seg]
+		childseg = co_segs[j_seg]
 		if absorbable(childseg, j_seg, rootref):
 			child_segs.append(childseg)
 			rootref.visited[j_seg] = True
 			rootref.absorbed[j_seg] = True
 
-	# 2. Use solution of recursive call to solve ##############################
+	# 2. Recursively call collapse on children #################################
 
 	# Base Case: leaf segments (i.e. no child segments in same cluster)
 	if not any(child_segs):
@@ -244,7 +238,8 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None):
 	cross_area_br = 0.
 	Ri_br_sum = 0. # sum of axial resistances of parallel child branches
 	for child in child_segs:
-		cp = collapse_seg_subtree(child, allsecrefs)
+		# Recursive call (if not absorbable, child segments were not added)
+		cp, cp_br = collapse_seg_subtree(child, allsecrefs)
 		ch_area = PI*cp.diam_eq*cp.L_eq
 
 		# Update equivalent properties of all child branches in parallel
@@ -263,7 +258,9 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None):
 	if len(child_segs) > 1:
 		Ri_br /= Ri_br_sum # Must be valid parallel circuit of Ri if only one child
 	Ri_br_eqgeom = Ra_br*L_br/cross_area_br/100. # Axial resistance of section with geometry equal to merged properties
+	eq_props_br = EqProps(L_eq=L_br, diam_eq=diam_br, Ra_eq=Ra_br, Ri_eq=Ri_br_eqgeom)
 
+	# 3. Use solution of recursive call to solve ##############################
 
 	# Sequential merge of root & merged child properties (use <seq> equations Marasco (2012))
 	L_seq = L_root + L_br			# Eq. L_seq
@@ -271,8 +268,8 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None):
 	Ri_seq = Ri_root + Ri_br		# Eq. r_a,seq
 	Ri_seq_eqgeom = Ri_root + Ri_br_eqgeom						# for diam_seq calculation
 	diam_seq = math.sqrt(Ra_seq*L_seq*4./PI/Ri_seq_eqgeom/100.)	# Eq. rho_seq
-	eq_props = EqProps(L_eq=L_seq, diam_eq=diam_seq, Ra_eq=Ra_seq, Ri_eq=Ri_seq)
-	return eq_props
+	eq_props_seq = EqProps(L_eq=L_seq, diam_eq=diam_seq, Ra_eq=Ra_seq, Ri_eq=Ri_seq)
+	return eq_props_seq, eq_props_br
 
 
 def map_pathri_gbar(cluster, allsecrefs):
@@ -333,7 +330,7 @@ def has_cluster_parentseg(aseg, cluster, clu_secs):
 	j_parseg = seg_index(parseg)
 	return parref.cluster_labels[j_parseg]==cluster.label
 
-def merge_seg_incremental(clusters, allsecrefs, npass):
+def merge_seg_incremental(clusters, allsecrefs, n_passes, max_collapses, Y_criterion):
 	"""
 	Merge segments incrementally.
 
@@ -341,8 +338,11 @@ def merge_seg_incremental(clusters, allsecrefs, npass):
 	"""
 	# Calculate section statistics
 	for secref in allsecrefs:
-		redtools.sec_path_ri(secref, store_seg_ri=True) # stores pathri on SectionRefs
-		redtools.sec_path_L(secref) # stores path length to end of each sections
+		# Calculate path length, path resistance, electrotonic path length to each segment
+		redtools.sec_path_props(secref, 100., gleak_name)
+		# Flag all sections as unvisited
+		if not hasattr(secref, 'absorbed'):
+			secref.absorbed = [False] * secref.sec.nseg
 
 	# Calculate cluster statistics
 	for cluster in clusters:
@@ -355,17 +355,63 @@ def merge_seg_incremental(clusters, allsecrefs, npass):
 		cluster.orMaxPathL = max(clu_path_L)
 		cluster.orMinPathL = min(clu_path_L)
 
-	# Find Y-sections with highest level in tree
-	max_level = max(ref.level for ref in allsecrefs)
-	highest_parents = [ref for ref in allsecrefs if (ref.level==max_level-1) and ref.end_branchpoint]
+	# Find Y-sections
+	if Y_criterion='max_electrotonic'
+		# Find Y with longest electrotonic length to first Y among its children.
+		# This corresponds to  Y with child section that has longest L/lambda.
+		# Collapsing this Y will eliminate most compartments.
+		for secref in allsecrefs:
+			child_secs = secref.sec.children()
+			secref.collapsable_L_elec = 0.0
+			if any(child_secs):
+				min_child_L = min(sec.L for sec in child_secs)
+			for chi_sec in child_secs:
+				# Get segment that is that distance away from child
+				furthest_seg = chi_sec(min_child_L/chi_sec.L)
+				furthest_L_elec = redtools.seg_path_L_elec(furthest_seg, 100., gleak_name)
+				secref.collapsable_L_elec += (secref.pathLelec1 - furthest_L_elec)
 
-	# Zip/collapse parallel unbranched sections (=one Section)
-	for parref in highest_parents:
-		# Collapse with depth of one section
-		# TODO: implement 'zipping' using merge_parallel (make Segment-based implementation)
-		childrefs = [getsecref(sec, allsecrefs) for sec in parref.sec.children()]
-		eligfunc = lambda (seg, jseg, ref): ref in childrefs # all segments in child section are absorbed
-		eq_props = collapse_seg_subtree(parref.sec(1.0), allsecrefs, eligfunc)
+		# Find other Y sections that meet same criteria
+		max_L_collapsable = max(ref.collapsable_L_elec for ref in allsecrefs)
+		low, high = 0.95*max_L_collapsable, 1.05*max_L_collapsable
+		candidate_Y_secs = [ref for ref in allsecrefs if (low<ref.collapsable_L_elec<high)]
+		target_level = max(ref.level for ref in candidate_Y_secs)
+		target_Y_secs = [ref for ref in candidate_Y_secs if ref.level==target_level]
+
+		# Report findings
+		logger.debug("The maximal collapsable electrotonic length is %f", max_L_collapsable)
+		logger.debug("Found %i sections with collapsable length within 5%% of this value", 
+						len(candidate_Y_secs))
+		logger.debug(("The highest level of a parent node with this value is %i, "
+						"and the number of nodes at this level with the same value is %i"), 
+						target_level, len(target_Y_secs))
+
+	elif Y_criterion='highest_level':
+		max_level = max(ref.level for ref in allsecrefs)
+		target_Y_secs = [ref for ref in candidate_Y_secs if ref.level==max_level-1]
+
+	else:
+		raise Exception("Unknow Y-section selection criterion '{}'".format(Y_criterion))
+
+
+	# Collapse/zip each Y section up to length of first branch point
+	target_Y_secs = [ref for i,ref in enumerate(target_Y_secs) if i<max_collapses]
+	for par_ref in target_Y_secs:
+		par_sec = par_ref.sec
+		child_secs = par_sec.children()
+
+		# 'Zip' segments up to length of closest branch point
+		min_child_L = min(sec.L for sec in child_secs) # Section is unbranched cable
+		eligfunc = lambda (seg, jseg, ref): (ref.parent.same(par_sec)) and (seg.x*seg.sec.L <= min_child_L)
+		eq_seq, eq_br = collapse_seg_subtree(par_ref.sec(1.0), allsecrefs, eligfunc)
+
+		# TODO: make Cluster object that represents collapsed segments
+
+		# TODO: call equivalent_sections() with Cluster object
+		#		- modify it to make single section
+		#		- modify it to substitute it in the tree, and then calculate gbar
+
+		# TODO: substitute it in the tree
 
 def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 	"""
@@ -463,7 +509,7 @@ def merge_seg_cluster(cluster, allsecrefs, average_Ri):
 
 		# Collapse subtree
 		logger.debug("Collapsing subtree of cluster root segment %s", repr(rootseg))
-		eq_props = collapse_seg_subtree(rootseg, allsecrefs)
+		eq_props, eq_br = collapse_seg_subtree(rootseg, allsecrefs)
 
 		# Combine properties of collapse sections using <eq> expressions
 		eq_area = eq_props.L_eq * PI * eq_props.diam_eq
