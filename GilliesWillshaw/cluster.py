@@ -32,7 +32,7 @@ class Cluster(object):
 	# 			desc += '\n\t|- {0}: {1}'.format(ppty, getattr(self, ppty))
 	# 	return desc
 
-class EqProps:
+class EqProps(object):
 	"""
 	Equivalent properties of merged sections
 
