@@ -103,69 +103,77 @@ def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals
 		xg1 = next((xg for xg in reversed(xgvals) if xg[1] > gmin), xgvals[-1]) # last g > gmin
 		return (xg0, xg1), (xgvals[0], xgvals[-1]), (gmin, gmax)
 
-
-def find_segs_adj_Lelec(L_elec, orsecrefs, tree_index=None, path_indices=None):
-	""" Find adjacent segments in terms of electrotonic path length
-
-	@type	L_elec		float
-	@param	L_elec		electrotonic path length
-
-	@type	orsecrefs	list(h.SectionRef)
-	@param	orsecrefs	references to sections in original model with
-						electrotonic path lengths to 0 and 1 ends assigned
-
-	@return				two lists bound_segs, bound_L containing pairs of 
-						boundary segments, and their electrotonic lengths
+def find_adj_path_segs(path_prop, path_L, orsecrefs, tree_index=None, path_indices=None):
 	"""
-	# 1. Find all sections that L_elec maps to (i.e. with L_elec(0.0) <= L_elec <= L_elec(1.0))
-	filter_L = lambda secref: (secref.pathLelec0 <= L_elec <= secref.pathLelec1)
-	if tree_index is None and path_indices is None:
-		filter_path = lambda secref: True
+	Find segments that are immediately before or after given path length value.
+
+	@param path_prop	property used for calculation of path length, one of
+						'path_L', 'path_ri', or 'path_L_elec'
+
+	@param path_L		path length value
+
+	@pre				path lengths must be assigned along searched path
+	"""
+	# attribute names corresponding to path property (see reduction_tools.sec_path_props())
+	if path_prop == 'path_L':
+		sec_prop0 = 'pathL0'
+		sec_prop1 = 'pathL1'
+		seg_prop = 'pathL_seg'
+	elif path_prop == 'path_ri':
+		sec_prop0 = 'pathri0'
+		sec_prop1 = 'pathri1'
+		seg_prop = 'pathri_seg'
+	elif path_prop == 'path_L_elec':
+		sec_prop0 = 'pathLelec0'
+		sec_prop1 = 'pathLelec1'
+		seg_prop = 'pathL_elec'
 	else:
-		if tree_index is None or path_indices is None:
-			raise Exception("Must provide both tree and path indices for dendritic path")
-		filter_path = lambda secref: ((secref.tree_index==tree_index) 
-									and (secref.table_index in path_indices))
+		raise ValueError("Unknown path property '{}'".format(path_prop))
+
+	# 1. Find sections where path_L falls between path length to start and end 
+	filter_L = lambda secref: (getattr(secref, sec_prop0) <= path_L <= getattr(secref, sec_prop1))
+	filter_path = lambda secref: ((secref.tree_index==tree_index) and (secref.table_index in path_indices))
+
 	path_secs = [secref for secref in orsecrefs if filter_path(secref)]
 	map_secs = [secref for secref in path_secs if filter_L(secref)]
 
 	# If none found: extrapolate
 	if len(map_secs) == 0:
-		# find section where L(1.0) is closest to L_elec
-		L_closest = min([abs(L_elec-secref.pathLelec1) for secref in path_secs])
-		# all sections where L_elec-L(1.0) is within 5% of this
-		map_secs = [secref for secref in path_secs if (0.95*L_closest <= abs(L_elec-secref.pathLelec1) <= 1.05*L_closest)]
-		logger.debug("Electrotonic path length %f dit not map onto any original section:" + 
-						" extrapolating from {} sections".format(len(map_secs)))
-	logger.debug("Found {} sections in original model with same path length".format(len(map_secs)))
+		# find section where L(1.0) is closest to path_L
+		L_closest = min([abs(path_L-getattr(secref, sec_prop1)) for secref in path_secs])
+		# all sections where path_L-L(1.0) is within 5% of this
+		map_secs = [secref for secref in path_secs if (0.95*L_closest <= abs(path_L-getattr(secref, sec_prop1)) <= 1.05*L_closest)]
+		logger.debug("Path length did not map onto any original section: " 
+					 "extrapolating from {} sections".format(len(map_secs)))
 
-	# 2. In each section that was found: find boundary segments
-	bound_segs = [] # bounding segments
-	bound_L = [] # electrotonic path length of bounding segments
+	# 2. In mapped sections: find segments that bound path_L
+	bound_segs = [] # bounding segments (lower, upper)
+	bound_L = []    # path lengths to (lower, upper)
 	for secref in map_secs:
-		# in each section find the two segments with L_elec(seg_a) <= L_elec <= L_elec(seg_b)
+		# in each section find the two segments with path_L(seg_a) <= path_L <= path_L(seg_b)
 		segs_internal = [seg for seg in secref.sec]
+		vals_internal = getattr(secref, seg_prop)
 
 		if len(segs_internal) == 1: # single segment: just use midpoint
-				midseg = segs_internal[0]
-				midL = secref.pathL_elec[0]
-				bound_segs.append((midseg, midseg))
-				bound_L.append((midL, midL))
+			midseg = segs_internal[0]
+			midL = vals_internal[0]
+			bound_segs.append((midseg, midseg))
+			bound_L.append((midL, midL))
 
 		else:
 			# Get lower bound
-			lower = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec >= pathL)
-			i_a, L_a = next(lower, (0, secref.pathL_elec[0])) # default is first seg
+			lower = ((i, pval) for i, pval in enumerate(vals_internal) if path_L >= pval)
+			i_a, L_a = next(lower, (0, vals_internal[0])) # default is first seg
 
 			# Get higher bound
-			higher = ((i, pathL) for i, pathL in enumerate(secref.pathL_elec) if L_elec <= pathL)
-			i_b, L_b = next(higher, (-1, secref.pathL_elec[-1])) # default is last seg
+			higher = ((i, pval) for i, pval in enumerate(vals_internal) if path_L <= pval)
+			i_b, L_b = next(higher, (-1, vals_internal[-1])) # default is last seg
 
 			# Append bounds
 			bound_segs.append((segs_internal[i_a], segs_internal[i_b]))
 			bound_L.append((L_a, L_b))
 
-	# Return pairs of boundary segments and boundary electrotonic lengths
+	# Return pairs of boundary segments and boundary path lengths
 	return bound_segs, bound_L
 
 def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):

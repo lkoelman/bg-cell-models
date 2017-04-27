@@ -251,8 +251,8 @@ def equivalent_sections(clusters, orsecrefs, f_lambda,
 					tree_id, path_ids = interp_path
 
 				# Then get 'neighbor segments'
-				bound_segs, bound_L = interp.find_segs_adj_Lelec(L_elec, orsecrefs, 
-										tree_id, path_ids)
+				bound_segs, bound_L = find_adj_path_segs('path_L_elec', L_elec, 
+										orsecrefs, tree_id, path_ids)
 
 				# Set conductances by interpolating neighbors
 				for gname in active_glist:
@@ -262,7 +262,8 @@ def equivalent_sections(clusters, orsecrefs, f_lambda,
 						match_method = re.search(r'^[a-z]+', interp_method)
 						method = match_method.group() # should be nearest, left, or right
 						assert len(bound_segs)==1, "Found more than two boundary segments along path"
-						gval = interp.interp_gbar_pick_neighbor(L_elec, gname, bound_segs[0], bound_L[0])
+						gval = interp.interp_gbar_pick_neighbor(L_elec, gname, 
+											bound_segs[0], bound_L[0], method)
 					seg.__setattr__(gname, gval)
 					cluster.eq_gbar[gname][j] = gval
 

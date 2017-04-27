@@ -103,7 +103,7 @@ def assign_topology_attrs(noderef, secrefs, parref=None):
 		noderef.end_branchpoint = True
 	else:
 		noderef.end_branchpoint = False
-	childrefs = [getsecref(sec) for sec in childsecs]
+	childrefs = [getsecref(sec, secrefs) for sec in childsecs]
 
 	# NON LEAF NODE: descend tree and calculate strahler
 	for childref in childrefs:

@@ -312,7 +312,7 @@ def sec_path_props(secref, f, gleak_name):
 				secref.pathL_seg[j_seg] = path_L
 				if (j_seg==psec.nseg-1):
 					secref.pathL1 = path_L
-					secref.pathL1 = path_L_elec
+					secref.pathLelec1 = path_L_elec
 					secref.pathri1 = path_ri
 
 def seg_path_ri(endseg, f, gleak_name):
@@ -529,7 +529,7 @@ def prev_seg(curseg):
 	allseg = reversed([seg for seg in curseg.sec if seg_index(seg) < seg_index(curseg)])
 	return next(allseg, curseg.sec.parentseg())
 
-def get_child_segs(curseg):
+def next_segs(curseg):
 	""" Get child segments of given segment """
 	cursec = curseg.sec
 	i_rootseg = seg_index(curseg)
@@ -634,7 +634,7 @@ def find_prox_cuts(nodeseg, cuts, cluster, allsecrefs):
 		else:
 			return # don't descend any further
 	else:
-		chi_segs = get_child_segs(nodeseg)
+		chi_segs = next_segs(nodeseg)
 		for chiseg in chi_segs:
 			find_prox_cuts(chiseg, cuts, cluster, allsecrefs)
 
@@ -642,9 +642,9 @@ def find_dist_cuts(nodeseg, cuts, cluster, allsecrefs):
 	"""
 	Find distal cuts for given cluster.
 
-	i.e. cluster boundaries given by pairs of segments where the first segment
-	is proximal to the root section and in the cluster, and the second
-	segment is in a different cluster and distal to the first one.
+	@post	argument 'cuts' is filled with pairs (seg_a, seg_b) where
+			seg_a is last segment in cluster along its path, and seg_b
+			is first segment in next cluster
 	"""
 	noderef = getsecref(nodeseg.sec, allsecrefs)
 	i_node = seg_index(nodeseg)
@@ -653,7 +653,7 @@ def find_dist_cuts(nodeseg, cuts, cluster, allsecrefs):
 	if node_label != cluster.label:
 		return
 	else:
-		chi_segs = get_child_segs(aseg)
+		chi_segs = next_segs(aseg)
 		# if no child segs: this is a cut
 		if not any(chi_segs):
 			cuts.add((nodeseg,None))
@@ -706,7 +706,7 @@ def substitute_cluster(rootref, cluster, clu_eqsec, allsecrefs, mechs_pars,
 	first_cut_seg = prox_cuts[0][1]
 	
 	# Find distal cuts
-	dist_cuts = set()
+	dist_cuts = set() # pairs (seg_a, seg_b) where a is in same cluster, and b in next cluster
 	find_dist_cuts(first_cut_seg, dist_cuts, cluster, allsecrefs)
 
 	# Sever tree at proximal cuts
@@ -736,7 +736,7 @@ def substitute_cluster(rootref, cluster, clu_eqsec, allsecrefs, mechs_pars,
 		eqsec_parseg = cut_sec.parentseg()
 
 	# Sever tree at distal cuts
-	eqsec_childsegs = []
+	eqsec_child_segs = []
 	for dist_cut in dist_cuts:
 		cut_seg = dist_cut[1] # Section will be cut before this segment
 		cut_sec = cut_seg.sec
@@ -763,31 +763,114 @@ def substitute_cluster(rootref, cluster, clu_eqsec, allsecrefs, mechs_pars,
 					seg.__setattr__(pname, pval)
 
 		# Set child segment for equivalent section
-		eqsec_childsegs.append(cut_sec(0.0))
+		eqsec_child_segs.append(cut_sec(0.0))
 
 	# Connect the equivalent section
 	clu_eqsec.connect(eqsec_parseg, 0.0) # see help(sec.connect)
-	for chiseg in eqsec_childsegs:
+	for chiseg in eqsec_child_segs:
 		chiseg.sec.connect(clu_eqsec, 1.0, chiseg.x) # this disconnects them
 
 	# Disconnect the substituted parts
-	for orig_child_sec in eqsec_parseg.sec.children():
-		chiref = getsecref(orig_child_sec, allsecrefs)
+	for subbed_sec in eqsec_parseg.sec.children():
+		chiref = getsecref(subbed_sec, allsecrefs)
 		if chiref.cluster_labels[0] == cluster.label:
 			# NOTE: only need to disconnect proximal ends of the subtree: the distal ends have already been disconnected by connecting them to the equivalent section for the cluster
-			orig_child_sec.push()
+			subbed_sec.push()
 			h.disconnect()
 			h.pop_section()
 
 			# Delete disconnected subtree if requested
 			if delete_substituted:
 				child_tree = h.SectionList()
-				orig_child_sec.push()
+				subbed_sec.push()
 				child_tree.subtree()
 				h.pop_section()
 				for sec in child_tree: # iterates CAS
 					h.delete_section()
 
+def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars, 
+							delete_substituted):
+	"""
+	Substitute equivalent section of a collapsed Y into the tree.
+
+	@param eqsec	equivalent Section for cluster
+
+	@param parent_seg	parent segment (where equivalent section will be attached)
+
+	@param bound_segs	list of distal boundary segments of the cluster
+						of segments that the equivalent section is substituting for
+
+	"""
+
+	# Mark all sections as uncut
+	for secref in allsecrefs:
+		if not hasattr(secref, 'is_cut'):
+			setattr(secref, 'is_cut', False)
+
+	# Parent of equivalent section
+	parent_seg = parent_seg
+
+	# Sever tree at distal cuts
+	eqsec_child_segs = []
+	for bound_seg in bound_segs:
+		cut_segs = next_segs(bound_seg)
+		for i in xrange(len(cut_segs)):
+			cut_seg = cut_segs[i] # cut_seg may be destroyed by resizing so don't make loop variable
+			cut_sec = cut_seg.sec
+			cut_seg_index = seg_index(cut_seg)
+
+			# If Section cut in middle: need to resize
+			if cut_seg_index > 0:
+				# Check if not already cut
+				cut_ref = getsecref(cut_sec, allsecrefs)
+				if cut_ref.is_cut:
+					raise Exception('Section has already been cut before')
+
+				# Calculate new properties
+				new_nseg = cut_sec.nseg-(cut_seg_index+1)
+				post_cut_L = cut_sec.L/cut_sec.nseg * new_nseg
+				cut_props = get_sec_properties(cut_sec, mechs_pars)
+				
+				# Set new properties
+				cut_sec.nseg = new_nseg
+				cut_sec.L = post_cut_L
+				for jseg, seg in enumerate(cut_sec):
+					pseg = cut_props[cut_seg_index + jseg]
+					for pname, pval in pseg.iteritems():
+						seg.__setattr__(pname, pval)
+
+			# Set child segment for equivalent section
+			eqsec_child_segs.append(cut_sec(0.0))
+
+	# Connect the equivalent section
+	eqsec.connect(parent_seg, 0.0) # see help(sec.connect)
+	for chi_seg in eqsec_child_segs:
+		chi_seg.sec.connect(eqsec, 1.0, chi_seg.x) # this disconnects them
+
+	# Disconnect the substituted parts
+	for subbed_sec in parent_seg.sec.children():
+		# Skip the equivalent/substituting section
+		if subbed_sec.same(eqsec):
+			continue
+
+		# Only need to disconnect proximal ends of the subtree: the distal ends have already been disconnected by connecting them to the equivalent section for the cluster
+		subbed_sec.push()
+		logger.debug("Disconnecting substituted section '{}'...".format(subbed_sec.name()))
+		h.disconnect()
+		h.pop_section()
+
+		# Delete disconnected subtree if requested
+		child_tree = h.SectionList()
+		subbed_sec.push()
+		child_tree.subtree()
+		h.pop_section()
+		for sec in child_tree: # iterates CAS
+			subbed_ref = getsecref(sec, allsecrefs)
+			subbed_ref.is_substituted = True
+			if delete_substituted:
+				logger.debug("Deleting substituted section '{}'...".format(sec.name()))
+				h.delete_section()
+				subbed_ref.is_deleted = True # can also be tested with NEURON ref.exists()
 
 def split_section(src_sec, mechs_pars, delete_src=False):
 	"""
