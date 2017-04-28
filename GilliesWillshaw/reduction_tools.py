@@ -38,6 +38,10 @@ def lambda_AC(sec, f):
 	""" Compute electrotonic length (taken from stdlib.hoc) """
 	return 1e5 * math.sqrt(sec.diam/(4*math.pi*f*sec.Ra*sec.cm))
 
+def lambda_AC_raw(f, diam, Ra, cm):
+	""" Compute electrotonic length constant """
+	return 1e5 * math.sqrt(diam/(4*math.pi*f*Ra*cm))
+
 def electrotonic_length(sec, gleak, f):
 	if f <= 0:
 		return lambda_DC(sec, gleak)
@@ -55,6 +59,10 @@ def seg_lambda(seg, gleak, f):
 		return 1e2 * math.sqrt(seg.diam*Rm/(4*Ra)) # units: ([um]*[Ohm*cm^2]/(Ohm*cm))^1/2 = [um*1e2]
 	else:
 		return 1e5 * math.sqrt(seg.diam/(4*math.pi*f*Ra*seg.cm))
+
+def seg_L_elec(seg, gleak, f):
+	""" Electrotonic length of segment """
+	return (seg.sec.L/seg.sec.nseg)/seg_lambda(seg, gleak, f)
 
 def min_nseg_hines(sec, f=100.):
 	""" Minimum number of segments based on electrotonic length """
@@ -521,7 +529,7 @@ def getsecref(sec, refs):
 	"""
 	if sec is None: return None
 	# Section names are unique, but alternatively use sec.same(ref.sec)
-	return next((ref for ref in refs if ref.sec.name()==sec.name()), None)
+	return next((ref for ref in refs if (ref.exists() and ref.sec.name()==sec.name())), None)
 
 def prev_seg(curseg):
 	""" Get segment preceding seg: this can be on same or parent Section """
@@ -869,8 +877,9 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
 			subbed_ref.is_substituted = True
 			if delete_substituted:
 				logger.debug("Deleting substituted section '{}'...".format(sec.name()))
-				h.delete_section()
 				subbed_ref.is_deleted = True # can also be tested with NEURON ref.exists()
+				h.delete_section()
+				
 
 def split_section(src_sec, mechs_pars, delete_src=False):
 	"""

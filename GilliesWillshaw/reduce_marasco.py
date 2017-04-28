@@ -58,6 +58,7 @@ gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel
 mechs_chans = gillies_mechs_chans
 gleak_name = 'gpas_STh'
 glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
+f_lambda = 100.0
 
 def merge_parallel(childrefs, allsecrefs):
 	"""
@@ -185,6 +186,7 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None, modfunc=None, bound
 	rootref = getsecref(rootsec, allsecrefs)
 	co_segs = [seg for seg in rootsec]
 	i_rootseg = seg_index(rootseg)
+	# logger.debug("Collapsing children of segment {0} (segment {1}/{2})".format(rootseg, i_rootseg+1, rootsec.nseg))
 
 	# Calculate properties of root segment
 	L_root = rootsec.L/rootsec.nseg
@@ -219,6 +221,8 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None, modfunc=None, bound
 				modfunc(childseg, 0, secref)
 			else:
 				root_is_bound = True
+		if not any(child_segs):
+			root_is_bound = True
 
 	else:
 		# IF NOT END SEGMENT: get adjacent segment if in same cluster
@@ -241,6 +245,7 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None, modfunc=None, bound
 
 	# Base Case: leaf segments (i.e. no child segments in same cluster)
 	if not any(child_segs):
+		# logger.debug("No child segments to absorb: ending recursive descent.")
 		eq_props_seq = EqProps(L_eq=L_root, diam_eq=diam_root, Ra_eq=Ra_root, Ri_eq=Ri_root)
 		eq_props_br = EqProps(L_eq=0., diam_eq=0., Ra_eq=0., Ri_eq=0.)
 		return eq_props_seq, eq_props_br
@@ -256,6 +261,7 @@ def collapse_seg_subtree(rootseg, allsecrefs, eligfunc=None, modfunc=None, bound
 	Ri_br_sum = 0. # sum of axial resistances of parallel child branches
 	for child in child_segs:
 		# Recursive call (if not absorbable, child segments were not added)
+		# logger.debug("Absorbing child segment {0}...".format(child))
 		cp, _ = collapse_seg_subtree(child, allsecrefs, eligfunc, modfunc, bound_segs)
 		ch_area = PI*cp.diam_eq*cp.L_eq
 
@@ -356,7 +362,7 @@ def merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, Y_criterion):
 	# Calculate section statistics
 	for secref in allsecrefs:
 		# Calculate path length, path resistance, electrotonic path length to each segment
-		redtools.sec_path_props(secref, 100., gleak_name)
+		redtools.sec_path_props(secref, f_lambda, gleak_name)
 		# Flag all sections as unvisited
 		if not hasattr(secref, 'absorbed'):
 			secref.absorbed = [False] * secref.sec.nseg
@@ -376,7 +382,7 @@ def merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, Y_criterion):
 			for chi_sec in child_secs:
 				# Get segment that is that distance away from child
 				furthest_seg = chi_sec(min_child_L/chi_sec.L)
-				furthest_L_elec = redtools.seg_path_L_elec(furthest_seg, 100., gleak_name)
+				furthest_L_elec = redtools.seg_path_L_elec(furthest_seg, f_lambda, gleak_name)
 				secref.collapsable_L_elec += (secref.pathLelec1 - furthest_L_elec)
 
 		# Find other Y sections that meet same criteria
@@ -404,6 +410,9 @@ def merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, Y_criterion):
 		raise Exception("Unknow Y-section selection criterion '{}'".format(Y_criterion))
 
 	# Don't collapse more Y-sections than given maximum
+	n_Y = len(target_Y_secs)
+	logger.debug("Found {0} Y-sections that meet selection criterion. Keeping {1}/{2}\n\n".format(
+					n_Y, min(n_Y, zips_per_pass), n_Y))
 	target_Y_secs = [ref for i,ref in enumerate(target_Y_secs) if i<zips_per_pass]
 
 	# Create Clusters: collapse (zip) each Y section up to length of first branch point
@@ -420,8 +429,12 @@ def merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, Y_criterion):
 		zip_label = "zip_" + name_sanitized
 		def modfunc(seg, jseg, ref): ref.zip_labels[jseg] = zip_label # lambda can't assign
 		far_bound_segs = [] # furthest/last segments that are absorbed
-		eq_seq, eq_br = collapse_seg_subtree(par_sec(1.0), allsecrefs, 
-										eligfunc, modfunc, far_bound_segs)
+		eq_seq, eq_br = collapse_seg_subtree(par_sec(1.0), allsecrefs, eligfunc, modfunc, far_bound_segs)
+
+		logger.debug("Target Y-section for zipping: {0} (tree_id:{1} , table_id:{2})".format(
+						par_sec.name(), par_ref.tree_index, par_ref.table_index))
+		bounds_info = ["\n\tsegment {0} [{1}/{2}]".format(seg, seg_index(seg)+1, seg.sec.nseg) for seg in far_bound_segs]
+		logger.debug("Zipping up to {0} boundary segments:{1}".format(len(far_bound_segs), "\n".join(bounds_info)))
 
 		# Make Cluster object that represents collapsed segments
 		cluster = Cluster(zip_label)
@@ -463,13 +476,28 @@ def merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, Y_criterion):
 		# Equivalent axial resistance
 		clu_segs_Ra = [seg.sec.Ra for seg in clu_segs]
 		if min(clu_segs_Ra) == max(clu_segs_Ra):
-			logger.debug("All collapsed segments have same Ra, using this as equivalent Ra")
 			cluster.eqRa = clu_segs_Ra[0]
 		else:
 			logger.warning("Sections have non-uniform Ra, calculating average "
 							"axial resistance per unit length, weighted by area")
 			cluster.eqRa = PI*(cluster.eqdiam/2.)**2*cluster.eqri*100./cluster.eqL # eq. Ra^eq
 		clusters.append(cluster)
+
+		# Calculate electrotonic path length
+		cluster.or_L_elec = sum(redtools.seg_L_elec(seg, gleak_name, f_lambda) for seg in clu_segs)
+		cluster.eq_lambda = redtools.lambda_AC_raw(f_lambda, cluster.eqdiam, cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
+		cluster.eq_L_elec = cluster.eqL/cluster.eq_lambda
+		eq_min_nseg = redtools.calc_min_nseg_hines(f_lambda, cluster.eqL, cluster.eqdiam, 
+											cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
+
+		# Debug
+		print_attrs = ['eqL', 'eqdiam', 'or_area', 'eq_area_sum', 'or_L_elec', 'eq_L_elec']
+		clu_info = ("- {0}: {1}".format(prop, getattr(cluster, prop)) for prop in print_attrs)
+		logger.debug("Equivalent section for zipped Y-section has following properties:\n\t{0}".format(
+						"\n\t".join(clu_info)))
+		logger.debug("Zip reduces L/lambda by {:.2f} %; number of segments saved is {1} (Hines rule)\n".format(
+						cluster.eq_L_elec/cluster.or_L_elec, len(clu_segs)-eq_min_nseg))
+
 	return clusters
 
 
@@ -845,7 +873,6 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 	eq_refs = []
 
 	# Create equivalent sections and passive electric structure
-	logger.debug("Building passive section topology...")
 	for i, cluster in enumerate(clusters):
 
 		# Create equivalent section
@@ -883,7 +910,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 
 		# Scale passive electrical properties
 		area_ratio = cluster.or_area / cluster.eq_area
-		logger.debug("Ratio of areas is %f" % area_ratio)
+		logger.debug("Surface area ratio is %f" % area_ratio)
 
 		# Scale Cm
 		eq_cm = cluster.or_cmtot / cluster.eq_area # more accurate than cm * or_area/eq_area
@@ -891,10 +918,9 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 		# Scale Rm
 		or_gleak = cluster.or_gtot[gleak_name] / cluster.or_area
 		eq_gleak = or_gleak * area_ratio # same as reducing Rm by area_new/area_old
-		logger.debug("gleak scaled by ratio is %f (old gleak is %f)" % (eq_gleak, or_gleak))
 
 		# Set number of segments based on rule of thumb electrotonic length
-		eqsec.nseg = redtools.calc_min_nseg_hines(100., eqsec.L, eqsec.diam, eqsec.Ra, eq_cm)
+		eqsec.nseg = redtools.calc_min_nseg_hines(f_lambda, eqsec.L, eqsec.diam, eqsec.Ra, eq_cm)
 
 		# Save Cm and conductances for each section for reconstruction
 		cluster.nseg = eqsec.nseg # save for reconstruction
@@ -922,7 +948,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 			tree_id, path_ids = interp_path
 
 		# Calculate path lengths in equivalent section
-		redtools.sec_path_props(eqref, 100., gleak_name)
+		redtools.sec_path_props(eqref, f_lambda, gleak_name)
 		if interp_prop == 'path_L':
 			seg_prop = 'pathL_seg'
 		elif interp_prop == 'path_ri':
@@ -963,7 +989,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 					if gbar_scaling == 'area':
 						# conserves ratio in each segment but not total original conductance
 						gval = getattr(seg, gname)*clusters[i_clu].or_area/clusters[i_clu].eq_area
-					elif gbar_scaling == 'integral':
+					elif gbar_scaling == 'gbar_integral':
 						# does not conserve ratio but conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
 						gval = getattr(seg, gname) * or_gtot/eq_gtot
 					else:
@@ -975,19 +1001,25 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 		for gname in active_glist:
 			gtot_or = cluster.or_gtot[gname]
 			gtot_eq_scaled = sum(getattr(seg, gname)*seg.area() for seg in eqsec)
-			logger.debug("conductance %s : gtot_or = %.3f ; gtot_eq = %.3f",
-							gname, gtot_or, gtot_eq_scaled)
+			# logger.debug("conductance %s : gtot_or = %.3f ; gtot_eq = %.3f",
+			# 				gname, gtot_or, gtot_eq_scaled)
+
 		# Debugging info:
-		logger.debug("Created equivalent section '%s' with \n\tL\tdiam\tcm\tRa\tnseg\
-		\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n\n", clusters[i_clu].label, eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
+		logger.debug("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
+						"\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n\n", 
+						clusters[i_clu].label, eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
 	
 	# Substitute equivalent section into tree
+	logger.info("\n###############################################################"
+				"\nSubstituting equivalent sections...\n")
 	for i_clu, cluster in enumerate(clusters):
 		eqsec = eq_secs[i_clu]
 		# Disconnect substituted segments and attach segment after Y boundary
 		# Can only do this now since all paths need to be walkable before this
+		logger.debug("Substituting zipped section {0}".format(eqsec))
 		redtools.sub_equivalent_Y_sec(eqsec, cluster.parent_seg, cluster.bound_segs, 
 					orsecrefs, mechs_chans, delete_substituted=True)
+		logger.debug("Substitution complete.\n")
 
 	# build new list of valid SectionRef
 	newsecrefs = [ref for ref in orsecrefs if not (ref.is_substituted or ref.is_deleted)]
@@ -1050,7 +1082,8 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	# 0. Pre-clustering: calculate properties
 
 	# Assign Strahler numbers
-	logger.info("Assigning Strahler's numbers...")
+	logger.info("\n###############################################################"
+				"\nAssigning Strahler's numbers...\n")
 	clutools.assign_topology_attrs(dendR_root, allsecrefs)
 	clutools.assign_topology_attrs(dendL_upper_root, allsecrefs)
 	clutools.assign_topology_attrs(dendL_lower_root, allsecrefs)
@@ -1063,6 +1096,8 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 
 	############################################################################
 	# 1. Merge a number of Y-sections
+	logger.info("\n###############################################################"
+				"\nFinding Y-sections to merge...\n")
 	
 	clusters = merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, 
 										Y_criterion='highest_level')
@@ -1070,10 +1105,12 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	############################################################################
 	# 2. Create equivalent sections
 
-	logger.info("Creating equivalent sections...")
-	# TODO: call sub_equivalent_Y_sections()
-	# eq_secs = redbush.equivalent_sections(clusters, allsecrefs, f_lambda, 
-	#			gbar_scaling='area', interp_path=(1, (1,3,8)), interp_method='left_neighbor')
+	logger.info("\n###############################################################"
+				"\nCreating equivalent sections...\n")
+	# Mark Sections
+	for secref in allsecrefs:
+		secref.is_substituted = False
+		secref.is_deleted = False
 
 	eq_secs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, 
 						interp_prop='path_L', interp_method='left_neighbor', 
