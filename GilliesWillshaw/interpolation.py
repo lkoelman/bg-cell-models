@@ -161,11 +161,11 @@ def find_adj_path_segs(path_prop, path_L, orsecrefs, tree_index=None, path_indic
 			bound_L.append((midL, midL))
 
 		else:
-			# Get lower bound
-			lower = ((i, pval) for i, pval in enumerate(vals_internal) if path_L >= pval)
-			i_a, L_a = next(lower, (0, vals_internal[0])) # default is first seg
+			# Get last/furthest segment with L <= path_L
+			lower = [(i, pval) for i, pval in enumerate(vals_internal) if path_L >= pval]
+			i_a, L_a = next(reversed(lower), (0, vals_internal[0])) # default is first seg
 
-			# Get higher bound
+			# Get first/closest segment with L >= path_L
 			higher = ((i, pval) for i, pval in enumerate(vals_internal) if path_L <= pval)
 			i_b, L_b = next(higher, (-1, vals_internal[-1])) # default is last seg
 

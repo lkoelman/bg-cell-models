@@ -495,7 +495,7 @@ def merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, Y_criterion):
 		clu_info = ("- {0}: {1}".format(prop, getattr(cluster, prop)) for prop in print_attrs)
 		logger.debug("Equivalent section for zipped Y-section has following properties:\n\t{0}".format(
 						"\n\t".join(clu_info)))
-		logger.debug("Zip reduces L/lambda by {:.2f} %; number of segments saved is {1} (Hines rule)\n".format(
+		logger.debug("Zip reduces L/lambda by {0:.2f} %; number of segments saved is {1} (Hines rule)\n".format(
 						cluster.eq_L_elec/cluster.or_L_elec, len(clu_segs)-eq_min_nseg))
 
 	return clusters
@@ -965,6 +965,9 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 			path_L = getattr(eqref, seg_prop)[j_seg]
 			bound_segs, bound_L = interp.find_adj_path_segs(interp_prop, path_L, orsecrefs, 
 														tree_id, path_ids)
+			bounds_info = "\n".join(("\t- bounds {0} - {1}".format(a, b) for a,b in bound_segs))
+			logger.debug("Found boundary segments at same path length x={0:.3f}:\n{1}".format(path_L, bounds_info))
+
 			# Set conductances by interpolating neighbors
 			for gname in active_glist:
 				if interp_method == 'linear_neighbors':
@@ -972,7 +975,6 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 				else:
 					match_method = re.search(r'^[a-z]+', interp_method)
 					method = match_method.group() # should be nearest, left, or right
-					assert len(bound_segs)==1, "Found more than two boundary segments along path"
 					gval = interp.interp_gbar_pick_neighbor(path_L, gname, 
 										bound_segs[0], bound_L[0], method)
 				seg.__setattr__(gname, gval)
@@ -985,17 +987,18 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 				if eq_gtot <= 0.:
 					eq_gtot = 1.
 				or_gtot = cluster.or_gtot[gname]
-				for j, seg in enumerate(eqsec):
+				for j_seg, seg in enumerate(eqsec):
 					if gbar_scaling == 'area':
 						# conserves ratio in each segment but not total original conductance
-						gval = getattr(seg, gname)*clusters[i_clu].or_area/clusters[i_clu].eq_area
+						scale = cluster.or_area/cluster.eq_area
 					elif gbar_scaling == 'gbar_integral':
 						# does not conserve ratio but conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
-						gval = getattr(seg, gname) * or_gtot/eq_gtot
+						scale = or_gtot/eq_gtot
 					else:
 						raise Exception("Unknown gbar scaling method'{}'.".format(gbar_scaling))
+					gval = getattr(seg, gname) * scale
 					seg.__setattr__(gname, gval)
-					cluster.eq_gbar[gname][j] = gval # save for reconstruction
+					cluster.eq_gbar[gname][j_seg] = gval # save for reconstruction
 
 		# Check gbar calculation
 		for gname in active_glist:
@@ -1113,7 +1116,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 		secref.is_deleted = False
 
 	eq_secs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, 
-						interp_prop='path_L', interp_method='left_neighbor', 
+						interp_prop='path_ri', interp_method='left_neighbor', 
 						interp_path=(1, (1,3,8)), gbar_scaling='area')
 
 	############################################################################
@@ -1380,4 +1383,4 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 if __name__ == '__main__':
 	# clusters, eq_secs = reduce_gillies_partial(delete_old_cells=True)
 	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=1, zips_per_pass=100)
-	from neuron import gui
+	from neuron import gui # check in ModelView: conductance distribution, structure
