@@ -846,6 +846,7 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
 					pseg = cut_props[cut_seg_index + jseg]
 					for pname, pval in pseg.iteritems():
 						seg.__setattr__(pname, pval)
+				logger.debug("Cut section {0} and re-assigned segment properties.".format(cut_sec.name()))
 
 			# Set child segment for equivalent section
 			eqsec_child_segs.append(cut_sec(0.0))

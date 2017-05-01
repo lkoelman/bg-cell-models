@@ -353,7 +353,7 @@ def has_cluster_parentseg(aseg, cluster, clu_secs):
 	j_parseg = seg_index(parseg)
 	return parref.cluster_labels[j_parseg]==cluster.label
 
-def merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, Y_criterion):
+def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 	"""
 	Merge segments incrementally.
 
@@ -426,7 +426,8 @@ def merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, Y_criterion):
 		eligfunc = lambda seg, jseg, ref: (ref.parent.same(par_sec)) and (seg.x*seg.sec.L <= min_child_L)
 		# name_sanitized = par_sec.name().replace('[','').replace(']','').replace('.','_')
 		name_sanitized = re.sub(r"[\[\]\.]", "", par_sec.name())
-		zip_label = "zip_" + name_sanitized
+		alphabet_uppercase = [chr(i) for i in xrange(65,90+1)] # A-Z are ASCII 65-90
+		zip_label = "zip{0}_{1}".format(alphabet_uppercase[i_pass], name_sanitized)
 		def modfunc(seg, jseg, ref): ref.zip_labels[jseg] = zip_label # lambda can't assign
 		far_bound_segs = [] # furthest/last segments that are absorbed
 		eq_seq, eq_br = collapse_seg_subtree(par_sec(1.0), allsecrefs, eligfunc, modfunc, far_bound_segs)
@@ -1042,6 +1043,22 @@ def label_order(label):
 	else:
 		return 4
 
+def assign_sth_indices(noderef, allsecrefs, parref=None):
+	"""
+	Re-assign tree index and table index as labelled in Gillies & Willshaw code
+	(see sth-data folder).
+	"""
+	if not hasattr(noderef, 'tree_index'):
+		noderef.tree_index = parref.tree_index
+	if not hasattr(noderef, 'table_index'):
+		noderef.table_index = -1 # unassigned
+
+	childsecs = noderef.sec.children()
+	childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
+	for childref in childrefs:
+		assign_sth_indices(childref, allsecrefs, parref=noderef)
+
+
 def reduce_gillies_incremental(n_passes, zips_per_pass):
 	"""
 	Reduce Gillies & Willshaw STN neuron model by incrementally
@@ -1073,7 +1090,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	dendL_upper_root = getsecref(h.SThcell[0].dend0[1], dendLrefs)
 	dendL_lower_root = getsecref(h.SThcell[0].dend0[2], dendLrefs)
 
-	# Assign indices used in Gillies code to read section properties from file
+	# Assign indices used in Gillies code (sth-data folder)
 	somaref.tree_index = -1
 	somaref.table_index = 0
 	for j, dendlist in enumerate((dendLrefs, dendRrefs)):
@@ -1081,57 +1098,72 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 			secref.tree_index = j # left tree is 0, right is 1
 			secref.table_index = i+1 # same as in /sth-data/treeX-nom.dat
 
-	############################################################################
-	# 0. Pre-clustering: calculate properties
+	# Assign topology ordinals before trunk sections
 
-	# Assign Strahler numbers
-	logger.info("\n###############################################################"
-				"\nAssigning Strahler's numbers...\n")
-	clutools.assign_topology_attrs(dendR_root, allsecrefs)
-	clutools.assign_topology_attrs(dendL_upper_root, allsecrefs)
-	clutools.assign_topology_attrs(dendL_lower_root, allsecrefs)
-	dendL_juction.order = 1
-	dendL_juction.level = 0
-	dendL_juction.strahlernumber = dendL_upper_root.strahlernumber+1
-	somaref.order = 0
-	somaref.level = 0
-	somaref.strahlernumber = dendL_juction.strahlernumber
+	for i_pass in xrange(n_passes):
+		# Check that we haven't collapsed too many levels
+		if not (dendL_upper_root.exists() and dendL_lower_root.exists()):
+			logger.warning("Maximum number of collapses reached: Cannot collapse past trunk sections.")
+			break
 
-	############################################################################
-	# 1. Merge a number of Y-sections
-	logger.info("\n###############################################################"
-				"\nFinding Y-sections to merge...\n")
-	
-	clusters = merge_seg_incremental(allsecrefs, n_passes, zips_per_pass, 
-										Y_criterion='highest_level')
+		logger.info("\n###############################################################"
+					"\nStarting reduction pass {0}/{1}...\n".format(i_pass+1, n_passes))
 
-	############################################################################
-	# 2. Create equivalent sections
+		############################################################################
+		# 0. Pre-clustering: calculate properties
 
-	logger.info("\n###############################################################"
-				"\nCreating equivalent sections...\n")
-	# Mark Sections
-	for secref in allsecrefs:
-		secref.is_substituted = False
-		secref.is_deleted = False
+		# Assign tree index to new sections
+		assign_sth_indices(somaref, allsecrefs)
 
-	eq_secs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, 
-						interp_prop='path_ri', interp_method='left_neighbor', 
-						interp_path=(1, (1,3,8)), gbar_scaling='area')
+		# Assign Strahler numbers
+		logger.info("\n###############################################################"
+					"\nAssigning Strahler's numbers...\n")
+		clutools.assign_topology_attrs(dendR_root, allsecrefs)
+		clutools.assign_topology_attrs(dendL_upper_root, allsecrefs)
+		clutools.assign_topology_attrs(dendL_lower_root, allsecrefs)
+		dendL_juction.order = 1
+		dendL_juction.level = 0
+		dendL_juction.strahlernumber = dendL_upper_root.strahlernumber+1
+		somaref.order = 0
+		somaref.level = 0
+		somaref.strahlernumber = dendL_juction.strahlernumber
 
-	############################################################################
-	# 3. Finalize & Analyze
-	
-	# Set ion styles
-	for sec in h.allsec(): # makes each section the CAS
-		h.ion_style("na_ion",1,2,1,0,1)
-		h.ion_style("k_ion",1,2,1,0,1)
-		h.ion_style("ca_ion",3,2,1,1,1)
+		############################################################################
+		# 1. Merge a number of Y-sections
+		logger.info("\n###############################################################"
+					"\nFinding Y-sections to merge...\n")
+		
+		clusters = zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion='highest_level')
 
-	# Print tree structure
-	logger.info("Equivalent tree topology:")
-	if logger.getEffectiveLevel() >= logging.DEBUG:
-		h.topology()
+		############################################################################
+		# 2. Create equivalent sections
+
+		logger.info("\n###############################################################"
+					"\nCreating equivalent sections...\n")
+		# Mark Sections
+		for secref in allsecrefs:
+			secref.is_substituted = False
+			secref.is_deleted = False
+
+		eq_secs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, 
+							interp_prop='path_L', interp_method='linear_neighbors', 
+							interp_path=(1, (1,3,8)), gbar_scaling='area')
+
+		allsecrefs = newsecrefs # prepare for next iteration
+
+		############################################################################
+		# 3. Finalize
+		
+		# Set ion styles
+		for sec in h.allsec(): # makes each section the CAS
+			h.ion_style("na_ion",1,2,1,0,1)
+			h.ion_style("k_ion",1,2,1,0,1)
+			h.ion_style("ca_ion",3,2,1,1,1)
+
+		# Print tree structure
+		logger.info("Equivalent tree topology:")
+		if logger.getEffectiveLevel() >= logging.DEBUG:
+			h.topology()
 
 	return eq_secs, newsecrefs
 
@@ -1382,5 +1414,5 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 
 if __name__ == '__main__':
 	# clusters, eq_secs = reduce_gillies_partial(delete_old_cells=True)
-	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=1, zips_per_pass=100)
+	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=2, zips_per_pass=100)
 	from neuron import gui # check in ModelView: conductance distribution, structure

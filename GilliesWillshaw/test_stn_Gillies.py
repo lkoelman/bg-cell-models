@@ -36,7 +36,7 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 # Our own modules
 from common import analysis
 import reduction_tools
-from reduction_tools import lambda_AC, ExtSecRef, Cluster, getsecref
+from reduction_tools import lambda_AC, ExtSecRef, getsecref
 from interpolation import *
 import reduction_analysis
 import reduce_marasco as marasco
@@ -291,6 +291,8 @@ def stn_cell(cellmodel):
 			smooth and one spiny section next to the soma section.
 			Parameters are fitted or empirically determined to produce
 			qualitatively similar behaviour to the full model.
+
+	8		Lucas' algorithm: incremental zipping of tree branches.
 	"""
 	stims = None
 
@@ -359,12 +361,21 @@ def stn_cell(cellmodel):
 		marasco_method = True # whether trees will be averaged (True, as in paper) or Rin conserved (False)
 		if cellmodel==5:
 			marasco_method = False
-		clusters, eq_secs, eq_refs = marasco.reduce_gillies(
-			customclustering=True, average_trees=marasco_method)
+		clusters, eq_secs, eq_refs = marasco.reduce_gillies_pathRi(
+			customclustering=True, average_Ri=marasco_method)
 		soma, dendLsecs, dendRsecs = eq_secs
 		dendsec = dendRsecs[-1] # last/most distal section of small dendrite
 		dendloc = 0.9
 		allsecs = [soma] + dendLsecs + dendRsecs
+
+	elif cellmodel==8: # Lucas ZipBranch algorithm
+		eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=2, zips_per_pass=100)
+		soma = next(ref.sec for ref in newsecrefs if ref.sec.name().endswith('soma'))
+		dendsec = next(ref.sec for ref in newsecrefs if (
+						hasattr(ref, 'strahlernumber') and ref.strahlernumber==1))
+		dendloc = 0.9
+		print("Distal segment for recording is {0}".format(dendsec(dendloc)))
+		allsecs = [ref.sec for ref in newsecrefs]
 
 	# Insert stimulation electrodes
 	if stims is None:
@@ -1007,7 +1018,7 @@ def compare_conductance_dist(gnames):
 def run_experimental_protocol():
 	""" Run one of the experiments using full or reduced STN model """
 	# Make cell
-	reduction_method = 1 # 1=full / 2=Rall reduction / 3=Bush / 6=optimized Bush / 4&5=Marasco
+	reduction_method = 8
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Manual cell adjustments
@@ -1041,9 +1052,9 @@ def run_experimental_protocol():
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
 	# Run experimental protocol
-	recData = test_spontaneous(soma, dends_locs, stims)
+	# recData = test_spontaneous(soma, dends_locs, stims)
 	# recData = test_reboundburst(soma, dends_locs, stims)
-	# recData = test_plateau(soma, dends_locs, stims)
+	recData = test_plateau(soma, dends_locs, stims)
 	# recData = test_slowbursting()
 
 	# If run as function, uncomment to make variables available

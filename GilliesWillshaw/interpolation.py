@@ -241,6 +241,7 @@ def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
 	for i, segs in enumerate(bound_segs):
 		seg_a, seg_b = segs
 		L_a, L_b = bound_L[i]
+		assert L_b >= L_a, "Path lengths of bounding segments must be in ascending order."
 
 		# Linear interpolation of gbar in seg_a and seg_b according to electrotonic length
 		if L_elec <= L_a:
