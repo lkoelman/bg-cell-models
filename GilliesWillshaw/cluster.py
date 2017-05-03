@@ -33,16 +33,6 @@ class Cluster(object):
 	# 			desc += '\n\t|- {0}: {1}'.format(ppty, getattr(self, ppty))
 	# 	return desc
 
-class EqProps(object):
-	"""
-	Equivalent properties of merged sections
-
-	NOTE: this is the 'Bunch' recipe from the python cookbook
-		  al alternative would be `myobj = type('Bunch', (object,), {})()`
-	"""
-	def __init__(self, **kwds):
-		self.__dict__.update(kwds)
-
 def clusterroot(secref, allsecrefs):
 	""" Find the highest parent/ancestor of given section that is still
 		in the same cluster """

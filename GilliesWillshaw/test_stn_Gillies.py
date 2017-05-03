@@ -369,10 +369,10 @@ def stn_cell(cellmodel):
 		allsecs = [soma] + dendLsecs + dendRsecs
 
 	elif cellmodel==8: # Lucas ZipBranch algorithm
-		eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=2, zips_per_pass=100)
+		eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
 		soma = next(ref.sec for ref in newsecrefs if ref.sec.name().endswith('soma'))
-		dendsec = next(ref.sec for ref in newsecrefs if (
-						hasattr(ref, 'strahlernumber') and ref.strahlernumber==1))
+		dendsec = next(ref.sec for ref in newsecrefs if (len(ref.sec.children())==0))
+		# 					hasattr(ref, 'strahlernumber') and ref.strahlernumber==1))
 		dendloc = 0.9
 		print("Distal segment for recording is {0}".format(dendsec(dendloc)))
 		allsecs = [ref.sec for ref in newsecrefs]
@@ -749,7 +749,12 @@ def test_plateau(soma, dends_locs, stims):
 	# Simulate
 	h.tstop = dur
 	h.init() # calls finitialize() and fcurrent()
+	t0 = h.startsw()
 	h.run()
+	t1 = h.startsw()
+	h.stopsw() # or t1=h.startsw(); runtime = t1-t0
+	print("Simulation ran for {:.6f} seconds".format(t1-t0))
+
 
 	# Plot membrane voltages
 	recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
@@ -1018,7 +1023,7 @@ def compare_conductance_dist(gnames):
 def run_experimental_protocol():
 	""" Run one of the experiments using full or reduced STN model """
 	# Make cell
-	reduction_method = 8
+	reduction_method = 1
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Manual cell adjustments
@@ -1064,3 +1069,4 @@ def run_experimental_protocol():
 if __name__ == '__main__':
 	run_experimental_protocol()
 	# compare_conductance_dist(gillies_glist)
+	# stn_cell_gillies(resurgent=False)

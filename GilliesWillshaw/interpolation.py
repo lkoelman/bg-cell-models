@@ -103,56 +103,62 @@ def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals
 		xg1 = next((xg for xg in reversed(xgvals) if xg[1] > gmin), xgvals[-1]) # last g > gmin
 		return (xg0, xg1), (xgvals[0], xgvals[-1]), (gmin, gmax)
 
-def find_adj_path_segs(path_prop, path_L, orsecrefs, tree_index=None, path_indices=None):
+def find_adj_path_segs(interp_prop, interp_L, path_secs):
 	"""
 	Find segments that are immediately before or after given path length value.
 
-	@param path_prop	property used for calculation of path length, one of
+	@param interp_prop	property used for calculation of path length, one of
 						'path_L', 'path_ri', or 'path_L_elec'
 
-	@param path_L		path length value
+	@param interp_L		path length value
+
+	@param path_secs	list of SectionRef or EqProp objects containing stored properties
+						for each Section on the path
 
 	@pre				path lengths must be assigned along searched path
 	"""
 	# attribute names corresponding to path property (see reduction_tools.sec_path_props())
-	if path_prop == 'path_L':
+	if interp_prop == 'path_L':
 		sec_prop0 = 'pathL0'
 		sec_prop1 = 'pathL1'
 		seg_prop = 'pathL_seg'
-	elif path_prop == 'path_ri':
+	elif interp_prop == 'path_ri':
 		sec_prop0 = 'pathri0'
 		sec_prop1 = 'pathri1'
 		seg_prop = 'pathri_seg'
-	elif path_prop == 'path_L_elec':
+	elif interp_prop == 'path_L_elec':
 		sec_prop0 = 'pathLelec0'
 		sec_prop1 = 'pathLelec1'
 		seg_prop = 'pathL_elec'
 	else:
-		raise ValueError("Unknown path property '{}'".format(path_prop))
+		raise ValueError("Unknown path property '{}'".format(interp_prop))
 
-	# 1. Find sections where path_L falls between path length to start and end 
-	filter_L = lambda secref: (getattr(secref, sec_prop0) <= path_L <= getattr(secref, sec_prop1))
-	filter_path = lambda secref: ((secref.tree_index==tree_index) and (secref.table_index in path_indices))
-
-	path_secs = [secref for secref in orsecrefs if filter_path(secref)]
+	# 1. Find sections where interp_L falls between path length to start and end
+	# filter_path = lambda secref: ((secref.tree_index==tree_index) and (secref.table_index in path_indices))
+	# path_secs = [secref for secref in orsecrefs if filter_path(secref)]
+	filter_L = lambda secref: (getattr(secref, sec_prop0) <= interp_L <= getattr(secref, sec_prop1))
 	map_secs = [secref for secref in path_secs if filter_L(secref)]
 
 	# If none found: extrapolate
 	if len(map_secs) == 0:
-		# find section where L(1.0) is closest to path_L
-		L_closest = min([abs(path_L-getattr(secref, sec_prop1)) for secref in path_secs])
-		# all sections where path_L-L(1.0) is within 5% of this
-		map_secs = [secref for secref in path_secs if (0.95*L_closest <= abs(path_L-getattr(secref, sec_prop1)) <= 1.05*L_closest)]
+		# find section where L(1.0) is closest to interp_L
+		L_closest = min([abs(interp_L-getattr(secref, sec_prop1)) for secref in path_secs])
+		# all sections where interp_L-L(1.0) is within 5% of this
+		map_secs = [secref for secref in path_secs if (0.95*L_closest <= abs(interp_L-getattr(secref, sec_prop1)) <= 1.05*L_closest)]
 		logger.debug("Path length did not map onto any original section: " 
 					 "extrapolating from {} sections".format(len(map_secs)))
 
-	# 2. In mapped sections: find segments that bound path_L
+	# 2. In mapped sections: find segments that bound interp_L
 	bound_segs = [] # bounding segments (lower, upper)
 	bound_L = []    # path lengths to (lower, upper)
 	for secref in map_secs:
-		# in each section find the two segments with path_L(seg_a) <= path_L <= path_L(seg_b)
-		segs_internal = [seg for seg in secref.sec]
-		vals_internal = getattr(secref, seg_prop)
+		# in each section find the two segments with L(seg_a) <= interp_L <= L(seg_b)
+		if isinstance(path_secs[0], ExtSecRef):
+			segs_internal = [seg for seg in secref.sec]
+			vals_internal = getattr(secref, seg_prop)
+		else:
+			segs_internal = secref.seg # array of dict() representing each segment
+			vals_internal = [sprops[seg_prop] for sprops in secref.seg]
 
 		if len(segs_internal) == 1: # single segment: just use midpoint
 			midseg = segs_internal[0]
@@ -161,12 +167,12 @@ def find_adj_path_segs(path_prop, path_L, orsecrefs, tree_index=None, path_indic
 			bound_L.append((midL, midL))
 
 		else:
-			# Get last/furthest segment with L <= path_L
-			lower = [(i, pval) for i, pval in enumerate(vals_internal) if path_L >= pval]
+			# Get last/furthest segment with L <= interp_L
+			lower = [(i, pval) for i, pval in enumerate(vals_internal) if interp_L >= pval]
 			i_a, L_a = next(reversed(lower), (0, vals_internal[0])) # default is first seg
 
-			# Get first/closest segment with L >= path_L
-			higher = ((i, pval) for i, pval in enumerate(vals_internal) if path_L <= pval)
+			# Get first/closest segment with L >= interp_L
+			higher = ((i, pval) for i, pval in enumerate(vals_internal) if interp_L <= pval)
 			i_b, L_b = next(higher, (-1, vals_internal[-1])) # default is last seg
 
 			# Append bounds
@@ -228,7 +234,7 @@ def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
 	@type	gname		str
 	@param	gname		full conductance name (including mechanism suffix)
 
-	@type	bound_segs	list(tuple(Segment,Segment))
+	@type	bound_segs	list(tuple(Segment,Segment)) OR list(tuple(dict,dict)
 	@param	bound_segs	pairs of boundary segments
 
 	@type	bound_L		list(tuple(float, float))
@@ -237,6 +243,13 @@ def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
 	@return		gbar_interp: the average interpolated gbar over all boundary
 				pairs
 	"""
+	# Allow to give a dict instead of segment
+	if isinstance(bound_segs[0][0], dict):
+		getfunc = dict.__getitem__
+	else:
+		getfunc = getattr
+
+	# Interpolate
 	gbar_interp = 0.0
 	for i, segs in enumerate(bound_segs):
 		seg_a, seg_b = segs
@@ -245,10 +258,10 @@ def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
 
 		# Linear interpolation of gbar in seg_a and seg_b according to electrotonic length
 		if L_elec <= L_a:
-			gbar_interp += getattr(seg_a, gname)
+			gbar_interp += getfunc(seg_a, gname)
 			continue
 		if L_elec >= L_b:
-			gbar_interp += getattr(seg_b, gname)
+			gbar_interp += getfunc(seg_b, gname)
 			continue
 		if L_b == L_a:
 			alpha == 0.5
@@ -256,8 +269,8 @@ def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
 			alpha = (L_elec - L_a)/(L_b - L_a)
 		if alpha > 1.0:
 			alpha = 1.0 # if too close to eachother
-		gbar_a = getattr(seg_a, gname)
-		gbar_b = getattr(seg_b, gname)
+		gbar_a = getfunc(seg_a, gname)
+		gbar_b = getfunc(seg_b, gname)
 		gbar_interp += gbar_a + alpha * (gbar_b - gbar_a)
 
 	gbar_interp /= len(bound_segs) # take average
@@ -272,15 +285,20 @@ def interp_gbar_pick_neighbor(L_elec, gname, bound_segs, bound_L, method='neares
 	"""
 	seg_a, seg_b = bound_segs
 	L_a, L_b = bound_L
+	if isinstance(seg_a, dict):
+		getfunc = type(seg_a).__getitem__
+	else:
+		getfunc = getattr
+
 	if method == 'left':
-		return getattr(seg_a, gname)
+		return getfunc(seg_a, gname)
 	elif method == 'right':
-		return getattr(seg_b, gname)
+		return getfunc(seg_b, gname)
 	elif method == 'nearest':
 		if abs(L_elec-L_a) <= abs(L_elec-L_b):
-			return getattr(seg_a, gname)
+			return getfunc(seg_a, gname)
 		else:
-			return getattr(seg_b, gname)
+			return getfunc(seg_b, gname)
 	else:
 		raise Exception("Unknown interpolation method '{}'".format(method))
 

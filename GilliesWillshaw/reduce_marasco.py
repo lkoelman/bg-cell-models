@@ -51,9 +51,9 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Own modules
 import reduction_tools as redtools
-from reduction_tools import ExtSecRef, getsecref, lambda_AC, prev_seg, seg_index, same_seg # for convenience
+from reduction_tools import ExtSecRef, EqProps, getsecref, lambda_AC, prev_seg, seg_index, same_seg # for convenience
 import cluster as clutools
-from cluster import Cluster, EqProps
+from cluster import Cluster
 import interpolation as interp
 import reduce_bush_sejnowski as redbush
 import reduction_analysis as analysis
@@ -851,8 +851,8 @@ def equivalent_sections(clusters, allsecrefs, gradients):
 
 	return eq_secs, eq_secrefs # return both or secs will be deleted
 
-def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L', 
-								interp_method='linear_neighbors', interp_path=None, 
+def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='path_L', 
+								interp_method='linear_neighbors', 
 								gbar_scaling='area'):
 	"""
 	Substitute equivalent Section for each cluster into original cell.
@@ -951,14 +951,6 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 		active_glist = list(glist)
 		active_glist.remove(gleak_name) # get list of active conductances
 
-		# Set path up the tree for interpolating along
-		if interp_path is None:
-			interp_path = (1, (1,3,8)) # dendritic path (default: right tree (1,2,4,6,8))
-		if cluster.label.startswith('soma'):
-			tree_id, path_ids = -1, (0,)
-		else:
-			tree_id, path_ids = interp_path
-
 		# Calculate path lengths in equivalent section
 		redtools.sec_path_props(eqref, f_lambda, gleak_name)
 		if interp_prop == 'path_L':
@@ -975,8 +967,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 			
 			# Get adjacent segments along path
 			path_L = getattr(eqref, seg_prop)[j_seg]
-			bound_segs, bound_L = interp.find_adj_path_segs(interp_prop, path_L, orsecrefs, 
-														tree_id, path_ids)
+			bound_segs, bound_L = interp.find_adj_path_segs(interp_prop, path_L, interp_path)
 			# bounds_info = "\n".join(("\t- bounds {0} - {1}".format(a, b) for a,b in bound_segs))
 			# logger.debug("Found boundary segments at same path length x={0:.3f}:\n{1}".format(path_L, bounds_info))
 
@@ -1109,6 +1100,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
 	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree
 	allsecrefs = [somaref] + dendLrefs + dendRrefs
+	orsecrefs = allsecrefs # SectionRef to original sections
 
 	# Get references to root sections of the 3 identical trees
 	dendR_root = getsecref(h.SThcell[0].dend1[0], dendRrefs)
@@ -1124,8 +1116,21 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 			secref.tree_index = j # left tree is 0, right is 1
 			secref.table_index = i+1 # same as in /sth-data/treeX-nom.dat
 
-	# Assign topology ordinals before trunk sections
+	# Calculate section path properties for entire tree
+	for secref in allsecrefs:
+		# Assign path length, path resistance, electrotonic path length to each segment
+		redtools.sec_path_props(secref, f_lambda, gleak_name)
 
+	# Store segment properties along interpolation path
+	interp_tree_id = 1
+	interp_table_ids = (1,3,8)
+	path_secs = [secref for secref in orsecrefs if (secref.tree_index == interp_tree_id and 
+													secref.table_index in interp_table_ids)]
+	sec_assigned = ['pathL0', 'pathL1', 'pathri0', 'pathri1', 'pathLelec0', 'pathLelec1']
+	seg_assigned = ['pathL_seg', 'pathri_seg', 'pathL_elec']
+	path_props = [redtools.get_sec_props_obj(ref, mechs_chans, seg_assigned, sec_assigned) for ref in path_secs]
+
+	# Start iterative collapsing procedure
 	for i_pass in xrange(n_passes):
 		# Check that we haven't collapsed too many levels
 		if not (dendL_upper_root.exists() and dendL_lower_root.exists()):
@@ -1166,15 +1171,15 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 		# 2. Create equivalent sections
 
 		logger.info("\n###############################################################"
-					"\nCreating equivalent sections...\n")
+					"\nCre`ating equivalent sections...\n")
 		# Mark Sections
 		for secref in allsecrefs:
 			secref.is_substituted = False
 			secref.is_deleted = False
 
-		eq_secs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, 
+		eq_secs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, path_props,
 							interp_prop='path_L', interp_method='linear_neighbors', 
-							interp_path=(1, (1,3,8)), gbar_scaling='area')
+							gbar_scaling='area')
 
 		allsecrefs = newsecrefs # prepare for next iteration
 

@@ -249,10 +249,11 @@ def equivalent_sections(clusters, orsecrefs, f_lambda,
 					tree_id, path_ids = -1, (0,)
 				else:
 					tree_id, path_ids = interp_path
+				path_secs = [secref for secref in orsecrefs if (secref.tree_index == interp_tree_id and 
+													secref.table_index in interp_table_ids)]
 
 				# Then get 'neighbor segments'
-				bound_segs, bound_L = find_adj_path_segs('path_L_elec', L_elec, 
-										orsecrefs, tree_id, path_ids)
+				bound_segs, bound_L = find_adj_path_segs('path_L_elec', L_elec, path_secs)
 
 				# Set conductances by interpolating neighbors
 				for gname in active_glist:

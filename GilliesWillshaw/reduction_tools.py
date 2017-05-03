@@ -522,6 +522,16 @@ class ExtSecRef(neuron.hclass(h.SectionRef)):
 					desc += '\n\t|- {0}: {1}'.format(ppty, getattr(self, ppty))
 		return desc
 
+class EqProps(object):
+	"""
+	Equivalent properties of merged sections
+
+	NOTE: this is the 'Bunch' recipe from the python cookbook
+		  al alternative would be `myobj = type('Bunch', (object,), {})()`
+	"""
+	def __init__(self, **kwds):
+		self.__dict__.update(kwds)
+
 def getsecref(sec, refs):
 	"""
 	Look for SectionRef pointing to Section sec in enumerable of SectionRef
@@ -950,6 +960,17 @@ def split_section(src_sec, mechs_pars, delete_src=False):
 		h.delete_section()
 	h.pop_section()
 
+def join_unbranched_sections(nodesec, max_joins=1e9):
+	"""
+	Join unbranched sections into a single section.
+
+	This operation preserves the number of segments and distribution of 
+	diameter and electrical properties.
+
+	@pre	the method assumes Ra is uniform in all the sections
+	"""
+	pass
+
 def get_sec_properties(src_sec, mechs_pars):
 	"""
 	Get RANGE properties for each segment in Section.
@@ -968,6 +989,31 @@ def get_sec_properties(src_sec, mechs_pars):
 				pseg[prop] = getattr(seg, prop)
 		props.append(pseg)
 	return props
+
+
+def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
+	"""
+	Get both RANGE properties and assigned properties for each segment.
+	"""
+
+	# Store section properties (non-Range)
+	sec_props = EqProps(L=secref.sec.L, Ra=secref.sec.Ra, nseg=secref.sec.nseg)
+	for prop in sec_assigned:
+		setattr(sec_props, prop, getattr(secref, prop))
+
+	# Initialize segment RANGE properties
+	sec_props.seg = [dict() for i in xrange(secref.sec.nseg)]
+	bprops = [par+'_'+mech for mech,pars in mechs_pars.iteritems() for par in pars] # NEURON properties
+	
+	# Store segment RANGE properties
+	for j_seg, seg in enumerate(secref.sec):
+		# Store built-in properties
+		for prop in bprops:
+			sec_props.seg[j_seg][prop] = getattr(seg, prop)
+		# Store self-assigned properties (stored on SectionRef)
+		for prop in seg_assigned:
+			sec_props.seg[j_seg][prop] = getattr(secref, prop)[j_seg]
+	return sec_props
 
 
 def copy_sec_properties(src_sec, tar_sec, mechs_pars):
