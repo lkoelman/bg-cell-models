@@ -34,10 +34,8 @@
 5. Reduce GPe model
 	- see ref
 
-
-
-
-## TODO NEXT ##
+--------------------------------------------------------------------------------
+# TODO NEXT #
 
 - Test model reduction code
 	- [x] Check scaling factors actually used VS paper in RedPurk.hoc
@@ -68,6 +66,7 @@
 - See if other currents need to be adjusted to accomodate new current INa_rsg
 	- e.g. reduce Ih/HCN or change its parameters
 
+--------------------------------------------------------------------------------
 # References/sources #
 
 - Resurgent sodium current - model implementation & experiments
@@ -78,13 +77,14 @@
 	- Marasco, A., Limongiello, A., & Migliore, M. (2013). Using Strahler’s analysis to reduce up to 200-fold the run time of realistic neuron models. Scientific Reports, 3. https://doi.org/10.1038/srep02934
 	- Encyclopedia of Computational Neuroscience p. 2598 (pdf 2650) - Reduced Morphology Models
 
-
+--------------------------------------------------------------------------------
 # Notes #
 
 - comparison of Otsuka/RubinTerman/GilliesWillshaw model: 
 	- see Encyclopedia of Computational Neuroscience, p. 2909 (pdf p. 2961)
 
 ## Na channel inactivation ##
+
 - All components of Na current are susceptible to inactivation
 - Option 1
 	- use Raman & Bean model to implement transient + resurgent

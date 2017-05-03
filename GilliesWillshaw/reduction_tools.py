@@ -14,7 +14,8 @@ import math
 
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
-logger = logging.getLogger(__name__) # create logger for this module
+logname = "reduction" # __name__
+logger = logging.getLogger(logname) # create logger for this module
 
 import neuron
 from neuron import h
@@ -820,8 +821,8 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
 
 	# Sever tree at distal cuts
 	eqsec_child_segs = []
-	for bound_seg in bound_segs:
-		cut_segs = next_segs(bound_seg)
+	for bound_seg in bound_segs: # last absorbed/collapsed segment
+		cut_segs = next_segs(bound_seg) # first segment after cut (not collapsed)
 		for i in xrange(len(cut_segs)):
 			cut_seg = cut_segs[i] # cut_seg may be destroyed by resizing so don't make loop variable
 			cut_sec = cut_seg.sec
@@ -835,7 +836,7 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
 					raise Exception('Section has already been cut before')
 
 				# Calculate new properties
-				new_nseg = cut_sec.nseg-(cut_seg_index+1)
+				new_nseg = cut_sec.nseg-(cut_seg_index)
 				post_cut_L = cut_sec.L/cut_sec.nseg * new_nseg
 				cut_props = get_sec_properties(cut_sec, mechs_pars)
 				

@@ -5,7 +5,8 @@ Functions for clustering sections in dendritic trees.
 import re
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
-logger = logging.getLogger(__name__) # create logger for this module
+logname = "reduction" # __name__
+logger = logging.getLogger(logname) # create logger for this module
 # Log to file
 # hdlr = logging.FileHandler('cluster.log')
 # fmtr = logging.Formatter('%(name)s:%(levelname)s:%(message)s')

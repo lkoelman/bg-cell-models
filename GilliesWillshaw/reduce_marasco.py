@@ -8,15 +8,26 @@ described in Marasco & Migliore (2012)
 """
 
 # Python modules
+import sys
 import re
 import math
 PI = math.pi
 
+# logging of DEBUG/INFO/WARNING messages
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
-logger = logging.getLogger(__name__) # create logger for this module
+logname = "reduction" # __name__
+logger = logging.getLogger(logname) # create logger for this module
+fmtr = logging.Formatter('%(levelname)s:%(message)s')
+# Log to file
+# fh = logging.FileHandler('reduce_marasco.log')
+# fh.setFormatter(fmtr)
+# logger.addHandler(fh)
+# Log to stream
+# ch = logging.StreamHandler(sys.stdout)
+# ch.setFormatter(fmtr)
+# logger.addHandler(ch)
 
-import sys
 import os.path
 scriptdir, scriptfile = os.path.split(__file__)
 modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
@@ -404,7 +415,7 @@ def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 	elif Y_criterion=='highest_level':
 		max_level = max(ref.level for ref in allsecrefs)
 		target_Y_secs = [ref for ref in allsecrefs if (ref.level==max_level-1) and (
-														any(ref.sec.children()))]
+						 i_pass+1 <= ref.max_passes) and (len(ref.sec.children()) >= 2)]
 
 	else:
 		raise Exception("Unknow Y-section selection criterion '{}'".format(Y_criterion))
@@ -966,8 +977,8 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 			path_L = getattr(eqref, seg_prop)[j_seg]
 			bound_segs, bound_L = interp.find_adj_path_segs(interp_prop, path_L, orsecrefs, 
 														tree_id, path_ids)
-			bounds_info = "\n".join(("\t- bounds {0} - {1}".format(a, b) for a,b in bound_segs))
-			logger.debug("Found boundary segments at same path length x={0:.3f}:\n{1}".format(path_L, bounds_info))
+			# bounds_info = "\n".join(("\t- bounds {0} - {1}".format(a, b) for a,b in bound_segs))
+			# logger.debug("Found boundary segments at same path length x={0:.3f}:\n{1}".format(path_L, bounds_info))
 
 			# Set conductances by interpolating neighbors
 			for gname in active_glist:
@@ -1010,7 +1021,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_prop='path_L',
 
 		# Debugging info:
 		logger.debug("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
-						"\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n\n", 
+						"\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", 
 						clusters[i_clu].label, eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
 	
 	# Substitute equivalent section into tree
@@ -1042,6 +1053,21 @@ def label_order(label):
 		return 3
 	else:
 		return 4
+
+def assign_attributes(noderef, allsecrefs, attr_dict):
+	"""
+	Assign attributes to all SectionRefs in subtree of given section
+
+	@param attr_dict	dictionary of key-value pairs (attribute_name, attribute_value)
+	"""
+	# Assign current node
+	for aname, aval in attr_dict.iteritems():
+		setattr(noderef, aname, aval)
+
+	childsecs = noderef.sec.children()
+	childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
+	for childref in childrefs:
+		assign_attributes(childref, allsecrefs, attr_dict)
 
 def assign_sth_indices(noderef, allsecrefs, parref=None):
 	"""
@@ -1112,8 +1138,9 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 		############################################################################
 		# 0. Pre-clustering: calculate properties
 
-		# Assign tree index to new sections
+		# Assign attributes used in calculation
 		assign_sth_indices(somaref, allsecrefs)
+		assign_attributes(somaref, allsecrefs, {'max_passes': 100})
 
 		# Assign Strahler numbers
 		logger.info("\n###############################################################"
@@ -1414,5 +1441,5 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 
 if __name__ == '__main__':
 	# clusters, eq_secs = reduce_gillies_partial(delete_old_cells=True)
-	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=2, zips_per_pass=100)
+	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=3, zips_per_pass=100)
 	from neuron import gui # check in ModelView: conductance distribution, structure
