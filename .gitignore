@@ -1,6 +1,12 @@
 # Created by https://www.gitignore.io
 # see http://git-scm.com/docs/gitignore
 
+# Lucas Koelman
+*.log
+*.csv
+*.pptx
+*.ppt
+
 # Mac OS
 *.DS_Store
 

@@ -1171,7 +1171,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 		# 2. Create equivalent sections
 
 		logger.info("\n###############################################################"
-					"\nCre`ating equivalent sections...\n")
+					"\nCreating equivalent sections...\n")
 		# Mark Sections
 		for secref in allsecrefs:
 			secref.is_substituted = False

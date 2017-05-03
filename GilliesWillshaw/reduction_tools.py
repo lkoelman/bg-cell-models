@@ -1015,6 +1015,28 @@ def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
 			sec_props.seg[j_seg][prop] = getattr(secref, prop)[j_seg]
 	return sec_props
 
+def store_seg_props(secref, mechs_pars, attr_name='or_seg_props', assigned_props=None):
+	"""
+	Store each segment's properties (RANGE variables) in a dictionary
+	on the given SectionRef.
+
+	@effect		SectionRef will have an attribute 'attr_name' that is
+				a list with a dict for each segment containing all its properties.
+	"""
+
+	# Initialize segment RANGE properties
+	secref.__setattr__(attr_name, [dict() for i in xrange(secref.sec.nseg)])
+	nrn_props = [par+'_'+mech for mech,pars in mechs_pars.iteritems() for par in pars] # NEURON properties
+	ref_props = [] if assigned_props is None else assigned_props
+
+	# Store segment RANGE properties
+	for j_seg, seg in enumerate(secref.sec):
+		# Store built-in properties
+		for prop in nrn_props:
+			secref.__getattribute__(attr_name)[j_seg][prop] = getattr(seg, prop)
+		# Store self-assigned properties (stored on SectionRef)
+		for prop in ref_props:
+			secref.__getattribute__(attr_name)[j_seg][prop] = getattr(secref, prop)[j_seg]
 
 def copy_sec_properties(src_sec, tar_sec, mechs_pars):
 	"""
