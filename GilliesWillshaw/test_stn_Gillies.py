@@ -41,7 +41,7 @@ from interpolation import *
 import reduction_analysis
 import reduce_marasco as marasco
 import reduce_bush_sejnowski as bush
-from optimization import STNCellController, Protocol
+# from optimization import STNCellController, Protocol
 
 # Global variables
 soma = None
@@ -56,16 +56,6 @@ gillies_gdict = {
 gillies_mechs = list(gillies_gdict.keys()) # all mechanisms
 gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
 
-
-def get_gillies_secs():
-	""" Get soma and dendritic trees when full model has been created. 
-	@return		tuple soma, (dend0, dend1)
-	"""
-	secs = list(h.allsec())
-	soma = secs[0]
-	dend0 = secs[1:24]
-	dend1 = secs[24:-1]
-	return soma, (dend0, dend1)
 
 def stn_cell_gillies(resurgent=False):
 	""" Initialize full Gillies & Willshaw cell model with two dendritic trees
@@ -622,7 +612,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	# Set simulation parameters
 	dur = 2000
 	h.dt = 0.025
-	h.celsius = 37 # different temp from paper (fig 3B: 25degC, fig. 3C: 35degC)
+	h.celsius = 35 # different temp from paper (fig 3B: 25degC, fig. 3C: 35degC)
 	h.v_init = -60 # paper simulations use default v_init
 	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
@@ -648,7 +638,11 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	# Simulate
 	h.tstop = dur
 	h.init() # calls finitialize() and fcurrent()
+	t0 = h.startsw()
 	h.run()
+	t1 = h.startsw()
+	h.stopsw() # or t1=h.startsw(); runtime = t1-t0
+	print("Simulation ran for {:.6f} seconds".format(t1-t0))
 
 	# Plot membrane voltages
 	recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
@@ -859,7 +853,11 @@ def test_reboundburst(soma, dends_locs, stims):
 	# Simulate
 	h.tstop = dur
 	h.init() # calls finitialize() and fcurrent()
+	t0 = h.startsw()
 	h.run()
+	t1 = h.startsw()
+	h.stopsw() # or t1=h.startsw(); runtime = t1-t0
+	print("Simulation ran for {:.6f} seconds".format(t1-t0))
 
 	# Plot membrane voltages
 	recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
@@ -1023,7 +1021,7 @@ def compare_conductance_dist(gnames):
 def run_experimental_protocol():
 	""" Run one of the experiments using full or reduced STN model """
 	# Make cell
-	reduction_method = 1
+	reduction_method = 8
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Manual cell adjustments
@@ -1035,7 +1033,8 @@ def run_experimental_protocol():
 				seg.cm = 3.0 * seg.cm
 				seg.gna_NaL = 0.6 * seg.gna_NaL
 
-	elif reduction_method == 3: # manual adjustments to Bush & Sejnowski method
+	# Adjustments to Bush & Sejnowski method
+	if reduction_method == 3:
 		Rm_factor = math.sqrt(1.)
 		Cm_factor = math.sqrt(1.)
 		rc_factor = Rm_factor*Cm_factor
@@ -1048,6 +1047,19 @@ def run_experimental_protocol():
 					seg.gna_NaL = 2.0 * seg.gna_NaL
 				else:
 					seg.gna_NaL = 1.25 * seg.gna_NaL
+
+	# Adjustments to incremental reduction method
+	if reduction_method == 8:
+		n_adjusted = 0
+		for sec in h.allsec():
+			if sec.name().endswith('soma'):
+				print("Skipping soma")
+				continue
+			for seg in sec:
+				# seg.gna_NaL = 1.075 * seg.gna_NaL
+				seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
+				n_adjusted += 1
+		print("Adjusted parameters of {} segments".format(n_adjusted))
 
 
 	# Attach duplicate of one tree

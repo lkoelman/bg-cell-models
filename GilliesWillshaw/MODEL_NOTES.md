@@ -3,6 +3,25 @@
 # Diary Entries relating to Gillies & Willshaw model
 
 --------------------------------------------------------------------------------
+# Diary 03/05/2017 #
+
+- Test incremental reduction methods
+
+	- `FINDING`(`npass=1`, `path_L/path_ri, left_neighbor`): 
+		- spontaneous firing faster, but bursts good
+
+	- `FINDING` (`interp_prop=path_L; method=linear_neighbors; npass=1`)
+		- burst almost completely identical (Vm both in soma and distally)
+		- spontaneous firing only a little faster (`T=84.7`)
+	
+	- `FINDING` (`npass=7`, trunk sections have no further branching)
+		- _plateau protocol_: an accurate burst is maintained until max level of collapsing
+		- _rebound protocol_: accurate burst and calcium currents in dendrite
+		- _spontaneous protocol_: 
+			- no spontaneous firing, likely because baseline INaP during ISI is much lower than in full/spontaneously firing models
+			- when I change all `eg.gna_NaL = 8e-6 * 1.3` (i.e. original uniform value * 1.3) from the automatic convex distribution, it works
+
+--------------------------------------------------------------------------------
 # Diary 12/04/2017 #
 
 ## Observation: identify functional regions based on gbar distribution
@@ -178,6 +197,7 @@
 
 
 ## Experiment: reproduce firing modes with reduced STN model ##
+
 - Experiment: reproduce _spontaneous_ activity
 	- params reduced model: gpas @ 75%; cm @ 300% gna_NaL @ 60%
 	- => AHP: repolarized to lower level (-62mV vs. -70 mV)
