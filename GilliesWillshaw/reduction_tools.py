@@ -994,6 +994,10 @@ def get_sec_properties(src_sec, mechs_pars):
 def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
 	"""
 	Get both RANGE properties and assigned properties for each segment.
+
+	The properties are stored on an 'bunch'/struct-like object named EqProps.
+
+	@return		object EqProps with the desired properties stored as attributes
 	"""
 
 	# Store section properties (non-Range)
