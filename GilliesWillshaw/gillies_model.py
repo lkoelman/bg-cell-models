@@ -30,6 +30,7 @@ gillies_gdict = {
 }
 gillies_mechs = list(gillies_gdict.keys()) # all mechanisms
 gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
+gleak_name = 'gpas_STh'
 
 
 def stn_cell_gillies():
