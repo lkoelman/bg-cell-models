@@ -1021,7 +1021,7 @@ def compare_conductance_dist(gnames):
 def run_experimental_protocol():
 	""" Run one of the experiments using full or reduced STN model """
 	# Make cell
-	reduction_method = 8
+	reduction_method = 1
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Manual cell adjustments
@@ -1069,9 +1069,9 @@ def run_experimental_protocol():
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
 
 	# Run experimental protocol
-	# recData = test_spontaneous(soma, dends_locs, stims)
+	recData = test_spontaneous(soma, dends_locs, stims)
 	# recData = test_reboundburst(soma, dends_locs, stims)
-	recData = test_plateau(soma, dends_locs, stims)
+	# recData = test_plateau(soma, dends_locs, stims)
 	# recData = test_slowbursting()
 
 	# If run as function, uncomment to make variables available
