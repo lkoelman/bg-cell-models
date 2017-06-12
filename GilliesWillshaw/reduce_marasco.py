@@ -366,9 +366,11 @@ def has_cluster_parentseg(aseg, cluster, clu_secs):
 
 def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 	"""
-	Merge segments incrementally.
+	Find forks (Y-sections) that can be 'zipped' and calculate properties
+	of equivalent zipped section.
 
-	@param npass		number of passes
+	@return			list of Cluster objects with properties of equivalent
+					Section for each 'zipped' fork.
 	"""
 	# Calculate section statistics
 	for secref in allsecrefs:
@@ -432,16 +434,29 @@ def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 		par_sec = par_ref.sec
 		child_secs = par_sec.children()
 
-		# 'Zip' segments up to length of closest branch point
+		# Function to determine which segment can be 'zipped'
 		min_child_L = min(sec.L for sec in child_secs) # Section is unbranched cable
 		eligfunc = lambda seg, jseg, ref: (ref.parent.same(par_sec)) and (seg.x*seg.sec.L <= min_child_L)
+		
+		# Name for equivalent zipped section
 		# name_sanitized = par_sec.name().replace('[','').replace(']','').replace('.','_')
 		name_sanitized = re.sub(r"[\[\]\.]", "", par_sec.name())
 		alphabet_uppercase = [chr(i) for i in xrange(65,90+1)] # A-Z are ASCII 65-90
 		zip_label = "zip{0}_{1}".format(alphabet_uppercase[i_pass], name_sanitized)
-		def modfunc(seg, jseg, ref): ref.zip_labels[jseg] = zip_label # lambda can't assign
-		far_bound_segs = [] # furthest/last segments that are absorbed
-		eq_seq, eq_br = collapse_seg_subtree(par_sec(1.0), allsecrefs, eligfunc, modfunc, far_bound_segs)
+
+		# Function for processing zipped SectionRefs
+		zipped_sec_ids = set()
+		def process_zipped_seg(seg, jseg, ref):
+			ref.zip_labels[jseg] = zip_label
+			if hasattr(ref, 'table_index') and ref.table_index >= 1:
+				zipped_sec_ids.add(ref.table_index)
+			else:
+				zipped_sec_ids.update(ref.zipped_sec_ids)
+		
+		# Perform 'zip' operation
+		far_bound_segs = [] # last (furthest) segments that are zipped
+		eq_seq, eq_br = collapse_seg_subtree(par_sec(1.0), allsecrefs, eligfunc, 
+							process_zipped_seg, far_bound_segs)
 
 		logger.debug("Target Y-section for zipping: {0} (tree_id:{1} , table_id:{2})".format(
 						par_sec.name(), par_ref.tree_index, par_ref.table_index))
@@ -450,14 +465,13 @@ def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 
 		# Make Cluster object that represents collapsed segments
 		cluster = Cluster(zip_label)
-		# Save equivalent properties
 		cluster.eqL = eq_br.L_eq
 		cluster.eqdiam = eq_br.diam_eq
 		cluster.eq_area_sum = eq_br.L_eq * PI * eq_br.diam_eq
 		cluster.eqri = eq_br.Ri_eq
-		# Save boundaries (for substitution)
+		cluster.zipped_sec_ids = zipped_sec_ids
 		cluster.parent_seg = par_sec(1.0)
-		cluster.bound_segs = far_bound_segs
+		cluster.bound_segs = far_bound_segs # Save boundaries (for substitution)
 
 		# Calculate cluster statistics #########################################
 		# Gather all cluster sections & segments
@@ -894,6 +908,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='pat
 		if created != 1:
 			raise Exception("Could not create section with name '{}'".format(cluster.label))
 		eqsec = getattr(h, cluster.label)
+		eqref = ExtSecRef(sec=eqsec)
 
 		# Set geometry 
 		eqsec.L = cluster.eqL
@@ -903,9 +918,12 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='pat
 		# Passive electrical properties (except Rm/gleak)
 		eqsec.Ra = cluster.eqRa
 
+		# Save metadata
+		eqref.zipped_sec_ids = cluster.zipped_sec_ids
+
 		# Append to list of equivalent sections
 		eq_secs.append(eqsec)
-		eq_refs.append(ExtSecRef(sec=eqsec))
+		eq_refs.append(eqref)
 
 		# Connect to tree (need to trace path from soma to section)
 		eqsec.connect(cluster.parent_seg, 0.0) # see help(sec.connect)
