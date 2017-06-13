@@ -13,6 +13,8 @@ from neuron import h
 import matplotlib.pyplot as plt
 import numpy as np
 
+from nrnutil import ExtSecRef
+
 # Load NEURON mechanisms
 import os.path
 scriptdir, scriptfile = os.path.split(__file__)
@@ -44,8 +46,36 @@ def stn_cell_gillies():
 
 	return soma, dends, stims
 
+def get_stn_refs():
+	"""
+	Make SectionRef for each section and assign identifiers
+	"""
+	somaref = ExtSecRef(sec=h.SThcell[0].soma)
+	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
+	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree
+	allsecrefs = [somaref] + dendLrefs + dendRrefs
+	
+	for noderef in allsecrefs:
+		# Assign indices in /sth-data/treeX-nom.dat
+		if noderef in dendLrefs:
+			noderef.tree_index = 0
+			noderef.table_index = dendLrefs.index(noderef) + 1
+		elif noderef in dendRrefs:
+			noderef.tree_index = 1
+			noderef.table_index = dendRrefs.index(noderef) + 1
+		elif noderef is somaref:
+			noderef.tree_index = -1
+			noderef.table_index = 0
+
+		# Assign a unique GID based on table and tree index
+		noderef.gid = min(0,noderef.tree_index)*100 + noderef.table_index
+
+	return somaref, dendLrefs, dendRrefs
+
 def runsim_paper(plotting='NEURON'):
-	""" Run original simulation provided with model files """
+	"""
+	Run original simulation provided with model files
+	"""
 
 	if plotting=='NEURON':
 		h('graphics = 1') # turn on plotting using NEURON

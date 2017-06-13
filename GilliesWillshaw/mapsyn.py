@@ -41,8 +41,8 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 	"""
 	if syn_mod_pars is None:
 		syn_mod_pars = {
-			'ExpSyn': ['tau', 'e'],
-			'Exp2Syn': ['tau1', 'tau2', 'e'],
+			'ExpSyn': ['tau', 'g', 'e'],
+			'Exp2Syn': ['tau1', 'tau2', 'g', 'e'],
 			'AlphaSynapse': ['onset', 'tau', 'gmax', 'e'],
 		}
 
@@ -109,14 +109,14 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 		syn_info.min_path_ri = min(syn_secref.pathri_seg) # min path resistance in Section
 
 		# Get transfer impedances
-		syn_info.Z_transfer = imp.transfer(syn_loc, sec=syn_sec) # query transfer impedanc,e i.e.  |v(loc)/i(x)| or |v(x)/i(loc)|
-		syn_info.Z_input = imp.input(syn_loc, sec=syn_sec) # query input impedance, i.e. v(x)/i(x)
-		syn_info.V_ratio = imp.ratio(syn_loc, sec=syn_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
+		syn_info.Zc = imp.transfer(syn_loc, sec=syn_sec) # query transfer impedanc,e i.e.  |v(loc)/i(x)| or |v(x)/i(loc)|
+		syn_info.Zin = imp.input(syn_loc, sec=syn_sec) # query input impedance, i.e. v(x)/i(x)
+		syn_info.k_syn_soma = imp.ratio(syn_loc, sec=syn_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
 
 		syn_data.append(syn_info)
 	return syn_data
 
-def subtree_meets_crit(noderef, allsecrefs, crit_func):
+def subtree_has_node(crit_func, noderef, allsecrefs):
 	"""
 	Check if the given function applies to (returns True) any node
 	in subtree of given node
@@ -129,20 +129,21 @@ def subtree_meets_crit(noderef, allsecrefs, crit_func):
 		childsecs = noderef.sec.children()
 		childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
 		for childref in childrefs:
-			if subtree_meets_crit(childref, allsecrefs, crit_func)
+			if subtree_has_node(crit_func, childref, allsecrefs):
 				return True
 		return False
 
-def map_synapse(noderef, allsecrefs, syn_info, imp):
+def map_synapse(noderef, allsecrefs, syn_info, imp, passed_synsec=False):
 	"""
 	Map synapse to a section in subtree of noderef
 	"""
-	cur_sec = cur_node.sec
-	Zc = syn_info.Z_transfer
+	cur_sec = noderef.sec
+	Zc = syn_info.Zc
 	Zc_0 = imp.transfer(0.0, sec=cur_sec)
 	Zc_1 = imp.transfer(1.0, sec=cur_sec)
 
-	if (Zc_0 <= Zc <= Zc_1) or (Zc_1 <= Zc <= Zc_0):
+	# Assume monotonically decreasing Zc away from root section
+	if (Zc >= Zc_0 and Zc >= Zc_1) or (Zc_0 <= Zc <= Zc_1) or (Zc_1 <= Zc <= Zc_0):
 		# Calculate Zc at midpoint of each internal segment
 		segs_loc_Zc = [(seg.x, imp.transfer(seg.x, sec=cur_sec)) for seg in cur_sec]
 		Zc_diffs = [abs(Zc-pts[1]) for pts in segs_loc_Zc]
@@ -156,19 +157,32 @@ def map_synapse(noderef, allsecrefs, syn_info, imp):
 		childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
 
 		# If we are in correct tree but Zc smaller than endpoints, return endpoint
-		if not any(child_refs):
+		if not any(childrefs):
 			assert Zc < Zc_0 and Zc < Zc_1
 			return noderef, 1.0
 
 		# Else, recursively search child nodes
+		# Function for checking that section maps to original synapse section
+		mapsto_synsec = lambda ref: (ref.tree_index==syn_info.tree_index) and (
+									ref.gid==syn_info.gid or (
+										hasattr(ref, 'zipped_sec_gids') and 
+										(syn_info.gid in ref.zipped_sec_gids)
+										)
+									)
+		passed_synsec = passed_synsec or mapsto_synsec(noderef)
+		# child_mapsto_synsec = [subtree_has_node(mapsto_synsec, ref, allsecrefs) for ref in childrefs]
+		# passed_synsec = not any(child_mapsto_synsec)
+		# if passed_synsec:
+		# 	assert mapsto_synsec(noderef) # assume that synapse was positioned on this Section
+
 		for childref in childrefs:
-			if subtree_meets_crit(childref, allsecrefs, crit_func)
-				return map_synapse(childref, allsecrefs, syn_info, imp)
+			if passed_synsec or subtree_has_node(mapsto_synsec, childref, allsecrefs):
+				return map_synapse(childref, allsecrefs, syn_info, imp, passed_synsec)
 		raise Exception("The synapse did not map onto any segment in this subtree.")
 
 
 
-def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq):
+def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_mod_pars=None):
 	"""
 	Map synapses to equivalent synaptic inputs on given morphologically
 	reduced cell.
@@ -177,39 +191,62 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq):
 
 	@param orig_syn_info	SynInfo for each synapse on original cell
 	"""
+	# Synaptic mechanisms
+	if syn_mod_pars is None:
+		syn_mod_pars = {
+			'ExpSyn': ['tau', 'g', 'e'],
+			'Exp2Syn': ['tau1', 'tau2', 'g', 'e'],
+			'AlphaSynapse': ['onset', 'tau', 'gmax', 'e'],
+		}
 
-	# Class for measuring transfer impedances
+	# Compute transfer impedances
 	imp = h.Impedance()
-	imp.loc(0.5, sec=rootsec)
+	imp.loc(0.5, sec=rootref.sec)
 	initcell_fun()
-
-	# Compute impedances at current state of cell
 	linearize_gating = 0 # 0 = calculation with current values of gating vars, 1 = linearize gating vars around V
 	imp.compute(Z_freq, linearize_gating) # compute transfer impedance between loc and all segments
 
 	# Loop over all synapses
+	logger.debug("Mapping synapses to reduced cell...")
 	for syn_info in orig_syn_info:
 
 		# Find the segment with same tree index and closest Ztransfer match,
 		map_ref, map_x = map_synapse(rootref, allsecrefs, syn_info, imp)
+		map_sec = map_ref.sec
+		logger.debug("Synapse was in {}({}) -> mapped to {}\n".format(
+						syn_info.sec_name, syn_info.sec_loc, map_sec(map_x)))
 
 		# Make the synapse
 		syn_mod = syn_info.mod_name
 		synmech_ctor = getattr(h, syn_mod) # constructor function for synaptic mechanism
-		mapped_syn = synmech_ctor(map_ref.sec(map_x))
+		mapped_syn = synmech_ctor(map_sec(map_x))
 
-	# TODO: (equation 10-11 in Jaffe & Carnevale 1999: Vsoma = k_{syn->soma}*Zin_{syn}*gsyn(V-Esyn) , with k=Zc/Zin
-	#       Use this relation to position the synapse.
-	#		The free parameters are where to place it (determining k & Zin) and gsyn.
-	#		E.g. position @ loc with same k (which should show greates variability)
-	#		then use Zc (=k*Zin) or measure Zin to scale gsyn to satisfy constraint of same Vsoma.
-	
-	# NOTE: first plot these properties in Impedance tool, and compare them between full and reduced cells
+		# Set synapse properties
+		mech_params = syn_mod_pars[syn_mod]
+		for par in mech_params:
+			val = getattr(syn_info, par)
+			setattr(mapped_syn, par, val)
 
-	# First find the section that the original section mapped to,
-	# then move to parent or child direction to find location with same v transfer ratio,
-	# TODO: when sections are collapsed: keep a list of original section names on the secref
-	pass
+		gsyn_attr = next((p for p in mech_params if p.startswith('g')))
+
+		# Ensure synaptic conductance is scaled correctly to produce same effect at soma
+		map_Zc = imp.transfer(map_x, sec=map_sec) # query transfer impedanc,e i.e.  |v(loc)/i(x)| or |v(x)/i(loc)|
+		map_Zin = imp.input(map_x, sec=map_sec) # query input impedance, i.e. v(x)/i(x)
+		map_k = imp.ratio(map_x, sec=map_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
+		
+		gsyn_orig = getattr(syn_info, gsyn_attr)
+		logger.debug("Original synapse:\nZc={}\tZin={}\tk={}\nk*Zin*gsyn={}\nZc*gsyn={}\n".format(
+						syn_info.Zc, syn_info.Zin, syn_info.k_syn_soma, 
+						syn_info.k_syn_soma*syn_info.Zin*gsyn_orig,
+						syn_info.Zc*gsyn_orig))
+
+		# NOTE: if synapse positioned using k, would need to measure Zin and rescale gbar,
+		#		but if positioned using Zc no scaling is required
+		gsyn_mapped = getattr(mapped_syn, gsyn_attr)
+		logger.debug("Mapped synapse:\nZc={}\tZin={}\tk={}\nk*Zin*gsyn={}\nZc*gsyn={}\n".format(
+						map_Zc, map_Zin, map_k, 
+						map_k*map_Zin*gsyn_mapped,
+						map_Zc*gsyn_mapped))
 
 
 def test_map_synapses(export_locals=False):
@@ -221,9 +258,7 @@ def test_map_synapses(export_locals=False):
 	"""
 	# Make STN cell
 	soma, dends, stims = gillies.stn_cell_gillies()
-	somaref = ExtSecRef(sec=h.SThcell[0].soma)
-	dendL_refs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
-	dendR_refs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree
+	somaref, dendL_refs, dendR_refs = gillies.get_stn_refs()
 	allsecrefs = [somaref] + dendL_refs + dendR_refs
 
 	# Connect some synapses
@@ -253,24 +288,31 @@ def test_map_synapses(export_locals=False):
 
 	# Make function to run simulation and bring cell to desired state
 	def stn_setstate():
-		h.celsius = 35
-		h.set_aCSF(4)
-		h.v_init = -60
-		h.tstop = 460
-		h.dt = 0.025
-		h.init()
-		h.run()
+		# h.celsius = 35
+		# h.set_aCSF(4)
+		# h.v_init = -60
+		# h.tstop = 460
+		# h.dt = 0.025
+		# h.init()
+		# h.run()
+		pass
+
+	# Frequency for computing impedances
+	Z_freq = 25.
 
 	# Get synapse info
-	secref_attrs = ['table_index', 'tree_index']
-	syn_info = get_syn_info(soma, allsecrefs, 
-					impedances=True, initcell_fun=stn_setstate)
+	secref_attrs = ['table_index', 'tree_index', 'gid']
+	syn_info = get_syn_info(soma, allsecrefs, Z_freq=Z_freq, initcell_fun=stn_setstate,
+							secref_attrs=secref_attrs)
 
-	# TODO: Create reduced cells
+	# Create reduced cell
 	import reduce_marasco as marasco
 	eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
+	logger.debug("STN cell reduction complete.")
 
-	# TODO: Map synapses to reduced cell
+	# Map synapses to reduced cell
+	rootref = next((ref for ref in newsecrefs if 'soma' in ref.sec.name()))
+	map_synapses(rootref, newsecrefs, syn_info, stn_setstate, Z_freq)
 
 	if export_locals:
 		globals().update(locals())

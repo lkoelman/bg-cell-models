@@ -430,7 +430,7 @@ def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 
 	# Create Clusters: collapse (zip) each Y section up to length of first branch point
 	clusters = []
-	for par_ref in target_Y_secs:
+	for j_zip, par_ref in enumerate(target_Y_secs):
 		par_sec = par_ref.sec
 		child_secs = par_sec.children()
 
@@ -443,15 +443,18 @@ def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 		name_sanitized = re.sub(r"[\[\]\.]", "", par_sec.name())
 		alphabet_uppercase = [chr(i) for i in xrange(65,90+1)] # A-Z are ASCII 65-90
 		zip_label = "zip{0}_{1}".format(alphabet_uppercase[i_pass], name_sanitized)
+		zip_id = 1000*i_pass + j_zip
 
 		# Function for processing zipped SectionRefs
-		zipped_sec_ids = set()
+		zipped_sec_gids = set()
 		def process_zipped_seg(seg, jseg, ref):
+			# Tag segment with label of current zip operation
 			ref.zip_labels[jseg] = zip_label
+			# Save GIDs of original cell that are zipped/absorbed into equivalent section
 			if hasattr(ref, 'table_index') and ref.table_index >= 1:
-				zipped_sec_ids.add(ref.table_index)
+				zipped_sec_gids.add(ref.gid)
 			else:
-				zipped_sec_ids.update(ref.zipped_sec_ids)
+				zipped_sec_gids.update(ref.zipped_sec_gids)
 		
 		# Perform 'zip' operation
 		far_bound_segs = [] # last (furthest) segments that are zipped
@@ -469,7 +472,8 @@ def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 		cluster.eqdiam = eq_br.diam_eq
 		cluster.eq_area_sum = eq_br.L_eq * PI * eq_br.diam_eq
 		cluster.eqri = eq_br.Ri_eq
-		cluster.zipped_sec_ids = zipped_sec_ids
+		cluster.zipped_sec_gids = zipped_sec_gids
+		cluster.zip_id = zip_id
 		cluster.parent_seg = par_sec(1.0)
 		cluster.bound_segs = far_bound_segs # Save boundaries (for substitution)
 
@@ -919,7 +923,8 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='pat
 		eqsec.Ra = cluster.eqRa
 
 		# Save metadata
-		eqref.zipped_sec_ids = cluster.zipped_sec_ids
+		eqref.zipped_sec_gids = cluster.zipped_sec_gids
+		eqref.zip_id = cluster.zip_id
 
 		# Append to list of equivalent sections
 		eq_secs.append(eqsec)
@@ -1088,6 +1093,13 @@ def assign_sth_indices(noderef, allsecrefs, parref=None):
 	if not hasattr(noderef, 'table_index'):
 		noderef.table_index = -1 # unassigned
 
+	# assign a unique cell GID
+	if not hasattr(noderef, 'gid'):
+		if noderef.table_index >= 0:
+			noderef.gid = min(0,noderef.tree_index)*100 + noderef.table_index
+		else:
+			noderef.gid = noderef.zip_id
+
 	childsecs = noderef.sec.children()
 	childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
 	for childref in childrefs:
@@ -1107,9 +1119,9 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	"""
 	############################################################################
 	# 0. Load full model to be reduced (Gillies & Willshaw STN)
-	for sec in h.allsec():
-		if not sec.name().startswith('SThcell') and delete_old_cells:
-			h.delete_section() # delete existing cells
+	# for sec in h.allsec():
+	# 	if not sec.name().startswith('SThcell') and delete_old_cells:
+	# 		h.delete_section() # delete existing cells
 	if not hasattr(h, 'SThcells'):
 		h.xopen("createcell.hoc")
 
@@ -1133,6 +1145,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 		for i, secref in enumerate(dendlist):
 			secref.tree_index = j # left tree is 0, right is 1
 			secref.table_index = i+1 # same as in /sth-data/treeX-nom.dat
+	assign_sth_indices(somaref, allsecrefs) # assign cell GIDs
 
 	# Calculate section path properties for entire tree
 	for secref in allsecrefs:
@@ -1215,6 +1228,8 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 		if logger.getEffectiveLevel() >= logging.DEBUG:
 			h.topology()
 
+	# Make sure all sections have identifiers
+	assign_sth_indices(somaref, allsecrefs)
 	return eq_secs, newsecrefs
 
 def reduce_gillies_partial(delete_old_cells=True):
@@ -1465,4 +1480,4 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 if __name__ == '__main__':
 	# clusters, eq_secs = reduce_gillies_partial(delete_old_cells=True)
 	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=3, zips_per_pass=100)
-	from neuron import gui # check in ModelView: conductance distribution, structure
+	# from neuron import gui # check in ModelView: conductance distribution, structure
