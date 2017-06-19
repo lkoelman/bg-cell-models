@@ -1225,7 +1225,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 
 		# Print tree structure
 		logger.info("Equivalent tree topology:")
-		if logger.getEffectiveLevel() >= logging.DEBUG:
+		if logger.getEffectiveLevel() <= logging.DEBUG:
 			h.topology()
 
 	# Make sure all sections have identifiers
@@ -1350,7 +1350,7 @@ def reduce_gillies_partial(delete_old_cells=True):
 
 	# Print tree structure
 	logger.info("Equivalent tree topology:")
-	if logger.getEffectiveLevel() >= logging.DEBUG:
+	if logger.getEffectiveLevel() <= logging.DEBUG:
 		h.topology()
 
 	return clusters, eq_secs
@@ -1471,7 +1471,7 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 			h.ion_style("ca_ion",3,2,1,1,1)
 
 	logger.info("Equivalent tree topology:")
-	if logger.getEffectiveLevel() >= logging.DEBUG:
+	if logger.getEffectiveLevel() <= logging.DEBUG:
 		h.topology() # prints topology
 	
 	# return data structures
@@ -1479,5 +1479,5 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 
 if __name__ == '__main__':
 	# clusters, eq_secs = reduce_gillies_partial(delete_old_cells=True)
-	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=3, zips_per_pass=100)
-	# from neuron import gui # check in ModelView: conductance distribution, structure
+	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
+	from neuron import gui # check in ModelView: conductance distribution, structure

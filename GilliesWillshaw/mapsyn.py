@@ -25,8 +25,11 @@ class SynInfo(object):
 	def __init__(self, **kwds):
 		self.__dict__.update(kwds)
 
+	def __repr__(self):
+		return "{} at {}({})".format(self.mod_name, self.sec_hname, self.sec_loc)
+
 def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, 
-					Z_freq=25., initcell_fun=None, secref_attrs=None):
+					Z_freq=25., initcell_fun=None, save_ref_attrs=None):
 	"""
 	For each synapse on the neuron, calculate and save information for placing an equivalent
 	synaptic input on a morphologically simplified neuron.
@@ -46,8 +49,8 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 			'AlphaSynapse': ['onset', 'tau', 'gmax', 'e'],
 		}
 
-	if secref_attrs is None:
-		secref_attrs = []
+	if save_ref_attrs is None:
+		save_ref_attrs = []
 
 	# Calculate section path properties for entire tree
 	for secref in allsecrefs:
@@ -70,6 +73,8 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 	dummy_nc = h.NetCon(None, dummy_syn)
 	cell_nc = [nc for nc in list(dummy_nc.postcelllist()) if not nc.same(dummy_nc)] # all NetCon targetting the same cell
 	cell_syns = set([nc.syn() for nc in cell_nc]) # unique synapses targeting the same cell
+	if len(cell_syns) == 0:
+		logger.warn("No synapses found on tree of Section {}".format(rootsec))
 	logger.debug("Found {} NetCon with {} unique synapses".format(len(cell_nc), len(cell_syns)))
 
 	# Save synapse properties
@@ -77,7 +82,7 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 	syn_data = []
 	for syn in cell_syns:
 		# Get synaptic mechanism name
-		match_mechname = re.search(r'^[a-zA-Z]+', syn.hname())
+		match_mechname = re.search(r'^[a-zA-Z0-9]+', syn.hname())
 		synmech = match_mechname.group()
 		if synmech not in syn_mod_pars:
 			raise Exception("Synaptic mechanism '{}' not in given mechanism list".format(synmech))
@@ -100,7 +105,8 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 			setattr(syn_info, par, getattr(syn, par))
 
 		# Save requested properties of synapse section
-		for attr in secref_attrs:
+		syn_info.saved_ref_attrs = save_ref_attrs
+		for attr in save_ref_attrs:
 			setattr(syn_info, attr, getattr(syn_secref, attr))
 
 		# Get axial path resistance to synapse
@@ -143,7 +149,8 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, passed_synsec=False):
 	Zc_1 = imp.transfer(1.0, sec=cur_sec)
 
 	# Assume monotonically decreasing Zc away from root section
-	if (Zc >= Zc_0 and Zc >= Zc_1) or (Zc_0 <= Zc <= Zc_1) or (Zc_1 <= Zc <= Zc_0):
+	if (Zc_0 <= Zc <= Zc_1) or (Zc_1 <= Zc <= Zc_0) or (Zc >= Zc_0 and Zc >= Zc_1):
+
 		# Calculate Zc at midpoint of each internal segment
 		segs_loc_Zc = [(seg.x, imp.transfer(seg.x, sec=cur_sec)) for seg in cur_sec]
 		Zc_diffs = [abs(Zc-pts[1]) for pts in segs_loc_Zc]
@@ -152,6 +159,7 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, passed_synsec=False):
 		seg_index = Zc_diffs.index(min(Zc_diffs))
 		x_map = segs_loc_Zc[seg_index][0]
 		return noderef, x_map	
+
 	else:
 		childsecs = noderef.sec.children()
 		childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
@@ -190,6 +198,10 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_m
 	@param rootsec			root section of reduced cell
 
 	@param orig_syn_info	SynInfo for each synapse on original cell
+
+	@effect					Create one synapse for each original synapse in 
+							orig_syn_info. A reference to this synapse is saved 
+							as as attribute 'mapped_syn' on the SynInfo object.
 	"""
 	# Synaptic mechanisms
 	if syn_mod_pars is None:
@@ -220,8 +232,9 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_m
 		syn_mod = syn_info.mod_name
 		synmech_ctor = getattr(h, syn_mod) # constructor function for synaptic mechanism
 		mapped_syn = synmech_ctor(map_sec(map_x))
+		syn_info.mapped_syn = mapped_syn
 
-		# Set synapse properties
+		# Copy synapse properties
 		mech_params = syn_mod_pars[syn_mod]
 		for par in mech_params:
 			val = getattr(syn_info, par)
@@ -230,6 +243,9 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_m
 		gsyn_attr = next((p for p in mech_params if p.startswith('g')))
 
 		# Ensure synaptic conductance is scaled correctly to produce same effect at soma
+		# TODO: if cannt match Zc, measure Zc (=k*Zin) and adjust g
+		# TODO: change get_syn_info to save weight instead of g (=/=param!) on syn_info (see syn mod file for meaning)
+		# TODO: save gsyn_mapped on the syn_info, then later set NetCon.weight to this value
 		map_Zc = imp.transfer(map_x, sec=map_sec) # query transfer impedanc,e i.e.  |v(loc)/i(x)| or |v(x)/i(loc)|
 		map_Zin = imp.input(map_x, sec=map_sec) # query input impedance, i.e. v(x)/i(x)
 		map_k = imp.ratio(map_x, sec=map_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
@@ -247,75 +263,3 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_m
 						map_Zc, map_Zin, map_k, 
 						map_k*map_Zin*gsyn_mapped,
 						map_Zc*gsyn_mapped))
-
-
-def test_map_synapses(export_locals=False):
-	"""
-	Test for function get_syn_info()
-
-	@param export_locals	bring function local variables into global namespace
-							for interactive testing
-	"""
-	# Make STN cell
-	soma, dends, stims = gillies.stn_cell_gillies()
-	somaref, dendL_refs, dendR_refs = gillies.get_stn_refs()
-	allsecrefs = [somaref] + dendL_refs + dendR_refs
-
-	# Connect some synapses
-	import numpy as np
-	rng = np.random.RandomState(15203008)
-	test_syns = []
-	test_nc = []
-
-	# Connect a few synapses per dendritic section
-	n_syn_sec = 3
-	for dend_ref in (dendL_refs + dendR_refs):
-		dend_sec = dend_ref.sec
-		# make synapses
-		for i in xrange(n_syn_sec):
-			syn_loc = rng.rand()
-			syn = h.ExpSyn(dend_sec(syn_loc))
-			syn.tau = rng.rand() * 20.
-			syn.e = rng.rand() * 10.
-			test_syns.append(syn)
-
-			# make NetCon
-			nc = h.NetCon(None, syn)
-			nc.threshold = 0.
-			nc.delay = 5.
-			nc.weight[0] = rng.rand() * 10.
-			test_nc.append(nc)
-
-	# Make function to run simulation and bring cell to desired state
-	def stn_setstate():
-		# h.celsius = 35
-		# h.set_aCSF(4)
-		# h.v_init = -60
-		# h.tstop = 460
-		# h.dt = 0.025
-		# h.init()
-		# h.run()
-		pass
-
-	# Frequency for computing impedances
-	Z_freq = 25.
-
-	# Get synapse info
-	secref_attrs = ['table_index', 'tree_index', 'gid']
-	syn_info = get_syn_info(soma, allsecrefs, Z_freq=Z_freq, initcell_fun=stn_setstate,
-							secref_attrs=secref_attrs)
-
-	# Create reduced cell
-	import reduce_marasco as marasco
-	eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
-	logger.debug("STN cell reduction complete.")
-
-	# Map synapses to reduced cell
-	rootref = next((ref for ref in newsecrefs if 'soma' in ref.sec.name()))
-	map_synapses(rootref, newsecrefs, syn_info, stn_setstate, Z_freq)
-
-	if export_locals:
-		globals().update(locals())
-
-if __name__ == '__main__':
-	test_map_synapses(export_locals=True)

@@ -35,9 +35,12 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Our own modules
 from common import analysis
+from analysis import rec_currents_activations, plot_currents_activations
+
 import reduction_tools
 from reduction_tools import lambda_AC, ExtSecRef, getsecref
 from interpolation import *
+
 import reduction_analysis
 import reduce_marasco as marasco
 import reduce_bush_sejnowski as bush
@@ -443,140 +446,6 @@ def applyApamin(soma, dends):
 			xnode = (2.*iseg-1.)/(2.*sec.nseg) # arclength of current node (segment midpoint)
 			sec(xnode).__setattr__('gk_sKCa', 0.0)
 
-################################################################################
-# Recording & Analysis functions
-################################################################################
-
-def rec_currents_activations(traceSpecs, sec_tag, sec_loc, ion_species=None, 
-								currents=True, chan_states=True, ion_conc=True):
-	""" Specify trace recordings for all ionic currents
-		and activation variables 
-
-	@param traceSpecs	collections.OrderedDict of trace specifications
-
-	@param	sec_tag		tag for the section in the section dictionary passed
-						to analysis.recordTraces. Note that the first two
-						characters must be unique
-
-	@param	sec_loc		location in the section to record the variable
-						(location maps to a segment where the var is recorded)
-
-	@effect				for each ionic current, insert a trace specification
-						for the current, open fractions, activation, 
-						and inactivation variables
-	"""
-	if ion_species is None:
-		ion_species = ['na', 'k', 'ca', 'nonspecific']
-
-	# Derive suffix for traces from section tag
-	suf = '_' + sec_tag[0:2]
-	ts = traceSpecs
-
-	if 'na' in ion_species:
-		if currents:
-			# Na currents
-			ts['I_NaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Na','var':'ina'} # transient sodium
-			ts['I_NaP'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'NaL','var':'inaL'} # persistent sodium
-		if chan_states:
-			# Na Channel open fractions
-			ts['O_NaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Na','var':'o'}
-			# NOTE: leak currents such as I_NaL and gpas_STh are always open
-			# Na channel activated fractions
-			ts['A_NaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Na','var':'m'}
-			# Na channel inactivated fractions
-			ts['B_NaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Na','var':'h'}
-
-	if 'k' in ion_species:
-		if currents:
-			# K currents
-			ts['I_KDR'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'KDR','var':'ik'}
-			ts['I_Kv3'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Kv31','var':'ik'}
-			ts['I_KCa'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'sKCa','var':'isKCa'}
-		if chan_states:
-			# K channel open fractions
-			ts['O_KDR'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'KDR','var':'n'}
-			ts['O_Kv3'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Kv31','var':'p'}
-			ts['O_KCa'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'sKCa','var':'w'}
-			# K channels activated fractions - same as open fractions (single state variable)
-			ts['A_KDR'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'KDR','var':'n'}
-			ts['A_Kv3'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Kv31','var':'p'}
-			ts['A_KCa'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'sKCa','var':'w'}
-			# K channels inactivated fractions - not present (single state variable)
-
-	if 'ca' in ion_species:
-		# Ions
-		ts['C_CaL_cai'+suf] = {'sec':sec_tag,'loc':sec_loc,'var':'cai'} # intracellular calcium concentration
-		ts['C_CaT_cai'+suf] = {'sec':sec_tag,'loc':sec_loc,'var':'cai'} # intracellular calcium concentration
-		if currents:
-			# Ca currents
-			ts['I_CaL'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'iLCa'}
-			ts['I_CaN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'iNCa'}
-			ts['I_CaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'iCaT'}
-		if chan_states:
-			# Ca channel open fractions
-			ts['O_CaL'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'o_L'}
-			ts['O_CaN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'o_N'}
-			ts['O_CaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'o'}
-			# Ca channels activated fractions
-			ts['A_CaL'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'q'} # shared activation var for L/N
-			ts['A_CaN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'q'} # shared activation var for L/N
-			ts['A_CaT'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'r'}
-			# Ca channels inactivated fractions
-			ts['B_CaL'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'h'} # Ca-depentdent inactivation
-			ts['B_CaN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'HVA','var':'u'} # V-dependent inactivation
-			ts['B_CaTf'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'s'} # fast inactivation
-			ts['B_CaTs'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'CaT','var':'d'} # slow inactivation
-
-	if 'nonspecific' in ion_species:
-		if currents:
-			# Nonspecific currents
-			ts['I_HCN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Ih','var':'ih'}
-		if chan_states:
-			# Nonspecific channel open fractions
-			ts['O_HCN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Ih','var':'f'}
-			# Nonspecific channels activated fractions - same as open fractions (single state variable)
-			ts['A_HCN'+suf] = {'sec':sec_tag,'loc':sec_loc,'mech':'Ih','var':'f'}
-			# Nonspecific channels activated fractions - not present (single state variable)
-
-def plot_currents_activations(recData, recordStep, timeRange=None, sec_tag=None):
-	""" Plot currents and (in)activation variable for each ionic
-		current in the same axis. Ionic currents are grouped per ion
-		in one figure, and the x-axes are synchronized for zooming
-		and panning.
-
-	@param recData		traces recorded using a trace specification provided
-						by rec_currents_activations()
-
-	@return				tuple figs, cursors where figs is a list of figures
-						that were created and cursors a list of cursors
-	"""
-	figs = []
-	cursors = []
-
-	# Plot activations-currents on same axis per current
-	ions_chans = [('NaT', 'NaP', 'HCN'), ('KDR', 'Kv3', 'KCa'), ('CaL', 'CaN', 'CaT')]
-	for iontraces in ions_chans: # one figure for each ion
-		fig, axrows = plt.subplots(len(iontraces), 1, sharex=True) # one plot for each channel
-		for i, trace_abbr in enumerate(iontraces):
-			# Find traces that are marked with the tracee abbreviation (e.g. 'CaT')
-			if sec_tag is None:
-				pat = re.compile(r'^[A-Z]_' +trace_abbr) # find 'char+_+abbr' at beginning of word
-			else:
-				sec_suffix = sec_tag[0:2]
-				pat = re.compile(r'^[A-Z]_' + trace_abbr + r'\w+' + sec_suffix + r'$')
-			chanFilter = lambda x: re.search(pat, x) # variables plotted on left axis match this filter
-			twinFilter = lambda	x: x.startswith('I_') # vars plotted on right axis match this filter
-			# Plot traces that match pattern
-			analysis.cumulPlotTraces(recData, recordStep, showFig=False, 
-								fig=None, ax1=axrows[i], yRange=(-0.1,1.1), timeRange=timeRange,
-								includeFilter=chanFilter, twinFilter=twinFilter)
-			# Add figure interaction
-			cursor = matplotlib.widgets.MultiCursor(fig.canvas, fig.axes, 
-						color='r', lw=1, horizOn=False, vertOn=True)
-		figs.append(fig)
-		cursors.append(cursor)
-
-	return figs, cursors
 
 ################################################################################
 # Experiments

@@ -18,7 +18,7 @@ sys.path.append(modulesbase)
 
 # Enable logging
 import logging
-logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
 
 # Load NEURON
