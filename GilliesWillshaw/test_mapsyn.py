@@ -164,12 +164,18 @@ def test_single_inputs(reduced=True):
 	####################################
 	# Reduce cell
 
+	def stn_setstate():
+		""" Initialize cell to measure electrical properties """
+		h.celsius = 35
+		h.v_init = -68.0
+		h.set_aCSF(4)
+		h.init()
+
 	# Get synapse info
 	save_ref_attrs = ['table_index', 'tree_index', 'gid'] # properties to save
 	Z_freq = 25.
-	def stn_setstate(): pass
 	syn_info = mapsyn.get_syn_info(soma, allsecrefs, Z_freq=Z_freq, 
-						initcell_fun=stn_setstate, save_ref_attrs=save_ref_attrs)
+						init_cell=stn_setstate, save_ref_attrs=save_ref_attrs)
 
 	# Create reduced cell
 	marasco.logger.setLevel(logging.WARNING) # ignore lower than warning
@@ -178,14 +184,16 @@ def test_single_inputs(reduced=True):
 
 	# Map synapses to reduced cell
 	rootref = next((ref for ref in newsecrefs if 'soma' in ref.sec.name()))
-	mapsyn.map_synapses(rootref, newsecrefs, syn_info, stn_setstate, Z_freq)
+	mapsyn.map_synapses(rootref, newsecrefs, syn_info, stn_setstate, Z_freq,
+						method='Ztransfer')
 
 	####################################
 	# Simulate reduced cell
 	recData['i_syn'] = h.Vector() # prevents recording
 
 	# Run simulation
-	secs = {'soma': soma, 'asyn': asyn}
+	msyn = syn_info[0].mapped_syn
+	secs = {'soma': soma, 'asyn': msyn}
 	traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
 
 	# Membrane voltages
@@ -194,7 +202,7 @@ def test_single_inputs(reduced=True):
 
 	# Set up recording vectors
 	recordStep = 0.05
-	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+	recDataB = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Change conductances
 	for sec in h.allsec():
@@ -210,7 +218,9 @@ def test_single_inputs(reduced=True):
 	h.init()
 	h.run()
 
-
+	# Plot
+	figs_B = analysis.plotTraces(recDataB, recordStep, traceSharex=True)
+	globals().update(locals())
 
 def reduce_map_syns():
 	"""

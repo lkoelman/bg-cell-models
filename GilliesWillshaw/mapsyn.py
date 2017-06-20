@@ -28,8 +28,27 @@ class SynInfo(object):
 	def __repr__(self):
 		return "{} at {}({})".format(self.mod_name, self.sec_hname, self.sec_loc)
 
-def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, 
-					Z_freq=25., initcell_fun=None, save_ref_attrs=None):
+
+def subtree_has_node(crit_func, noderef, allsecrefs):
+	"""
+	Check if the given function applies to (returns True) any node
+	in subtree of given node
+	"""
+	if noderef is None:
+		return False
+	elif crit_func(noderef):
+		return True
+	else:
+		childsecs = noderef.sec.children()
+		childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
+		for childref in childrefs:
+			if subtree_has_node(crit_func, childref, allsecrefs):
+				return True
+		return False
+
+
+def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., 
+					init_cell=None, save_ref_attrs=None, sever_netcons=True):
 	"""
 	For each synapse on the neuron, calculate and save information for placing an equivalent
 	synaptic input on a morphologically simplified neuron.
@@ -39,13 +58,14 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 	@param syn_mod_pars	dict of <synaptic mechanism name> : list(<attribute names>)
 						containing attributes that need to be stored
 
-	@param initcell_fun	function to bring the cell to the desired state to measure transfer
+	@param init_cell	function to bring the cell to the desired state to measure transfer
 						impedances, e.g. simulating under a particular input
+
 	"""
 	if syn_mod_pars is None:
 		syn_mod_pars = {
-			'ExpSyn': ['tau', 'g', 'e'],
-			'Exp2Syn': ['tau1', 'tau2', 'g', 'e'],
+			'ExpSyn': ['tau', 'e'], # gmax stored in NetCon weight vector
+			'Exp2Syn': ['tau1', 'tau2', 'e'], # gmax stored in NetCon weight vector
 			'AlphaSynapse': ['onset', 'tau', 'gmax', 'e'],
 		}
 
@@ -57,25 +77,21 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 		redtools.sec_path_props(secref, 100., gillies.gleak_name)
 
 	# Measure transfer impedance and filter parameters
+	init_cell() # Make sure cell is in a physiological state
 	imp = h.Impedance()
 	imp.loc(0.5, sec=rootsec)
-
-	# Make sure cell is in a physiological state
-	logger.debug("Running simulation function...")
-	initcell_fun() # TODO: save times before, during, after burst and measure at these times
-
-	# Compute impedances at current state of cell
-	linearize_gating = 0 # 0 = calculation with current values of gating vars, 1 = linearize gating vars around V
+	linearize_gating = 1 # 0 = calculation with current values of gating vars, 1 = linearize gating vars around V
 	imp.compute(Z_freq, linearize_gating) # compute transfer impedance between loc and all segments
 
 	# Find all Synapses on cell (all Sections in whole tree)
 	dummy_syn = h.Exp2Syn(rootsec(0.5))
 	dummy_nc = h.NetCon(None, dummy_syn)
-	cell_nc = [nc for nc in list(dummy_nc.postcelllist()) if not nc.same(dummy_nc)] # all NetCon targetting the same cell
-	cell_syns = set([nc.syn() for nc in cell_nc]) # unique synapses targeting the same cell
+	cell_ncs = [nc for nc in list(dummy_nc.postcelllist()) if not nc.same(dummy_nc)] # all NetCon targeting same tree as dummy
+	cell_syns = set([nc.syn() for nc in cell_ncs]) # unique synapses targeting the same cell
+	
 	if len(cell_syns) == 0:
 		logger.warn("No synapses found on tree of Section {}".format(rootsec))
-	logger.debug("Found {} NetCon with {} unique synapses".format(len(cell_nc), len(cell_syns)))
+	logger.debug("Found {} NetCon with {} unique synapses".format(len(cell_ncs), len(cell_syns)))
 
 	# Save synapse properties
 	logger.debug("Getting synapse properties...")
@@ -99,10 +115,16 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 		syn_info.sec_hname = syn_sec.hname()
 		syn_info.sec_loc = syn_loc # can also use nc.postcell() and nc.postloc()
 
-		# Save synapse parameters
+		# Save synaptic mechanism parameters
 		mech_params = syn_mod_pars[synmech]
 		for par in mech_params:
 			setattr(syn_info, par, getattr(syn, par))
+
+		# Save all NetCon objects targetting this synapse
+		aff_ncs = [nc for nc in cell_ncs if syn.same(nc.syn())]
+		aff_weight_vecs = [[nc.weight[i] for i in xrange(int(nc.wcnt()))] for nc in aff_ncs]
+		syn_info.afferent_netcons = aff_ncs
+		syn_info.afferent_weights = aff_weight_vecs
 
 		# Save requested properties of synapse section
 		syn_info.saved_ref_attrs = save_ref_attrs
@@ -120,47 +142,51 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None,
 		syn_info.k_syn_soma = imp.ratio(syn_loc, sec=syn_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
 
 		syn_data.append(syn_info)
+
+	# Point all afferent NetCon connections to nothing
+	if sever_netcons:
+		for nc in cell_ncs:
+			nc.setpost(None)
+
 	return syn_data
 
-def subtree_has_node(crit_func, noderef, allsecrefs):
-	"""
-	Check if the given function applies to (returns True) any node
-	in subtree of given node
-	"""
-	if noderef is None:
-		return False
-	elif crit_func(noderef):
-		return True
-	else:
-		childsecs = noderef.sec.children()
-		childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
-		for childref in childrefs:
-			if subtree_has_node(crit_func, childref, allsecrefs):
-				return True
-		return False
 
-def map_synapse(noderef, allsecrefs, syn_info, imp, passed_synsec=False):
+def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False):
 	"""
 	Map synapse to a section in subtree of noderef
 	"""
 	cur_sec = noderef.sec
-	Zc = syn_info.Zc
-	Zc_0 = imp.transfer(0.0, sec=cur_sec)
-	Zc_1 = imp.transfer(1.0, sec=cur_sec)
+
+	if method == 'Ztransfer':
+		Zc = syn_info.Zc
+		elec_fun = imp.transfer
+	elif method == 'Vratio':
+		Zc = syn_info.k_syn_soma
+		elec_fun = imp.ratio
+	else:
+		raise Exception("Unknown synapse placement method '{}'".format(method))
+
+	Zc_0 = elec_fun(0.0, sec=cur_sec)
+	Zc_1 = elec_fun(1.0, sec=cur_sec)
+
+	logger.debug("Entering section with Zc(0.0)={} , Zc(1.0)={} (target Zc={})".format(Zc_0, Zc_1, Zc))
 
 	# Assume monotonically decreasing Zc away from root section
 	if (Zc_0 <= Zc <= Zc_1) or (Zc_1 <= Zc <= Zc_0) or (Zc >= Zc_0 and Zc >= Zc_1):
 
 		# Calculate Zc at midpoint of each internal segment
-		segs_loc_Zc = [(seg.x, imp.transfer(seg.x, sec=cur_sec)) for seg in cur_sec]
-		Zc_diffs = [abs(Zc-pts[1]) for pts in segs_loc_Zc]
+		locs_Zc = [(seg.x, elec_fun(seg.x, sec=cur_sec)) for seg in cur_sec]
+		Zc_diffs = [abs(Zc-pts[1]) for pts in locs_Zc]
 
 		# Map synapse with closest Zc at midpoint
 		seg_index = Zc_diffs.index(min(Zc_diffs))
-		x_map = segs_loc_Zc[seg_index][0]
+		x_map = locs_Zc[seg_index][0]
+
+		logger.debug("Arrived: closest Zc={}".format(locs_Zc[seg_index][1]))
 		return noderef, x_map	
 
 	else:
+		logger.debug("No map: descending further...")
 		childsecs = noderef.sec.children()
 		childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
 
@@ -185,12 +211,13 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, passed_synsec=False):
 
 		for childref in childrefs:
 			if passed_synsec or subtree_has_node(mapsto_synsec, childref, allsecrefs):
-				return map_synapse(childref, allsecrefs, syn_info, imp, passed_synsec)
+				return map_synapse(childref, allsecrefs, syn_info, imp, method, passed_synsec)
 		raise Exception("The synapse did not map onto any segment in this subtree.")
 
 
 
-def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_mod_pars=None):
+def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq, 
+					syn_mod_pars=None, method='Ztransfer'):
 	"""
 	Map synapses to equivalent synaptic inputs on given morphologically
 	reduced cell.
@@ -199,6 +226,11 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_m
 
 	@param orig_syn_info	SynInfo for each synapse on original cell
 
+	@param method			Method for positioning synapses and scaling
+							synaptic conductances: 'Ztransfer' positions synapses
+							at loc with ~= transfer impedance, 'Vratio' positions
+							them at loc with ~= Voltage attenuation
+
 	@effect					Create one synapse for each original synapse in 
 							orig_syn_info. A reference to this synapse is saved 
 							as as attribute 'mapped_syn' on the SynInfo object.
@@ -206,16 +238,17 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_m
 	# Synaptic mechanisms
 	if syn_mod_pars is None:
 		syn_mod_pars = {
-			'ExpSyn': ['tau', 'g', 'e'],
-			'Exp2Syn': ['tau1', 'tau2', 'g', 'e'],
+			'ExpSyn': ['tau', 'e'], # gmax stored in NetCon weight vector
+			'Exp2Syn': ['tau1', 'tau2', 'e'], # gmax stored in NetCon weight vector
 			'AlphaSynapse': ['onset', 'tau', 'gmax', 'e'],
 		}
 
 	# Compute transfer impedances
-	imp = h.Impedance()
+	init_cell()
+	logger.debug("Placing impedance measuring electrode...")
+	imp = h.Impedance() # imp = h.zz # previously created
 	imp.loc(0.5, sec=rootref.sec)
-	initcell_fun()
-	linearize_gating = 0 # 0 = calculation with current values of gating vars, 1 = linearize gating vars around V
+	linearize_gating = 1 # 0 = calculation with current values of gating vars, 1 = linearize gating vars around V
 	imp.compute(Z_freq, linearize_gating) # compute transfer impedance between loc and all segments
 
 	# Loop over all synapses
@@ -223,7 +256,7 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_m
 	for syn_info in orig_syn_info:
 
 		# Find the segment with same tree index and closest Ztransfer match,
-		map_ref, map_x = map_synapse(rootref, allsecrefs, syn_info, imp)
+		map_ref, map_x = map_synapse(rootref, allsecrefs, syn_info, imp, method)
 		map_sec = map_ref.sec
 		logger.debug("Synapse was in {}({}) -> mapped to {}\n".format(
 						syn_info.sec_name, syn_info.sec_loc, map_sec(map_x)))
@@ -240,26 +273,46 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, initcell_fun, Z_freq, syn_m
 			val = getattr(syn_info, par)
 			setattr(mapped_syn, par, val)
 
-		gsyn_attr = next((p for p in mech_params if p.startswith('g')))
+		# Change target of afferent connections
+		for aff_nc in syn_info.afferent_netcons:
+			aff_nc.setpost(mapped_syn)
+			aff_nc.active(1) # NetCons are turned off if target was set to None!
 
-		# Ensure synaptic conductance is scaled correctly to produce same effect at soma
-		# TODO: if cannt match Zc, measure Zc (=k*Zin) and adjust g
-		# TODO: change get_syn_info to save weight instead of g (=/=param!) on syn_info (see syn mod file for meaning)
-		# TODO: save gsyn_mapped on the syn_info, then later set NetCon.weight to this value
+		# Measure electrotonic properties for scaling synapses
 		map_Zc = imp.transfer(map_x, sec=map_sec) # query transfer impedanc,e i.e.  |v(loc)/i(x)| or |v(x)/i(loc)|
 		map_Zin = imp.input(map_x, sec=map_sec) # query input impedance, i.e. v(x)/i(x)
 		map_k = imp.ratio(map_x, sec=map_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
-		
-		gsyn_orig = getattr(syn_info, gsyn_attr)
-		logger.debug("Original synapse:\nZc={}\tZin={}\tk={}\nk*Zin*gsyn={}\nZc*gsyn={}\n".format(
-						syn_info.Zc, syn_info.Zin, syn_info.k_syn_soma, 
-						syn_info.k_syn_soma*syn_info.Zin*gsyn_orig,
-						syn_info.Zc*gsyn_orig))
 
-		# NOTE: if synapse positioned using k, would need to measure Zin and rescale gbar,
-		#		but if positioned using Zc no scaling is required
-		gsyn_mapped = getattr(mapped_syn, gsyn_attr)
-		logger.debug("Mapped synapse:\nZc={}\tZin={}\tk={}\nk*Zin*gsyn={}\nZc*gsyn={}\n".format(
-						map_Zc, map_Zin, map_k, 
-						map_k*map_Zin*gsyn_mapped,
-						map_Zc*gsyn_mapped))
+		# Ensure synaptic conductances scaled correctly to produce same effect at soma
+		# using relationship `Vsoma = Zc*gsyn*(V-Esyn) = k_{syn->soma}*Zin*gsyn*(V-Esyn)`
+
+		# Report discrepancy
+		logger.debug("""
+		Original synapse:\nZc={}\tk={}\tZin={}
+		Mapped synapse:\nZc={}\tk={}\tZin={}
+		Discrepancy: Zc_old/Zc_new={} = scale factor for gmax
+		""".format(syn_info.Zc, syn_info.k_syn_soma, syn_info.Zin,
+					map_Zc, map_k, map_Zin, syn_info.Zc/map_Zc))
+
+		# Calculate scale factor
+		if method == 'Ztransfer':
+			# method 1: conserve Zc*Isyn (no local response): place at loc with approx same Zc, correct using exact Zc measurement
+			scale_g = syn_info.Zc/map_Zc
+		elif method == 'Vratio':
+			# Method 2: conserve Zin*Isyn (local response): place at loc with same k_{syn->soma}, correct using Zin measurement
+			scale_g = syn_info.Zin/map_Zin
+		else:
+			raise Exception("Unknown synapse placement method '{}'".format(method))
+
+		# Scale conductances (weights) of all incoming connections
+		for i_nc, nc in enumerate(syn_info.afferent_netcons):
+			orig_weights = syn_info.afferent_weights[i_nc]
+			assert len(orig_weights) == int(nc.wcnt())
+			for i_w in xrange(int(nc.wcnt())):
+				nc.weight[i_w] = orig_weights[i_w] * scale_g
+				logger.debug("Scaled weight {} by factor {}".format(orig_weights[i_w], scale_g))
+
+			
+		
+
+		
