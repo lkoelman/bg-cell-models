@@ -95,7 +95,7 @@ def test_map_synapses(export_locals=False):
 		globals().update(locals())
 
 
-def test_single_inputs(reduced=True):
+def map_run_single_input(reduced=True):
 	"""
 	Test single input on full model, mapping to reduced model,
 	and compare responses.
@@ -123,7 +123,10 @@ def test_single_inputs(reduced=True):
 	asyn.tau1 = 5.0
 	asyn.tau2 = 5.0
 	asyn.e = 0.0
-	gmax = 0.0005 # set using NetCon weight
+	gmax = 0.0015 # set using NetCon weight
+
+	####################################
+	# Simulate full model
 
 	nc = h.NetCon(None, asyn)
 	nc.delay = 1.0
@@ -145,9 +148,13 @@ def test_single_inputs(reduced=True):
 	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Change conductances
-	for sec in h.allsec():
-		for seg in sec:
-			seg.gna_NaL = 0.0
+	def block_Na_channels():
+		for sec in h.allsec():
+			for seg in sec:
+				seg.gna_NaL = 0.0 # prevent spontaneousdepolarization
+				seg.gna_Na = 0.0 # prenvent spiking
+
+	block_Na_channels()
 
 	# Simulate
 	h.dt = 0.025
@@ -159,10 +166,14 @@ def test_single_inputs(reduced=True):
 	h.run()
 
 	# Plot
-	figs_vm = analysis.plotTraces(recData, recordStep, traceSharex=True)
+	figs_vm = analysis.plotTraces(recData, recordStep, traceSharex=True,
+									yRange={'V_soma':(-80,0)})
 
 	####################################
 	# Reduce cell
+
+	# Restore conductances
+	gillies.reset_channel_gbar()
 
 	def stn_setstate():
 		""" Initialize cell to measure electrical properties """
@@ -185,7 +196,7 @@ def test_single_inputs(reduced=True):
 	# Map synapses to reduced cell
 	rootref = next((ref for ref in newsecrefs if 'soma' in ref.sec.name()))
 	mapsyn.map_synapses(rootref, newsecrefs, syn_info, stn_setstate, Z_freq,
-						method='Ztransfer')
+						method='Vratio')
 
 	####################################
 	# Simulate reduced cell
@@ -204,12 +215,8 @@ def test_single_inputs(reduced=True):
 	recordStep = 0.05
 	recDataB = analysis.recordTraces(secs, traceSpecs, recordStep)
 
-	# Change conductances
-	for sec in h.allsec():
-		for seg in sec:
-			seg.gna_NaL = 0.0
-
 	# Simulate
+	block_Na_channels()
 	h.dt = 0.025
 	h.celsius = 35
 	h.v_init = -60
@@ -219,19 +226,14 @@ def test_single_inputs(reduced=True):
 	h.run()
 
 	# Plot
-	figs_B = analysis.plotTraces(recDataB, recordStep, traceSharex=True)
+	figs_B = analysis.plotTraces(recDataB, recordStep, traceSharex=True,
+									yRange={'V_soma':(-80,0)})
 	globals().update(locals())
 
-def reduce_map_syns():
-	"""
-	Reduce STN cell and map synapses.
-	"""
-	pass
 
-
-def test_multiple_inputs():
+def map_run_multiple_inputs():
 	"""
-	Test multiple inputs on full mode, mapping to reduced model,
+	Test multiple inputs on full model, mapping to reduced model,
 	and compare responses.
 	"""
 
@@ -279,4 +281,4 @@ def test_multiple_inputs():
 
 if __name__ == '__main__':
 	# test_map_synapses(export_locals=True)
-	test_single_inputs()
+	map_run_single_input()

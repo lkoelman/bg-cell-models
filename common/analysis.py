@@ -288,7 +288,8 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		if labelTime:
 			plt.xlabel('Time (ms)', fontsize=fontsiz)
 		if isinstance(yRange, dict):
-			plt.ylim(yRange[trace])
+			if trace in yRange:
+				plt.ylim(yRange[trace])
 		elif yRange is not None:
 			plt.ylim(yRange)
 		plt.xlim(timeRange)

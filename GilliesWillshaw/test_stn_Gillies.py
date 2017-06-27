@@ -34,6 +34,8 @@ NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Our own modules
+import gillies_model as gillies
+from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 from common import analysis
 from analysis import rec_currents_activations, plot_currents_activations
 
@@ -48,16 +50,6 @@ import reduce_bush_sejnowski as bush
 
 # Global variables
 soma = None
-gillies_gdict = {
-	'STh':	['gpas'], 								# passive/leak channel
-	'Na':	['gna'], 'NaL':['gna'],					# Na channels
-	'KDR':	['gk'], 'Kv31':['gk'], 'sKCa':['gk'],	# K channels
-	'Ih':	['gk'], 								# nonspecific channels
-	'CaT':	['gcaT'], 'HVA':['gcaL', 'gcaN'], 		# Ca channels
-	'Cacum': [],									# No channels
-}
-gillies_mechs = list(gillies_gdict.keys()) # all mechanisms
-gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
 
 
 def stn_cell_gillies(resurgent=False):
@@ -128,7 +120,7 @@ def stn_cell_Rall(resurgent=False, oneseg=False):
 	soma.cm = all_cm
 	for mech in stn_mechs: soma.insert(mech)
 	setconductances(soma, -1, glist=stn_glist)
-	setionstyles_gillies(soma)
+	gillies.setionstyles_gillies(soma)
 	
 	# Right dendritic tree (Fig. 1, small one)
 	dend1 = h.Section()
@@ -146,7 +138,7 @@ def stn_cell_Rall(resurgent=False, oneseg=False):
 		opt_nseg1 = int(np.ceil(dend1.L/(0.1*lambda_AC(dend1,100))))
 		dend1.nseg = opt_nseg1
 		setconductances(dend1, 1, glist=stn_glist)
-	setionstyles_gillies(dend1) # set ion styles
+	gillies.setionstyles_gillies(dend1) # set ion styles
 
 	# Left dendritic tree (Fig. 1, big one)
 	dend0 = h.Section()
@@ -164,7 +156,7 @@ def stn_cell_Rall(resurgent=False, oneseg=False):
 		opt_nseg0 = int(np.ceil(dend0.L/(0.1*lambda_AC(dend0,100))))
 		dend0.nseg = opt_nseg0
 		setconductances(dend0, 0, glist=stn_glist)
-	setionstyles_gillies(dend0) # set ion styles
+	gillies.setionstyles_gillies(dend0) # set ion styles
 
 	# Create stimulator objects
 	stim1 = h.IClamp(soma(0.5))
@@ -212,7 +204,7 @@ def stn_cell_onedend():
 	for mech in stn_mechs:
 		soma.insert(mech)
 	setconductances(soma, -1, glist=stn_glist)
-	setionstyles_gillies(soma)
+	gillies.setionstyles_gillies(soma)
 	
 	# Primary neurite, equiv. to trunk/smooth dendrites
 	trunk = getattr(h, secnames[1])
@@ -228,7 +220,7 @@ def stn_cell_onedend():
 	for mech in stn_mechs:
 		trunk.insert(mech)
 	interpconductances(trunk, 1, path=[1,2], glist=stn_glist) # set channel conductances
-	setionstyles_gillies(trunk) # set ion styles
+	gillies.setionstyles_gillies(trunk) # set ion styles
 
 	# Secondary neurite, equivalent to spiny dendrites
 	spiny = getattr(h, secnames[2])
@@ -244,7 +236,7 @@ def stn_cell_onedend():
 	for mech in stn_mechs:
 		spiny.insert(mech)
 	interpconductances(spiny, 1, path=[5], glist=stn_glist) # set channel conductances
-	setionstyles_gillies(spiny) # set ion styles
+	gillies.setionstyles_gillies(spiny) # set ion styles
 
 	for secname in secnames:
 		sec = getattr(h, secname)
@@ -383,68 +375,6 @@ def stn_cell(cellmodel):
 # Functions for reduced model
 ################################################################################
 
-def setionstyles_gillies(sec):
-	""" Set ion styles to work correctly with membrane mechanisms """
-	sec.push()
-	h.ion_style("na_ion",1,2,1,0,1)
-	h.ion_style("k_ion",1,2,1,0,1)
-	h.ion_style("ca_ion",3,2,1,1,1)
-	h.pop_section()
-
-def set_aCSF(req):
-	""" Set global initial ion concentrations (artificial CSF properties) """
-
-	if req == 3: # Beurrier et al (1999)
-		h.nai0_na_ion = 15
-		h.nao0_na_ion = 150
-
-		h.ki0_k_ion = 140
-		h.ko0_k_ion = 3.6
-
-		h.cai0_ca_ion = 1e-04
-		h.cao0_ca_ion = 2.4
-
-		h('cli0_cl_ion = 4') # self-declared Hoc var
-		h('clo0_cl_ion = 135') # self-declared Hoc var
-
-	if req == 4: # Bevan & Wilson (1999)
-		h.nai0_na_ion = 15
-		h.nao0_na_ion = 128.5
-
-		h.ki0_k_ion = 140
-		h.ko0_k_ion = 2.5
-
-		h.cai0_ca_ion = 1e-04
-		h.cao0_ca_ion = 2.0
-
-		h('cli0_cl_ion = 4')
-		h('clo0_cl_ion = 132.5')
-
-	if req == 0: # NEURON's defaults
-		h.nai0_na_ion = 10
-		h.nao0_na_ion = 140
-
-		h.ki0_k_ion = 54
-		h.ko0_k_ion = 2.5
-
-		h.cai0_ca_ion = 5e-05
-		h.cao0_ca_ion = 2
-
-		h('cli0_cl_ion = 0')
-		h('clo0_cl_ion = 0')
-
-def applyApamin(soma, dends):
-	""" Apply apamin (reduce sKCa conductance)
-
-		NOTE: in paper they say reduce by 90 percent but in code
-		they set everything to 0 except in soma where they divide
-		by factor 10
-	"""
-	soma(0.5).__setattr__('gk_sKCa', 0.0000068)
-	for sec in dends:
-		for iseg in range(1, sec.nseg+1):
-			xnode = (2.*iseg-1.)/(2.*sec.nseg) # arclength of current node (segment midpoint)
-			sec(xnode).__setattr__('gk_sKCa', 0.0)
 
 
 ################################################################################
@@ -483,7 +413,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	h.dt = 0.025
 	h.celsius = 35 # different temp from paper (fig 3B: 25degC, fig. 3C: 35degC)
 	h.v_init = -60 # paper simulations use default v_init
-	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+	gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 	# Recording: trace specification
 	secs = {'soma': soma}
@@ -533,20 +463,25 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 	return recData, figs, cursors
 
 def test_plateau(soma, dends_locs, stims):
-	""" Test plateau potential evoked by applying depolarizing pulse 
-		at hyperpolarized level of membrane potential
+	"""
+	Test plateau potential evoked by applying depolarizing pulse 
+	at hyperpolarized level of membrane potential (Gillies 2006, Fig. 10C-D)
 
 	GILLIES CURRENTS
 
 	OTSUKA CURRENTS
+	
 	- KA peak decreases during burst (height of peaks during AP), as KA decreases the firing frequency also decreases
 		- hence KA seems to responsible for rapid repolarization and maintenance of high-frequency firing
+	
 	- KCa peak increases over about 25 ms (height of peaks during AP), and decreases during last 100 ms of burst
-	- CaT is the first depolarizing current that rises after realease from hyperpolarization and seems to be
+	
+	- CaT is the first depolarizing current that rises after release from hyperpolarization and seems to be
 	  responsible for initiation of the rebound burst
 		- CaT bootstraps burst (bootstraps pos feedback of CaL entry)
 		- it runs out of fuel during burst and thus may contribute to ending the burst
 			- this is contradicted by burst at regular Vm: there drop in ICaL clearly ends burst
+	
 	- CaL reaces steady maximum peak after approx. 70 ms into the burst, after CaT is already past its peak
 		- hypothesis that it seems responsible for prolonging th burst seems plausible
 		- burst seems to go on as long as CaT+CaL remains approx. constant, and burst ends as long as CaT too low
@@ -562,7 +497,7 @@ def test_plateau(soma, dends_locs, stims):
 	h.dt = 0.025
 	h.celsius = 30 # different temp from paper
 	h.v_init = -60 # paper simulations sue default v_init
-	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+	gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 	# Set up stimulation (5 mA/cm2 for 80 ms)
 	cellarea = np.pi*soma.diam*soma.L # (micron^2)
@@ -648,12 +583,15 @@ def test_plateau(soma, dends_locs, stims):
 	return recData, figs, cursors
 
 def test_reboundburst(soma, dends_locs, stims):
-	""" Run rebound burst experiment from original Hoc file
+	"""
+	Run rebound burst experiment from original Hoc file (Gillies 2006, Fig. 3-4)
 
 	GILLIES CURRENTS
+	
 	- same 'CaT bootstraps CaL' mechanism: 
 		- small peak in CaT at beginning of burst triggers sharp rise in ICaL with 9x higher peak
 		- successive CaL peaks decline in magnitude during burst\
+	
 	- Ih/HCN sharply declines in peak magnitude over burst to insignificance (approx negexp)
 		- burst ends when it died out
 		- there is no similar current in Otsuka model
@@ -677,7 +615,7 @@ def test_reboundburst(soma, dends_locs, stims):
 	h.dt = 0.025
 	h.celsius = 35 # different temp from paper
 	h.v_init = -60 # paper simulations sue default v_init
-	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+	gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 	# Set up stimulation
 	stim1.delay = 0
@@ -780,7 +718,7 @@ def test_slowbursting(soma, dends_locs, stims):
 	h.dt = 0.025
 	h.celsius = 37 # for slow bursting experiment
 	h.v_init = -60 # paper simulations sue default v_init
-	set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+	gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 	# Set up stimulation
 	stim1.delay = 0
@@ -826,7 +764,7 @@ def test_slowbursting(soma, dends_locs, stims):
 	if fullmodel:
 		h.applyApamin() # lower sKCa conductance by 90 percent
 	else:
-		applyApamin(soma, dends)
+		gillies.applyApamin(soma, dends)
 	h.init()
 	h.run()
 	if fullmodel:

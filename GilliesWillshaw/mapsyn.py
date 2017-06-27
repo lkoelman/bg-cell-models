@@ -4,6 +4,7 @@ to reduced morphology model.
 """
 
 import re
+from textwrap import dedent
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
@@ -227,9 +228,13 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 	@param orig_syn_info	SynInfo for each synapse on original cell
 
 	@param method			Method for positioning synapses and scaling
-							synaptic conductances: 'Ztransfer' positions synapses
-							at loc with ~= transfer impedance, 'Vratio' positions
-							them at loc with ~= Voltage attenuation
+							synaptic conductances:
+
+							'Ztransfer' positions synapses at loc with 
+										~= transfer impedance
+
+							'Vratio' positions them at loc with 
+										~= Voltage attenuation
 
 	@effect					Create one synapse for each original synapse in 
 							orig_syn_info. A reference to this synapse is saved 
@@ -287,27 +292,31 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 		# using relationship `Vsoma = Zc*gsyn*(V-Esyn) = k_{syn->soma}*Zin*gsyn*(V-Esyn)`
 
 		# Report discrepancy
-		logger.debug("""
-		Original synapse:\nZc={}\tk={}\tZin={}
-		Mapped synapse:\nZc={}\tk={}\tZin={}
-		Discrepancy: Zc_old/Zc_new={} = scale factor for gmax
+		logger.debug(dedent("""
+		\nOriginal synapse:\nZc={}\tk={}\tZin={}
+		\nMapped synapse:\nZc={}\tk={}\tZin={}
+		\nDiscrepancy: Zc_old/Zc_new={} = scale factor for gmax
 		""".format(syn_info.Zc, syn_info.k_syn_soma, syn_info.Zin,
-					map_Zc, map_k, map_Zin, syn_info.Zc/map_Zc))
+					map_Zc, map_k, map_Zin, syn_info.Zc/map_Zc)))
 
 		# Calculate scale factor
 		if method == 'Ztransfer':
 			# method 1: conserve Zc*Isyn (no local response): place at loc with approx same Zc, correct using exact Zc measurement
 			scale_g = syn_info.Zc/map_Zc
+		
 		elif method == 'Vratio':
 			# Method 2: conserve Zin*Isyn (local response): place at loc with same k_{syn->soma}, correct using Zin measurement
 			scale_g = syn_info.Zin/map_Zin
+		
 		else:
 			raise Exception("Unknown synapse placement method '{}'".format(method))
 
 		# Scale conductances (weights) of all incoming connections
 		for i_nc, nc in enumerate(syn_info.afferent_netcons):
+			
 			orig_weights = syn_info.afferent_weights[i_nc]
 			assert len(orig_weights) == int(nc.wcnt())
+			
 			for i_w in xrange(int(nc.wcnt())):
 				nc.weight[i_w] = orig_weights[i_w] * scale_g
 				logger.debug("Scaled weight {} by factor {}".format(orig_weights[i_w], scale_g))

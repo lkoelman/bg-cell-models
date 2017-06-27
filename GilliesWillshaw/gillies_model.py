@@ -72,6 +72,104 @@ def get_stn_refs():
 
 	return somaref, dendLrefs, dendRrefs
 
+def reset_channel_gbar():
+	"""
+	Reset all channel conductances to initial state.
+
+	NOTE: initialization copied from sample.hoc/createcell.hoc
+	"""
+	# Soma
+	h.SThcells[0].soma.gna_Na = h.default_gNa_soma
+	h.SThcells[0].soma.gna_NaL = h.default_gNaL_soma
+
+	# Dendrites
+	h.cset(0,"gk_KDR","")
+	h.cset(0,"gk_Kv31","")
+	h.cset(0,"gk_Ih","")
+	h.cset(0,"gk_sKCa","")
+	h.cset(0,"gcaT_CaT","")
+	h.cset(0,"gcaN_HVA","")
+	h.cset(0,"gcaL_HVA","")
+
+def setionstyles_gillies(sec):
+	"""
+	Set ion styles to work correctly with membrane mechanisms
+	"""
+	sec.push()
+	h.ion_style("na_ion",1,2,1,0,1)
+	h.ion_style("k_ion",1,2,1,0,1)
+	h.ion_style("ca_ion",3,2,1,1,1)
+	h.pop_section()
+
+def set_aCSF(req):
+	"""
+	Set global initial ion concentrations (artificial CSF properties)
+
+	This is a Python version of the Hoc function set_aCSF()
+	"""
+
+	if req == 3: # Beurrier et al (1999)
+		h.nai0_na_ion = 15
+		h.nao0_na_ion = 150
+
+		h.ki0_k_ion = 140
+		h.ko0_k_ion = 3.6
+
+		h.cai0_ca_ion = 1e-04
+		h.cao0_ca_ion = 2.4
+
+		h('cli0_cl_ion = 4') # self-declared Hoc var
+		h('clo0_cl_ion = 135') # self-declared Hoc var
+
+	if req == 4: # Bevan & Wilson (1999)
+		h.nai0_na_ion = 15
+		h.nao0_na_ion = 128.5
+
+		h.ki0_k_ion = 140
+		h.ko0_k_ion = 2.5
+
+		h.cai0_ca_ion = 1e-04
+		h.cao0_ca_ion = 2.0
+
+		h('cli0_cl_ion = 4')
+		h('clo0_cl_ion = 132.5')
+
+	if req == 0: # NEURON's defaults
+		h.nai0_na_ion = 10
+		h.nao0_na_ion = 140
+
+		h.ki0_k_ion = 54
+		h.ko0_k_ion = 2.5
+
+		h.cai0_ca_ion = 5e-05
+		h.cao0_ca_ion = 2
+
+		h('cli0_cl_ion = 0')
+		h('clo0_cl_ion = 0')
+
+def applyApamin(soma, dends):
+	"""
+	Apply apamin (reduce sKCa conductance)
+
+	@param soma		soma Section
+
+	@param dends	list of dendritic Sections objects
+	
+	NOTE: in paper they say reduce by 90 percent but in code
+	they set everything to 0 except in soma where they divide
+	by factor 10
+	"""
+	soma(0.5).__setattr__('gk_sKCa', 0.0000068)
+	for sec in dends:
+		for iseg in range(1, sec.nseg+1):
+			xnode = (2.*iseg-1.)/(2.*sec.nseg) # arclength of current node (segment midpoint)
+			sec(xnode).__setattr__('gk_sKCa', 0.0)
+
+
+################################################################################
+# Simulations
+################################################################################
+
 def runsim_paper(plotting='NEURON'):
 	"""
 	Run original simulation provided with model files
