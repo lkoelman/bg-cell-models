@@ -1,9 +1,96 @@
+# TODO PLAN #
+
+1. first compare balance of currents Otsuka/Gillies/RubinTerman/KhaliqRaman papers and see which currents are responsible for the different features of STN cell dynamics (e.g. bursts, spontaneous pacemaking, ...)
+	
+	- (plot equilibrium activations variables for each current)
+	
+	- implement experiments for different firing/physiology features from all papers
+		- go through paper Gillies and add experiments to Otsuka test script
+		- also add experiments for INaR from DoBean STN/Purkinje & Khaliq Purkinje papers
+	
+	- run experiment for each feature in each model
 
 
-# Diary Entries relating to Gillies & Willshaw model
+2. Construct equivalent reduced model
+	
+	- reduction method: see principles of computational modeling, Ch. 8 & Ch. 4.3.3
+		1. Simplify tree morphology (see Ch. 4.3.3) & p. 85
+			- iteratively replace cylinders using technique in Box 3.2 and 3/2 assumption
+		2. Tune gbar ration & and geom+electrical properties of equivalent compartment to reproduce important behaviours/experiments of full model
+			- tune coupling of two compartments 
+				- see cable equation (NEURON book Ch3 p. 26 eq. 3.47 (pdf p. 114), or) Sterrat book eq. 2.24
+				- d and Ra determine input resistance for axial current
+	
+	- pick the balance of currents & implementations that agree most with other STN physiology papers
+		- possibly enhance rebound bursts according to Otsuka model to make sure they are robust
+
+
+3. Add bursting mechanism: removal of slow inactivation of Na currents by IPSPs
+	
+	- add slowly inactivating Na channels with de-inactivation by IPSPs
+		- see refs `DoBean2003/Baufreton2005/Wilson2015`
+	
+	- then replace the Na current with the more detailed Na channel model of Do/Bean/Khaliq/Raman model
+		- but retain the relative magnitude of gnabar and see that you can still reproduce main features of Otsuka & Gillies models
+			- potentially include two na mechanisms (one for persistent/transient, one for resurgent)
+			- sum of new Na currents must be equal to sum of existing Na currents
+	
+	- (design experiment to test if resurgent Na currents promote additional patterning unexplained by models without this current)
+
+
+4. Add synapses
+	
+	- based on studies synapse distribution
+	
+	- use synapse mapping procedure Marasco & adapt topology of reduced model to preserve transformations and I/O characteristics of dendritic tree
+
+
+5. Reduce GPe model
+	- see ref
 
 --------------------------------------------------------------------------------
-# Diary 03/05/2017 #
+# TODO NEXT #
+
+- Test model reduction code
+	
+	- [x] Check scaling factors actually used VS paper in RedPurk.hoc
+		- same as mentioned in paper: original/equivalent surface (if synapses in cluster: only count sections containing synapse toward original surface)
+	
+	- [x] See what happens to theoretical Rin in toy model
+		- Calculate marasco reduction by hand for simple tree
+		- calculated by hand and adapted expressions to make units match
+		- in toy tree (secs P/A/B): Rin is conserved witn 0.2% accuracy for toy tree
+			- NOTE that cluster root sections are not merged here with Marasco <eq> expressions
+	
+	- [x] See what happens to theoretical Rin in Gillies & Willshaw model
+		- Calculate and compare input resistance of trees in full/reduced model (using algorithm Sterrat Ch. 4)
+		- => if trees averaged/RaMERGINGMETHOD=1: they are not equal (see compare_models())
+		- => if trees not averaged/RaMERGINGMETHOD=0: they are practically equal (within 1%)
+	
+	- [x] run other tests and see if all fail
+		- => they fail, likely due to different input resistance
+	
+	- [x] check if mergingYmethod correctly implemented 
+		- => NO: i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
+		- however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
+	
+	- [ ] Correct spontaneous firing rate through scaling/fitting
+		- [x] read Chapt Sterrat parameter fitting
+		- [x] compare values post-/pre-reduction
+		- [x] test effect of extra dendrites => increases firing rate (due to more I_NaL provided?)
+		- => spontaneous firing rate can be adapted by changing cm/gpas/gnaL. However by tuning these parameters you cannot get the firing as low as in the full model (9 Hz)
+	
+- Implement slow inactivation
+	- [ ] get parameters state model slow inactivaton & recovery from papers (see notes below)
+		
+- See if other currents need to be adjusted to accomodate new current INa_rsg
+	- e.g. reduce Ih/HCN or change its parameters
+	
+
+--------------------------------------------------------------------------------
+# Diary Entries relating to Gillies & Willshaw model
+
+## Diary 03/05/2017 #
 
 - Test incremental reduction methods
 
@@ -22,9 +109,9 @@
 			- when I change all `eg.gna_NaL = 8e-6 * 1.3` (i.e. original uniform value * 1.3) from the automatic convex distribution, it works
 
 --------------------------------------------------------------------------------
-# Diary 12/04/2017 #
+## Diary 12/04/2017 #
 
-## Observation: identify functional regions based on gbar distribution
+### Observation: identify functional regions based on gbar distribution
 
 - **Method**
 	- Run sample.hoc in NEURON GUI
@@ -68,9 +155,9 @@
 		- this corresponds to the middle of the long spiny sections
 
 --------------------------------------------------------------------------------
-# Diary 20/02/2017 #
+## Diary 20/02/2017 #
 
-## Experiment: run evolutionary optimization Bush & Sejnowski reduction ##
+### Experiment: run evolutionary optimization Bush & Sejnowski reduction ##
 
 - **Experiment** First optimization
 	- => Fittest individual: see CSV files
@@ -81,16 +168,16 @@
 
 
 --------------------------------------------------------------------------------
-# Diary 10/02/2017 #
+## Diary 10/02/2017 #
 
-## Experiment: reproduce plateau mechanism in Bush & Sejnowski model ##
+### Experiment: reproduce plateau mechanism in Bush & Sejnowski model ##
 
 - **Experiment** tune bush reduction manually to fix based on plateau insight
 	- => interpolation of linear distribution: code verified
 	- => INSIGHT: only scaling by area ratios conserves the ratio of gbar in each segment
 	- => using the area ratio approach: plateau in dendrite is longer, leading to longer burst
 
-## Experiment: compare relative gbar in original & equivalent models
+### Experiment: compare relative gbar in original & equivalent models
 
 - **Observation** : compare relative maximum conductances in distal dendritic sections
 	- OR = original model
@@ -121,9 +208,9 @@
 	EQ (spiny) Relative gcaT_CaT = 36.6491934546
 
 --------------------------------------------------------------------------------
-# Diary 09/02/2017 #
+## Diary 09/02/2017 #
 
-## Experiment: understand rebound/plateau mechanism ##
+### Experiment: understand rebound/plateau mechanism ##
 
 - **Observation**: comparison conductance distribution in full/reduced model
 	
@@ -154,9 +241,9 @@
 	4. use optimizer with new functions
 
 --------------------------------------------------------------------------------
-# Diary 08/02/2017 #
+## Diary 08/02/2017 #
 
-## Experiment: reproduce firing modes with Bush & Sejnowski reduced model ##
+### Experiment: reproduce firing modes with Bush & Sejnowski reduced model ##
 
 - **Experiment**: disabling area scaling for cm and all gbar
 	- => causes much faster spontaneous firing rate
@@ -193,10 +280,10 @@
 		- => burst contains 4 tightly packed spikes, followed by 4 slower spikes (still much faster than spontaneous rate) that are not really part of the same burst
 
 --------------------------------------------------------------------------------
-# Diary 30/01/2017 #
+## Diary 30/01/2017 #
 
 
-## Experiment: reproduce firing modes with reduced STN model ##
+### Experiment: reproduce firing modes with reduced STN model ##
 
 - Experiment: reproduce _spontaneous_ activity
 	- params reduced model: gpas @ 75%; cm @ 300% gna_NaL @ 60%
@@ -219,14 +306,14 @@
 	- => the individual current spikes of IKDR and IKv3 are not packed tightly together and riding on a 'plateau' as in full model, but are more widely spaces and return to baseline current level instead
 
 --------------------------------------------------------------------------------
-# Diary 29/01/2017 #
+## Diary 29/01/2017 #
 
 - TODO (mail to self)
 	- [x] i was only changing g in sec midpoints: need nested. for loop sections/segments
 	- [x] try attaching passive dendrite that functions only as leak reservoir
 	- [x] Plot on same axis: open, act, inact, with twinx() on left, current with twinx() on right
 
-## Experiment: reduce INaL in all segments of reduced model
+### Experiment: reduce INaL in all segments of reduced model
 - Experiment: reduce `I_NaL` in all segments of reduced model
 	- baseline, full model: T = 110 ms (f=9Hz)
 	- baseline, reduced model: T = 
@@ -247,7 +334,7 @@
 	- => with passive copy of trunk0 tree => T=24 ms; INaL,max = -2.5e-3
 
 --------------------------------------------------------------------------------
-# Diary 19/01/2017 #
+## Diary 19/01/2017 #
 
 - Try today
 	- [x] take another look as scaling g with surface method (try direct surface scaling approach)
@@ -255,7 +342,7 @@
 	- [x] only lower gNaL of soma
 	- [x] plot (in) activation variables and study role in AHP => control AHP duration by setting balance of g
 
-## Experiment & Insight: role of ionic currents (gbar) ##
+### Experiment & Insight: role of ionic currents (gbar) ##
 
 - [x] plot (in) activation variables and study role in AHP => control AHP duration by setting balance of g
 	
@@ -277,9 +364,9 @@
     	+ - CaT bootstraps CaL (activates at hyperpolarized V and inactivates at depolarized V)
 
 --------------------------------------------------------------------------------
-# Diary 11/01/2017 #
+## Diary 11/01/2017 #
 
-## Experiments ##
+### Experiments ##
 Test spontaneous firing
 	- [x] simulated full model
 		=> rgular spiking @ 10 Hz
@@ -297,7 +384,7 @@ Test generation of plateau potential
 	- [x] Simulated using average axial resistance (Marasco method)
 	- [x] Simulated using conservation of Rin (no averaging of trees)
 
-## Fitting/Rescaling ###
+### Fitting/Rescaling ###
 
 - to reduce firing rate:
 	- scaling L (surface) does not work

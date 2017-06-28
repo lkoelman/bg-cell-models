@@ -1,91 +1,82 @@
-# TODO PLAN #
 
-1. first compare balance of currents Otsuka/Gillies/RubinTerman/KhaliqRaman papers and see which currents are responsible for the different features of STN cell dynamics (e.g. bursts, spontaneous pacemaking, ...)
-	
-	- (plot equilibrium activations variables for each current)
-	
-	- implement experiments for different firing/physiology features from all papers
-		- go through paper Gillies and add experiments to Otsuka test script
-		- also add experiments for INaR from DoBean STN/Purkinje & Khaliq Purkinje papers
-	
-	- run experiment for each feature in each model
+# Connectivity & Synapse Parameters
 
+## CTX -> STN afferents
 
-2. Construct equivalent reduced model
+- [Chu 2015](Heterosynaptic Regulation of External Globus Pallidus Inputs to the Subthalamic Nucleus by the Motor Cortex)
 	
-	- reduction method: see principles of computational modeling, Ch. 8 & Ch. 4.3.3
-		1. Simplify tree morphology (see Ch. 4.3.3) & p. 85
-			- iteratively replace cylinders using technique in Box 3.2 and 3/2 assumption
-		2. Tune gbar ration & and geom+electrical properties of equivalent compartment to reproduce important behaviours/experiments of full model
-			- tune coupling of two compartments 
-				- see cable equation (NEURON book Ch3 p. 26 eq. 3.47 (pdf p. 114), or) Sterrat book eq. 2.24
-				- d and Ra determine input resistance for axial current
-	
-	- pick the balance of currents & implementations that agree most with other STN physiology papers
-		- possibly enhance rebound bursts according to Otsuka model to make sure they are robust
+	- `NOTE`:
 
+		- find out if these are from several synapses or not? Increased frequency of GPe transmission -> more synapses become functional (i.e. from silent to non-silent) (mentioned in discussion) that means that the single responses are probably from single synapses (otherwise you would have same frequency with higher amplitude)?
 
-3. Add bursting mechanism: removal of slow inactivation of Na currents by IPSPs
-	
-	- add slowly inactivating Na channels with de-inactivation by IPSPs
-		- see refs `DoBean2003/Baufreton2005/Wilson2015`
-	
-	- then replace the Na current with the more detailed Na channel model of Do/Bean/Khaliq/Raman model
-		- but retain the relative magnitude of gnabar and see that you can still reproduce main features of Otsuka & Gillies models
-			- potentially include two na mechanisms (one for persistent/transient, one for resurgent)
-			- sum of new Na currents must be equal to sum of existing Na currents
-	
-	- (design experiment to test if resurgent Na currents promote additional patterning unexplained by models without this current)
+		- find out if this is recorded at soma or post-synaptically. If former: need to correct for attenuation dendrite -> soma. Since traces were recorded using patch-clamp, they are likely recorded at soma.
+
+	- AMPA synapse EPSC characteristics at -60 mV RMP [Fig. 1](E)
+		- Imax = ~240 pA
+		- tau = ~4 ms (time from peak to 1/e = 36.8% of peak)
+
+	- AMPA synapse EPSC characteristics at -80 mV RMP [Fig. 1](E)
+		- Imax = ~275 pA
+		- tau = ~4 ms (time from peak to 1/e = 36.8% of peak)
+
+	- AMPA synapse EPSC characteristics at -80 mV RMP _before_ induction of hLTP [Fig. 2](panel G, left side)
+		- Imax = ~275 pA
+		- tau_rise = ~ 1 ms
+		- tau_fall = ~ 1.75 ms (time from peak to 1/e = 36.8% of peak)
+
+	- AMPA synapse EPSC characteristics at -80 mV RMP _after_ induction of hLTP [Fig. 2](panel G, right side)
+		- Imax = ~ 390 pA
+		- tau_rise = ~ 1 ms
+		- tau_fall = ~ 1.75ms (time from peak to 1/e = 36.8% of peak)
 
 
-4. Add synapses
-	
-	- based on studies synapse distribution
-	
-	- use synapse mapping procedure Marasco & adapt topology of reduced model to preserve transformations and I/O characteristics of dendritic tree
+	- NMDA synapse EPSC characteristics at -80 mV RMP [Fig. 1](E)
+		- `most accurate measurement of tau`
+		- Imax = ~270 pA
+		- tau = ~50 ms (time from peak to 1/e = 36.8% of peak)
+
+	- NMDA synapse EPSC characteristics at -60 mV RMP [Fig. 1](E)
+		- `inaccurate measurement of tau`
+		- Imax = ~10 pA
+		- tau = ~40 ms (time from peak to 1/e = 36.8% of peak)
+
+	- NMDA synapse EPSC characteristics at -80 mV RMP [Fig. 1](E)
+		- `inaccurate measurement of tau`
+		- Imax = ~5 pA
+		- tau = ~40 ms (time from peak to 1/e = 36.8% of peak)
+
+## GPe -> STN afferents
+
+- [Chu 2015](Heterosynaptic Regulation of External Globus Pallidus Inputs to the Subthalamic Nucleus by the Motor Cortex)
+
+	- GABA-A synapse IPSP characteristics at -60 mV RMP _before_ induction of hLTP [Fig. 2](panel G, left side)
+		- Imax = ~250 pA
+		- tau_rise = ~2.14 ms
+		- tau = ~2.75 ms (time from peak to 1/e = 36.8% of peak)
+
+	- GABA-A synapse IPSP characteristics at -60 mV RMP _after_ induction of hLTP [Fig. 2](panel G, right side)
+		- Imax = ~350 pA
+		- tau_rise = ~2.14
+		- tau = ~3 ms (time from peak to 1/e = 36.8% of peak)
+
+	- GABA-A synapse IPSP characteristics _before_ induction of hLTP [Fig. 5](panel A, top traces, black)
+		- Imax = ~350 pA
+		- tau_rise = ~2.6 ms
+		- tau = ~5 ms (time from peak to 1/e = 36.8% of peak)
+
+	- GABA-A synapse IPSP characteristics _after_ induction of hLTP [Fig. 5](panel A, top traces, green)
+		- Imax = ~450 pA
+		- tau_rise = ~3.15
+		- tau = ~6.5 (time from peak to 1/e = 36.8% of peak)
 
 
-5. Reduce GPe model
-	- see ref
+- [Baufreton et al. 2009](Sparse but Selective and Potent Synaptic Transmission From the Globus Pallidus to the Subthalamic Nucleus)
 
---------------------------------------------------------------------------------
-# TODO NEXT #
+	- GABA-A synapse IPSP characteristics [Fig. 5](panel A, top traces, black)
+		- Imax = ~ 375-680 pA
+		- tau = ~ 6-9 ms (time from peak to 1/e = 36.8% of peak)
 
-- Test model reduction code
-	
-	- [x] Check scaling factors actually used VS paper in RedPurk.hoc
-		- same as mentioned in paper: original/equivalent surface (if synapses in cluster: only count sections containing synapse toward original surface)
-	
-	- [x] See what happens to theoretical Rin in toy model
-		- Calculate marasco reduction by hand for simple tree
-		- calculated by hand and adapted expressions to make units match
-		- in toy tree (secs P/A/B): Rin is conserved witn 0.2% accuracy for toy tree
-			- NOTE that cluster root sections are not merged here with Marasco <eq> expressions
-	
-	- [x] See what happens to theoretical Rin in Gillies & Willshaw model
-		- Calculate and compare input resistance of trees in full/reduced model (using algorithm Sterrat Ch. 4)
-		- => if trees averaged/RaMERGINGMETHOD=1: they are not equal (see compare_models())
-		- => if trees not averaged/RaMERGINGMETHOD=0: they are practically equal (within 1%)
-	
-	- [x] run other tests and see if all fail
-		- => they fail, likely due to different input resistance
-	
-	- [x] check if mergingYmethod correctly implemented 
-		- => NO: i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
-		- however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
-	
-	- [ ] Correct spontaneous firing rate through scaling/fitting
-		- [x] read Chapt Sterrat parameter fitting
-		- [x] compare values post-/pre-reduction
-		- [x] test effect of extra dendrites => increases firing rate (due to more I_NaL provided?)
-		- => spontaneous firing rate can be adapted by changing cm/gpas/gnaL. However by tuning these parameters you cannot get the firing as low as in the full model (9 Hz)
-	
-- Implement slow inactivation
-	- [ ] get parameters state model slow inactivaton & recovery from papers (see notes below)
-		
-- See if other currents need to be adjusted to accomodate new current INa_rsg
-	- e.g. reduce Ih/HCN or change its parameters
-
+## STN -> GPi efferents
 
 --------------------------------------------------------------------------------
 # Histology, Physiology, Connectivity
@@ -93,9 +84,13 @@
 ## Subcellular Connectivity
 
 - Refs for calibrating synapses:
+
 	- [Baufreton et al. 2009](Sparse but Selective and Potent Synaptic Transmission From the Globus Pallidus to the Subthalamic Nucleus)
+	
 	- [Atherton et al. 2013](Short-term Depression of External Globus Pallidus-Subthalamic Nucleus Synaptic Transmission and Implications for Patterning Subthalamic Activity)
 		- set time constants for Tsodyks-Markram model
+
+	- [Chu 2015](Heterosynaptic Regulation of External Globus Pallidus Inputs to the Subthalamic Nucleus by the Motor Cortex)
 
 
 - Bevan (2017) in Handbook of BG Structure & Function

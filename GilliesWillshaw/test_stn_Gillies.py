@@ -11,7 +11,6 @@ for the different features of STN cell dynamics
 """
 
 import collections
-import re
 import math
 
 import numpy as np
@@ -788,7 +787,11 @@ def test_slowbursting(soma, dends_locs, stims):
 	return recData
 
 def compare_conductance_dist(gnames):
-	""" Compare conductance distribution betweel full and reduced model """
+	"""
+	Compare conductance distribution betweel full and reduced model
+
+	NOTE: better use ModelView in NEURON GUI instead
+	"""
 
 	# Get cells of original model
 	or_somaref, or_treeL, or_treeR = reduction_analysis.get_gillies_cells()
@@ -826,7 +829,9 @@ def compare_conductance_dist(gnames):
 
 # if __name__ == '__main__':
 def run_experimental_protocol():
-	""" Run one of the experiments using full or reduced STN model """
+	"""
+	Run one of the experiments using full or reduced STN model
+	"""
 	# Make cell
 	reduction_method = 1
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
