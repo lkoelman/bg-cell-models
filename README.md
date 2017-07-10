@@ -1,6 +1,15 @@
 
 # Connectivity & Synapse Parameters
 
+- Refs for calibrating synapses:
+
+	- [Baufreton et al. 2009](Sparse but Selective and Potent Synaptic Transmission From the Globus Pallidus to the Subthalamic Nucleus)
+	
+	- [Atherton et al. 2013](Short-term Depression of External Globus Pallidus-Subthalamic Nucleus Synaptic Transmission and Implications for Patterning Subthalamic Activity)
+		- set time constants for Tsodyks-Markram model
+
+	- [Chu 2015](Heterosynaptic Regulation of External Globus Pallidus Inputs to the Subthalamic Nucleus by the Motor Cortex)
+
 ## CTX -> STN afferents
 
 - [Chu 2015](Heterosynaptic Regulation of External Globus Pallidus Inputs to the Subthalamic Nucleus by the Motor Cortex)
@@ -82,15 +91,6 @@
 # Histology, Physiology, Connectivity
 
 ## Subcellular Connectivity
-
-- Refs for calibrating synapses:
-
-	- [Baufreton et al. 2009](Sparse but Selective and Potent Synaptic Transmission From the Globus Pallidus to the Subthalamic Nucleus)
-	
-	- [Atherton et al. 2013](Short-term Depression of External Globus Pallidus-Subthalamic Nucleus Synaptic Transmission and Implications for Patterning Subthalamic Activity)
-		- set time constants for Tsodyks-Markram model
-
-	- [Chu 2015](Heterosynaptic Regulation of External Globus Pallidus Inputs to the Subthalamic Nucleus by the Motor Cortex)
 
 
 - Bevan (2017) in Handbook of BG Structure & Function

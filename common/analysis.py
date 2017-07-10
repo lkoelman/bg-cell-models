@@ -223,20 +223,36 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 				includeTraces=None, excludeTraces=None, labelTime=False,
 				showFig=True, colorList=None, lineList=None, yRange=None,
 				traceSharex=False, showGrid=True):
-	""" Plot previously recorded traces
+	"""
+	Plot previously recorded traces
 
-		- timeRange ([start:stop]): Time range of spikes shown; if None shows all (default: None)
-		- oneFigPer ('cell'|'trace'): Whether to plot one figure per cell (showing multiple traces) 
-			or per trace (showing multiple cells) (default: 'cell')
-		- showFig (True|False): Whether to show the figure or not (default: True)
-		- labelTime (True|False): whether to show the time axis label (default:True)
-		- includeTraces (['V_soma', ...]): traces to include in this plot
-		- excludeTraces (['V_soma', ...]): traces to exclude in this plot
-		- yRange: y limit for range, e.g. (0, 60). Can be a tuple, list or dict with traces as keys
-		- traceSharex: if True, all x-axes will be shared (maintained during zooming/panning), else
-			if an axes object is provided, share x axis with that axes
+	- timeRange ([start:stop])
+		Time range of spikes shown; if None shows all (default: None)
+	
+	- oneFigPer ('cell'|'trace')
+		Whether to plot one figure per cell (showing multiple traces) 
+		or per trace (showing multiple cells) (default: 'cell')
+	
+	- showFig (True|False)
+		Whether to show the figure or not (default: True)
+	
+	- labelTime (True|False)
+		whether to show the time axis label (default:True)
+	
+	- includeTraces (['V_soma', ...])
+		traces to include in this plot
+	
+	- excludeTraces (['V_soma', ...])
+		traces to exclude in this plot
+	
+	- yRange
+		y limit for range, e.g. (0, 60). Can be a tuple, list or dict with traces as keys
+	
+	- traceSharex
+		if True, all x-axes will be shared (maintained during zooming/panning), else
+		if an axes object is provided, share x axis with that axes
 		
-		Returns figure handles
+	Returns figure handles
 	"""
 
 	tracesList = traceData.keys()
@@ -274,7 +290,9 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		else: # one separate figure per trace
 			fig = plt.figure()
 			figs.append(fig)
-			ax = fig.axes[0]
+			ax = plt.subplot(111, sharex=shared_ax)
+			if itrace==0 and traceSharex==True:
+				shared_ax = ax
 
 		# Get data to plot
 		tracevec = traceData[trace].as_numpy()
@@ -356,7 +374,15 @@ def pick_line(trace_name, trace_index, solid_only=False):
 	else:
 		colors, styles = default_style
 	return colors[trace_index%len(colors)], styles[trace_index%len(styles)]
-	
+
+
+def match_traces(recData, matchfun):
+	"""
+	Get ordered dictionary with matching traces.
+
+	@param matchfun		lambda string -> bool
+	"""
+	return collections.OrderedDict([(trace_name,v) for trace_name,v in recData.iteritems() if matchfun(trace_name)])
 
 def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 					includeTraces=None, excludeTraces=None,

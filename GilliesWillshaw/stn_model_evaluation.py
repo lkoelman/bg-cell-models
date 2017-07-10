@@ -62,23 +62,26 @@ class StnModel(Enum):
 	Gillies_BranchZip = 3
 
 
-def distribute_synapses(secrefs, elig_func):
+def pick_random_segments(secrefs, n_segs, elig_func, rng=None):
 	"""
-	Pick locations on given Sections so that each location has
-	a uniform change of being selected.
+	Pick random segments with spatially uniform distribution.
 	"""
+	# Get random number generator
+	if rng is None:
+		rng = np.random
 
 	# Gather segments that are eligible.
 	elig_segs = [seg for ref in secrefs for seg in ref.sec if elig_func(seg)]
-	logger.debug("Found {} eligible target segments for CTX afferents".format(len(elig_segs)))
+	logger.debug("Found {} eligible target segments".format(len(elig_segs)))
 
 	# Sample segments
-	# Note that nseg/L might not be uniform so that randomly picking
-	# segments will not lead to a uniform spatial distribution of synapses.
+	# 	Note that nseg/L is not necessarily uniform so that randomly picking
+	# 	segments will not lead to a uniform spatial distribution of synapses.
 	target_segs = [] # target segments, including their x-location
 	Ltotal = sum((seg.sec.L/seg.sec.nseg for seg in elig_segs)) # summed length of all found segments
-	for i in xrange(n_ctx_syn):
-		sample = self.rng.random_sample() # in [0,1)
+	for i in xrange(n_segs):
+		sample = rng.random_sample() # in [0,1)
+		# Pick segment at random fraction of combined length of Sections
 		Ltraversed = 0.0
 		for seg in elig_segs:
 			Lseg = seg.sec.L
@@ -98,17 +101,22 @@ class StnModelEvaluator(object):
 	"""
 	Evaluate STN models
 
-	Inspired by
+	Inspired by:
 	- optimization.py/Simulation
 	- optimization.py/StnCellController
 	- bgmodel/models/kang/model.py/BGSim
+
+	Improvements:
+	- make evaluator subclasses for the different protocols
 	"""
 
-	def __init__(self, pstate, target_model):
-		self._physio_state = pstate
-		self.stim_protocol = sproto
+	def __init__(self, target_model, physio_state=PhysioState.NORMAL):
+		"""
+		Initialize new evaluator in given physiological state.
+		"""
+		self._physio_state = physio_state
 
-		self.model_data = dict((model, {} for model in list(StnModel)))
+		self.model_data = dict(((model, {}) for model in list(StnModel)))
 		self.target_model = target_model
 
 		somaref, dendrefs = self.build_cell(self.target_model)
@@ -118,7 +126,7 @@ class StnModelEvaluator(object):
 			'dendrites': dendrefs # one list(SectionRef) per dendrite
 		}
 
-		self.model_data[self.target_model]['rec_data'] = dict((proto, {} for proto in StimProtocol))
+		self.model_data[self.target_model]['rec_data'] = dict(((proto, {}) for proto in StimProtocol))
 
 		self.sim_dur = 1000.
 		self.sim_dt = 0.025
@@ -137,8 +145,11 @@ class StnModelEvaluator(object):
 		Set cell physiological state.
 		"""
 		if self.target_model == StnModel.Gillies2005:
-			# TODO: change to DA depleted state
-			pass
+			if state == PhysioState.NORMAL:
+				pass # this case corresponds to default model parameters
+			else:
+				# TODO: decide parameter modifications for DA-depleted state from literature
+				raise NotImplementedError()
 		else:
 			raise Exception("Model '{}' not supported".format(
 					self.target_model))
@@ -149,6 +160,11 @@ class StnModelEvaluator(object):
 		"""
 		Build cell model using current physiological state
 		"""
+
+		if self.model_data[model].get('built', False):
+			logger.warning("Attempting to build model {} which has already been built.".format(
+							model))
+
 		if model == StnModel.Gillies2005:
 			# Make Gillies STN cell
 			soma, dends, stims = gillies.stn_cell_gillies()
@@ -165,6 +181,9 @@ class StnModelEvaluator(object):
 		else:
 			raise Exception("Model '{}' not supported".format(
 					model))
+
+		# Indicate that given model has been built
+		self.model_data[model]['built'] = True
 
 		return somaref, dendrefs
 
@@ -243,21 +262,26 @@ class StnModelEvaluator(object):
 
 		elif stim_protocol == StimProtocol.SYN_BACKGROUND_HIGH:
 			# TODO: implement inputs for SYN_BACKGROUND_HIGH
-			pass
+			raise NotImplementedError()
 
 		elif stim_protocol == StimProtocol.SYN_BACKGROUND_LOW:
 			# TODO: implement inputs for SYN_BACKGROUND_LOW
-			pass
+			raise NotImplementedError()
 
 		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED:
 
 			# Add cortical input
+			# TODO: calibrate cortical inputs
+			#	- test that EPSP/IPSP have desired size
+			#	- in DA-depleted state: should trigger bursts
+			
 			# Method 1:
-			# - add netstim and play input signal into weight (see Dura-Berndal arm example)
-			# - advantage: low weight in off-period will provide background noise
-			# - if no input desired in off-period: periodically turn it on/off using events or other NetStim
+			# 	- add netstim and play input signal into weight (see Dura-Berndal arm example)
+			# 	- advantage: low weight in off-period will provide background noise
+			# 	- if no input desired in off-period: periodically turn it on/off using events or other NetStim
+			
 			# Method 2:
-			# - use nsloc.mod (=netstim with variable rate)
+			# 	- use nsloc.mod (=netstim with variable rate)
 
 			n_ctx_syn = 10
 			ctx_syns = []
@@ -265,32 +289,41 @@ class StnModelEvaluator(object):
 			ctx_stims = []
 
 			# Make weight signal
-			stimtimevec = np.arange(0, self.sim_dur, 0.05) # update every 0.05 ms
+			ctx_timevec = np.arange(0, self.sim_dur, 0.05) # update every 0.05 ms
 			ctx_pattern_freq = 20.0 # frequency [Hz]
-			pattern = np.sin(2*pi*ctx_pattern_freq*1e-3*stimtimevec) # amplitude 1.0
-			pattern[pattern<=0] = 0.05 # TODO: fractional noise amplitude
+			pattern = np.sin(2*np.pi*ctx_pattern_freq*1e-3*ctx_timevec) # amplitude 1.0
+			noise_amp = 0.05 # TODO: fractional noise amplitude
+			pattern[pattern<=noise_amp] = noise_amp
 			
-			# gmax is in uS in POINT_PROCESS synapses
-			# 1 [uS] * 1 [mV] = 1 [nA]
-			# we want ~ 300 [pA] = 0.3 [nA]
-			# gmax [uS] * (-68 [mV] - 0 [mV]) = gmax * -68 [nA]
-			# gmax * -68 = 0.3 <=> gmax = 0.3/68 = 0.044 [uS]
+			# DEBUG: visualize waveform
+			# from matplotlib import pyplot as plt
+			# plt.plot(ctx_timevec, pattern)
+			# plt.show(block=True)
+			
+			# gmax is in [uS] in POINT_PROCESS synapses
+			# 	1 [uS] * 1 [mV] = 1 [nA]
+			# 	we want ~ 300 [pA] = 0.3 [nA]
+			# 	gmax [uS] * (-68 [mV] - 0 [mV]) = gmax * -68 [nA]
+			# 	gmax * -68 = 0.3 <=> gmax = 0.3/68 = 0.044 [uS]
 			gmax = 0.390/68. # 390 [pA] @ RMP=-68 [mV]
-			stimweightvec = pattern * gmax
+			ctx_weightvec = pattern * gmax
+
+			stimweightvec = h.Vector(ctx_weightvec)
+			stimtimevec = h.Vector(ctx_timevec)
 
 			# Distribute synapses over dendritic trees
 			is_ctx_target = lambda seg: seg.diam <= 1.0			
 			dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
 			dend_secrefs = sum(dendrites, [])
-			ctx_target_segs = distribute_synapses(dend_secrefs, is_ctx_target)
+			ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
 
 			# Make synapses
 			for target_seg in ctx_target_segs:
 
 				# Make a synapse
-				asyn = h.Exp2Syn(target_seg)
+				asyn = h.Exp2Syn(target_seg) # TODO: use depressing synapses (tmgsyn)
 				asyn.tau1 = 1.0
-				asyn.tau2 = 1.75 + rng.rand()*2.25 # see refs: ~ 1.75-4 ms
+				asyn.tau2 = 1.75 + self.rng.rand()*2.25 # see refs: ~ 1.75-4 ms
 				asyn.e = 0.0
 				ctx_syns.append(asyn)
 
@@ -312,11 +345,11 @@ class StnModelEvaluator(object):
 
 			# Save inputs
 			self.model_data[self.target_model]['inputs']['ctx'] = {
-				'stimtimevec', stimtimevec,
-				'stimweightvec', stimweightvec,
-				'synapses', ctx_syns,
-				'NetCons', ctx_ncs,
-				'NetStims', ctx_stims,
+				'stimtimevec': stimtimevec,
+				'stimweightvec': stimweightvec,
+				'synapses': ctx_syns,
+				'NetCons': ctx_ncs,
+				'NetStims': ctx_stims,
 			}
 
 
@@ -327,30 +360,33 @@ class StnModelEvaluator(object):
 			gpe_stims = []
 
 			# Make weight signal
-			stimtimevec = np.arange(0, self.sim_dur, 0.05) # update every 0.05 ms
+			gpe_timevec = np.arange(0, self.sim_dur, 0.05) # update every 0.05 ms
 			gpe_pattern_freq = 20.0 # frequency [Hz]
 			gpe_pattern_phase = np.pi # anti-phase from CTX
-			gpe_pattern = np.sin(2*pi*gpe_pattern_freq*1e-3*stimtimevec + gpe_pattern_phase) # amplitude 1.0
+			gpe_pattern = np.sin(2*np.pi*gpe_pattern_freq*1e-3*gpe_timevec + gpe_pattern_phase) # amplitude 1.0
 			gpe_pattern[gpe_pattern<=0] = 0.05 # fractional noise amplitude
 
 			# See calculation above: gmax = x [nA]/RMP [mV] = y [uS]
 			# TODO: correct both gmax for attenuation from dendrites to soma. Do this separately for GPe and CTX inputs since they have to travel different path lengths.
 			gmax = 0.450/68. # 450 [pA] @ RMP=-68 [mV]
-			stimweightvec = gpe_pattern * gmax
+			gpe_weightvec = gpe_pattern * gmax
 
-			# Distribute synapses over dendritic trees
+			stimweightvec = h.Vector(gpe_weightvec)
+			stimtimevec = h.Vector(gpe_timevec)
+
+			# Pick random segments in dendrites for placing synapses
 			is_gpe_target = lambda seg: seg.diam > 1.0	
 			dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
 			dend_secrefs = sum(dendrites, [])
-			gpe_target_segs = distribute_synapses(dend_secrefs, is_gpe_target)
+			gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
 
 			# Make synapses
 			for target_seg in gpe_target_segs:
 
 				# Make a synapse
 				asyn = h.Exp2Syn(target_seg)
-				asyn.tau1 = 2.1 + rng.rand()*1. # see refs: ~ 2.1-3.1 ms
-				asyn.tau2 = 2.75 + rng.rand()*3.25 # see refs: ~ 2.75-6 ms
+				asyn.tau1 = 2.1 + self.rng.rand()*1. # see refs: ~ 2.1-3.1 ms
+				asyn.tau2 = 2.75 + self.rng.rand()*3.25 # see refs: ~ 2.75-6 ms
 				asyn.e = 0.0
 				gpe_syns.append(asyn)
 
@@ -372,11 +408,11 @@ class StnModelEvaluator(object):
 
 			# Save inputs
 			self.model_data[self.target_model]['inputs']['gpe'] = {
-				'stimtimevec', stimtimevec,
-				'stimweightvec', stimweightvec,
-				'synapses', gpe_syns,
-				'NetCons', gpe_ncs,
-				'NetStims', gpe_stims,
+				'stimtimevec': stimtimevec,
+				'stimweightvec': gpe_weightvec,
+				'synapses': gpe_syns,
+				'NetCons': gpe_ncs,
+				'NetStims': gpe_stims,
 			}
 
 
@@ -385,19 +421,20 @@ class StnModelEvaluator(object):
 		"""
 		Map inputs from target model to candidate model.
 		"""
-		pass
+		raise NotImplementedError()
 
 
 	def rec_traces(self, protocol, recordStep=0.025):
 		"""
 		Set up recording Vectors to record from relevant pointers
 		"""
-		# Define named sections to record from
+		# Specify sections to record from
 		if self.target_model == StnModel.Gillies2005:
 
 			somasec = h.SThcell[0].soma
 			dendsec = h.SThcell[0].dend1[7]
 
+			# Assign label to each recorded section
 			rec_segs = {
 				'soma': somasec(0.5), # middle of soma
 				'dist_dend': dendsec(0.8), # approximate location along dendrite in fig. 5C
@@ -418,17 +455,17 @@ class StnModelEvaluator(object):
 		if protocol == StimProtocol.SPONTANEOUS: # spontaneous firing (no inputs)
 			
 			# Trace specs for membrane voltages
-			for segname, seg in rec_segs.iteritems():
-				traceSpecs['V_'+segname] = {'sec':segname, 'loc':seg.x, 'var':'v'}
+			for seclabel, seg in rec_segs.iteritems():
+				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
 
 			# Trace specs for recording ionic currents, channel states
-			rec_currents_activations(traceSpecs, 'soma', 0.5)
+			analysis.rec_currents_activations(traceSpecs, 'soma', 0.5)
 
 		elif protocol == StimProtocol.CLAMP_PLATEAU: # plateau potential (Gillies 2006, Fig. 10C-D):
 			
 			# Trace specs for membrane voltages
-			for segname, seg in rec_segs.iteritems():
-				traceSpecs['V_'+segname] = {'sec':segname, 'loc':seg.x, 'var':'v'}
+			for seclabel, seg in rec_segs.iteritems():
+				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
 
 			# Record Ca and Ca-activated currents in dendrite
 			dendloc = rec_segs['dist_dend'].x
@@ -444,35 +481,37 @@ class StnModelEvaluator(object):
 		elif protocol == StimProtocol.CLAMP_REBOUND: # rebound burst (Gillies 2006, Fig. 3-4)
 
 			# Trace specs for membrane voltages
-			for segname, seg in rec_segs.iteritems():
-				traceSpecs['V_'+segname] = {'sec':segname, 'loc':seg.x, 'var':'v'}
+			for seclabel, seg in rec_segs.iteritems():
+				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
 
 			# Trace specs for recording ionic currents, channel states
-			rec_currents_activations(traceSpecs, 'soma', 0.5)
+			analysis.rec_currents_activations(traceSpecs, 'soma', 0.5)
 			
 			# Ca and K currents in distal dendrites
 			dendloc = rec_segs['dist_dend'].x
-			rec_currents_activations(traceSpecs, 'dist_dend', dendloc, ion_species=['ca','k'])
+			analysis.rec_currents_activations(traceSpecs, 'dist_dend', dendloc, ion_species=['ca','k'])
 
-		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH. # synaptic bombardment, high background activity
-			pass
+		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH: # synaptic bombardment, high background activity
+			# TODO: decide what to record for SYN_BACKGROUND_HIGH
+			raise NotImplementedError()
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_LOW: # synaptic bombardment, low background activity
-			pass
+			# TODO: decide what to record for SYN_BACKGROUND_LOW
+			raise NotImplementedError()
 
 		elif protocol == StimProtocol.SYN_PARK_PATTERNED: # pathological input, strong patterned cortical input with strong GPi input in antiphase
 			
-			# Name some proximal and distal dendritic sections for recording
 			# See diagram in marasco_reduction.pptx
-			dist_dend0_ids = [8,9,7,10,12,13,18,19,17,20,22,23]
-			prox_dend0_ids = [2,4,5,3,14,15]
+			# dist_dend0_ids = [8,9,7,10,12,13,18,19,17,20,22,23]
+			# prox_dend0_ids = [2,4,5,3,14,15]
+			# dist_dend1_ids = [6,7,5,8,10,11]
+			# prox_dend1_ids = [1,2,3]
 
-			dist_dend1_ids = [6,7,5,8,10,11]
-			prox_dend1_ids = [1,2,3]
-
+			# Pick some proximal and distal dendritic sections for recording
 			dist_secs = [(0,9), (0,10), (0,17), (0,23), (1,6), (1,8)]
 			prox_secs = [(0,2), (0,3), (1,1)]
 
+			# Add to recorded sections
 			for tree_id, sec_id in dist_secs:
 				tree_name = 'dend' + str(tree_id)
 				sec = getattr(h.SThcell[0], tree_name)[sec_id-1]
@@ -483,22 +522,32 @@ class StnModelEvaluator(object):
 				sec = getattr(h.SThcell[0], tree_name)[sec_id-1]
 				rec_segs['prox_' + repr(sec)] = sec(0.9)
 
-			# Traces to record in all sections
-			for segname, seg in rec_segs.iteritems():
+			# Pick some segments that are targeted by synapse
+			gpe_ncs = self.model_data[self.target_model]['inputs']['gpe']['NetCons']
+			ctx_ncs = self.model_data[self.target_model]['inputs']['ctx']['NetCons']
+			gpe_picks = [gpe_ncs[i] for i in self.rng.choice(len(gpe_ncs), 3, replace=False)]
+			ctx_picks = [ctx_ncs[i] for i in self.rng.choice(len(ctx_ncs), 3, replace=False)]
+			for nc in gpe_picks + ctx_picks:
+				seg = nc.syn().get_segment()
+				rec_segs['postsyn_' + repr(seg.sec)] = seg
+
+
+			# Specify which traces you want in these sections
+			for seclabel, seg in rec_segs.iteritems():
 				# Membrane voltages
-				traceSpecs['V_'+segname] = {'sec':segname, 'loc':seg.x, 'var':'v'}
+				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
 
-				# K currents (dendrite)
-				traceSpecs['I_KCa_'+segname] = {'sec':'dist_dend','loc':seg.x,'mech':'sKCa','var':'isKCa'}
+				# # K currents (dendrite)
+				# traceSpecs['I_KCa_'+seclabel] = {'sec':'dist_dend','loc':seg.x,'mech':'sKCa','var':'isKCa'}
 				
-				# Ca currents (dendrite)
-				traceSpecs['I_CaL_'+segname] = {'sec':'dist_dend','loc':seg.x,'mech':'HVA','var':'iLCa'}
-				traceSpecs['I_CaN_'+segname] = {'sec':'dist_dend','loc':seg.x,'mech':'HVA','var':'iNCa'}
-				traceSpecs['I_CaT_'+segname] = {'sec':'dist_dend','loc':seg.x,'mech':'CaT','var':'iCaT'}
+				# # Ca currents (dendrite)
+				# traceSpecs['I_CaL_'+seclabel] = {'sec':'dist_dend','loc':seg.x,'mech':'HVA','var':'iLCa'}
+				# traceSpecs['I_CaN_'+seclabel] = {'sec':'dist_dend','loc':seg.x,'mech':'HVA','var':'iNCa'}
+				# traceSpecs['I_CaT_'+seclabel] = {'sec':'dist_dend','loc':seg.x,'mech':'CaT','var':'iCaT'}
 
 
-		# Prepare dictionary with name -> Section
-		rec_secs = dict((secname, seg.sec) for secname, seg in rec_segs.iteritems)
+		# Prepare dictionary (label -> Section)
+		rec_secs = dict((seclabel, seg.sec) for seclabel, seg in rec_segs.iteritems())
 
 		# Use trace specs to make Hoc Vectors
 		recData = analysis.recordTraces(rec_secs, traceSpecs, recordStep)
@@ -507,66 +556,69 @@ class StnModelEvaluator(object):
 		self.model_data[self.target_model]['rec_data'][protocol] = {
 			'trace_specs': traceSpecs,
 			'trace_data': recData,
+			'rec_dt': recordStep,
 		}
 		
 
 
-	def plot_traces(self, protocol):
+	def plot_traces(self, protocol, model=None):
 		"""
 		Plot relevant recorded traces for given protocol
 		"""
 
-		if protocol == StimProtocol.SPONTANEOUS:
-			recData = self.model_data[self.target_model]['rec_data'][protocol]['trace_data']
-			
-			# Plot membrane voltages
+		# Get recorded data
+		if model is None:
+			model = self.target_model
+		recData = self.model_data[model]['rec_data'][protocol]['trace_data']
+		recordStep = self.model_data[model]['rec_data'][protocol]['rec_dt']
+
+		# Plot membrane voltages
+		def plot_all_Vm():
 			recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
-			figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), traceSharex=True)
-			vm_fig = figs_vm[0]
-			vm_ax = figs_vm[0].axes[0]
+			figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
+											traceSharex=True, oneFigPer='trace')
+			return figs_vm
+
+		# Extra plots depending on simulated protocol
+		if protocol == StimProtocol.SPONTANEOUS:
+			plot_all_Vm()
 
 			# Plot ionic currents, (in)activation variables
-			figs, cursors = plot_currents_activations(self.recData, recordStep)
+			figs, cursors = analysis.plot_currents_activations(self.recData, recordStep)
 
 		elif protocol == StimProtocol.CLAMP_PLATEAU:
-			recData = self.model_data[self.target_model]['rec_data'][protocol]['trace_data']
-			
-			# Plot membrane voltages
-			recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
-			figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), traceSharex=True)
-			vm_fig = figs_vm[0]
-			vm_ax = figs_vm[0].axes[0]
+			plot_all_Vm()
 
 			# Plot ionic currents, (in)activation variables
-			figs, cursors = plot_currents_activations(recData, recordStep)
+			figs, cursors = analysis.plot_currents_activations(recData, recordStep)
 
 			# Dendrite currents during burst
 			recDend = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.endswith('_d')])
 			analysis.cumulPlotTraces(recDend, recordStep, timeRange=burst_time)
 
 		elif protocol == StimProtocol.CLAMP_REBOUND:
-			recData = self.model_data[self.target_model]['rec_data'][protocol]['trace_data']
-
-			# Plot membrane voltages
-			recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
-			figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), traceSharex=True)
-			vm_fig = figs_vm[0]
-			vm_ax = figs_vm[0].axes[0]
+			plot_all_Vm()
 
 			# Plot ionic currents, (in)activation variables
-			figs_soma, cursors_soma = plot_currents_activations(recData, recordStep, sec_tag='soma')
-			figs_dend, cursors_dend = plot_currents_activations(recData, recordStep, sec_tag='dist_dend')
+			figs_soma, cursors_soma = analysis.plot_currents_activations(recData, recordStep, sec_tag='soma')
+			figs_dend, cursors_dend = analysis.plot_currents_activations(recData, recordStep, sec_tag='dist_dend')
 			figs = figs_soma + figs_dend
 			cursors = cursors_soma + cursors_dend
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH:
-			pass
+			plot_all_Vm() # only plot membrane voltages
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_LOW:
-			pass
+			plot_all_Vm() # only plot membrane voltages
 
 		elif protocol == StimProtocol.SYN_PARK_PATTERNED:
-			pass
+			V_prox = analysis.match_traces(recData, lambda t: t.startswith('V_prox'))
+			V_dist = analysis.match_traces(recData, lambda t: t.startswith('V_dist'))
+			V_postsyn = analysis.match_traces(recData, lambda t: t.startswith('V_postsyn'))
+
+			analysis.plotTraces(V_prox, recordStep, yRange=(-80,40), traceSharex=True)
+			analysis.plotTraces(V_dist, recordStep, yRange=(-80,40), traceSharex=True)
+			analysis.plotTraces(V_postsyn, recordStep, yRange=(-80,40), traceSharex=True)
 
 	def run_sim(self, dur=None):
 		"""
@@ -578,22 +630,35 @@ class StnModelEvaluator(object):
 
 		h.tstop = dur
 		h.init() # calls finitialize() and fcurrent()
+		logger.debug("Simulating...")
 		t0 = h.startsw()
 		h.run()
 		t1 = h.startsw()
 		h.stopsw() # or t1=h.startsw(); runtime = t1-t0
-		logger.debug("Simulation ran for {:.6f} seconds".format(t1-t0))
+		logger.debug("Simulated for {:.6f} seconds".format(t1-t0))
 
 
-	def run_protocol(self, protocol, model):
+	def run_protocol(self, protocol, model=None):
 		"""
-		Simulate cell in physiological state, under given stimulation protocol
+		Simulate cell in physiological state, under given stimulation protocol.
+
+		@param model	Model to simulate protocol with. If no model is given,
+						the target model is used.
+
+		@pre		cell must be built using build_cell
+
+		@pre		physiological state must be set
+
+		@effect		makes inputs (afferents, stimulation) based on physiological 
+					state and stimulation protocol (see make_inputs)
+
+		@effect		runs a simulation
 		"""
 		
 		if protocol == StimProtocol.SPONTANEOUS: # spontaneous firing (no inputs)
 			
 			# Set simulation parameters
-			self.sim_dur = 2000
+			self.sim_dur = 1000
 			h.dt = 0.025
 			self.sim_dt = h.dt
 
@@ -647,11 +712,11 @@ class StnModelEvaluator(object):
 			# Simulate
 			self.run_sim()
 
-		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH. # synaptic bombardment, high background activity
-			pass
+		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH: # synaptic bombardment, high background activity
+			raise NotImplementedError()
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_LOW: # synaptic bombardment, low background activity
-			pass
+			raise NotImplementedError()
 
 		elif protocol == StimProtocol.SYN_PARK_PATTERNED: # pathological input, strong patterned cortical input with strong GPi input in antiphase
 			
@@ -677,10 +742,17 @@ class StnModelEvaluator(object):
 
 if __name__ == '__main__':
 	# Run Gillies 2005 model
-	evaluator = StnModelEvaluator(PhysioState.NORMAL, StnModel.Gillies2005)
-	evaluator.build_cell(StnModel.Gillies2005)
-	evaluator.run_protocol(StimProtocol.SPONTANEOUS)
-	evaluator.plot_traces(StimProtocol.SPONTANEOUS)
+	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
+
+	# Choose protocol
+	# proto = StimProtocol.SPONTANEOUS
+	# proto = StimProtocol.CLAMP_PLATEAU
+	# proto = StimProtocol.CLAMP_REBOUND
+	proto = StimProtocol.SYN_PARK_PATTERNED
+	# proto = StimProtocol.SYN_BACKGROUND_LOW
+	# proto = StimProtocol.SYN_BACKGROUND_HIGH
+	evaluator.run_protocol(proto)
+	evaluator.plot_traces(proto)
 
 
 
