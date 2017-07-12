@@ -30,15 +30,7 @@ import gillies_model as gillies
 import reduce_marasco as marasco
 import mapsyn
 from common import analysis
-
-
-class PhysioState(Enum):
-	"""
-	Physiological state of the cell
-	"""
-	NORMAL = 0
-	PARKINSONIAN = 1
-	PARK_DBS = 2
+from cellpopdata import PhysioState
 
 class StimProtocol(Enum):
 	"""
@@ -144,16 +136,48 @@ class StnModelEvaluator(object):
 		"""
 		Set cell physiological state.
 		"""
+		# Change model parameters
 		if self.target_model == StnModel.Gillies2005:
+
 			if state == PhysioState.NORMAL:
 				pass # this case corresponds to default model parameters
-			else:
+
+			elif (state == PhysioState.PARKINSONIAN or state == PhysioState.PARK_DBS):
+
 				# TODO: decide parameter modifications for DA-depleted state from literature
+				somaref = self.model_data[self.target_model]['sec_refs']['soma']
+				dendrefs =  self.model_data[self.target_model]['sec_refs']['dendrites']
+
+				# 1. Reduce sKCA channel conductance by 90%, from sources:
+				#	- Gillies & Willshaw 2005 (see refs)
+				for secref in [somaref] + dendrefs:
+					for seg in secrref.sec:
+						seg.gk_sKCa = 0.1 * seg.gk_sKCa
+
+				# 2. Modifications to GPE GABA IPSPs
+				#	- Changes:
+				#		- Increased strength of GABA IPSPs
+				#		- longer decay kinetics, 
+				#		- increase in number of functional synapses (1 afferent axon has more activated synaptic contacts)
+				# 	- References:
+				#		- Fan (2012), "Proliferation of External Globus Pallidus-Subthalamic Nucleus Synapses following Degeneration of Midbrain Dopamine Neurons"
+				#	- see changes in cellpopdata.py
+
+				# 3. Modifications to GPE AMPA EPSCs (see hLTP)
+				#	- See changes in cellpopdata.py
+
+				# 4. Changes to regularity/variability of spontaneous firing (summarize literature)
+
+				if state == PhysioState.PARK_DBS:
+					# 5. Neurochemical effects of DBS?
+					raise NotImplementedError()
+			else:
 				raise NotImplementedError()
 		else:
 			raise Exception("Model '{}' not supported".format(
 					self.target_model))
 
+		# Set the state flag
 		self._physio_state = state
 
 	def build_cell(self, model):
@@ -302,9 +326,9 @@ class StnModelEvaluator(object):
 			
 			# gmax is in [uS] in POINT_PROCESS synapses
 			# 	1 [uS] * 1 [mV] = 1 [nA]
-			# 	we want ~ 300 [pA] = 0.3 [nA]
+			# 	we want ~ -300 [pA] = -0.3 [nA]
 			# 	gmax [uS] * (-68 [mV] - 0 [mV]) = gmax * -68 [nA]
-			# 	gmax * -68 = 0.3 <=> gmax = 0.3/68 = 0.044 [uS]
+			# 	gmax * -68 = -0.3 <=> gmax = 0.3/68 = 0.044 [uS]
 			gmax = 0.390/68. # 390 [pA] @ RMP=-68 [mV]
 			ctx_weightvec = pattern * gmax
 

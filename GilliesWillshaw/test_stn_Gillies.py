@@ -596,10 +596,13 @@ def test_reboundburst(soma, dends_locs, stims):
 		- there is no similar current in Otsuka model
 
 	OTSUKA COMPARISON
+
 		- In Gillies model CaT bootstrap is a small single peak at start of burst, 
 		  while in Otsuka model CaT is exp declining peaks
+		
 		- In Gillies model ICaL is a declining ramp of peaks (approx linear), while 
 		  in Otsuka it is slowly activated and inactivated (bugle of peaks)
+		
 		- Ih/HCN and IKCa which determine shape/recovery of AP are different, resulting
 		  in a different evolution of AP shape within a burst
 
@@ -701,9 +704,12 @@ def test_slowbursting(soma, dends_locs, stims):
 	- inject constant hyperpolarizing current
 
 	PAPER OBSERVATIONS
+
 	- CaL itself is responsible for burst initiation
 			- CaL bootstraps itself in the dendrites
+	
 	- intra-burst: inter-AP Vm gradually hyperpolarizes due to current injection
+	
 	- inter-burst: in the dendrites, CaL and CaT (very small due to relatively high Vm) gradually depolarize the membrane
 		- slow depolarization continues until majority of CaL channels activated
 	"""

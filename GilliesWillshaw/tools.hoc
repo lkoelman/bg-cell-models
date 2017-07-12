@@ -57,7 +57,8 @@ proc washTTX() {local washmodif
 }
 
 // apply Apamin: sKCa antagonist
-// NOTE: reduces sKCa conductance by 90% in all sections
+// NOTE: in paper they say reduce by 90 percent but in sth-data file 
+//       they set everything to 0 except in soma where they divide by factor 10
 proc applyApamin() {local sKCamodif,new_gsKCa_soma,new_gsKCa_dl,new_gsKCa_db
   printf(" [applying Apamin]\n")
   
