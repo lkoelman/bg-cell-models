@@ -694,9 +694,7 @@ def substitute_cluster(rootref, cluster, clu_eqsec, allsecrefs, mechs_pars,
 		chiref = getsecref(subbed_sec, allsecrefs)
 		if chiref.cluster_labels[0] == cluster.label:
 			# NOTE: only need to disconnect proximal ends of the subtree: the distal ends have already been disconnected by connecting them to the equivalent section for the cluster
-			subbed_sec.push()
-			h.disconnect()
-			h.pop_section()
+			h.disconnect(sec=subbed_sec)
 
 			# Delete disconnected subtree if requested
 			if delete_substituted:
@@ -774,10 +772,8 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
 			continue
 
 		# Only need to disconnect proximal ends of the subtree: the distal ends have already been disconnected by connecting them to the equivalent section for the cluster
-		subbed_sec.push()
 		logger.debug("Disconnecting substituted section '{}'...".format(subbed_sec.name()))
-		h.disconnect()
-		h.pop_section()
+		h.disconnect(sec=subbed_sec)
 
 		# Delete disconnected subtree if requested
 		child_tree = h.SectionList()
@@ -854,11 +850,9 @@ def split_section(src_sec, mechs_pars, delete_src=False):
 			childsec.connect(secA, 2*xloc, 0)
 
 	# Disconnect and delete src_sec
-	src_sec.push()
-	h.disconnect()
+	h.disconnect(sec=src_sec)
 	if delete_src:
-		h.delete_section()
-	h.pop_section()
+		h.delete_section(sec=src_sec)
 
 def join_unbranched_sections(nodesec, max_joins=1e9):
 	"""

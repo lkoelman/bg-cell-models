@@ -9,6 +9,8 @@ from enum import Enum
 import types
 import numpy as np
 
+import nrn # types nrn.Section and nrn.Segment
+
 class PhysioState(Enum):
 	"""
 	Physiological state of the cell
@@ -45,6 +47,7 @@ class ParameterSource(Enum):
 	Fan2012 = 4
 	Atherton2013 = 5
 	Kumaravelu2016 = 6
+	bevan2006 = 7
 	
 
 def getConnParams(target_pop, physio_state, use_sources, rng=None):
@@ -147,6 +150,15 @@ def getConnParams(target_pop, physio_state, use_sources, rng=None):
 		}
 
 		# ---------------------------------------------------------------------
+		# Parameters for GABA-B synapses (metabotropic)
+		cp[pop.GPE][nt.GABAB][ps.CommonOccurrence] = {
+			'tau_onset': 135.0
+			'tau1': 310.0,
+			'tau2': 5.0,
+			'Erev': -93.0, # bevan2006
+		}
+
+		# ---------------------------------------------------------------------
 		# Parameters from Fan (2012)
 		cp[pop.GPE][nt.GABAA][ps.Fan2012] = {
 			'gbar': {
@@ -189,40 +201,55 @@ def getConnParams(target_pop, physio_state, use_sources, rng=None):
 		return cp
 
 
-def make_synapse(post_seg, pre_obj, cd, rng=None):
+def make_synapse(pre_obj, post_obj, con_params, syn_type=None, syn_par_map=None, 
+					nc_par_map=None, weight_scales=None, rng=None):
 	"""
 	Insert synapse POINT_PROCESS in given section.
 
-	@param cd		dict containing electrophysiological data
-					relating to the synapse/connection
+	@param weight_scales	Scale factors for the weights in range (0,1). 
+							This must be an iterable: NetCon.weight[i] is scaled by the i-th value. 
+							If a vector	is given, it is scaled and played into the weight.
 
-	@effect			creates an Exp2Syn with an incoming NetCon with
-					weight equal to maximum synaptic conductance
+	@param con_params		dict containing electrophysiological data
+							relating to the synapse/connection
+
+	@effect					creates an Exp2Syn with an incoming NetCon with
+							weight equal to maximum synaptic conductance
 	"""
 	if rng is None
 		rng = np.random
 
+	if not isinstance(post_obj, nrn.Segment):
+		raise ValueError("Post-synaptic object {} is not of type nrn.Segment".format(repr(post_obj)))
+
 	# Make synapse
-	syn = h.Exp2Syn(post_seg)
-	syn_params = {
-		'e': 'Erev',
-		'tau1': 'tau1',
-		'tau2': 'tau2'
-	}
+	if syn_type is None:
+		syn_type = 'Exp2Syn'
+		syn_par_map = { # Mapping attributes of synapse object to keys in con_params
+			'e': 'Erev',
+			'tau1': 'tau1',
+			'tau2': 'tau2'
+		}
+	syn_ctor = getattr(h, syn_type) # constructor for synapse type
+	syn = syn_ctor(post_obj)
+	
 
-	# Set synapse parameters
-	for syn_attr, conn_par in syn_params.iteritems():
+	# Set each parameter on the synapse object
+	for syn_attr, con_par in syn_par_map.iteritems():
 
-		par_data = cd[conn_par]
+		par_data = con_params[con_par]
 		par_val = None
 
 		if isinstance(par_data, (float, int)):
+			# parameter is numerical value
 			par_val = par_data
 
 		elif isinstance(par_data, types.FunctionType):
+			# parameter is a function
 			par_val = par_data()
 
 		elif isinstance(par_data, dict):
+			# parameter is described by other parameters (e.g. distribution)
 
 			if ('min' in par_data and 'max' in par_data):
 				lower = par_data['min']
@@ -243,25 +270,32 @@ def make_synapse(post_seg, pre_obj, cd, rng=None):
 		# Set the attribute
 		setattr(syn, syn_attr, par_val)
 
-	# TODO: let user specify waveform in [0,1], then make NetStim with given noise, rate, waveform
-	if src_is_event_generating_point_process:
-		nc = h.NetCon(pre_obj, syn)
-
-	elif src_is_waveform:
-		stimsource = h.NetStim() # Create a NetStim
-		stimsource.interval = stim_rate**-1*1e3 # Interval between spikes
-		stimsource.number = 1e9 # max number of spikes
-		stimsource.noise = 0.33 # Fractional noise in timing
-
-		nc = h.NetCon(stimsource, syn)
-		waveform_Vector.play(nc._ref_weight[0], stimtimevec)
+	# Make NetCon connection
+	if isinstance(pre_obj, nrn.Section):
+		# Biophysical cells need threshold detection to generate events
+		nc = hoc.NetCon(pre_obj(0.5)._ref_v, receiver, sec=pre_obj)
 
 	else:
-		# physiological cells need threshold detection to generate events
-		nc = hoc.NetCon(pre_cell(0.5)._ref_v, receiver, sec=pre_cell)
-		nc.threshold =  p_thresh
+		# Source object is POINT_PROCESS or other event-generating objcet
+		nc = h.NetCon(pre_obj, syn)
 
-	nc.delay = p_delay
-	nc.weight[wid] = p_sbar
+	# Set parameters of NetCon
+	if nc_par_map is None:
+		nc_par_map = {
+			'delay': 'delay',
+			'weight': 'gbar',
+			'threshold': 'threshold',
+		}
+	nc.delay = con_params[nc_par_map['delay']]
+	nc.threshold = con_params[nc_par_map['threshold']]
 
-	return nc, syn
+	# Set weights
+	if weight_scales is None:
+		nc.weight[0] = con_params[nc_par_map['weight']]
+
+	else:
+		for i_w, weight in enumerate(weight_scales):
+			nc.weight[i_w] = weight * con_params[nc_par_map['weight']]
+
+	# Return refs to objects that need to stay alive
+	return syn, nc

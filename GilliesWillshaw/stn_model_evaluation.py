@@ -293,11 +293,6 @@ class StnModelEvaluator(object):
 			raise NotImplementedError()
 
 		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED:
-
-			# Add cortical input
-			# TODO: calibrate cortical inputs
-			#	- test that EPSP/IPSP have desired size
-			#	- in DA-depleted state: should trigger bursts
 			
 			# Method 1:
 			# 	- add netstim and play input signal into weight (see Dura-Berndal arm example)
@@ -306,6 +301,14 @@ class StnModelEvaluator(object):
 			
 			# Method 2:
 			# 	- use nsloc.mod (=netstim with variable rate)
+
+			####################################################################
+			# CTX inputs
+			####################################################################
+
+			# TODO: calibrate cortical inputs
+			#	- test that EPSP/IPSP have desired size
+			#	- in DA-depleted state: should trigger bursts
 
 			n_ctx_syn = 10
 			ctx_syns = []
@@ -376,6 +379,9 @@ class StnModelEvaluator(object):
 				'NetStims': ctx_stims,
 			}
 
+			####################################################################
+			# GPe inputs
+			####################################################################
 
 			# Add GPe inputs using Tsodyks-Markram synapses
 			n_gpe_syn = 10
@@ -399,7 +405,7 @@ class StnModelEvaluator(object):
 			stimtimevec = h.Vector(gpe_timevec)
 
 			# Pick random segments in dendrites for placing synapses
-			is_gpe_target = lambda seg: seg.diam > 1.0	
+			is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
 			dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
 			dend_secrefs = sum(dendrites, [])
 			gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
