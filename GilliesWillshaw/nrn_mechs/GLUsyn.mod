@@ -21,7 +21,7 @@ ENDCOMMENT
 NEURON {
     THREADSAFE
 
-    POINT_PROCESS TsodyksMarkram_AMPA_NMDA
+    POINT_PROCESS GLUsyn
     RANGE tau_r_AMPA, tau_d_AMPA
     RANGE tau_r_NMDA, tau_d_NMDA
     RANGE mg, gmax_AMPA, gmax_NMDA

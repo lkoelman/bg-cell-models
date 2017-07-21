@@ -3,15 +3,15 @@ Evaluation of STN cell models under different physiological and stimulus conditi
 """
 
 # Standard library modules
+import collections
+from enum import Enum
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
 
-import collections
-from enum import Enum
-
 # Third party modules
 import numpy as np
+from scipy import signal
 
 # NEURON modules
 import neuron
@@ -30,7 +30,8 @@ import gillies_model as gillies
 import reduce_marasco as marasco
 import mapsyn
 from common import analysis
-from cellpopdata import PhysioState
+import cellpopdata as cpd
+from cellpopdata import PhysioState, Populations as Pop, NTReceptors as NTR, ParameterSource as Cit
 
 class StimProtocol(Enum):
 	"""
@@ -136,47 +137,7 @@ class StnModelEvaluator(object):
 		"""
 		Set cell physiological state.
 		"""
-		# Change model parameters
-		if self.target_model == StnModel.Gillies2005:
-
-			if state == PhysioState.NORMAL:
-				pass # this case corresponds to default model parameters
-
-			elif (state == PhysioState.PARKINSONIAN or state == PhysioState.PARK_DBS):
-
-				# TODO: decide parameter modifications for DA-depleted state from literature
-				somaref = self.model_data[self.target_model]['sec_refs']['soma']
-				dendrefs =  self.model_data[self.target_model]['sec_refs']['dendrites']
-
-				# 1. Reduce sKCA channel conductance by 90%, from sources:
-				#	- Gillies & Willshaw 2005 (see refs)
-				for secref in [somaref] + dendrefs:
-					for seg in secrref.sec:
-						seg.gk_sKCa = 0.1 * seg.gk_sKCa
-
-				# 2. Modifications to GPE GABA IPSPs
-				#	- Changes:
-				#		- Increased strength of GABA IPSPs
-				#		- longer decay kinetics, 
-				#		- increase in number of functional synapses (1 afferent axon has more activated synaptic contacts)
-				# 	- References:
-				#		- Fan (2012), "Proliferation of External Globus Pallidus-Subthalamic Nucleus Synapses following Degeneration of Midbrain Dopamine Neurons"
-				#	- see changes in cellpopdata.py
-
-				# 3. Modifications to GPE AMPA EPSCs (see hLTP)
-				#	- See changes in cellpopdata.py
-
-				# 4. Changes to regularity/variability of spontaneous firing (summarize literature)
-
-				if state == PhysioState.PARK_DBS:
-					# 5. Neurochemical effects of DBS?
-					raise NotImplementedError()
-			else:
-				raise NotImplementedError()
-		else:
-			raise Exception("Model '{}' not supported".format(
-					self.target_model))
-
+		# ! All changes should be enacted in build_cell() and make_inputs()
 		# Set the state flag
 		self._physio_state = state
 
@@ -190,12 +151,51 @@ class StnModelEvaluator(object):
 							model))
 
 		if model == StnModel.Gillies2005:
+			
 			# Make Gillies STN cell
 			soma, dends, stims = gillies.stn_cell_gillies()
 			somaref, dendL_refs, dendR_refs = gillies.get_stn_refs()
 			dendrefs = [dendL_refs, dendR_refs]
 
+			# State-dependent changes to model specification
+			state = self.physio_state
+			if state == PhysioState.NORMAL:
+				pass # this case corresponds to default model parameters
+
+			elif (state == PhysioState.PARKINSONIAN or state == rec.PARK_DBS):
+
+				# TODO: decide parameter modifications for DA-depleted state from literature
+				somaref = self.model_data[self.target_model]['sec_refs']['soma']
+				dendrefs =  self.model_data[self.target_model]['sec_refs']['dendrites']
+
+				# 1. Reduce sKCA channel conductance by 90%, from sources:
+				#	- Gillies & Willshaw 2005 (see refs)
+				for secref in [somaref] + dendrefs:
+					for seg in secrref.sec:
+						seg.gk_sKCa = 0.1 * seg.gk_sKCa
+
+				# 2. Modifications to GPE GABA IPSPs
+				#	- DONE: see changes in cellpopdata.py
+				#	- Changes:
+				#		- Increased strength of GABA IPSPs
+				#		- longer decay kinetics, 
+				#		- increase in number of functional synapses (1 afferent axon has more activated synaptic contacts)
+				# 	- References:
+				#		- Fan (2012), "Proliferation of External Globus Pallidus-Subthalamic Nucleus Synapses following Degeneration of Midbrain Dopamine Neurons"
+
+				# 3. Modifications to GPE AMPA EPSCs (see hLTP)
+				#	- DONE: see changes in cellpopdata.py
+
+				# 4. Changes to regularity/variability of spontaneous firing (summarize literature)
+
+				if state == rec.PARK_DBS:
+					# 5. Neurochemical effects of DBS?
+					raise NotImplementedError()
+			else:
+				raise NotImplementedError()
+
 		elif model == StnModel.Gillies_BranchZip:
+			
 			# Incremental reduction with 'Branch Zipping' algorithm
 			logger.warn("Gillies STN model will be modified if created")
 			eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
@@ -219,6 +219,8 @@ class StnModelEvaluator(object):
 		if self.target_model != StnModel.Gillies2005:
 			raise Exception("Found target model '{}'. Only model '{}' is supported as a target model").format(
 				self.target_model, StnModel.Gillies2005)
+
+		cc = cpd.CellConnector(self.physio_state, self.rng)
 
 		# Allocate data for input
 		self.model_data[self.target_model]['inputs'] = {}
@@ -315,27 +317,20 @@ class StnModelEvaluator(object):
 			ctx_ncs = []
 			ctx_stims = []
 
-			# Make weight signal
-			ctx_timevec = np.arange(0, self.sim_dur, 0.05) # update every 0.05 ms
-			ctx_pattern_freq = 20.0 # frequency [Hz]
-			pattern = np.sin(2*np.pi*ctx_pattern_freq*1e-3*ctx_timevec) # amplitude 1.0
-			noise_amp = 0.05 # TODO: fractional noise amplitude
-			pattern[pattern<=noise_amp] = noise_amp
-			
-			# DEBUG: visualize waveform
-			# from matplotlib import pyplot as plt
-			# plt.plot(ctx_timevec, pattern)
-			# plt.show(block=True)
-			
-			# gmax is in [uS] in POINT_PROCESS synapses
-			# 	1 [uS] * 1 [mV] = 1 [nA]
-			# 	we want ~ -300 [pA] = -0.3 [nA]
-			# 	gmax [uS] * (-68 [mV] - 0 [mV]) = gmax * -68 [nA]
-			# 	gmax * -68 = -0.3 <=> gmax = 0.3/68 = 0.044 [uS]
-			gmax = 0.390/68. # 390 [pA] @ RMP=-68 [mV]
-			ctx_weightvec = pattern * gmax
 
-			stimweightvec = h.Vector(ctx_weightvec)
+			# Make weight signal representing oscillatory pattern
+			ctx_timevec = np.arange(0, self.sim_dur, 0.05) # update every 0.05 ms
+			ctx_pattern_freq = 8.0 # frequency [Hz]
+			ctx_pattern_phase = 0.0 # anti-phase from GPE
+			ctx_radvec = 2*np.pi*ctx_pattern_freq*1e-3*ctx_timevec + ctx_pattern_phase
+			
+			# Set ON and OFF phase
+			duty_ms = 50.0 # max is 1/freq * 1e3
+			duty = duty_ms / (1./ctx_pattern_freq*1e3)
+			ctx_pattern = signal.square(ctx_radvec, duty)
+			ctx_pattern[ctx_pattern<0.0] = 0.05 # fractional noise amplitude
+
+			stimweightvec = h.Vector(ctx_pattern)
 			stimtimevec = h.Vector(ctx_timevec)
 
 			# Distribute synapses over dendritic trees
@@ -345,35 +340,34 @@ class StnModelEvaluator(object):
 			ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
 
 			# Make synapses
+			ctx_wvecs = [stimweightvec]
 			for target_seg in ctx_target_segs:
 
-				# Make a synapse
-				asyn = h.Exp2Syn(target_seg) # TODO: use depressing synapses (tmgsyn)
-				asyn.tau1 = 1.0
-				asyn.tau2 = 1.75 + self.rng.rand()*2.25 # see refs: ~ 1.75-4 ms
-				asyn.e = 0.0
-				ctx_syns.append(asyn)
-
 				# Make poisson spike generator
-				# TODO: (CTX) calibrate poisson noise & rate parameters, use references for this (reported in vivo firing rates, traces etc)
-				stim_rate = 50.0
+				stim_rate = 80.0
 				stimsource = h.NetStim() # Create a NetStim
 				stimsource.interval = stim_rate**-1*1e3 # Interval between spikes
 				stimsource.number = 1e9 # max number of spikes
-				stimsource.noise = 0.33 # Fractional noise in timing
+				stimsource.noise = 0.25 # Fractional noise in timing
 				# stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
 				ctx_stims.append(stimsource) # Save this NetStim
 
-				# Make NetCon
-				stimconn = h.NetCon(stimsource, asyn)
-				stimconn.delay = 1.0
-				stimweightvec.play(stimconn._ref_weight[0], stimtimevec)
-				ctx_ncs.append(stimconn)
+				# TODO SETPARAM: (CTX) set poisson noise & rate parameters dependent on PhysioState
+				#	use references for this (reported in vivo firing rates, traces etc)
+
+				# Make synapse and NetCon
+				syn, nc, wvecs = cc.make_synapse((Pop.CTX, Pop.STN), (stimsource, target_seg), 
+									'GLUsyn', (NTR.AMPA, NTR.NMDA), (Cit.Chu2015,), 
+									[stimweightvec], [stimtimevec])
+
+				ctx_ncs.append(nc)
+				ctx_syns.append(syn)
+				ctx_wvecs.extend(wvecs)
 
 			# Save inputs
 			self.model_data[self.target_model]['inputs']['ctx'] = {
 				'stimtimevec': stimtimevec,
-				'stimweightvec': stimweightvec,
+				'stimweightvec': ctx_wvecs,
 				'synapses': ctx_syns,
 				'NetCons': ctx_ncs,
 				'NetStims': ctx_stims,
@@ -384,24 +378,24 @@ class StnModelEvaluator(object):
 			####################################################################
 
 			# Add GPe inputs using Tsodyks-Markram synapses
-			n_gpe_syn = 10
+			n_gpe_syn = 10 # NOTE: one synapse represents a multi-synaptic contact from one GPe axon
 			gpe_syns = []
 			gpe_ncs = []
 			gpe_stims = []
 
-			# Make weight signal
+			# Make weight signal representing oscillatory pattern
 			gpe_timevec = np.arange(0, self.sim_dur, 0.05) # update every 0.05 ms
-			gpe_pattern_freq = 20.0 # frequency [Hz]
+			gpe_pattern_freq = 8.0 # frequency [Hz]
 			gpe_pattern_phase = np.pi # anti-phase from CTX
-			gpe_pattern = np.sin(2*np.pi*gpe_pattern_freq*1e-3*gpe_timevec + gpe_pattern_phase) # amplitude 1.0
-			gpe_pattern[gpe_pattern<=0] = 0.05 # fractional noise amplitude
+			gpe_radvec = 2*np.pi*gpe_pattern_freq*1e-3*gpe_timevec + gpe_pattern_phase
+			
+			# Set ON and OFF phase
+			duty_ms = 80.0 # max is 1/freq * 1e3
+			duty = duty_ms / (1./gpe_pattern_freq*1e3)
+			gpe_pattern = signal.square(gpe_radvec, duty)
+			gpe_pattern[gpe_pattern<0.0] = 0.05 # fractional noise amplitude
 
-			# See calculation above: gmax = x [nA]/RMP [mV] = y [uS]
-			# TODO: correct both gmax for attenuation from dendrites to soma. Do this separately for GPe and CTX inputs since they have to travel different path lengths.
-			gmax = 0.450/68. # 450 [pA] @ RMP=-68 [mV]
-			gpe_weightvec = gpe_pattern * gmax
-
-			stimweightvec = h.Vector(gpe_weightvec)
+			stimweightvec = h.Vector(gpe_pattern)
 			stimtimevec = h.Vector(gpe_timevec)
 
 			# Pick random segments in dendrites for placing synapses
@@ -411,35 +405,37 @@ class StnModelEvaluator(object):
 			gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
 
 			# Make synapses
+			gpe_wvecs = [stimweightvec]
 			for target_seg in gpe_target_segs:
 
-				# Make a synapse
-				asyn = h.Exp2Syn(target_seg)
-				asyn.tau1 = 2.1 + self.rng.rand()*1. # see refs: ~ 2.1-3.1 ms
-				asyn.tau2 = 2.75 + self.rng.rand()*3.25 # see refs: ~ 2.75-6 ms
-				asyn.e = 0.0
-				gpe_syns.append(asyn)
-
 				# Make poisson spike generator
-				# TODO: (GPe) calibrate poisson noise & rate parameters, see CTX notes
-				stim_rate = 50.0
+				stim_rate = 100.0 # hz
 				stimsource = h.NetStim() # Create a NetStim
 				stimsource.interval = stim_rate**-1*1e3 # Interval between spikes
 				stimsource.number = 1e9 # max number of spikes
-				stimsource.noise = 0.33 # Fractional noise in timing
+				stimsource.noise = 0.25 # Fractional noise in timing
 				# stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
 				gpe_stims.append(stimsource) # Save this NetStim
 
-				# Make NetCon
-				stimconn = h.NetCon(stimsource, asyn)
-				stimconn.delay = 1.0
-				stimweightvec.play(stimconn._ref_weight[0], stimtimevec)
-				gpe_ncs.append(stimconn)
+				# TODO SETPARAM: (GPe) set poisson noise & rate parameters, dependent on PhysioState
+				# HallworthBevan2005_DynamicallyRegulate: 
+				#		Fig 6: 10 pulses @ 100 Hz and 20 pulses @ 100 Hz triiger rebound bursts
+				# Bevan2006_CellularPrinciples:
+				#		Fig 2: 10 stimuli @ 100 Hz trigger pause + rebound burst
+
+				# Make synapse and NetCon
+				syn, nc, wvecs = cc.make_synapse((Pop.GPE, Pop.STN), (stimsource, target_seg), 
+									'GABAsyn', (NTR.GABAA, NTR.GABAB), (Cit.Chu2015, Cit.Fan2012), 
+									[stimweightvec], [stimtimevec])
+
+				gpe_ncs.append(nc)
+				gpe_syns.append(syn)
+				gpe_wvecs.extend(wvecs)
 
 			# Save inputs
 			self.model_data[self.target_model]['inputs']['gpe'] = {
 				'stimtimevec': stimtimevec,
-				'stimweightvec': gpe_weightvec,
+				'stimweightvec': gpe_wvecs,
 				'synapses': gpe_syns,
 				'NetCons': gpe_ncs,
 				'NetStims': gpe_stims,
@@ -646,9 +642,12 @@ class StnModelEvaluator(object):
 			V_dist = analysis.match_traces(recData, lambda t: t.startswith('V_dist'))
 			V_postsyn = analysis.match_traces(recData, lambda t: t.startswith('V_postsyn'))
 
-			analysis.plotTraces(V_prox, recordStep, yRange=(-80,40), traceSharex=True)
-			analysis.plotTraces(V_dist, recordStep, yRange=(-80,40), traceSharex=True)
-			analysis.plotTraces(V_postsyn, recordStep, yRange=(-80,40), traceSharex=True)
+			analysis.plotTraces(V_prox, recordStep, yRange=(-80,40), traceSharex=True, 
+								title='Proximal sections')
+			analysis.plotTraces(V_dist, recordStep, yRange=(-80,40), traceSharex=True,
+								title='Distal sections')
+			analysis.plotTraces(V_postsyn, recordStep, yRange=(-80,40), traceSharex=True,
+								title='Post-synaptic segments')
 
 	def run_sim(self, dur=None):
 		"""

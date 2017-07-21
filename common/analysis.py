@@ -222,7 +222,7 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell', 
 				includeTraces=None, excludeTraces=None, labelTime=False,
 				showFig=True, colorList=None, lineList=None, yRange=None,
-				traceSharex=False, showGrid=True):
+				traceSharex=False, showGrid=True, title=None):
 	"""
 	Plot previously recorded traces
 
@@ -315,8 +315,12 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		# Customize the grid
 		ax.grid(showGrid)
 
+	if title:
+		plot.suptitle(title) # suptitle() is Fig title, title() is ax title
+
 	if showFig:
 		plt.show(block=False)
+	
 	return figs
 
 allcolors = [

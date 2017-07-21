@@ -63,8 +63,8 @@ PARAMETER {
     : Parameters tau_r and tau_d have different function for GABA-B receptor:
     :   they represents rise and decay time constants for neurotransmitter
     :   concentration that kicks of the signaling cascade.
-    tau_r_GABAB = 0.29  (ms)  : Dual-exponential neurotransmitter profile
-    tau_d_GABAB = 43    (ms)  : IMPORTANT: tau_r < tau_d
+    tau_r_GABAB = 0.2   (ms)  : Dual-exponential neurotransmitter profile
+    tau_d_GABAB = 1.7   (ms)  : IMPORTANT: tau_r < tau_d
 
     Erev_GABAA = -80    (mV)  : GABAA reversal potential
     Erev_GABAB = -95    (mV)  : GABAB reversal potential
