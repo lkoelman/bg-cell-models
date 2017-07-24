@@ -25,11 +25,17 @@ scriptdir, scriptfile = os.path.split(__file__)
 modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
 sys.path.append(modulesbase)
 
-# Our own modules
+# Gillies-Willshaw STN model
 import gillies_model as gillies
+
+# Cell reduction
 import reduce_marasco as marasco
 import mapsyn
+
+# Plotting & recording
 from common import analysis
+
+# Physiological parameters
 import cellpopdata as cpd
 from cellpopdata import PhysioState, Populations as Pop, NTReceptors as NTR, ParameterSource as Cit
 
@@ -44,6 +50,8 @@ class StimProtocol(Enum):
 	SYN_BACKGROUND_HIGH = 3 # synaptic bombardment, high background activity
 	SYN_BACKGROUND_LOW = 4 # synaptic bombardment, low background activity
 	SYN_PARK_PATTERNED = 5 # pathological input, strong patterned cortical input with strong GPi input in antiphase
+	SINGLE_SYN_GABAA = 6
+	SINGLE_SYN_GABAB = 7
 
 class StnModel(Enum):
 	"""
@@ -294,6 +302,80 @@ class StnModelEvaluator(object):
 			# TODO: implement inputs for SYN_BACKGROUND_LOW
 			raise NotImplementedError()
 
+		elif stim_protocol == StimProtocol.SINGLE_SYN_GABAA:
+
+			# Add GPe inputs using Tsodyks-Markram synapses
+			n_gpe_syn = 1 # NOTE: one synapse represents a multi-synaptic contact from one GPe axon
+			gpe_syns = []
+			gpe_ncs = []
+			gpe_stims = []
+			gpe_handlers = []
+
+			# Pick random segments in dendrites for placing synapses
+			is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
+			dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
+			dend_secrefs = sum(dendrites, [])
+			gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
+
+			# Make synapses
+			gpe_wvecs = []
+			for target_seg in gpe_target_segs:
+
+				# Make poisson spike generator
+				stim_rate = 33.0 # hz
+				stim_T = stim_rate**-1*1e3
+				stimsource = h.NetStim() # Create a NetStim
+				stimsource.interval = stim_T # Interval between spikes
+				stimsource.number = 1e9 # max number of spikes
+				stimsource.noise = 0.0 # Fractional noise in timing
+				gpe_stims.append(stimsource) # Save this NetStim
+
+				# Custom synapse parameters
+				syn_mech = 'GABAsyn'
+				syn_params = {
+					'use_stdp_A': 1,
+					'use_stdp_B': 1,
+				}
+
+				# Make synapse and NetCon
+				syn, nc, wvecs = cc.make_synapse((Pop.GPE, Pop.STN), (stimsource, target_seg), 
+									syn_mech, (NTR.GABAA, NTR.GABAB), 
+									(Cit.Custom, Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013),
+									custom_synpar=syn_params)
+
+				print("Made {} synapse with following parameters:".format(syn_mech))
+				for pname in cc.getSynMechParamNames(syn_mech):
+					print("{} : {}".format(pname, str(getattr(syn, pname))))
+
+				# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
+				syn.gmax_GABAA = syn.gmax_GABAA / syn.U1
+				syn.gmax_GABAB = syn.gmax_GABAB / 0.21
+
+				# Control netstim
+				tstart, tstop = 100, 100 + 10*stim_T
+				stimsource.start = tstart
+				turn_off = h.NetCon(None, stimsource)
+				turn_off.weight[0] = -1
+				def queue_events():
+					turn_off.event(tstop)
+				fih = h.FInitializeHandler(queue_events)
+
+				gpe_handlers.append(fih)
+				gpe_handlers.append(turn_off)
+				gpe_ncs.append(nc)
+				gpe_syns.append(syn)
+				gpe_wvecs.extend(wvecs)
+
+			# Save inputs
+			self.model_data[self.target_model]['inputs']['gpe'] = {
+				'stimweightvec': gpe_wvecs,
+				'synapses': gpe_syns,
+				'NetCons': gpe_ncs,
+				'NetStims': gpe_stims,
+				'InitHandlers': gpe_handlers,
+			}
+
+
 		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED:
 			
 			# Method 1:
@@ -425,7 +507,7 @@ class StnModelEvaluator(object):
 
 				# Make synapse and NetCon
 				syn, nc, wvecs = cc.make_synapse((Pop.GPE, Pop.STN), (stimsource, target_seg), 
-									'GABAsyn', (NTR.GABAA, NTR.GABAB), (Cit.Chu2015, Cit.Fan2012), 
+									'GABAsyn', (NTR.GABAA, NTR.GABAB), (Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013), 
 									[stimweightvec], [stimtimevec])
 
 				gpe_ncs.append(nc)
@@ -487,7 +569,11 @@ class StnModelEvaluator(object):
 			# Trace specs for recording ionic currents, channel states
 			analysis.rec_currents_activations(traceSpecs, 'soma', 0.5)
 
+
 		elif protocol == StimProtocol.CLAMP_PLATEAU: # plateau potential (Gillies 2006, Fig. 10C-D):
+			####################################################################
+			# Record CLAMP_PLATEAU
+			####################################################################
 			
 			# Trace specs for membrane voltages
 			for seclabel, seg in rec_segs.iteritems():
@@ -504,7 +590,11 @@ class StnModelEvaluator(object):
 			traceSpecs['I_CaN_d'] = {'sec':'dist_dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
 			traceSpecs['I_CaT_d'] = {'sec':'dist_dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
 
+
 		elif protocol == StimProtocol.CLAMP_REBOUND: # rebound burst (Gillies 2006, Fig. 3-4)
+			####################################################################
+			# Record CLAMP_REBOUND
+			####################################################################
 
 			# Trace specs for membrane voltages
 			for seclabel, seg in rec_segs.iteritems():
@@ -517,6 +607,29 @@ class StnModelEvaluator(object):
 			dendloc = rec_segs['dist_dend'].x
 			analysis.rec_currents_activations(traceSpecs, 'dist_dend', dendloc, ion_species=['ca','k'])
 
+
+		elif protocol == StimProtocol.SINGLE_SYN_GABAA:
+			####################################################################
+			# Record SINGLE_SYN_GABAA
+			####################################################################
+
+			# Add synapse and segment containing it
+			nc = self.model_data[self.target_model]['inputs']['gpe']['NetCons'][0]
+			rec_segs['synGABA'] = nc.syn()
+			rec_segs['postseg'] = nc.syn().get_segment()
+
+			# Record synaptic variables
+			traceSpecs['gA_syn'] = {'pointp':'synGABA', 'var':'g_GABAA'}
+			traceSpecs['gB_syn'] = {'pointp':'synGABA', 'var':'g_GABAB'}
+			traceSpecs['Rrp_syn'] = {'pointp':'synGABA', 'var':'Rrp'}
+			traceSpecs['Use_syn'] = {'pointp':'synGABA', 'var':'Use'}
+			traceSpecs['Hill_syn'] = {'pointp':'synGABA', 'var':'G'}
+
+			# Record membrane voltages
+			for seclabel, seg in rec_segs.iteritems():
+				if isinstance(seg, neuron.nrn.Segment):
+					traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
+
 		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH: # synaptic bombardment, high background activity
 			# TODO: decide what to record for SYN_BACKGROUND_HIGH
 			raise NotImplementedError()
@@ -526,7 +639,10 @@ class StnModelEvaluator(object):
 			raise NotImplementedError()
 
 		elif protocol == StimProtocol.SYN_PARK_PATTERNED: # pathological input, strong patterned cortical input with strong GPi input in antiphase
-			
+			####################################################################
+			# Record SYN_PARK_PATTERNED
+			####################################################################
+
 			# See diagram in marasco_reduction.pptx
 			# dist_dend0_ids = [8,9,7,10,12,13,18,19,17,20,22,23]
 			# prox_dend0_ids = [2,4,5,3,14,15]
@@ -573,7 +689,12 @@ class StnModelEvaluator(object):
 
 
 		# Prepare dictionary (label -> Section)
-		rec_secs = dict((seclabel, seg.sec) for seclabel, seg in rec_segs.iteritems())
+		rec_secs = {}
+		for seclabel, hobj in rec_segs.iteritems():
+			if isinstance(hobj, neuron.nrn.Segment):
+				rec_secs[seclabel] = hobj.sec
+			else:
+				rec_secs[seclabel] = hobj # point process
 
 		# Use trace specs to make Hoc Vectors
 		recData = analysis.recordTraces(rec_secs, traceSpecs, recordStep)
@@ -595,24 +716,32 @@ class StnModelEvaluator(object):
 		# Get recorded data
 		if model is None:
 			model = self.target_model
+
+		traceSpecs = self.model_data[model]['rec_data'][protocol]['trace_specs']
 		recData = self.model_data[model]['rec_data'][protocol]['trace_data']
 		recordStep = self.model_data[model]['rec_data'][protocol]['rec_dt']
 
 		# Plot membrane voltages
 		def plot_all_Vm():
-			recV = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.startswith('V_')]) # preserves order
+			recV = analysis.match_traces(recData, lambda t: t.startswith('V_'))
 			figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
 											traceSharex=True, oneFigPer='trace')
 			return figs_vm
 
 		# Extra plots depending on simulated protocol
 		if protocol == StimProtocol.SPONTANEOUS:
+			####################################################################
+			# Plot CLAMP_REBOUND
+			####################################################################
 			plot_all_Vm()
 
 			# Plot ionic currents, (in)activation variables
 			figs, cursors = analysis.plot_currents_activations(self.recData, recordStep)
 
 		elif protocol == StimProtocol.CLAMP_PLATEAU:
+			####################################################################
+			# Plot CLAMP_PLATEAU
+			####################################################################
 			plot_all_Vm()
 
 			# Plot ionic currents, (in)activation variables
@@ -623,6 +752,10 @@ class StnModelEvaluator(object):
 			analysis.cumulPlotTraces(recDend, recordStep, timeRange=burst_time)
 
 		elif protocol == StimProtocol.CLAMP_REBOUND:
+			####################################################################
+			# Plot CLAMP_REBOUND
+			####################################################################
+
 			plot_all_Vm()
 
 			# Plot ionic currents, (in)activation variables
@@ -632,12 +765,41 @@ class StnModelEvaluator(object):
 			cursors = cursors_soma + cursors_dend
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH:
+			####################################################################
+			# Plot SYN_BACKGROUND_HIGH
+			####################################################################
+			
 			plot_all_Vm() # only plot membrane voltages
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_LOW:
+			####################################################################
+			# Plot SYN_BACKGROUND_LOW
+			####################################################################
+			
 			plot_all_Vm() # only plot membrane voltages
 
+		elif protocol == StimProtocol.SINGLE_SYN_GABAA:
+			####################################################################
+			# Plot SINGLE_SYN_GABAA
+			####################################################################
+			
+			# Plot membrane voltages (one figure)
+			recV = analysis.match_traces(recData, lambda t: t.startswith('V_'))
+			figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
+											traceSharex=True, oneFigPer='cell')
+
+			# Plot synaptic variables
+			syn_traces = analysis.match_traces(recData, lambda t: (not t.startswith('V_')) and t.endswith('syn'))
+			n, KD = h.n_GABAsyn, h.KD_GABAsyn # parameters of kinetic scheme
+			hillfac = lambda x: x**n/(x**n + KD)
+			analysis.plotTraces(syn_traces, recordStep, traceSharex=True, title='Synaptic variables',
+								traceXforms={'Hill_syn': hillfac})
+
 		elif protocol == StimProtocol.SYN_PARK_PATTERNED:
+			####################################################################
+			# Plot SYN_PARK_PATTERNED
+			####################################################################
+
 			V_prox = analysis.match_traces(recData, lambda t: t.startswith('V_prox'))
 			V_dist = analysis.match_traces(recData, lambda t: t.startswith('V_dist'))
 			V_postsyn = analysis.match_traces(recData, lambda t: t.startswith('V_postsyn'))
@@ -667,7 +829,22 @@ class StnModelEvaluator(object):
 		logger.debug("Simulated for {:.6f} seconds".format(t1-t0))
 
 
-	def run_protocol(self, protocol, model=None):
+	def init_sim(self, dur=2000., dt=0.024, celsius=35., v_init=-60):
+		"""
+		Initialize simulation.
+		"""
+		# Set simulation parameters
+		self.sim_dur = dur
+		h.dt = dt
+		self.sim_dt = h.dt
+
+		h.celsius = celsius # different temp from paper
+		h.v_init = v_init # paper simulations sue default v_init
+		gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+
+
+
+	def simulate_protocol(self, protocol, model=None):
 		"""
 		Simulate cell in physiological state, under given stimulation protocol.
 
@@ -741,13 +918,7 @@ class StnModelEvaluator(object):
 			# Simulate
 			self.run_sim()
 
-		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH: # synaptic bombardment, high background activity
-			raise NotImplementedError()
-
-		elif protocol == StimProtocol.SYN_BACKGROUND_LOW: # synaptic bombardment, low background activity
-			raise NotImplementedError()
-
-		elif protocol == StimProtocol.SYN_PARK_PATTERNED: # pathological input, strong patterned cortical input with strong GPi input in antiphase
+		else:
 			
 			# Set simulation parameters
 			self.sim_dur = 2000
@@ -769,6 +940,7 @@ class StnModelEvaluator(object):
 
 
 
+
 if __name__ == '__main__':
 	# Run Gillies 2005 model
 	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
@@ -777,10 +949,11 @@ if __name__ == '__main__':
 	# proto = StimProtocol.SPONTANEOUS
 	# proto = StimProtocol.CLAMP_PLATEAU
 	# proto = StimProtocol.CLAMP_REBOUND
-	proto = StimProtocol.SYN_PARK_PATTERNED
+	# proto = StimProtocol.SYN_PARK_PATTERNED
 	# proto = StimProtocol.SYN_BACKGROUND_LOW
 	# proto = StimProtocol.SYN_BACKGROUND_HIGH
-	evaluator.run_protocol(proto)
+	proto = StimProtocol.SINGLE_SYN_GABAA
+	evaluator.simulate_protocol(proto)
 	evaluator.plot_traces(proto)
 
 

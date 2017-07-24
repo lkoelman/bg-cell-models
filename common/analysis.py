@@ -177,10 +177,11 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 
 	EXAMPLE USE:
 
-	secs = {'soma': soma, 'dend', dends[1], 'izhpp', izh}
+	secs = {'soma': soma, 'dend', dends[1], 'izhpp', izh, 'synpp':syn}
 
 	traceSpecs = {
-		'V_izhi':{'pointp': 'izh'}
+		'V_izhi': {'pointp': 'izh'},
+		'g_syn': {'pointp': 'synpp', 'var': 'g'}
 		'V_soma':{'sec':'soma','loc':0.5,'var':'v'},
 		'GP_RT_cai':{'sec':'soma','loc':0.5,'var':'cai'},
 		'GP_RT_ainf':{'sec':'soma','loc':0.5,'mech':'gpRT','var':'a_inf'}, 
@@ -222,9 +223,16 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell', 
 				includeTraces=None, excludeTraces=None, labelTime=False,
 				showFig=True, colorList=None, lineList=None, yRange=None,
-				traceSharex=False, showGrid=True, title=None):
+				traceSharex=False, showGrid=True, title=None, traceXforms=None):
 	"""
 	Plot previously recorded traces
+
+	- traceData
+		dict(trace_name -> h.Vector()) containing recorded traces
+
+	- traceXforms
+		dict(trace_name -> function) containg transformation to apply
+		to trace before plotting
 
 	- timeRange ([start:stop])
 		Time range of spikes shown; if None shows all (default: None)
@@ -295,7 +303,12 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 				shared_ax = ax
 
 		# Get data to plot
-		tracevec = traceData[trace].as_numpy()
+		if (traceXforms is not None) and (trace in traceXforms):
+			xform = traceXforms[trace]
+			tracevec = xform(traceData[trace].as_numpy())
+		else:
+			tracevec = traceData[trace].as_numpy()
+		
 		data = tracevec[int(timeRange[0]/recordStep):int(timeRange[1]/recordStep)]
 		t = np.arange(timeRange[0], timeRange[1]+recordStep, recordStep)
 
@@ -316,7 +329,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		ax.grid(showGrid)
 
 	if title:
-		plot.suptitle(title) # suptitle() is Fig title, title() is ax title
+		plt.suptitle(title) # suptitle() is Fig title, title() is ax title
 
 	if showFig:
 		plt.show(block=False)

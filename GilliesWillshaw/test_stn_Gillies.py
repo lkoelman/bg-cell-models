@@ -35,8 +35,9 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 # Our own modules
 import gillies_model as gillies
 from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
+
 from common import analysis
-from analysis import rec_currents_activations, plot_currents_activations
+from common.analysis import rec_currents_activations, plot_currents_activations
 
 import reduction_tools
 from reduction_tools import lambda_AC, ExtSecRef, getsecref
