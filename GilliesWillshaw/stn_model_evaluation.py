@@ -50,8 +50,8 @@ class StimProtocol(Enum):
 	SYN_BACKGROUND_HIGH = 3 # synaptic bombardment, high background activity
 	SYN_BACKGROUND_LOW = 4 # synaptic bombardment, low background activity
 	SYN_PARK_PATTERNED = 5 # pathological input, strong patterned cortical input with strong GPi input in antiphase
-	SINGLE_SYN_GABAA = 6
-	SINGLE_SYN_GABAB = 7
+	SINGLE_SYN_GABA = 6
+	SINGLE_SYN_GLU = 7
 
 class StnModel(Enum):
 	"""
@@ -128,6 +128,10 @@ class StnModelEvaluator(object):
 		}
 
 		self.model_data[self.target_model]['rec_data'] = dict(((proto, {}) for proto in StimProtocol))
+		self.model_data[self.target_model]['rec_segs'] = dict(((proto, {}) for proto in StimProtocol))
+
+		# Allocate data for input
+		self.model_data[self.target_model]['inputs'] = {} # key for each pre-synaptic population
 
 		self.sim_dur = 1000.
 		self.sim_dt = 0.025
@@ -193,6 +197,7 @@ class StnModelEvaluator(object):
 
 				# 3. Modifications to GPE AMPA EPSCs (see hLTP)
 				#	- DONE: see changes in cellpopdata.py
+				#	- NMDA is involved in this hLTP mechanism
 
 				# 4. Changes to regularity/variability of spontaneous firing (summarize literature)
 
@@ -220,6 +225,33 @@ class StnModelEvaluator(object):
 		return somaref, dendrefs
 
 
+	def reset_handlers(self, pre_pop):
+		"""
+		Reset Initialize Handlers for given pre-synaptic input.
+		"""
+		py_handlers = self.model_data[self.target_model]['inputs'][pre_pop].setdefault('PyInitHandlers', [])
+		hoc_handlers = []
+
+		for pyh in py_handlers:
+			fih = h.FInitializeHandler(pyh)
+			hoc_handlers.append(fih)
+
+		self.model_data[self.target_model]['inputs'][pre_pop]['HocInitHandlers'] = hoc_handlers
+
+
+	def add_inputs(self, pre_pop, **kwargs):
+		"""
+		Add inputs to dict of existing inputs.
+		"""
+		all_inputs = self.model_data[self.target_model]['inputs']
+		old_inputs = all_inputs.setdefault(pre_pop, {})
+
+		for input_type, input_objs in kwargs.iteritems():
+			if input_type in old_inputs:
+				old_inputs[input_type].extend(input_objs)
+			else:
+				old_inputs[input_type] = input_objs
+
 	def make_inputs(self, stim_protocol):
 		"""
 		Make the inputs for given stimulation protocol.
@@ -229,9 +261,6 @@ class StnModelEvaluator(object):
 				self.target_model, StnModel.Gillies2005)
 
 		cc = cpd.CellConnector(self.physio_state, self.rng)
-
-		# Allocate data for input
-		self.model_data[self.target_model]['inputs'] = {}
 
 		# Get sections
 		somasec = h.SThcell[0].soma
@@ -302,7 +331,7 @@ class StnModelEvaluator(object):
 			# TODO: implement inputs for SYN_BACKGROUND_LOW
 			raise NotImplementedError()
 
-		elif stim_protocol == StimProtocol.SINGLE_SYN_GABAA:
+		elif stim_protocol == StimProtocol.SINGLE_SYN_GABA:
 
 			# Add GPe inputs using Tsodyks-Markram synapses
 			n_gpe_syn = 1 # NOTE: one synapse represents a multi-synaptic contact from one GPe axon
@@ -310,6 +339,7 @@ class StnModelEvaluator(object):
 			gpe_ncs = []
 			gpe_stims = []
 			gpe_handlers = []
+			gpe_wvecs = []
 
 			# Pick random segments in dendrites for placing synapses
 			is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
@@ -318,7 +348,6 @@ class StnModelEvaluator(object):
 			gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
 
 			# Make synapses
-			gpe_wvecs = []
 			for target_seg in gpe_target_segs:
 
 				# Make poisson spike generator
@@ -361,7 +390,7 @@ class StnModelEvaluator(object):
 				fih = h.FInitializeHandler(queue_events)
 
 				gpe_handlers.append(fih)
-				gpe_handlers.append(turn_off)
+				gpe_ncs.append(turn_off)
 				gpe_ncs.append(nc)
 				gpe_syns.append(syn)
 				gpe_wvecs.extend(wvecs)
@@ -372,9 +401,79 @@ class StnModelEvaluator(object):
 				'synapses': gpe_syns,
 				'NetCons': gpe_ncs,
 				'NetStims': gpe_stims,
-				'InitHandlers': gpe_handlers,
+				'HocInitHandlers': gpe_handlers,
 			}
 
+		elif stim_protocol == StimProtocol.SINGLE_SYN_GLU:
+
+			# Add CTX inputs using Tsodyks-Markram synapses
+			n_ctx_syn = 1
+			ctx_syns = []
+			ctx_ncs = []
+			ctx_stims = []
+
+			# Distribute synapses over dendritic trees
+			is_ctx_target = lambda seg: seg.diam <= 1.0			
+			dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
+			dend_secrefs = sum(dendrites, [])
+			ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
+
+			# Make synapses
+			ctx_wvecs = []
+			for target_seg in ctx_target_segs:
+
+				# Make poisson spike generator
+				stim_rate = 33.0 # hz
+				stim_T = stim_rate**-1*1e3
+				stimsource = h.NetStim() # Create a NetStim
+				stimsource.interval = stim_T # Interval between spikes
+				stimsource.number = 1e9 # max number of spikes
+				stimsource.noise = 0.0 # Fractional noise in timing
+				ctx_stims.append(stimsource) # Save this NetStim
+
+				# Custom synapse parameters
+				syn_mech = 'GLUsyn'
+				syn_params = {
+					'use_stdp_A': 1,
+					'use_stdp_B': 1,
+				}
+
+				# Make synapse and NetCon
+				syn, nc, wvecs = cc.make_synapse((Pop.CTX, Pop.STN), (stimsource, target_seg), 
+									syn_mech, (NTR.AMPA, NTR.NMDA), (Cit.Custom, Cit.Chu2015),
+									custom_synpar=syn_params)
+
+				print("Made {} synapse with following parameters:".format(syn_mech))
+				for pname in cc.getSynMechParamNames(syn_mech):
+					print("{} : {}".format(pname, str(getattr(syn, pname))))
+
+				# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
+				syn.gmax_AMPA = syn.gmax_AMPA / syn.U1
+				syn.gmax_NMDA = syn.gmax_NMDA / syn.U1
+
+				# Control netstim
+				tstart, tstop = 100, 100 + 10*stim_T
+				stimsource.start = tstart
+				turn_off = h.NetCon(None, stimsource)
+				turn_off.weight[0] = -1
+				def queue_events():
+					turn_off.event(tstop)
+				fih = h.FInitializeHandler(queue_events)
+
+				ctx_handlers.append(fih)
+				ctx_ncs.append(turn_off)
+				ctx_ncs.append(nc)
+				ctx_syns.append(syn)
+				ctx_wvecs.extend(wvecs)
+
+			# Save inputs
+			self.model_data[self.target_model]['inputs']['ctx'] = {
+				'stimweightvec': ctx_wvecs,
+				'synapses': ctx_syns,
+				'NetCons': ctx_ncs,
+				'NetStims': ctx_stims,
+				'HocInitHandlers': ctx_handlers,
+			}
 
 		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED:
 			
@@ -548,7 +647,7 @@ class StnModelEvaluator(object):
 				'dist_dend': dendsec(0.8), # approximate location along dendrite in fig. 5C
 			}
 			
-			self.model_data[self.target_model]['rec_segs'] = rec_segs
+			self.model_data[self.target_model]['rec_segs'][protocol] = rec_segs
 
 		else:
 			raise NotImplementedError("""Recording from other models 
@@ -608,9 +707,9 @@ class StnModelEvaluator(object):
 			analysis.rec_currents_activations(traceSpecs, 'dist_dend', dendloc, ion_species=['ca','k'])
 
 
-		elif protocol == StimProtocol.SINGLE_SYN_GABAA:
+		elif protocol == StimProtocol.SINGLE_SYN_GABA:
 			####################################################################
-			# Record SINGLE_SYN_GABAA
+			# Record SINGLE_SYN_GABA
 			####################################################################
 
 			# Add synapse and segment containing it
@@ -778,9 +877,9 @@ class StnModelEvaluator(object):
 			
 			plot_all_Vm() # only plot membrane voltages
 
-		elif protocol == StimProtocol.SINGLE_SYN_GABAA:
+		elif protocol == StimProtocol.SINGLE_SYN_GABA:
 			####################################################################
-			# Plot SINGLE_SYN_GABAA
+			# Plot SINGLE_SYN_GABA
 			####################################################################
 			
 			# Plot membrane voltages (one figure)
@@ -811,16 +910,11 @@ class StnModelEvaluator(object):
 			analysis.plotTraces(V_postsyn, recordStep, yRange=(-80,40), traceSharex=True,
 								title='Post-synaptic segments')
 
-	def run_sim(self, dur=None):
+	def run_sim(self):
 		"""
 		Run NEURON simulator for `dur` or `self.sim_dur` milliseconds
 		with precise measurement of runtime
 		"""
-		if dur is None:
-			dur = self.sim_dur
-
-		h.tstop = dur
-		h.init() # calls finitialize() and fcurrent()
 		logger.debug("Simulating...")
 		t0 = h.startsw()
 		h.run()
@@ -829,19 +923,23 @@ class StnModelEvaluator(object):
 		logger.debug("Simulated for {:.6f} seconds".format(t1-t0))
 
 
-	def init_sim(self, dur=2000., dt=0.024, celsius=35., v_init=-60):
+	def init_sim(self, dur=2000., dt=0.025, celsius=35., v_init=-60):
 		"""
 		Initialize simulation.
 		"""
 		# Set simulation parameters
 		self.sim_dur = dur
+		h.tstop = dur
+		
+		self.sim_dt = dt
 		h.dt = dt
-		self.sim_dt = h.dt
 
 		h.celsius = celsius # different temp from paper
 		h.v_init = v_init # paper simulations sue default v_init
 		gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
+		# Initialize NEURON simulator
+		h.init() # calls finitialize()
 
 
 	def simulate_protocol(self, protocol, model=None):
@@ -876,6 +974,7 @@ class StnModelEvaluator(object):
 			self.rec_traces(protocol, recordStep=0.05)
 
 			# Simulate
+			h.init()
 			self.run_sim()
 
 		elif protocol == StimProtocol.CLAMP_PLATEAU: # plateau potential (Gillies 2006, Fig. 10C-D):
@@ -896,6 +995,7 @@ class StnModelEvaluator(object):
 			self.rec_traces(protocol, recordStep=0.025)
 
 			# Simulate
+			h.init()
 			self.run_sim()
 
 		elif protocol == StimProtocol.CLAMP_REBOUND: # rebound burst (Gillies 2006, Fig. 3-4)
@@ -916,24 +1016,19 @@ class StnModelEvaluator(object):
 			self.rec_traces(protocol, recordStep=0.05)
 
 			# Simulate
+			h.init()
 			self.run_sim()
 
 		else:
-			
-			# Set simulation parameters
-			self.sim_dur = 2000
-			h.dt = 0.025
-			self.sim_dt = h.dt
-
-			h.celsius = 35 # different temp from paper
-			h.v_init = -60 # paper simulations sue default v_init
-			gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 			# Make inputs
 			self.make_inputs(protocol)
 
 			# Set up recording
 			self.rec_traces(protocol, recordStep=0.05)
+
+			# Initialize
+			self.init_sim()
 
 			# Simulate
 			self.run_sim()
@@ -952,7 +1047,7 @@ if __name__ == '__main__':
 	# proto = StimProtocol.SYN_PARK_PATTERNED
 	# proto = StimProtocol.SYN_BACKGROUND_LOW
 	# proto = StimProtocol.SYN_BACKGROUND_HIGH
-	proto = StimProtocol.SINGLE_SYN_GABAA
+	proto = StimProtocol.SINGLE_SYN_GABA
 	evaluator.simulate_protocol(proto)
 	evaluator.plot_traces(proto)
 

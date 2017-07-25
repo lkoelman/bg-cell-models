@@ -63,6 +63,7 @@ class ParameterSource(Enum):
 	Atherton2013 = 5
 	Kumaravelu2016 = 6
 	Custom = 7			# Custom parameters, e.g. for testing
+	Gradinaru2009 = 8
 
 # Shorthands
 Pop = Populations
@@ -115,8 +116,6 @@ class CellConnector(object):
 
 			# TODO SETPARAM: make sure default delay, Vpre etc. is set for each (pre,post,rec) combination
 
-			# TODO SETPARAM: add params STD/STP dynamics for GPE-STN and CTX-STN synapses
-
 			# gmax calculation:
 			# gmax is in [uS] in POINT_PROCESS synapses
 			# 	1 [uS] * 1 [mV] = 1 [nA]
@@ -127,7 +126,6 @@ class CellConnector(object):
 			#######################################################################
 			# CTX -> STN parameters
 			Erev = 0.
-			Ermp = -70.
 
 			# Default parameters
 			for ntr in cp[Pop.CTX].keys():
@@ -137,7 +135,8 @@ class CellConnector(object):
 				}
 
 			# ---------------------------------------------------------------------
-			# Parameters from Chu (2015)
+			# AMPA from Chu (2015)
+			Ermp = -80.
 			cp[Pop.CTX][Rec.AMPA][Src.Chu2015] = {
 				'Ipeak': -275., 	# peak synaptic current (pA)
 				'gbar': -275.*1e-3 / (Ermp - Erev), # gbar calculation
@@ -145,19 +144,55 @@ class CellConnector(object):
 				'tau_decay_g': 4.0,
 				'Erev': Erev,
 			}
-			cp[Pop.CTX][Rec.NMDA][Src.Chu2015] = {
-				'Ipeak': -270., 	# peak synaptic current (pA)
-				'gbar': -270.*1e-3 / (Ermp - Erev), # gbar calculation
-				'tau_rise_g': 1.0,
-				'tau_decay_g': 50.0,
-				'Erev': Erev,
-			}
+
+			# Changes in parkinsonian state
 			if physio_state == PhysioState.PARKINSONIAN:
+				Ermp = -80. # Fig. 2G
 				cp[Pop.CTX][Rec.AMPA][Src.Chu2015].update({
 					'Ipeak': -390.,
 					'gbar': -390.*1e-3 / (Ermp - Erev),	
 				})
+			park_gain = 390./275. # increase in Parkinsonian condition
+
+			# NMDA from Chu (2015)
+			Ermp = 30. # NMDA EPSC measured at 30 mV rmp to remove Mg2+ block
+			I_peak = 210. # opposite sign: see graph
+			cp[Pop.CTX][Rec.NMDA][Src.Chu2015] = {
+				'Ipeak': I_peak, 	# peak synaptic current (pA)
+				'gbar': I_peak * 1e-3 / (Ermp - Erev), # gbar calculation
+				'tau_rise_g': 3.7,
+				'tau_decay_g': 80.0,
+				'Erev': Erev,
+			}
+
+			# Changes in parkinsonian state
+			if physio_state == PhysioState.PARKINSONIAN:
+				Ermp = -80. # Fig. 2G
+				cp[Pop.CTX][Rec.AMPA][Src.Chu2015].update({
+					'Ipeak': park_gain * cp[Pop.CTX][Rec.NMDA][Src.Chu2015]['Ipeak'],
+					'gbar':  park_gain * cp[Pop.CTX][Rec.NMDA][Src.Chu2015]['Ipeak'],	
+				})
+
+			# ---------------------------------------------------------------------
+			# Default parameters
+
+			# Copy params Chu (2015)
+			cp[Pop.CTX][Rec.AMPA][Src.Default] = dict(cp[Pop.CTX][Rec.AMPA][Src.Chu2015])
+			cp[Pop.CTX][Rec.NMDA][Src.Default] = dict(cp[Pop.CTX][Rec.NMDA][Src.Chu2015])
 			
+			# Modification to NMDA conductance
+			#	-> NMDA conductance is typically 70% of that of AMPA (see EPFL MOOC)
+			cp[Pop.CTX][Rec.NMDA][Src.Default]['gbar'] = 0.7 * cp[Pop.CTX][Rec.AMPA][Src.Default]['gbar']
+			
+			
+			# ---------------------------------------------------------------------
+			# Parameters Gradinaru (2009)
+
+			cp[Pop.CTX][Rec.AMPA][Src.Gradinaru2009] = {
+				'tau_rec_STD': 200.,
+				'tau_rec_STP': 1., # no facilitation
+				'P_release_base': 0.7,
+			}
 
 			#######################################################################
 			# GPe -> STN parameters
@@ -284,7 +319,7 @@ class CellConnector(object):
 			'Vpre_threshold': 'netcon:threshold',
 			'tau_rec_STD': 'syn:tau_rec', # NOTE: GABAA & GABAB use shared vars for depression/facilitation
 			'tau_rec_STP': 'syn:tau_facil',
-			'P_release_base': 'syn:U1',
+			'P_release_base': 'syn:U1', # initial release probability (fraction of vesicles in RRP released initially)
 		},
 		Rec.GABAB : {
 			'Erev': 'syn:Erev_GABAB',
