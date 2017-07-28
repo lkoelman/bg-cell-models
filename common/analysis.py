@@ -191,17 +191,33 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 		'STN_q':{'sec':'soma','loc':0.5,'mech':'stn','var':'q'},
 	}
 
+	WARNING: For multithreaded execution, section _must_ have POINT_PROCESS
+	         associated with it to identify the tread. Hence, a PointProcessMark
+	         (see ppmark.mod) will be inserted if no PP present.
 	"""
 	recData = collections.OrderedDict() # empty dict for storing recording vectors
+	pp_markers = []
 
 	for trace, spec in traceSpecs.iteritems():
 		ptr = None
+		pp = None
 		if 'loc' in spec:
 			sec = secs[spec['sec']]
+			seg = sec(spec['loc'])
+			
+			# Get pointer/reference to variable to record
 			if 'mech' in spec:  # eg. soma(0.5).hh._ref_gna
-				ptr = sec(spec['loc']).__getattribute__(spec['mech']).__getattribute__('_ref_'+spec['var'])
+				ptr = seg.__getattribute__(spec['mech']).__getattribute__('_ref_'+spec['var'])
 			else:  # eg. soma(0.5)._ref_v
-				ptr = sec(spec['loc']).__getattribute__('_ref_'+spec['var'])
+				ptr = seg.__getattribute__('_ref_'+spec['var'])
+			
+			# find a POINT_PROCESS in segment to imptove efficiency
+			seg_pps = seg.point_processes()
+			if any(seg_pps):
+				pp = seg_pps[0]
+			else:
+				pp = h.PointProcessMark(seg)
+				pp_markers.append(pp)
 		else:
 			if 'pointp' in spec: # eg. soma.izh._ref_u
 				if spec['pointp'] in secs:
@@ -215,9 +231,13 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 				recData[trace] = h.Vector(duration/recordStep+1).resize(0)
 			else:
 				recData[trace] = h.Vector()
-			recData[trace].record(ptr, recordStep)
 
-	return recData
+			if pp is not None:
+				recData[trace].record(pp, ptr, recordStep)
+			else:
+				recData[trace].record(ptr, recordStep)
+
+	return recData, pp_markers
 
 
 def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell', 
