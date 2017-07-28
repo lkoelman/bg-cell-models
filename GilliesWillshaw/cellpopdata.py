@@ -468,7 +468,7 @@ class CellConnector(object):
 				if not phys_parname in phys_params:
 					logger.warning(dedent("""\
 							Parameter {dictpar} not found for connection ({pre},{post},{rec}).
-							This means that parameter {mechpar} will not be set""").format(
+							This means that parameter {mechpar} will not be set\n""").format(
 								dictpar=phys_parname, pre=pre_pop, post=post_pop, 
 								rec=rec, mechpar=mech_parspec))
 					continue
