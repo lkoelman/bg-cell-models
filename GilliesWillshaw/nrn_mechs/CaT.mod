@@ -27,6 +27,7 @@ UNITS {
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 
 NEURON {
+    THREADSAFE
 	SUFFIX CaT
 	USEION ca READ cai,cao,eca WRITE ica
 	RANGE gcaT, iCaT, o
@@ -79,6 +80,7 @@ UNITSOFF
 
 INITIAL {
 	LOCAL ktemp,ktempb,ktemp1,ktemp2
+
 	if (activate_Q10>0) {
 	  rate_k = Q10^((celsius-tempb)/10)
           gmax_k = gmaxQ10^((celsius-tempb)/10)
@@ -86,37 +88,41 @@ INITIAL {
 	  rate_k = 1.0
 	  gmax_k = 1.0
 	}
-        settables(v)
-        r = ralpha/(ralpha+rbeta)
-        s = (salpha*(dbeta+dalpha) - (salpha*dbeta))/((salpha+sbeta)*(dalpha+dbeta) - (salpha*dbeta))
+	
+    settables(v)
+    r = ralpha/(ralpha+rbeta)
+    s = (salpha*(dbeta+dalpha) - (salpha*dbeta))/((salpha+sbeta)*(dalpha+dbeta) - (salpha*dbeta))
 	d = (dbeta*(salpha+sbeta) - (salpha*dbeta))/((salpha+sbeta)*(dalpha+dbeta) - (salpha*dbeta))
 }
 
 DERIVATIVE states {  
 	settables(v)      :Computes state variables at the current v and dt.
-	r' = ((ralpha*(1-r)) - (rbeta*r))
-	d' = ((dbeta*(1-s-d)) - (dalpha*d))
-	s' = ((salpha*(1-s-d)) - (sbeta*s))
+	r' = rate_k * ((ralpha*(1-r)) - (rbeta*r))
+	d' = rate_k * ((dbeta*(1-s-d)) - (dalpha*d))
+	s' = rate_k * ((salpha*(1-s-d)) - (sbeta*s))
 }
 
+: In NEURON > v7, the TABLE is created before the INITIAL block is called. 
+: Consequently, a TABLE may be invalid if it depends on something that is specified in an INITIAL block.
+: Therefore, the rate_k has been removed as factor for rates, and inserted into DERIVATIVE block
 PROCEDURE settables(v) {  :Computes rate and other constants at current v.
                           :Call once from HOC to initialize inf at resting v.
 			  :Voltage shift (for temp effects) of -1.9278 added
-        LOCAL   bd
-        TABLE ralpha, rbeta, salpha, sbeta, dalpha, dbeta DEPEND celsius FROM -100 TO 100 WITH 400
+    LOCAL   bd
+    TABLE ralpha, rbeta, salpha, sbeta, dalpha, dbeta DEPEND celsius FROM -100 TO 100 WITH 400
 
-		:"r" CaT activation system
-	ralpha = rate_k * 1.0/(1.7+exp(-(v + 26.2722)/13.5))
-	rbeta  = rate_k * exp(-(v + 61.0722)/7.8)/(exp(-(v + 26.8722)/13.1)+1.7)
+	:"r" CaT activation system
+	ralpha = 1.0/(1.7+exp(-(v + 26.2722)/13.5))
+	rbeta  = exp(-(v + 61.0722)/7.8)/(exp(-(v + 26.8722)/13.1)+1.7)
 
-                :"s" CaT fast inactivation system
-        salpha = rate_k * exp(-(v + 158.3722)/17.8)
-        sbeta  = rate_k * (sqrt(0.25+exp((v + 81.5722)/6.3))-0.5) * (exp(-(v + 158.3722)/17.8))
+	:"s" CaT fast inactivation system
+	salpha = exp(-(v + 158.3722)/17.8)
+	sbeta  = (sqrt(0.25+exp((v + 81.5722)/6.3))-0.5) * (exp(-(v + 158.3722)/17.8))
 
-	        :"d" CaT slow inactivation system
+	:"d" CaT slow inactivation system
 	bd     = sqrt(0.25+exp((v + 81.5722)/6.3))
-	dalpha = rate_k * (1.0+exp((v + 35.4722)/30.0))/(240.0*(0.5+bd))
-        dbeta  = rate_k * (bd-0.5)*dalpha
+	dalpha = (1.0+exp((v + 35.4722)/30.0))/(240.0*(0.5+bd))
+	dbeta  = (bd-0.5)*dalpha
 }
 
 UNITSON

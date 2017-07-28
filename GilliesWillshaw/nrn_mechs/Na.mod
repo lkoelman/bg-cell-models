@@ -27,6 +27,7 @@ UNITS {
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 
 NEURON {
+    THREADSAFE
 	SUFFIX Na
 	USEION na READ nai,ena WRITE ina
 	RANGE gna, ina, o
@@ -55,7 +56,7 @@ STATE {
 }
 
 ASSIGNED { 
-        ina (mA/cm2)
+    ina (mA/cm2)
 	alpham (/ms)
 	betam (/ms)
 	alphah (/ms)
@@ -73,11 +74,18 @@ BREAKPOINT {
 
 UNITSOFF
 
+: In NEURON > v7, the TABLE is created before the INITIAL block is called. 
+: Consequently, a TABLE may be invalid if it depends on something that is specified in an INITIAL block.
+BEFORE INITIAL {
+	
+}
+
 INITIAL {
 	LOCAL ktemp,ktempb,ktemp1,ktemp2
+
 	if (activate_Q10>0) {
 	  rate_k = Q10^((celsius-tempb)/10)
-          gmax_k = gmaxQ10^((celsius-tempb)/10)
+      gmax_k = gmaxQ10^((celsius-tempb)/10)
 	}else{
 	  : Note, its not 1.0, as we have rescaled the kinetics
           :  (reverting the scaleing Traub did), the original is
@@ -85,31 +93,35 @@ INITIAL {
 	  rate_k = 1.60
 	  gmax_k = 1.60
 	}
-        settables(v)
-        m = alpham/(alpham+betam)
-        h = alphah/(alphah+betah)
+
+    settables(v)
+    m = alpham/(alpham+betam)
+    h = alphah/(alphah+betah)
 
 }
 
 DERIVATIVE states {
 	settables(v)      :Computes state variables at the current v and dt.
-	m' = alpham * (1-m) - betam * m
-	h' = alphah * (1-h) - betah * h
+	m' = rate_k * ( alpham * (1-m) - betam * m )
+	h' = rate_k * ( alphah * (1-h) - betah * h )
 }
 
+: In NEURON > v7, the TABLE is created before the INITIAL block is called. 
+: Consequently, a TABLE may be invalid if it depends on something that is specified in an INITIAL block.
+: Therefore, the rate_k has been removed as factor for rates, and inserted into DERIVATIVE block
 PROCEDURE settables(v) {  :Computes rate and other constants at current v.
                       :Call once from HOC to initialize inf at resting v.
         LOCAL vadj
         TABLE alpham, betam, alphah, betah DEPEND rest,celsius FROM -100 TO 100 WITH 400
-	vadj  = v - rest
+		vadj  = v - rest
 
 		:"m" sodium activation system
-	alpham = rate_k * 0.2 * vtrap((13.1-vadj),4.0)
-        betam =  rate_k * 0.175 * vtrap((vadj-40.1),1.0)
+		alpham = 0.2 * vtrap((13.1-vadj),4.0)
+        betam =  0.175 * vtrap((vadj-40.1),1.0)
 
                 :"h" sodium inactivation system
-        alphah = rate_k * 0.08 * exp((17.0-vadj)/18.0)
-        betah = rate_k * 2.5 / (exp((40.0-vadj)/5.0) + 1)
+        alphah = 0.08 * exp((17.0-vadj)/18.0)
+        betah = 2.5 / (exp((40.0-vadj)/5.0) + 1)
 }
 
 FUNCTION vtrap(x,y) {  :Traps for 0 in denominator of rate eqns.

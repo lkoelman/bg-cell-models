@@ -26,6 +26,7 @@ UNITS {
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 
 NEURON {
+    THREADSAFE
 	SUFFIX Kv31
 	USEION k READ ki,ek WRITE ik
 	RANGE gk, ik
@@ -69,6 +70,7 @@ UNITSOFF
 
 INITIAL {
 	LOCAL ktemp,ktempb,ktemp1,ktemp2
+
 	if (activate_Q10>0) {
           rate_k = Q10^((celsius-tempb)/10)
           gmax_k = gmaxQ10^((celsius-tempb)/10)
@@ -76,22 +78,26 @@ INITIAL {
 	  rate_k = 1.0
 	  gmax_k = 1.0
 	}
-        settables(v)
+	
+    settables(v)
 	p = pinf
 }
 
 DERIVATIVE states {  
         settables(v)
-	p' = (pinf-p)/ptau
+	p' = rate_k * (pinf-p)/ptau
 }
 
+: In NEURON > v7, the TABLE is created before the INITIAL block is called. 
+: Consequently, a TABLE may be invalid if it depends on something that is specified in an INITIAL block.
+: Therefore, the rate_k has been removed as factor for rates, and inserted into DERIVATIVE block
 PROCEDURE settables(v) {:Computes rate and other constants at current v.
                         :Call once from HOC to initialize inf at resting v.
 			:Voltage shift (for temp effects) of -5.08
 	TABLE pinf, ptau DEPEND celsius FROM -100 TO 100 WITH 400
 
 	pinf = 1.0/(1.0+exp((v + -0.083699749)/ -9.0))
-	ptau = ((7.3/(exp((v + 32.9163003)/-14.0)+exp((v + 2.91630025)/16.0)))+1) / rate_k
+	ptau = ((7.3/(exp((v + 32.9163003)/-14.0)+exp((v + 2.91630025)/16.0)))+1)
 
 }
 

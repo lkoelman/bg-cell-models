@@ -27,6 +27,7 @@ UNITS {
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 
 NEURON {
+    THREADSAFE
 	SUFFIX KDR
 	USEION k READ ki,ek WRITE ik
 	RANGE gk, ik
@@ -71,6 +72,7 @@ UNITSOFF
 
 INITIAL {
 	LOCAL ktemp,ktempb,ktemp1,ktemp2
+
 	if (activate_Q10>0) {
           rate_k = Q10^((celsius-tempb)/10)
           gmax_k = gmaxQ10^((celsius-tempb)/10)
@@ -81,15 +83,19 @@ INITIAL {
 	  rate_k = 1.60
 	  gmax_k = 1.60
 	}
-        settables(v)
+	
+    settables(v)
 	n = alphan/(alphan+betan)
 }
 
 DERIVATIVE states {
 	settables(v)      :Computes state variables at the current v and dt.
-	n' = alphan * (1-n) - betan * n
+	n' = rate_k * (alphan * (1-n) - betan * n)
 }
 
+: In NEURON > v7, the TABLE is created before the INITIAL block is called. 
+: Consequently, a TABLE may be invalid if it depends on something that is specified in an INITIAL block.
+: Therefore, the rate_k has been removed as factor for rates, and inserted into DERIVATIVE block
 PROCEDURE settables(v) {  :Computes rate and other constants at current v.
                           :Call once from HOC to initialize inf at resting v.
                           :Voltage shift (for temp effects) of 0.60650122.
@@ -98,8 +104,8 @@ PROCEDURE settables(v) {  :Computes rate and other constants at current v.
 	vadj  = v - rest + 0.60650122
 
 	        :"n" potassium activation system
-	alphan = rate_k * 0.01 * vtrap((35.1-vadj),5.0)
-        betan = rate_k * 0.156 * exp((20.0-vadj)/40.0)
+	alphan = 0.01 * vtrap((35.1-vadj),5.0)
+        betan = 0.156 * exp((20.0-vadj)/40.0)
 }
 
 FUNCTION vtrap(x,y) {  :Traps for 0 in denominator of rate eqns.

@@ -27,6 +27,7 @@ UNITS {
 }
 
 NEURON {
+    THREADSAFE
        SUFFIX NaL
        USEION na READ ena,nai WRITE ina
        RANGE gna,inaL

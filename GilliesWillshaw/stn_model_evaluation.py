@@ -677,7 +677,7 @@ class StnModelEvaluator(object):
 		# Start trace specification
 		if traceSpecs is None:
 			traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
-		traceSpecs['t_global'] = {'var':'t'}
+			traceSpecs['t_global'] = {'var':'t'}
 		self.rec_dt = recordStep
 		
 		# Add synapse and segment containing it
@@ -709,7 +709,7 @@ class StnModelEvaluator(object):
 		# Start trace specification
 		if traceSpecs is None:
 			traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
-		traceSpecs['t_global'] = {'var':'t'}
+			traceSpecs['t_global'] = {'var':'t'}
 		self.rec_dt = recordStep
 		
 		# Add synapse and segment containing it
@@ -753,7 +753,7 @@ class StnModelEvaluator(object):
 
 		# Start trace specification
 		traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
-		traceSpecs['t_global'] = {'var':'t'}
+		# traceSpecs['t_global'] = {'var':'t'}
 		self.rec_dt = recordStep
 
 		# PROTOCOL-SPECIFIC TRACES
@@ -880,13 +880,14 @@ class StnModelEvaluator(object):
 				rec_secs[seclabel] = hobj # point process
 
 		# Use trace specs to make Hoc Vectors
-		recData = analysis.recordTraces(rec_secs, traceSpecs, recordStep)
+		recData, markers = analysis.recordTraces(rec_secs, traceSpecs, recordStep)
 
 		# Save trace specs and recording Vectors
 		self.model_data[self.target_model]['rec_data'][protocol] = {
 			'trace_specs': traceSpecs,
 			'trace_data': recData,
 			'rec_dt': recordStep,
+			'rec_markers': markers,
 		}
 		
 
@@ -981,11 +982,21 @@ class StnModelEvaluator(object):
 			analysis.plotTraces(V_postsyn, recordStep, yRange=(-80,40), traceSharex=True,
 								title='Post-synaptic segments')
 
-	def run_sim(self):
+	def run_sim(self, nthread=1):
 		"""
 		Run NEURON simulator for `dur` or `self.sim_dur` milliseconds
 		with precise measurement of runtime
 		"""
+		# enable multithreaded execution
+		if nthread > 1:
+			h.cvode_active(0)
+			h.load_file('parcom.hoc')
+			pct = h.ParallelComputeTool[0]
+			pct.nthread(nthread)
+			pct.multisplit(1)
+			pct.busywait(1)
+
+		# Simulate
 		logger.debug("Simulating...")
 		t0 = h.startsw()
 		h.run()
@@ -1131,16 +1142,16 @@ def rebound_protocol():
 	    print("Synapse {} in segment {}".format(syn, syn.get_segment()))
 
 	# Record synaptic variables
-	self.rec_GABA_traces(proto_GABA) # uncomment if single synapse simulated
-	self.rec_GLU_traces(proto_GLU) # uncomment if single synapse simulated
+	self.rec_traces(proto_GABA) # uncomment if single synapse simulated
+	self.rec_traces(proto_GLU) # uncomment if single synapse simulated
 
 	# Simulate with additional synapses
 	self.init_sim()
-	self.run_sim()
+	self.run_sim(nthread=4)
 
 	# Plot simulation data
-	self.plot_GABA_traces(proto_GABA)
-	self.plot_GLU_traces(proto_GLU)
+	self.plot_traces(proto_GABA)
+	self.plot_traces(proto_GLU)
 
 	globals().update(locals())
 

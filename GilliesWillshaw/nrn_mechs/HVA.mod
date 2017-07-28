@@ -31,6 +31,7 @@ UNITS {
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 
 NEURON {
+    THREADSAFE
 	SUFFIX HVA
 	USEION ca READ cai,cao,eca WRITE ica
 	RANGE gcaN, gcaL, iNCa, iLCa, o_N, o_L
@@ -88,9 +89,9 @@ BREAKPOINT {
 	ica  = iNCa + iLCa
 }
 
-
 INITIAL {
 	LOCAL ktemp,ktempb,ktemp1,ktemp2
+
 	if (activate_Q10>0) {
 	  rate_k = Q10^((celsius-tempb)/10)
 	  gmax_k = gmaxQ10^((celsius-tempb)/10)
@@ -98,8 +99,8 @@ INITIAL {
 	  rate_k = 1.0
 	  gmax_k = 1.0
 	}
-
-        settables(v)
+	
+    settables(v)
 	q = qinf
 	u = uinf
 	setCadepLinact(cai)
@@ -108,12 +109,15 @@ INITIAL {
 
 DERIVATIVE states {  
 	settables(v)  
-	q' = (qinf-q)/qtau
-	u' = (uinf-u)/utau
+	q' = rate_k * (qinf-q)/qtau
+	u' = rate_k * (uinf-u)/utau
 	setCadepLinact(cai)
-	h' = (hinf-h)/htau
+	h' = rate_k * (hinf-h)/htau
 }
 
+: In NEURON > v7, the TABLE is created before the INITIAL block is called. 
+: Consequently, a TABLE may be invalid if it depends on something that is specified in an INITIAL block.
+: Therefore, the rate_k has been removed as factor for rates, and inserted into DERIVATIVE block
 PROCEDURE settables(v) {  :Computes rate and other constants at current v.
                           :Call once from HOC to initialize inf at resting v.
 			  :Voltage shifts (for temp effects) of -8.25 and -14.67 added respt.
@@ -121,17 +125,17 @@ PROCEDURE settables(v) {  :Computes rate and other constants at current v.
 
                 :"q" N/L Ca activation system
         qinf   = 1.0/(1.0 + exp((-16.3547869 - v)/11.3))
-        qtau   = (1.25/(cosh(-0.031 * (v + 28.8547869)))) /rate_k
+        qtau   = (1.25/(cosh(-0.031 * (v + 28.8547869))))
 
                 :"u" N inactivation system - voltage dependent.
         uinf   = 1.0/(1.0 + exp((v + 45.3326653)/12.5))
-        utau   = (98.0 + cosh(0.021*(24.7673347-v))) /rate_k
+        utau   = (98.0 + cosh(0.021*(24.7673347-v)))
 }
 
 PROCEDURE setCadepLinact(cai) { : set Ca dependent L-type calcium channel inactivation
                 :"h" L inactivation system - [Ca]i dependent.
 	hinf   = inactLmax+((1.0-inactLmax)/(1.0 + exp((cai-0.7)/0.15)))
-        htau   = inactLtau /rate_k
+        htau   = inactLtau
 }
 
 INCLUDE "ghk.inc"

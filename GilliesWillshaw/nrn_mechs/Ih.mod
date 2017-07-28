@@ -28,6 +28,7 @@ UNITS {
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 
 NEURON {
+    THREADSAFE
 	SUFFIX Ih
 	NONSPECIFIC_CURRENT ih
 	RANGE gk, ih
@@ -70,6 +71,7 @@ UNITSOFF
 
 INITIAL {
 	LOCAL ktemp,ktempb,ktemp1,ktemp2
+
 	if (activate_Q10>0) {
 	  rate_k = Q10^((celsius-tempb)/10)
           gmax_k = gmaxQ10^((celsius-tempb)/10)
@@ -77,21 +79,25 @@ INITIAL {
 	  rate_k = 1.0
 	  gmax_k = 1.0
 	}
-        setinf(v)
+	
+    setinf(v)
 	f = finf
 }
 
 DERIVATIVE integrate {
         setinf(v)
-	f' = (finf - f)/ftau
+	f' = rate_k * (finf - f)/ftau
 }
 
+: In NEURON > v7, the TABLE is created before the INITIAL block is called. 
+: Consequently, a TABLE may be invalid if it depends on something that is specified in an INITIAL block.
+: Therefore, the rate_k has been removed as factor for rates, and inserted into DERIVATIVE block
 PROCEDURE setinf(v) {
                     :Voltage shift (for temp effects) of 5.0.
 	TABLE finf, ftau DEPEND celsius FROM -100 TO 100 WITH 400
 
 	finf = 1.0/(1+exp((v + 80 )/ 5.5))
-        ftau = (1.0/(exp(-15.02 - 0.086*v)+exp(-1.5195 + 0.0701*v))) /rate_k
+        ftau = (1.0/(exp(-15.02 - 0.086*v)+exp(-1.5195 + 0.0701*v)))
 }
 
 UNITSON

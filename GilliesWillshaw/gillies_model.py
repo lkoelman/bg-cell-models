@@ -9,6 +9,8 @@ NOTE: this script relies on commenting out the 'graphics=1' line in sample.hoc
 
 import neuron
 from neuron import h
+h.load_file("stdlib.hoc") # Load the standard library
+h.load_file("stdrun.hoc") # Load the standard run library
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -446,6 +448,7 @@ def runtest_mixedbursting():
 	plt.xlabel("Mixed rhythmic bursting (Apamin, 37 degC, CaL+10%)")
 	plt.show(block=False)
 
+
 def runalltests():
 	""" Run all experiments from Hoc file """
 	stn_cell_gillies()
@@ -456,6 +459,52 @@ def runalltests():
 	runtest_fastbursting()
 	runtest_mixedbursting()
 
-if __name__ == '__main__':
+
+def runtest_multithreaded(testfun, nthread):
+	"""
+	Run a test procol in multithreaded mode
+	"""
+	# make cell
 	stn_cell_gillies()
-	runtest_reboundburst()
+
+	# enable multithreaded execution
+	h.cvode_active(0)
+	h.load_file('parcom.hoc')
+	pct = h.ParallelComputeTool[0]
+	pct.nthread(4)
+	pct.multisplit(1)
+	pct.busywait(1)
+
+	# Do test
+	t0 = h.startsw()
+	testfun()
+	t1 = h.startsw(); h.stopsw()
+	print("Elapsed time: {} ms".format(t1-t0))
+
+
+def runtest_singlethreaded(testfun, use_tables=True):
+	"""
+	Run a test protocol in single-threaded mode
+	"""
+	# make cell
+	stn_cell_gillies()
+
+	# Disable tables
+	if not use_tables:
+		for at in dir(h):
+			if at.startswith('usetable_'):
+				setattr(h, at, 0)
+				print("Disabled TABLE {}".format(at))
+
+	# Do test
+	t0 = h.startsw()
+	testfun()
+	t1 = h.startsw(); h.stopsw()
+	print("Elapsed time: {} ms".format(t1-t0))
+
+if __name__ == '__main__':
+	# Run a test protocol
+	# stn_cell_gillies()
+	# runtest_reboundburst()
+
+	runtest_multithreaded(runtest_reboundburst, 6)

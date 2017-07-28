@@ -20,6 +20,7 @@ COMMENT
 ENDCOMMENT
 
 NEURON {
+	THREADSAFE
 	SUFFIX Cacum
 	USEION ca READ ica WRITE cai
 	GLOBAL con,cai0,buftau,activate_Q10,Q10,rate_k,temp1,temp2,tempb,depth
