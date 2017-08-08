@@ -441,12 +441,11 @@ class CellConnector(object):
 		# Make NetCon connection
 		if isinstance(pre_obj, nrn.Section):
 			# Biophysical cells need threshold detection to generate events
-			nc = hoc.NetCon(pre_obj(0.5)._ref_v, receiver, sec=pre_obj)
+			nc = h.NetCon(pre_obj(0.5)._ref_v, receiver, sec=pre_obj)
 
 		else:
 			# Source object is POINT_PROCESS or other event-generating objcet
 			nc = h.NetCon(pre_obj, syn)
-
 
 		# Set each parameter on the synapse object
 		phys_data = self.getConParams(pre_pop, post_pop, use_sources, custom_conpar)

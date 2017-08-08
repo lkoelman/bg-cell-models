@@ -4,6 +4,7 @@ Evaluation of STN cell models under different physiological and stimulus conditi
 
 # Standard library modules
 import collections
+import re
 from enum import Enum
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
@@ -52,6 +53,7 @@ class StimProtocol(Enum):
 	SYN_PARK_PATTERNED = 5 # pathological input, strong patterned cortical input with strong GPi input in antiphase
 	SINGLE_SYN_GABA = 6
 	SINGLE_SYN_GLU = 7
+	MIN_SYN_BURST = 8 # burst using minimal combination of GLU + GABA synapses
 
 class StnModel(Enum):
 	"""
@@ -120,18 +122,11 @@ class StnModelEvaluator(object):
 		self.model_data = dict(((model, {}) for model in list(StnModel)))
 		self.target_model = target_model
 
-		somaref, dendrefs = self.build_cell(self.target_model)
-
-		self.model_data[self.target_model]['sec_refs'] = {
-			'soma': somaref,
-			'dendrites': dendrefs # one list(SectionRef) per dendrite
-		}
-
-		self.model_data[self.target_model]['rec_data'] = dict(((proto, {}) for proto in StimProtocol))
-		self.model_data[self.target_model]['rec_segs'] = dict(((proto, {}) for proto in StimProtocol))
-
-		# Allocate data for input
-		self.model_data[self.target_model]['inputs'] = {} # key for each pre-synaptic population
+		# Initialize containers for model data
+		for model in list(StnModel):
+			self.model_data[model]['rec_data'] = dict(((proto, {}) for proto in StimProtocol))
+			self.model_data[model]['rec_segs'] = dict(((proto, {}) for proto in StimProtocol))
+			self.model_data[model]['inputs'] = {} # key for each pre-synaptic population
 
 		self.sim_dur = 1000.
 		self.sim_dt = 0.025
@@ -153,77 +148,161 @@ class StnModelEvaluator(object):
 		# Set the state flag
 		self._physio_state = state
 
-	def build_cell(self, model):
+	def build_cell(self, model, state=None):
 		"""
 		Build cell model using current physiological state
+
+		@param state		PhysioState enum member
+							(if none given, use self.physio_state)
 		"""
+		if state is None:
+			state = self.physio_state
 
 		if self.model_data[model].get('built', False):
 			logger.warning("Attempting to build model {} which has already been built.".format(
 							model))
 
 		if model == StnModel.Gillies2005:
-			
-			# Make Gillies STN cell
-			soma, dends, stims = gillies.stn_cell_gillies()
-			somaref, dendL_refs, dendR_refs = gillies.get_stn_refs()
-			dendrefs = [dendL_refs, dendR_refs]
-
-			# State-dependent changes to model specification
-			state = self.physio_state
-			if state == PhysioState.NORMAL:
-				pass # this case corresponds to default model parameters
-
-			elif (state == PhysioState.PARKINSONIAN or state == rec.PARK_DBS):
-
-				# TODO: decide parameter modifications for DA-depleted state from literature
-				somaref = self.model_data[self.target_model]['sec_refs']['soma']
-				dendrefs =  self.model_data[self.target_model]['sec_refs']['dendrites']
-
-				# 1. Reduce sKCA channel conductance by 90%, from sources:
-				#	- Gillies & Willshaw 2005 (see refs)
-				for secref in [somaref] + dendrefs:
-					for seg in secrref.sec:
-						seg.gk_sKCa = 0.1 * seg.gk_sKCa
-
-				# 2. Modifications to GPE GABA IPSPs
-				#	- DONE: see changes in cellpopdata.py
-				#	- Changes:
-				#		- Increased strength of GABA IPSPs
-				#		- longer decay kinetics, 
-				#		- increase in number of functional synapses (1 afferent axon has more activated synaptic contacts)
-				# 	- References:
-				#		- Fan (2012), "Proliferation of External Globus Pallidus-Subthalamic Nucleus Synapses following Degeneration of Midbrain Dopamine Neurons"
-
-				# 3. Modifications to GPE AMPA EPSCs (see hLTP)
-				#	- DONE: see changes in cellpopdata.py
-				#	- NMDA is involved in this hLTP mechanism
-
-				# 4. Changes to regularity/variability of spontaneous firing (summarize literature)
-
-				if state == rec.PARK_DBS:
-					# 5. Neurochemical effects of DBS?
-					raise NotImplementedError()
-			else:
-				raise NotImplementedError()
+			somaref, dendrefs = self._build_gillies(state)
 
 		elif model == StnModel.Gillies_BranchZip:
-			
-			# Incremental reduction with 'Branch Zipping' algorithm
-			logger.warn("Gillies STN model will be modified if created")
-			eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
-			somaref = next(ref for ref in newsecrefs if 'soma' in ref.sec.name())
-			dendrefs = [[ref] for ref in newsecrefs if not 'soma' in ref.sec.name()]
+			somaref, dendrefs = self._reduce_map_gillies()
 
 		else:
 			raise Exception("Model '{}' not supported".format(
 					model))
+
+		# Save Sections
+		self.model_data[model]['sec_refs'] = {
+			'soma': somaref,
+			'dendrites': dendrefs # one list(SectionRef) per dendrite
+		}
 
 		# Indicate that given model has been built
 		self.model_data[model]['built'] = True
 
 		return somaref, dendrefs
 
+	def _build_gillies(self, state):
+		"""
+		Build the Gillies2005 model.
+		"""
+
+		# Make Gillies STN cell
+		soma, dends, stims = gillies.stn_cell_gillies()
+		somaref, dendL_refs, dendR_refs = gillies.get_stn_refs()
+		dendrefs = [dendL_refs, dendR_refs]
+
+		# State-dependent changes to model specification
+		if state == PhysioState.NORMAL:
+			pass # this case corresponds to default model parameters
+
+		elif (state == PhysioState.PARKINSONIAN or state == rec.PARK_DBS):
+
+			# TODO: decide parameter modifications for DA-depleted state from literature
+
+			# 1. Reduce sKCA channel conductance by 90%, from sources:
+			#	- Gillies & Willshaw 2005 (see refs)
+			for secref in [somaref] + dendrefs:
+				for seg in secrref.sec:
+					seg.gk_sKCa = 0.1 * seg.gk_sKCa
+
+			# 2. Modifications to GPE GABA IPSPs
+			#	- DONE: see changes in cellpopdata.py
+			#	- Changes:
+			#		- Increased strength of GABA IPSPs
+			#		- longer decay kinetics, 
+			#		- increase in number of functional synapses (1 afferent axon has more activated synaptic contacts)
+			# 	- References:
+			#		- Fan (2012), "Proliferation of External Globus Pallidus-Subthalamic Nucleus Synapses following Degeneration of Midbrain Dopamine Neurons"
+
+			# 3. Modifications to GPE AMPA EPSCs (see hLTP)
+			#	- DONE: see changes in cellpopdata.py
+			#	- NMDA is involved in this hLTP mechanism
+
+			# 4. Changes to regularity/variability of spontaneous firing (summarize literature)
+
+			if state == rec.PARK_DBS:
+				# 5. Neurochemical effects of DBS?
+				raise NotImplementedError()
+
+		else:
+			raise NotImplementedError('Unrecognized state %s' % repr(state))
+
+		return somaref, dendrefs
+
+
+	def _reduce_map_gillies(self):
+		"""
+		Reduce Gillies model and map synapses.
+		"""
+
+		full_model = StnModel.Gillies2005
+		red_model = StnModel.Gillies_BranchZip
+
+		# Make sure gillies model is built
+		if not self.model_data[full_model]['built']:
+			logger.info("Building Gillies original model first...")
+			self.build_cell(full_model)
+		else:
+			logger.warn("Gillies STN model will be modified")
+
+		# Restore conductances
+		gillies.reset_channel_gbar()
+
+		# Settings for analyzing electrotonic properties
+		Z_freq = 25.
+		def stn_setstate():
+			""" Initialize cell for analyzing electrical properties """
+			h.celsius = 35
+			h.v_init = -68.0
+			h.set_aCSF(4)
+			h.init()
+
+		# Get original model Sections
+		somaref = self.model_data[full_model]['sec_refs']['soma']
+		dendrefs = self.model_data[full_model]['sec_refs']['dendrites']
+		allsecrefs = [somaref] + dendrefs[0] + dendrefs[1]
+		soma = somaref.sec
+
+		# Get synapses and NetCon we want to map
+		cdict = self.model_data[full_model]['inputs']
+		pre_pops = cdict.keys()
+		syns_tomap = sum((cdict[pop]['synapses'] for pop in pre_pops), [])
+		ncs_tomap = sum((cdict[pop]['NetCons'] for pop in pre_pops), [])
+
+		# Get synapse info
+		save_ref_attrs = ['table_index', 'tree_index', 'gid'] # SecRef attributes to save
+		pop_mapper = {'pre_pop': lambda syn: self.get_pre_pop(syn, full_model)}
+		syn_info = mapsyn.get_syn_info(soma, allsecrefs, Z_freq=Z_freq, 
+							init_cell=stn_setstate, save_ref_attrs=save_ref_attrs,
+							attr_mappers=pop_mapper, syn_nc_tomap=(syns_tomap, ncs_tomap))
+
+		# TODO: give dict with syn_mod_pars
+		# TODO: store synapses as {syn: [aff_ncs]}, i.e. don.t pass controlling synapses to method (see sever_netcons and setpost)
+		# TODO: test if crash is solved when controlling NetCon are deleted
+		# TODO: for GABAsyn & GLUsyn: see if gbar must not be set via weight instead of gmax (see mod file/conversion factor)
+
+		# Create reduced cell
+		marasco.logger.setLevel(logging.WARNING) # ignore lower than warning
+		eq_secs, newsecrefs = marasco.reduce_gillies_incremental(
+										n_passes=7, zips_per_pass=100)
+
+		# Reassign SectionRef vars
+		somaref = next(ref for ref in newsecrefs if 'soma' in ref.sec.name())
+		dendrefs = [[ref] for ref in newsecrefs if not 'soma' in ref.sec.name()]
+
+		# Map synapses to reduced cell
+		mapsyn.map_synapses(somaref, newsecrefs, syn_info, stn_setstate, Z_freq,
+							method='Vratio')
+
+		# Save inputs
+		self._init_con_dict(red_model, pre_pops)
+		for syndata in syn_info:
+			self.model_data[red_model]['inputs'][syndata.pre_pop]['synapses'].append(syndata.mapped_syn)
+			self.model_data[red_model]['inputs'][syndata.pre_pop]['NetCons'].extend(syndata.afferent_netcons)
+
+		return somaref, dendrefs
 
 	def reset_handlers(self, pre_pop):
 		"""
@@ -239,18 +318,45 @@ class StnModelEvaluator(object):
 		self.model_data[self.target_model]['inputs'][pre_pop]['HocInitHandlers'] = hoc_handlers
 
 
-	def add_inputs(self, pre_pop, **kwargs):
+	def add_inputs(self, pre_pop, model, **kwargs):
 		"""
 		Add inputs to dict of existing inputs.
 		"""
-		all_inputs = self.model_data[self.target_model]['inputs']
-		old_inputs = all_inputs.setdefault(pre_pop, {})
+		pop_inputs = self.model_data[model]['inputs'].get(pre_pop, {})
 
 		for input_type, input_objs in kwargs.iteritems():
-			if input_type in old_inputs:
-				old_inputs[input_type].extend(input_objs)
+			if input_type in pop_inputs:
+				# Add to list (don't overwrite)
+				pop_inputs[input_type].extend(input_objs)
 			else:
-				old_inputs[input_type] = input_objs
+				pop_inputs[input_type] = input_objs
+
+		self.model_data[model]['inputs'][pre_pop] = pop_inputs
+
+	def get_pre_pop(self, syn, model):
+		"""
+		Get pre-synaptic population for given synapse.
+		"""
+		inputs = self.model_data[model]['inputs']
+		gen_pop = (pre_pop for (pre_pop, conn_data) in inputs.iteritems() if syn in conn_data['synapses'])
+		return next(gen_pop, None)
+
+
+	def _init_con_dict(self, model, pre_pops):
+		"""
+		Initialize dict with connection data for given model
+		and presynaptic populations.
+		"""
+		for pop in pre_pops:
+			self.model_data[model]['inputs'][pop] = {
+				'stimweightvec': [],
+				'synapses': [],
+				'NetCons': [],
+				'NetStims': [],
+				'HocInitHandlers': [],
+				'PyInitHandlers': [],
+			}
+
 
 	def make_GABA_inputs(self, n_gpe_syn, connector=None):
 		"""
@@ -260,6 +366,8 @@ class StnModelEvaluator(object):
 			cc = cpd.CellConnector(self.physio_state, self.rng)
 		else:
 			cc = connector
+
+		model = self.target_model
 			
 		# Add GPe inputs using Tsodyks-Markram synapses
 		# NOTE: one synapse represents a multi-synaptic contact from one GPe axon
@@ -272,7 +380,7 @@ class StnModelEvaluator(object):
 
 		# Pick random segments in dendrites for placing synapses
 		is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
-		dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
+		dendrites = self.model_data[model]['sec_refs']['dendrites']
 		dend_secrefs = sum(dendrites, [])
 		gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
 
@@ -335,7 +443,7 @@ class StnModelEvaluator(object):
 			'HocInitHandlers': gpe_hoc_handlers,
 			'PyInitHandlers': gpe_py_handlers,
 		}
-		self.add_inputs('gpe', **new_inputs)
+		self.add_inputs('gpe', model, **new_inputs)
 
 
 	def make_GLU_inputs(self, n_ctx_syn, connector=None):
@@ -346,6 +454,8 @@ class StnModelEvaluator(object):
 			cc = cpd.CellConnector(self.physio_state, self.rng)
 		else:
 			cc = connector
+
+		model = self.target_model
 			
 		# Add CTX inputs using Tsodyks-Markram synapses
 		ctx_syns = []
@@ -357,7 +467,7 @@ class StnModelEvaluator(object):
 
 		# Distribute synapses over dendritic trees
 		is_ctx_target = lambda seg: seg.diam <= 1.0			
-		dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
+		dendrites = self.model_data[model]['sec_refs']['dendrites']
 		dend_secrefs = sum(dendrites, [])
 		ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
 
@@ -420,14 +530,21 @@ class StnModelEvaluator(object):
 			'PyInitHandlers': ctx_py_handlers,
 			'HocInitHandlers': ctx_hoc_handlers,
 		}
-		self.add_inputs('ctx', **new_inputs)
+		self.add_inputs('ctx', model, **new_inputs)
 
 
 	def make_inputs(self, stim_protocol):
 		"""
 		Make the inputs for given stimulation protocol.
 		"""
-		if self.target_model != StnModel.Gillies2005:
+		if self.target_model == StnModel.Gillies_BranchZip:
+			logger.info("""\
+			\nSkip making inputs for model {}.\
+			\nInputs for reduced model should have been mapped from full model.
+			""".format(StnModel.Gillies_BranchZip))
+			return
+
+		elif self.target_model != StnModel.Gillies2005:
 			raise Exception("Found target model '{}'. Only model '{}' is supported as a target model").format(
 				self.target_model, StnModel.Gillies2005)
 
@@ -495,7 +612,11 @@ class StnModelEvaluator(object):
 			self.model_data[self.target_model]['inputs']['SEClamps'] = [clamp]
 
 		elif stim_protocol == StimProtocol.SYN_BACKGROUND_HIGH:
-			# TODO: implement inputs for SYN_BACKGROUND_HIGH
+			# TODO: implement inputs for SYN_BACKGROUND_HIGH : 
+			# - see approach BBP, Week 6 graded assignment
+			#     - 1 Poisson spikegen per multisynaptic contacts
+			# - BBP use 1/4 Hz for exc/inh neurons in Ctx, but we can use lit values for avg. rates in awake condition
+			# - see typical nb. of synapses on STN neurons in observations DB
 			raise NotImplementedError()
 
 		elif stim_protocol == StimProtocol.SYN_BACKGROUND_LOW:
@@ -509,6 +630,11 @@ class StnModelEvaluator(object):
 		elif stim_protocol == StimProtocol.SINGLE_SYN_GLU:
 			# Make single GLU synapse
 			self.make_GLU_inputs(1, connector=cc)
+
+		elif stim_protocol == StimProtocol.MIN_SYN_BURST:
+			# Minimal number of GABA + GLU synapses to trigger burst
+			self.make_GABA_inputs(1)
+			self.make_GLU_inputs(4)
 
 		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED:
 			
@@ -665,65 +791,65 @@ class StnModelEvaluator(object):
 		"""
 		raise NotImplementedError()
 
-	def rec_GABA_traces(self, protocol, recordStep=0.025, traceSpecs=None):
+	def rec_GABA_traces(self, protocol, traceSpecs, n_syn=1):
 		"""
 		Set up recording Vectors
+
+		@param n_syn		number of synaptic traces to record
 		"""
 
 		rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
-		
-		# END COMMON PART ##############################################################
-		
-		# Start trace specification
-		if traceSpecs is None:
-			traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
-			traceSpecs['t_global'] = {'var':'t'}
-		self.rec_dt = recordStep
+		model = self.target_model
 		
 		# Add synapse and segment containing it
-		nc = self.model_data[self.target_model]['inputs']['gpe']['NetCons'][0]
-		rec_segs['synGABA'] = nc.syn()
-		rec_segs['postseg'] = nc.syn().get_segment()
+		nc_list = self.model_data[model]['inputs']['gpe']['NetCons']
+		for i_syn, nc in enumerate(nc_list):
+			if i_syn > n_syn-1:
+				break
 
-		# Record synaptic variables
-		traceSpecs['gA_syn'] = {'pointp':'synGABA', 'var':'g_GABAA'}
-		traceSpecs['gB_syn'] = {'pointp':'synGABA', 'var':'g_GABAB'}
-		traceSpecs['Rrp_syn'] = {'pointp':'synGABA', 'var':'Rrp'}
-		traceSpecs['Use_syn'] = {'pointp':'synGABA', 'var':'Use'}
-		traceSpecs['Hill_syn'] = {'pointp':'synGABA', 'var':'G'}
+			syn_tag = 'GABAsyn%i' % i_syn
+			seg_tag = 'GABAseg%i' % i_syn
+			rec_segs[syn_tag] = nc.syn()
+			rec_segs[seg_tag] = nc.syn().get_segment()
 
-		# Record membrane voltages
-		for seclabel, seg in rec_segs.iteritems():
-			if isinstance(seg, neuron.nrn.Segment):
-				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
+			# Record synaptic variables
+			traceSpecs['gA_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAA'}
+			traceSpecs['gB_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAB'}
+			traceSpecs['Rrp_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'Rrp'}
+			traceSpecs['Use_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'Use'}
+			traceSpecs['Hill_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'G'}
 
 
-	def rec_GLU_traces(self, protocol, recordStep=0.025, traceSpecs=None):
+	def rec_GLU_traces(self, protocol, traceSpecs, n_syn=1):
 		"""
 		Set up recording Vectors
 		"""
 		rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
-		
-		# END COMMON PART ##############################################################
-		
-		# Start trace specification
-		if traceSpecs is None:
-			traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
-			traceSpecs['t_global'] = {'var':'t'}
-		self.rec_dt = recordStep
+		model = self.target_model
 		
 		# Add synapse and segment containing it
-		nc = self.model_data[self.target_model]['inputs']['ctx']['NetCons'][0]
-		rec_segs['synGLU'] = nc.syn()
-		rec_segs['postseg'] = nc.syn().get_segment()
+		nc_list = self.model_data[model]['inputs']['ctx']['NetCons']
+		for i_syn, nc in enumerate(nc_list):
+			if i_syn > n_syn-1:
+				break
 
-		# Record synaptic variables
-		traceSpecs['gA_syn'] = {'pointp':'synGLU', 'var':'g_AMPA'}
-		traceSpecs['gN_syn'] = {'pointp':'synGLU', 'var':'g_NMDA'}
-		traceSpecs['Rrp_syn'] = {'pointp':'synGLU', 'var':'R'}
-		traceSpecs['Use_syn'] = {'pointp':'synGLU', 'var':'Use'}
+			syn_tag = 'GLUsyn%i' % i_syn
+			seg_tag = 'GLUseg%i' % i_syn
+			rec_segs[syn_tag] = nc.syn()
+			rec_segs[seg_tag] = nc.syn().get_segment()
 
-		# Record membrane voltages
+			# Record synaptic variables
+			traceSpecs['gA_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_AMPA'}
+			traceSpecs['gN_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_NMDA'}
+			traceSpecs['Rrp_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'R'}
+			traceSpecs['Use_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'Use'}
+
+
+	def rec_Vm(self, protocol, traceSpecs):
+		"""
+		Record membrane voltages in all recorded segments
+		"""
+		rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
 		for seclabel, seg in rec_segs.iteritems():
 			if isinstance(seg, neuron.nrn.Segment):
 				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
@@ -733,8 +859,12 @@ class StnModelEvaluator(object):
 		"""
 		Set up recording Vectors to record from relevant pointers
 		"""
+		# Initialize data
+		model = self.target_model
+		self.model_data[model]['rec_data'][protocol] = {}
+
 		# Specify sections to record from
-		if self.target_model == StnModel.Gillies2005:
+		if model == StnModel.Gillies2005:
 
 			somasec = h.SThcell[0].soma
 			dendsec = h.SThcell[0].dend1[7]
@@ -744,16 +874,30 @@ class StnModelEvaluator(object):
 				'soma': somasec(0.5), # middle of soma
 				'dist_dend': dendsec(0.8), # approximate location along dendrite in fig. 5C
 			}
-			
-			self.model_data[self.target_model]['rec_segs'][protocol] = rec_segs
+
+		elif model == StnModel.Gillies_BranchZip:
+
+			somasec = self.model_data[model]['sec_refs']['soma'].sec
+			dends = self.model_data[model]['sec_refs']['dendrites'] # list of lists
+			dendrefs = sum(dends, []) # flatten it
+			dendsec = next(ref.sec for ref in dendrefs if not any(ref.sec.children()))
+
+			# Default recorded segments
+			rec_segs = {
+				'soma': somasec(0.5), # middle of soma
+				'dist_dend': dendsec(0.9), # approximate location along dendrite in fig. 5C
+			}
 
 		else:
 			raise NotImplementedError("""Recording from other models 
 					besides {} not yet implemented""".format(StnModel.Gillies2005))
 
+		# Save recorded segments list
+		self.model_data[model]['rec_segs'][protocol] = rec_segs
+
 		# Start trace specification
 		traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
-		# traceSpecs['t_global'] = {'var':'t'}
+		traceSpecs['t_global'] = {'var':'t'}
 		self.rec_dt = recordStep
 
 		# PROTOCOL-SPECIFIC TRACES
@@ -807,11 +951,17 @@ class StnModelEvaluator(object):
 
 		elif protocol == StimProtocol.SINGLE_SYN_GABA:
 			# Record synaptic variables
-			self.rec_GABA_traces(protocol, recordStep, traceSpecs)
+			self.rec_GABA_traces(protocol, traceSpecs)
+
+			# Record membrane voltages
+			self.rec_Vm(protocol, traceSpecs)
 
 		elif protocol == StimProtocol.SINGLE_SYN_GLU:
 			# Record synaptic variables
-			self.rec_GLU_traces(protocol, recordStep, traceSpecs)
+			self.rec_GLU_traces(protocol, traceSpecs)
+
+			# Record membrane voltages
+			self.rec_Vm(protocol, traceSpecs)
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH: # synaptic bombardment, high background activity
 			# TODO: decide what to record for SYN_BACKGROUND_HIGH
@@ -820,6 +970,14 @@ class StnModelEvaluator(object):
 		elif protocol == StimProtocol.SYN_BACKGROUND_LOW: # synaptic bombardment, low background activity
 			# TODO: decide what to record for SYN_BACKGROUND_LOW
 			raise NotImplementedError()
+
+		elif protocol == StimProtocol.MIN_SYN_BURST:
+			# Record both GABA and GLU synapses
+			self.rec_GABA_traces(protocol, traceSpecs)
+			self.rec_GLU_traces(protocol, traceSpecs)
+
+			# Record membrane voltages
+			self.rec_Vm(protocol, traceSpecs)
 
 		elif protocol == StimProtocol.SYN_PARK_PATTERNED: # pathological input, strong patterned cortical input with strong GPi input in antiphase
 			####################################################################
@@ -883,13 +1041,56 @@ class StnModelEvaluator(object):
 		recData, markers = analysis.recordTraces(rec_secs, traceSpecs, recordStep)
 
 		# Save trace specs and recording Vectors
-		self.model_data[self.target_model]['rec_data'][protocol] = {
+		self.model_data[model]['rec_data'][protocol].update({
 			'trace_specs': traceSpecs,
 			'trace_data': recData,
 			'rec_dt': recordStep,
 			'rec_markers': markers,
-		}
+		})
 		
+
+	def _plot_all_Vm(self, model, protocol, fig_per='trace'):
+		"""
+		Plot all membrane voltages.
+		"""
+		# Get data
+		rec_dict = self.model_data[model]['rec_data'][protocol]
+		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
+
+		# Plot data
+		recV = analysis.match_traces(recData, lambda t: t.startswith('V_'))
+		figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
+										traceSharex=True, oneFigPer=fig_per)
+		return figs_vm
+
+
+	def _plot_GABA_traces(self, model, protocol, fig_per='trace'):
+		"""
+		Plot GABA synapse traces.
+		"""
+		# Get data
+		rec_dict = self.model_data[model]['rec_data'][protocol]
+		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
+
+		# Plot data
+		syn_traces = analysis.match_traces(recData, lambda t: re.search(r'GABAsyn', t))
+		n, KD = h.n_GABAsyn, h.KD_GABAsyn # parameters of kinetic scheme
+		hillfac = lambda x: x**n/(x**n + KD)
+		analysis.plotTraces(syn_traces, recordStep, traceSharex=True, title='Synaptic variables',
+							traceXforms={'Hill_syn': hillfac})
+
+
+	def _plot_GLU_traces(self, model, protocol, fig_per='trace'):
+		"""
+		Plot GABA synapse traces.
+		"""
+		# Get data
+		rec_dict = self.model_data[model]['rec_data'][protocol]
+		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
+
+		# Plot synaptic variables
+		syn_traces = analysis.match_traces(recData, lambda t: re.search(r'GLUsyn', t))
+		analysis.plotTraces(syn_traces, recordStep, traceSharex=True, title='Synaptic variables')
 
 
 	def plot_traces(self, protocol, model=None):
@@ -906,23 +1107,19 @@ class StnModelEvaluator(object):
 		recordStep = self.model_data[model]['rec_data'][protocol]['rec_dt']
 
 		# Plot membrane voltages
-		def plot_all_Vm():
-			recV = analysis.match_traces(recData, lambda t: t.startswith('V_'))
-			figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
-											traceSharex=True, oneFigPer='trace')
-			return figs_vm
+		
 
 		# Extra plots depending on simulated protocol
 		if protocol == StimProtocol.SPONTANEOUS:
 
-			plot_all_Vm()
+			self._plot_all_Vm(model, protocol)
 
 			# Plot ionic currents, (in)activation variables
 			figs, cursors = analysis.plot_currents_activations(self.recData, recordStep)
 
 		elif protocol == StimProtocol.CLAMP_PLATEAU:
 
-			plot_all_Vm()
+			self._plot_all_Vm(model, protocol)
 
 			# Plot ionic currents, (in)activation variables
 			figs, cursors = analysis.plot_currents_activations(recData, recordStep)
@@ -933,7 +1130,7 @@ class StnModelEvaluator(object):
 
 		elif protocol == StimProtocol.CLAMP_REBOUND:
 
-			plot_all_Vm()
+			self._plot_all_Vm(model, protocol)
 
 			# Plot ionic currents, (in)activation variables
 			figs_soma, cursors_soma = analysis.plot_currents_activations(recData, recordStep, sec_tag='soma')
@@ -943,31 +1140,37 @@ class StnModelEvaluator(object):
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH:
 			
-			plot_all_Vm() # only plot membrane voltages
+			self._plot_all_Vm(model, protocol) # only plot membrane voltages
 
 		elif protocol == StimProtocol.SYN_BACKGROUND_LOW:
 			
-			plot_all_Vm() # only plot membrane voltages
+			self._plot_all_Vm(model, protocol) # only plot membrane voltages
 
 		elif protocol == StimProtocol.SINGLE_SYN_GABA:
 			
 			# Plot membrane voltages (one figure)
-			V_traces = analysis.match_traces(recData, lambda t: t.startswith('V_'))
-			figs_vm = analysis.plotTraces(V_traces, recordStep, yRange=(-80,40), 
-											traceSharex=True, oneFigPer='cell')
+			self._plot_all_Vm(model, protocol, fig_per='cell')
 
 			# Plot synaptic variables
-			syn_traces = analysis.match_traces(recData, lambda t: (not t.startswith('V_')) and t.endswith('syn'))
-			n, KD = h.n_GABAsyn, h.KD_GABAsyn # parameters of kinetic scheme
-			hillfac = lambda x: x**n/(x**n + KD)
-			analysis.plotTraces(syn_traces, recordStep, traceSharex=True, title='Synaptic variables',
-								traceXforms={'Hill_syn': hillfac})
+			self._plot_GABA_traces(model, protocol)
 
 		elif protocol == StimProtocol.SINGLE_SYN_GLU:
 
+			# Plot membrane voltages (one figure)
+			self._plot_all_Vm(model, protocol, fig_per='cell')
+
 			# Plot synaptic variables
-			syn_traces = analysis.match_traces(recData, lambda t: (not t.startswith('V_')) and t.endswith('syn'))
-			analysis.plotTraces(syn_traces, recordStep, traceSharex=True, title='Synaptic variables')
+			self._plot_GLU_traces(model, protocol)
+
+		elif protocol == StimProtocol.MIN_SYN_BURST:
+
+			# Plot membrane voltages (one figure)
+			self._plot_all_Vm(model, protocol, fig_per='cell')
+
+			# Plot synaptic variables
+			self._plot_GLU_traces(model, protocol)
+			self._plot_GABA_traces(model, protocol)
+
 
 		elif protocol == StimProtocol.SYN_PARK_PATTERNED:
 
@@ -1022,6 +1225,26 @@ class StnModelEvaluator(object):
 
 		# Initialize NEURON simulator
 		h.init() # calls finitialize()
+
+
+	def _sim_proto(self, proto, stdinit=False):
+		"""
+		Standard simulation function
+		"""
+		# Make inputs
+		self.make_inputs(proto)
+
+		# Set up recording
+		self.rec_traces(proto, recordStep=0.05)
+
+		# Initialize
+		if stdinit:
+			h.stdinit()
+		else:
+			self.init_sim()
+
+		# Simulate
+		self.run_sim()
 
 
 	def simulate_protocol(self, protocol, model=None):
@@ -1101,22 +1324,52 @@ class StnModelEvaluator(object):
 			h.init()
 			self.run_sim()
 
+		elif protocol == StimProtocol.MIN_SYN_BURST:
+
+			# Change SKCa conductance
+			for sec in h.allsec():
+				for seg in sec:
+					seg.gk_sKCa = 0.6 * seg.gk_sKCa
+
+			self._sim_proto(protocol)
+
 		else:
+			# Standard simulation function
+			self._sim_proto(protocol)
 
-			# Make inputs
-			self.make_inputs(protocol)
-
-			# Set up recording
-			self.rec_traces(protocol, recordStep=0.05)
-
-			# Initialize
-			self.init_sim()
-
-			# Simulate
-			self.run_sim()
+################################################################################
+# EXPERIMENTS
+################################################################################
 
 
-def rebound_protocol():
+def map_protocol_MIN_SYN_BURST():
+	"""
+	Run the MIN_SYN_BURST protocol, then reduce the cell, map the synapses
+	and run the protocol again to compare responses.
+	"""
+	# Make cell model and evaluator
+	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
+	evaluator.build_cell(StnModel.Gillies2005)
+	
+	# Run protocol
+	proto = StimProtocol.MIN_SYN_BURST
+	evaluator.make_inputs(proto)
+	# evaluator.simulate_protocol(proto)
+
+	# Plot protocol
+	# evaluator.plot_traces(proto)
+
+	###################################
+	# Model reduction
+	evaluator.build_cell(StnModel.Gillies_BranchZip)
+	evaluator.target_model = StnModel.Gillies_BranchZip
+
+	# Run Protocol
+	evaluator.simulate_protocol(proto)
+	# TODO: don't remake synapses
+
+
+def run_protocol_MIN_SYN_BURST():
 	"""
 	Try to elicit a rebound burst using synaptic inputs only.
 
@@ -1125,50 +1378,30 @@ def rebound_protocol():
 	"""
 	# Make cell model and evaluator
 	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
-	self = evaluator
+	evaluator.build_cell(StnModel.Gillies2005)
 
-	proto_GABA = StimProtocol.SINGLE_SYN_GABA
-	proto_GLU = StimProtocol.SINGLE_SYN_GLU
+	# Run protocol
+	proto = StimProtocol.MIN_SYN_BURST
+	evaluator.simulate_protocol(proto)
 
-	# Add some synapses
-	self.make_GABA_inputs(2)
-	self.make_GLU_inputs(8)
+	# Plot protocol
+	evaluator.plot_traces(proto)
 
-	# Print synapse list
-	h.topology() # see console from which Jupyter was started
-	print("List of synapses:")
-	all_syns = sum((evaluator.model_data[evaluator.target_model]['inputs'][pop]['synapses'] for pop in ['gpe', 'ctx']),[])
-	for syn in all_syns:
-	    print("Synapse {} in segment {}".format(syn, syn.get_segment()))
-
-	# Record synaptic variables
-	self.rec_traces(proto_GABA) # uncomment if single synapse simulated
-	self.rec_traces(proto_GLU) # uncomment if single synapse simulated
-
-	# Simulate with additional synapses
-	self.init_sim()
-	self.run_sim(nthread=4)
-
-	# Plot simulation data
-	self.plot_traces(proto_GABA)
-	self.plot_traces(proto_GLU)
+	# # Print synapse list
+	# h.topology() # see console from which Jupyter was started
+	# print("List of synapses:")
+	# all_syns = sum((evaluator.model_data[evaluator.target_model]['inputs'][pop]['synapses'] for pop in ['gpe', 'ctx']),[])
+	# for syn in all_syns:
+	# 	print("Synapse {} in segment {}".format(syn, syn.get_segment()))
 
 	globals().update(locals())
-
 
 
 if __name__ == '__main__':
 	# Run Gillies 2005 model
 	# evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
-
-	# Choose protocol
-	# proto = StimProtocol.SPONTANEOUS
-	# proto = StimProtocol.CLAMP_PLATEAU
-	# proto = StimProtocol.CLAMP_REBOUND
-	# proto = StimProtocol.SYN_PARK_PATTERNED
-	# proto = StimProtocol.SYN_BACKGROUND_LOW
-	# proto = StimProtocol.SYN_BACKGROUND_HIGH
+	# evaluator.build_cell(StnModel.Gillies2005)
 	
-	rebound_protocol()
+	map_protocol_MIN_SYN_BURST()
 
 

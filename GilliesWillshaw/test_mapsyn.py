@@ -80,7 +80,7 @@ def test_map_synapses(export_locals=False):
 	# Get synapse info
 	save_ref_attrs = ['table_index', 'tree_index', 'gid']
 	syn_info = mapsyn.get_syn_info(soma, allsecrefs, Z_freq=Z_freq, 
-						initcell_fun=stn_setstate, save_ref_attrs=save_ref_attrs)
+						init_cell=stn_setstate, save_ref_attrs=save_ref_attrs)
 
 	# Create reduced cell
 	eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, 
@@ -145,7 +145,7 @@ def map_run_single_input(reduced=True):
 
 	# Set up recording vectors
 	recordStep = 0.05
-	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+	recData, markers = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Change conductances
 	def block_Na_channels():
@@ -213,7 +213,7 @@ def map_run_single_input(reduced=True):
 
 	# Set up recording vectors
 	recordStep = 0.05
-	recDataB = analysis.recordTraces(secs, traceSpecs, recordStep)
+	recDataB, markers = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Simulate
 	block_Na_channels()
@@ -277,6 +277,8 @@ def map_run_multiple_inputs():
 			nc.delay = 5.
 			nc.weight[0] = rng.rand() * 10.
 			test_nc.append(nc)
+
+	raise NotImplementedError('TODO: finish this method')
 
 
 if __name__ == '__main__':

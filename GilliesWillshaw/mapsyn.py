@@ -22,6 +22,49 @@ class SynInfo(object):
 	"""
 	Data for constructing an equivalent synaptic input.
 	(This is just a struct/bunch-like class)
+
+	It has following attributes:
+
+	mod_name			str
+	
+	sec_name			str
+	
+	sec_hname			str
+	
+	sec_loc				float
+
+	'mech_attr_i'		float
+						one attribute for each synaptic mechanism parameter
+
+	afferent_netcons	list(NetCon)
+	
+	afferent_weights	list(list(float))
+						weight vector for each incoming NetCon
+
+	'secref_attr_i'		object
+						saved SectionRef attributes
+
+
+	path_ri				float
+						summed seg.ri() up to synapse segment
+	
+	max_path_ri			float
+						= max(syn_sec.pathri_seg) # max path resistance in Section
+	
+	min_path_ri			float
+						= min(syn_sec.pathri_seg) # min path resistance in Section
+
+	Zc					float
+						Ztransfer, i.e. |v(soma)/i(syn)| or |v(syn)/i(soma)|
+	
+	Zin					float
+						Zinput, i.e. v(x)/i(x) measured at synapse
+
+	k_syn_soma			float
+						voltage transfer ratio, i.e. |v(soma)/v(syn|
+
+	mapped_syn			HocObject
+						the new synapse that the original was mapped to
 	"""
 	def __init__(self, **kwds):
 		self.__dict__.update(kwds)
@@ -47,9 +90,25 @@ def subtree_has_node(crit_func, noderef, allsecrefs):
 				return True
 		return False
 
+# Parameter names for synaptic mechanisms in .MOD files
+synmech_parnames = {
+	'ExpSyn': ['tau', 'e'], # gmax stored in NetCon weight vector
+	
+	'Exp2Syn': ['tau1', 'tau2', 'e'], # gmax stored in NetCon weight vector
+	
+	'AlphaSynapse': ['onset', 'tau', 'gmax', 'e'],
+	
+	'GABAsyn': ['tau_r_GABAA', 'tau_d_GABAA', 'tau_r_GABAB', 'tau_d_GABAB', 
+				'gmax_GABAA', 'gmax_GABAB', 'Erev_GABAA', 'Erev_GABAB', 
+				'tau_rec', 'tau_facil', 'U1', 'use_stdp_A', 'use_stdp_B'],
+	
+	'GLUsyn': ['tau_r_AMPA', 'tau_d_AMPA', 'tau_r_NMDA', 'tau_d_NMDA', 'mg', 
+				'gmax_AMPA', 'gmax_NMDA', 'tau_rec', 'tau_facil', 'U1', 'e'],
+}
 
 def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., 
-					init_cell=None, save_ref_attrs=None, sever_netcons=True):
+					init_cell=None, save_ref_attrs=None, sever_netcons=True,
+					attr_mappers=None, syn_nc_tomap=None):
 	"""
 	For each synapse on the neuron, calculate and save information for placing an equivalent
 	synaptic input on a morphologically simplified neuron.
@@ -62,16 +121,18 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25.,
 	@param init_cell	function to bring the cell to the desired state to measure transfer
 						impedances, e.g. simulating under a particular input
 
+	@param syn_list		list(Synapse) you wish to remap
+
+	@param nc_list		list(Synapse) you want to move to the new (mapped) Synapse
 	"""
 	if syn_mod_pars is None:
-		syn_mod_pars = {
-			'ExpSyn': ['tau', 'e'], # gmax stored in NetCon weight vector
-			'Exp2Syn': ['tau1', 'tau2', 'e'], # gmax stored in NetCon weight vector
-			'AlphaSynapse': ['onset', 'tau', 'gmax', 'e'],
-		}
+		syn_mod_pars = synmech_parnames
 
 	if save_ref_attrs is None:
 		save_ref_attrs = []
+
+	if attr_mappers is None:
+		attr_mappers = {}
 
 	# Calculate section path properties for entire tree
 	for secref in allsecrefs:
@@ -85,11 +146,15 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25.,
 	imp.compute(Z_freq, linearize_gating) # compute transfer impedance between loc and all segments
 
 	# Find all Synapses on cell (all Sections in whole tree)
-	dummy_syn = h.Exp2Syn(rootsec(0.5))
-	dummy_nc = h.NetCon(None, dummy_syn)
-	cell_ncs = [nc for nc in list(dummy_nc.postcelllist()) if not nc.same(dummy_nc)] # all NetCon targeting same tree as dummy
-	cell_syns = set([nc.syn() for nc in cell_ncs]) # unique synapses targeting the same cell
-	
+	if syn_nc_tomap is None:
+		dummy_syn = h.Exp2Syn(rootsec(0.5))
+		dummy_nc = h.NetCon(None, dummy_syn)
+		cell_ncs = [nc for nc in list(dummy_nc.postcelllist()) if not nc.same(dummy_nc)] # all NetCon targeting same tree as dummy
+		cell_syns = set([nc.syn() for nc in cell_ncs]) # unique synapses targeting the same cell
+	else:
+		cell_syns = syn_nc_tomap[0]
+		cell_ncs = syn_nc_tomap[1]
+
 	if len(cell_syns) == 0:
 		logger.warn("No synapses found on tree of Section {}".format(rootsec))
 	logger.debug("Found {} NetCon with {} unique synapses".format(len(cell_ncs), len(cell_syns)))
@@ -127,10 +192,14 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25.,
 		syn_info.afferent_netcons = aff_ncs
 		syn_info.afferent_weights = aff_weight_vecs
 
-		# Save requested properties of synapse section
+		# Save requested properties of synapse SectionRef
 		syn_info.saved_ref_attrs = save_ref_attrs
 		for attr in save_ref_attrs:
 			setattr(syn_info, attr, getattr(syn_secref, attr))
+
+		# Save other computed properties
+		for attr, mapper in attr_mappers.iteritems():
+			setattr(syn_info, attr, mapper(syn))
 
 		# Get axial path resistance to synapse
 		syn_info.path_ri = syn_secref.pathri_seg[seg_index(syn_seg)] # summed seg.ri() up to synapse segment
@@ -242,11 +311,7 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 	"""
 	# Synaptic mechanisms
 	if syn_mod_pars is None:
-		syn_mod_pars = {
-			'ExpSyn': ['tau', 'e'], # gmax stored in NetCon weight vector
-			'Exp2Syn': ['tau1', 'tau2', 'e'], # gmax stored in NetCon weight vector
-			'AlphaSynapse': ['onset', 'tau', 'gmax', 'e'],
-		}
+		syn_mod_pars = synmech_parnames
 
 	# Compute transfer impedances
 	init_cell()
