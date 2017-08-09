@@ -32,6 +32,9 @@ import gillies_model as gillies
 # Cell reduction
 import reduce_marasco as marasco
 import mapsyn
+# Adjust verbosity of loggers
+marasco.logger.setLevel(logging.WARNING)
+mapsyn.logger.setLevel(logging.WARNING)
 
 # Plotting & recording
 from common import analysis
@@ -99,6 +102,15 @@ def pick_random_segments(secrefs, n_segs, elig_func, rng=None):
 
 	return target_segs
 
+def extend_dictitem(d, key, val, append=True):
+	"""
+	Append value to the item in d[key]
+	"""
+	item = d.setdefault(key, [])
+	if append:
+		item.append(val) # append to list
+	else:
+		item.extend(val) # if val is list, join lists
 
 class StnModelEvaluator(object):
 	"""
@@ -269,7 +281,7 @@ class StnModelEvaluator(object):
 		cdict = self.model_data[full_model]['inputs']
 		pre_pops = cdict.keys()
 		syns_tomap = sum((cdict[pop]['synapses'] for pop in pre_pops), [])
-		ncs_tomap = sum((cdict[pop]['NetCons'] for pop in pre_pops), [])
+		ncs_tomap = sum((cdict[pop]['syn_NetCons'] for pop in pre_pops), [])
 
 		# Get synapse info
 		save_ref_attrs = ['table_index', 'tree_index', 'gid'] # SecRef attributes to save
@@ -277,14 +289,8 @@ class StnModelEvaluator(object):
 		syn_info = mapsyn.get_syn_info(soma, allsecrefs, Z_freq=Z_freq, 
 							init_cell=stn_setstate, save_ref_attrs=save_ref_attrs,
 							attr_mappers=pop_mapper, syn_nc_tomap=(syns_tomap, ncs_tomap))
-
-		# TODO: give dict with syn_mod_pars
-		# TODO: store synapses as {syn: [aff_ncs]}, i.e. don.t pass controlling synapses to method (see sever_netcons and setpost)
-		# TODO: test if crash is solved when controlling NetCon are deleted
-		# TODO: for GABAsyn & GLUsyn: see if gbar must not be set via weight instead of gmax (see mod file/conversion factor)
-
+		
 		# Create reduced cell
-		marasco.logger.setLevel(logging.WARNING) # ignore lower than warning
 		eq_secs, newsecrefs = marasco.reduce_gillies_incremental(
 										n_passes=7, zips_per_pass=100)
 
@@ -300,7 +306,7 @@ class StnModelEvaluator(object):
 		self._init_con_dict(red_model, pre_pops)
 		for syndata in syn_info:
 			self.model_data[red_model]['inputs'][syndata.pre_pop]['synapses'].append(syndata.mapped_syn)
-			self.model_data[red_model]['inputs'][syndata.pre_pop]['NetCons'].extend(syndata.afferent_netcons)
+			self.model_data[red_model]['inputs'][syndata.pre_pop]['syn_NetCons'].extend(syndata.afferent_netcons)
 
 		return somaref, dendrefs
 
@@ -351,7 +357,8 @@ class StnModelEvaluator(object):
 			self.model_data[model]['inputs'][pop] = {
 				'stimweightvec': [],
 				'synapses': [],
-				'NetCons': [],
+				'syn_NetCons': [], # NetCons targetting synapses
+				'com_NetCons': [], # NetCons for command & control
 				'NetStims': [],
 				'HocInitHandlers': [],
 				'PyInitHandlers': [],
@@ -371,12 +378,7 @@ class StnModelEvaluator(object):
 			
 		# Add GPe inputs using Tsodyks-Markram synapses
 		# NOTE: one synapse represents a multi-synaptic contact from one GPe axon
-		gpe_syns = []
-		gpe_ncs = []
-		gpe_stims = []
-		gpe_hoc_handlers = []
-		gpe_py_handlers = []
-		gpe_wvecs = []
+		new_inputs = {}
 
 		# Pick random segments in dendrites for placing synapses
 		is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
@@ -394,7 +396,6 @@ class StnModelEvaluator(object):
 			stimsource.interval = stim_T # Interval between spikes
 			stimsource.number = 8 # max number of spikes
 			stimsource.noise = 0.0 # Fractional noise in timing
-			gpe_stims.append(stimsource) # Save this NetStim
 
 			# Custom synapse parameters
 			syn_mech = 'GABAsyn'
@@ -426,23 +427,15 @@ class StnModelEvaluator(object):
 			def queue_events():
 				turn_off.event(tstop)
 			
-			gpe_py_handlers.append(queue_events)
-			gpe_hoc_handlers.append(h.FInitializeHandler(queue_events))
-
-			gpe_ncs.append(nc)
-			gpe_ncs.append(turn_off)
-			gpe_syns.append(syn)
-			gpe_wvecs.extend(wvecs)
+			extend_dictitem(new_inputs, 'PyInitHandlers', queue_events)
+			extend_dictitem(new_inputs, 'HocInitHandlers', h.FInitializeHandler(queue_events))
+			extend_dictitem(new_inputs, 'syn_NetCons', nc)
+			extend_dictitem(new_inputs, 'com_NetCons', turn_off)
+			extend_dictitem(new_inputs, 'synapses', syn)
+			extend_dictitem(new_inputs, 'NetStims', stimsource)
+			extend_dictitem(new_inputs, 'stimweightvec', wvecs)
 
 		# Save inputs
-		new_inputs = {
-			'stimweightvec': gpe_wvecs,
-			'synapses': gpe_syns,
-			'NetCons': gpe_ncs,
-			'NetStims': gpe_stims,
-			'HocInitHandlers': gpe_hoc_handlers,
-			'PyInitHandlers': gpe_py_handlers,
-		}
 		self.add_inputs('gpe', model, **new_inputs)
 
 
@@ -458,13 +451,6 @@ class StnModelEvaluator(object):
 		model = self.target_model
 			
 		# Add CTX inputs using Tsodyks-Markram synapses
-		ctx_syns = []
-		ctx_ncs = []
-		ctx_stims = []
-		ctx_hoc_handlers = []
-		ctx_py_handlers = []
-		ctx_wvecs = []
-
 		# Distribute synapses over dendritic trees
 		is_ctx_target = lambda seg: seg.diam <= 1.0			
 		dendrites = self.model_data[model]['sec_refs']['dendrites']
@@ -472,6 +458,7 @@ class StnModelEvaluator(object):
 		ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
 
 		# Make synapses
+		new_inputs = {}
 		for target_seg in ctx_target_segs:
 
 			# Make poisson spike generator
@@ -481,7 +468,6 @@ class StnModelEvaluator(object):
 			stimsource.interval = stim_T # Interval between spikes
 			stimsource.number = 5 # max number of spikes
 			stimsource.noise = 0.0 # Fractional noise in timing
-			ctx_stims.append(stimsource) # Save this NetStim
 
 			# Custom synapse parameters
 			syn_mech = 'GLUsyn'
@@ -513,23 +499,16 @@ class StnModelEvaluator(object):
 			def queue_events():
 				turn_off.event(tstop)
 			fih = h.FInitializeHandler(queue_events)
-			
-			ctx_py_handlers.append(queue_events)
-			ctx_hoc_handlers.append(fih)
-			ctx_ncs.append(nc)
-			ctx_ncs.append(turn_off)
-			ctx_syns.append(syn)
-			ctx_wvecs.extend(wvecs)
 
-		# Save inputs
-		new_inputs = {
-			'stimweightvec': ctx_wvecs,
-			'synapses': ctx_syns,
-			'NetCons': ctx_ncs,
-			'NetStims': ctx_stims,
-			'PyInitHandlers': ctx_py_handlers,
-			'HocInitHandlers': ctx_hoc_handlers,
-		}
+			# Save inputs
+			extend_dictitem(new_inputs, 'PyInitHandlers', queue_events)
+			extend_dictitem(new_inputs, 'HocInitHandlers', fih)
+			extend_dictitem(new_inputs, 'syn_NetCons', nc)
+			extend_dictitem(new_inputs, 'com_NetCons', turn_off)
+			extend_dictitem(new_inputs, 'synapses', syn)
+			extend_dictitem(new_inputs, 'NetStims', stimsource)
+			extend_dictitem(new_inputs, 'stimweightvec', wvecs)
+
 		self.add_inputs('ctx', model, **new_inputs)
 
 
@@ -655,9 +634,7 @@ class StnModelEvaluator(object):
 			#	- in DA-depleted state: should trigger bursts
 
 			n_ctx_syn = 10
-			ctx_syns = []
-			ctx_ncs = []
-			ctx_stims = []
+			new_inputs = {}
 
 
 			# Make weight signal representing oscillatory pattern
@@ -682,7 +659,6 @@ class StnModelEvaluator(object):
 			ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
 
 			# Make synapses
-			ctx_wvecs = [stimweightvec]
 			for target_seg in ctx_target_segs:
 
 				# Make poisson spike generator
@@ -692,7 +668,6 @@ class StnModelEvaluator(object):
 				stimsource.number = 1e9 # max number of spikes
 				stimsource.noise = 0.25 # Fractional noise in timing
 				# stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
-				ctx_stims.append(stimsource) # Save this NetStim
 
 				# TODO SETPARAM: (CTX) set poisson noise & rate parameters dependent on PhysioState
 				#	use references for this (reported in vivo firing rates, traces etc)
@@ -702,18 +677,16 @@ class StnModelEvaluator(object):
 									'GLUsyn', (NTR.AMPA, NTR.NMDA), (Cit.Chu2015,), 
 									[stimweightvec], [stimtimevec])
 
-				ctx_ncs.append(nc)
-				ctx_syns.append(syn)
-				ctx_wvecs.extend(wvecs)
+				# Save inputs
+				extend_dictitem(new_inputs, 'synapses', syn)
+				extend_dictitem(new_inputs, 'syn_NetCons', nc)
+				extend_dictitem(new_inputs, 'NetStims', stimsource)
+				extend_dictitem(new_inputs, 'stimweightvec', wvecs)
 
-			# Save inputs
-			self.model_data[self.target_model]['inputs']['ctx'] = {
-				'stimtimevec': stimtimevec,
-				'stimweightvec': ctx_wvecs,
-				'synapses': ctx_syns,
-				'NetCons': ctx_ncs,
-				'NetStims': ctx_stims,
-			}
+			# Save inputs to model
+			extend_dictitem(new_inputs, 'stimweightvec', stimweightvec)
+			extend_dictitem(new_inputs, 'stimtimevec', stimtimevec)
+			self.add_inputs('ctx', self.target_model, **new_inputs)
 
 			####################################################################
 			# GPe inputs
@@ -721,9 +694,7 @@ class StnModelEvaluator(object):
 
 			# Add GPe inputs using Tsodyks-Markram synapses
 			n_gpe_syn = 10 # NOTE: one synapse represents a multi-synaptic contact from one GPe axon
-			gpe_syns = []
-			gpe_ncs = []
-			gpe_stims = []
+			new_inputs = {}
 
 			# Make weight signal representing oscillatory pattern
 			gpe_timevec = np.arange(0, self.sim_dur, 0.05) # update every 0.05 ms
@@ -757,7 +728,6 @@ class StnModelEvaluator(object):
 				stimsource.number = 1e9 # max number of spikes
 				stimsource.noise = 0.25 # Fractional noise in timing
 				# stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
-				gpe_stims.append(stimsource) # Save this NetStim
 
 				# TODO SETPARAM: (GPe) set poisson noise & rate parameters, dependent on PhysioState
 				# HallworthBevan2005_DynamicallyRegulate: 
@@ -770,18 +740,16 @@ class StnModelEvaluator(object):
 									'GABAsyn', (NTR.GABAA, NTR.GABAB), (Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013), 
 									[stimweightvec], [stimtimevec])
 
-				gpe_ncs.append(nc)
-				gpe_syns.append(syn)
-				gpe_wvecs.extend(wvecs)
+				# Save inputs
+				extend_dictitem(new_inputs, 'synapses', syn)
+				extend_dictitem(new_inputs, 'syn_NetCons', nc)
+				extend_dictitem(new_inputs, 'NetStims', stimsource)
+				extend_dictitem(new_inputs, 'stimweightvec', wvecs)
 
-			# Save inputs
-			self.model_data[self.target_model]['inputs']['gpe'] = {
-				'stimtimevec': stimtimevec,
-				'stimweightvec': gpe_wvecs,
-				'synapses': gpe_syns,
-				'NetCons': gpe_ncs,
-				'NetStims': gpe_stims,
-			}
+			# Save inputs to model
+			extend_dictitem(new_inputs, 'stimtimevec', stimtimevec)
+			extend_dictitem(new_inputs, 'stimweightvec', stimweightvec)
+			self.add_inputs('gpe', self.target_model, **new_inputs)
 
 
 
@@ -802,7 +770,7 @@ class StnModelEvaluator(object):
 		model = self.target_model
 		
 		# Add synapse and segment containing it
-		nc_list = self.model_data[model]['inputs']['gpe']['NetCons']
+		nc_list = self.model_data[model]['inputs']['gpe']['syn_NetCons']
 		for i_syn, nc in enumerate(nc_list):
 			if i_syn > n_syn-1:
 				break
@@ -828,7 +796,7 @@ class StnModelEvaluator(object):
 		model = self.target_model
 		
 		# Add synapse and segment containing it
-		nc_list = self.model_data[model]['inputs']['ctx']['NetCons']
+		nc_list = self.model_data[model]['inputs']['ctx']['syn_NetCons']
 		for i_syn, nc in enumerate(nc_list):
 			if i_syn > n_syn-1:
 				break
@@ -1006,8 +974,8 @@ class StnModelEvaluator(object):
 				rec_segs['prox_' + repr(sec)] = sec(0.9)
 
 			# Pick some segments that are targeted by synapse
-			gpe_ncs = self.model_data[self.target_model]['inputs']['gpe']['NetCons']
-			ctx_ncs = self.model_data[self.target_model]['inputs']['ctx']['NetCons']
+			gpe_ncs = self.model_data[self.target_model]['inputs']['gpe']['syn_NetCons']
+			ctx_ncs = self.model_data[self.target_model]['inputs']['ctx']['syn_NetCons']
 			gpe_picks = [gpe_ncs[i] for i in self.rng.choice(len(gpe_ncs), 3, replace=False)]
 			ctx_picks = [ctx_ncs[i] for i in self.rng.choice(len(ctx_ncs), 3, replace=False)]
 			for nc in gpe_picks + ctx_picks:
@@ -1227,7 +1195,7 @@ class StnModelEvaluator(object):
 		h.init() # calls finitialize()
 
 
-	def _sim_proto(self, proto, stdinit=False):
+	def _setup_run_proto(self, proto, stdinit=False):
 		"""
 		Standard simulation function
 		"""
@@ -1247,7 +1215,7 @@ class StnModelEvaluator(object):
 		self.run_sim()
 
 
-	def simulate_protocol(self, protocol, model=None):
+	def setup_run_protocol(self, protocol, model=None):
 		"""
 		Simulate cell in physiological state, under given stimulation protocol.
 
@@ -1331,11 +1299,11 @@ class StnModelEvaluator(object):
 				for seg in sec:
 					seg.gk_sKCa = 0.6 * seg.gk_sKCa
 
-			self._sim_proto(protocol)
+			self._setup_run_proto(protocol)
 
 		else:
 			# Standard simulation function
-			self._sim_proto(protocol)
+			self._setup_run_proto(protocol)
 
 ################################################################################
 # EXPERIMENTS
@@ -1353,11 +1321,9 @@ def map_protocol_MIN_SYN_BURST():
 	
 	# Run protocol
 	proto = StimProtocol.MIN_SYN_BURST
-	evaluator.make_inputs(proto)
-	# evaluator.simulate_protocol(proto)
-
-	# Plot protocol
-	# evaluator.plot_traces(proto)
+	#evaluator.make_inputs(proto)
+	evaluator.setup_run_protocol(proto)
+	evaluator.plot_traces(proto)
 
 	###################################
 	# Model reduction
@@ -1365,8 +1331,8 @@ def map_protocol_MIN_SYN_BURST():
 	evaluator.target_model = StnModel.Gillies_BranchZip
 
 	# Run Protocol
-	evaluator.simulate_protocol(proto)
-	# TODO: don't remake synapses
+	evaluator.setup_run_protocol(proto)
+	evaluator.plot_traces(proto)
 
 
 def run_protocol_MIN_SYN_BURST():
@@ -1382,7 +1348,7 @@ def run_protocol_MIN_SYN_BURST():
 
 	# Run protocol
 	proto = StimProtocol.MIN_SYN_BURST
-	evaluator.simulate_protocol(proto)
+	evaluator.setup_run_protocol(proto)
 
 	# Plot protocol
 	evaluator.plot_traces(proto)

@@ -43,6 +43,7 @@ PARAMETER {
     mg = 1             (mM)  : Initial concentration of mg2+
     mggate
     
+    : NOTE: gmax can be set either via NetCon.weight[0] in [nS] or here in [uS] (assuming that weight is 1)
     gmax_AMPA = .001   (uS)  : Weight conversion factor (from nS to uS)
     gmax_NMDA = .001   (uS)  : Weight conversion factor (from nS to uS)
 

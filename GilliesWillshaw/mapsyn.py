@@ -121,6 +121,9 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25.,
 	@param init_cell	function to bring the cell to the desired state to measure transfer
 						impedances, e.g. simulating under a particular input
 
+	@param sever_netcons	Set NetCon target to None for each connection, this is useful
+							when the cell or synapses are destroyed
+
 	@param syn_list		list(Synapse) you wish to remap
 
 	@param nc_list		list(Synapse) you want to move to the new (mapped) Synapse

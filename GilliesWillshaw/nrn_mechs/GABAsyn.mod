@@ -69,6 +69,7 @@ PARAMETER {
     Erev_GABAA = -80    (mV)  : GABAA reversal potential
     Erev_GABAB = -95    (mV)  : GABAB reversal potential
     
+    : NOTE: gmax can be set either via NetCon.weight[0] in [nS] or here in [uS] (assuming that weight is 1)
     gmax_GABAA = .001   (uS)  : Weight conversion factor (from nS to uS)
     gmax_GABAB = .001   (uS)  : Weight conversion factor (from nS to uS)
                               : (typically about 70% of GABA-A conductance)
