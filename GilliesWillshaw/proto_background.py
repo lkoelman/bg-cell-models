@@ -1,0 +1,334 @@
+"""
+Functions to set up STN experimental protocol with low and high
+background activity
+
+
+################################################################################
+CONNECTIVITY observations
+################################################################################
+
+
+Bevan2017HandbookBG
+
+	- The major GABAergic input to the STN arises from ipsilateral Nkx2-1- and LHx6-expressing GPe neurons,the majority of which also express parvalbumin.
+
+	- Approximately 70-80% of GPe neurons are estimated to innervate the STN  with each STN neuron receiving input from a small fraction of GPe-STN neurons (Baufreton et al., 2009). 
+	
+	- Each GPe-STN axon forms a sparse, spatially distributed ter-minal field that synapses on the proximal somatodendritic regions of a small number of widely dispersed STN neurons  
+	
+	- The axon initial segment of STN neurons is devoid of both GABAergic inputs and GABARs (Atherton et al., 2008).
+
+
+
+	- Unitary GABAAR-mediated GPe-STN conduc-tances are large (~5-15 nS) because each axon forms multiple synaptic inputs with an individual postsynap-tic neuron
+	
+	- However, sustained presynaptic GPe-STN activity is associated with profound short-term synaptic depression due to depletion of release-ready vesicles, which limits the reliability and ampli-tude of unitary synaptic transmission (Atherton et al.,2013). 
+	
+	- Given the high rates of activity of GPe-STN neurons in vivo (Abdi et al., 2015; Dodson et al., 2015), short-term synaptic depression is likely to greatly restrict the influence of individual GPe neurons on the STN. 
+	
+	- The anatomical organization and short-term plasticity properties of unitary GPe-STN inputs therefore greatly reduce the probably of detecting correlated GPe-STN activity.
+
+
+
+	- Cortical inputs terminate on small diameter dendrites and dendritic spines of STN neurons (Bevan et al., 1995) and act through postsynaptic AMPARs and NMDARs with classical drug sensitivities,kinetics, and voltage dependencies (Chu et al., 2015).
+
+
+
+	- The STN also receives a major serotonergic input from the dorsal raphe (Lavoie and Parent, 1990; Parent et al., 2010; Wallman et al., 2011). 
+	
+	- Serotonergic synapses are distributed uniformly throughout the STN and pre- dominantly form asymmetric synapses with the den- dritic shafts and spines of STN neurons (Parent et al., 2010; Wallman et al., 2011). 
+	
+	- Serotonin typically excites STN neurons through activation of Gq-coupled 5HT2CRs and Gs-coupled 5HT4Rs but also inhibits a subset of STN neurons through activation of Gi-cou- pled 5HT1ARs (Shen et al., 2007; Stanford et al., 2005; Xiang et al., 2005). 
+	
+	- Excitation is associated with a decrease in voltage-independent K+ conductance and an increase in nonselective cation conductance, whereas inhibition is mediated through an increase in K+ conductance (Shen et al., 2007; Stanford et al., 2005; Xiang et al., 2005). 
+	
+	- Serotonin also reduces the initial probability of both glutamatergic and GABAergic transmission through activation of presynaptic Gi-cou- pled 5HT1BRs (Shen and Johnson, 2008).
+
+
+
+	- The parafascicular thalamic nucleus  also projects ipsilaterally and topographically to the STN (Bevan et al., 1995; Groenewegen and Berendse, 1990; Lanciego et al., 2004; Sadikot et al.,1992). 
+
+	- In rodents, the medial, central, and lateral parts of the parafascicular thalamic nucleus project to corre-sponding zones of the STN. Parafascicular thalamicneurons that project to STN also send collaterals tothe striatum and layer VI of the cortex (Deschenes et al., 1996). 
+
+	- Thalamic inputs also terminate on the dendritic shafts and spines of STN neurons. However,thalamic inputs target larger diameter and thus moreproximal dendrites than cortical inputs (Bevan et al.,1995). 
+
+	- The available evidence suggests that para-fascicular inputs also excite STN neurons throughactivation of postsynaptic AMPARs and NMDARs (Mouroux and Feger, 1993).
+
+
+
+	- Both noncholinergic and cholinergic PPN neuronsproject bilaterally to the STN but with an ipsilateral preference (Bevan and Bolam, 1995; Kita and Kita,2011). 
+
+	- Because noncholinergic and cholinergic PPN axon terminals express high levels of glutamate theyare presumed to use it as a neurotransmitter (Bevanand Bolam, 1995; Clarke et al., 1997). 
+
+	- PPN inputs terminate on the dendritic shafts and spines of STN neurons (Bevan and Bolam, 1995).
+
+
+
+Galvan2004DifferentialDistributionGABAaGABAb
+
+	- we found that the GABAA receptors are distributed evenly along synaptic specializations in the STN. 
+
+	- Also, the density of GABAA alpha1 subunit labeling at symmetric synapses was similar on proximal and distal dendrites, as originally found in the cerebellum (Somogyi et al., 1996). 
+
+	- Since it has been proposed that GABAergic postsynaptic responses correlate directly with the number of GABA receptors (Nusser et al., 1997), our observations suggest that the strength of pallidal GABAergic synapses remains relatively constant along the dendritic tree of STN neurons.
+
+
+
+BaufretonBevan2008
+	
+	- It is estimated that STN neurons each receive approximately 300 synaptic inputs, each with a mean conductance of approximately 0.8 nS (this study).
+
+
+
+Baufreton 2009
+
+	- Light and electron microscopic analyses revealed that single GP axons give rise to sparsely distributed terminal clusters, many of which correspond to multiple synapses with individual STN neurons.
+	
+	- Application of the minimal stimulation technique in brain slices confirmed that STN neurons receive multisynaptic unitary inputs and that these inputs largely arise from different sets of GABAergic axons
+
+
+
+################################################################################
+ACTIVITY observations
+################################################################################
+
+Mallet2016Neuron89
+
+	- GPe Proto cells fired regularly at high rates (47.3 +/- 6.1 Hz) while GPe Arky cells (projecting to Str) were more irregularly active with lower awake firing rates (8.9 +/- 1.9 Hz)
+
+	- Both GPe Arky and Proto cells show similar population-level entrainment to LFP beta oscillations with few individual cells strongly entrained
+
+	- A subset of GPe Proto cells show clear pauses in activity from high baseline, consistent with high-frequency discharging
+
+
+
+Nambu2014Frontiers8
+
+	- Average firing rate of GPe neurons decreased significantly from 65.2+/-25.8 to 41.2+/-22.5 upon MPTP treatment
+
+
+"""
+
+# NEURON
+import neuron
+h = neuron.h
+
+# Physiological parameters
+import cellpopdata as cpd
+from cellpopdata import PhysioState, Populations as Pop, NTReceptors as NTR, ParameterSource as Cit
+
+# Stimulation protocols
+from proto_common import *
+
+# Global parameters
+n_syn_stn_tot = 300		# [SETPARAM] 300 total synapses on STN
+frac_ctx_syn = 2.0/3.0	# [SETPARAM] fraction of CTX/GPE of STN afferent synapses
+gsyn_unitary = 0.8e-3	# [SETPARAM] average unitary conductance [uS]
+FRAC_SYN = {
+	Pop.CTX: frac_ctx_syn,
+	Pop.GPE: 1.0 - frac_ctx_syn,
+}
+
+
+def make_inputs(self, connector=None):
+	"""
+	Make a realistic number of CTX and GPe synapses that fire
+	a background firing pattern onto STN.
+	"""
+
+	if connector is None:
+		cc = cpd.CellConnector(self.physio_state, self.rng)
+	else:
+		cc = connector
+
+	###########################################################################
+	# CTX inputs
+
+	# Filter to select distal, smaller-diam dendritic segments
+	is_ctx_target = lambda seg: seg.diam <= 1.0 # see Gillies cell diagram
+
+	# Parameters for making connection
+	syn_mech_NTRs = ('GLUsyn', [NTR.AMPA, NTR.NMDA])
+	refs_con = [Cit.Chu2015]
+	refs_fire = [Cit.Custom, Cit.Bergman2015RetiCh3]
+
+	# Get connection & firing parameters
+	con_par = cc.getConParams(Pop.CTX, Pop.STN, refs_con)
+	fire_par = cc.getFireParams(Pop.CTX, self.physio_state, refs_fire, 
+					custom_params={'rate_mean': 20.0})
+
+	# Make CTX GLUtamergic inputs
+	make_background_inputs(self, Pop.CTX, is_ctx_target, syn_mech_NTRs, fire_par, con_par, cc)
+
+	###########################################################################
+	# GPe inputs
+
+	# Filter to select proximal, larger-diam dendritic segments
+	is_gpe_target = lambda seg: seg.diam > 1.0 # see Gillies cell diagram
+
+	# Parameters for making connection
+	syn_mech_NTRs = ('GABAsyn', [NTR.GABAA, NTR.GABAB])
+	refs_con = [Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013]
+	refs_fire = [Cit.Mallet2016]
+
+	# Get connection & firing parameters
+	con_par = cc.getConParams(Pop.GPE, Pop.STN, refs_con)
+	fire_par = cc.getFireParams(Pop.GPE, self.physio_state, refs_fire)
+
+	# Make GPe GABAergic inputs
+	make_background_inputs(self, Pop.GPE, is_gpe_target, syn_mech_NTRs, fire_par, con_par, cc)
+
+
+
+def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par, con_par, connector):
+	"""
+	Make synapses with background spiking from given population.
+
+	@param refs_fire		References for firing parameters
+
+	@param refs_con			References for connectivity parameters
+	"""
+
+	model = self.target_model
+	cc = connector
+
+	# Get max synaptic conductance
+	syn_mech, syn_NTRs = syn_mech_NTRs
+	gsyn_multi = max((con_par[NTR].get('gbar', 0) for NTR in syn_NTRs))
+
+	# Calculate number of synapses
+	n_aff_unitary = int(FRAC_SYN[POP_PRE] * n_syn_stn_tot) # number of unitary synapses for this population
+	gsyn_tot = n_aff_unitary * gsyn_unitary # total parallel condutance desired [uS]
+	n_aff_multi = int(gsyn_tot / gsyn_multi)
+	n_syn = n_aff_multi
+	logger.debug("Number of {}->STN MSR synapses = {}".format(POP_PRE.name, n_syn))
+
+	# Get target segments: distribute synapses over dendritic trees
+	dendrites = self.model_data[model]['sec_refs']['dendrites']
+	dend_secrefs = sum(dendrites, [])
+	target_segs = pick_random_segments(dend_secrefs, n_syn, is_target_seg, rng=self.rng)
+
+	# Data for configuring inputs
+	stim_rate = fire_par['rate_mean']
+	gid = self.model_data[model]['gid']
+	n_syn_existing = self.get_num_syns(model)
+
+	# Make synapses
+	new_inputs = {}
+	for i_seg, target_seg in enumerate(target_segs):
+
+		# Index of the new synapse
+		i_syn = n_syn_existing + i_seg
+
+		# Make Exponential noise generator
+		stimrand = h.Random() # see CNS2014 Dura-Bernal example or EPFL cell synapses.hoc file
+		stimrand.MCellRan4()
+		stimrand.MCellRan4(i_syn*100000+100, gid+250+self.base_seed ) # EPFL BBP doesn't use .seq()
+		stimrand.poisson(1.0) # use 1.0 since NetStim.interval will be multiplied
+		# stimrand.seq((randseed+gid)*1e9) # Set RNG seed, when not set in constructor
+		
+		# Create a NetStim
+		stimsource = h.NetStim()
+		stimsource.interval = stim_rate**-1*1e3 # Interval between spikes
+		stimsource.number = 1e9 # inexhaustible for our simulation
+		stimsource.noise = 1.0
+		stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
+
+		# Make synapse and NetCon
+		syn, nc, wvecs = cc.make_synapse((POP_PRE, Pop.STN), (stimsource, target_seg), 
+							syn_mech, syn_NTRs, con_par_data=con_par)
+
+		# Control netstim
+		tstart = 850
+		stimsource.start = tstart
+
+		# Save inputs
+		extend_dictitem(new_inputs, 'syn_NetCons', nc)
+		extend_dictitem(new_inputs, 'synapses', syn)
+		extend_dictitem(new_inputs, 'NetStims', stimsource)
+		extend_dictitem(new_inputs, 'RNGs', stimrand)
+		extend_dictitem(new_inputs, 'stimweightvec', wvecs)
+
+	self.add_inputs(POP_PRE.name.lower(), model, **new_inputs)
+
+
+
+def rec_traces(self, protocol, traceSpecs):
+	"""
+	Record all traces for this protocol.
+	"""
+	# record synaptic traces
+	rec_GABA_traces(self, protocol, traceSpecs)
+	rec_GLU_traces(self, protocol, traceSpecs)
+
+	# record membrane voltages
+	rec_Vm(self, protocol, traceSpecs)
+
+
+def rec_GABA_traces(self, protocol, traceSpecs):
+	"""
+	Record traces at GABA synapses
+
+	@param n_syn		number of synaptic traces to record
+	"""
+
+	n_syn = 3 # number of recorded synapses
+
+	rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
+	model = self.target_model
+	
+	# Add synapse and segment containing it
+	nc_list = self.model_data[model]['inputs']['gpe']['syn_NetCons']
+	for i_syn, nc in enumerate(nc_list):
+		if i_syn > n_syn-1:
+			break
+
+		syn_tag = 'GABAsyn%i' % i_syn
+		seg_tag = 'GABAseg%i' % i_syn
+
+		# Record from synapse POINT_PROCESS and postsynaptic segment
+		rec_segs[syn_tag] = nc.syn()
+		rec_segs[seg_tag] = nc.syn().get_segment()
+
+		# Record synaptic variables
+		traceSpecs['gA_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAA'}
+		traceSpecs['gB_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAB'}
+
+
+def rec_GLU_traces(self, protocol, traceSpecs):
+	"""
+	Record traces at GLU synapses
+	"""
+
+	n_syn = 3 # number of recorded synapses
+
+	rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
+	model = self.target_model
+	
+	# Add synapse and segment containing it
+	nc_list = self.model_data[model]['inputs']['ctx']['syn_NetCons']
+	for i_syn, nc in enumerate(nc_list):
+		if i_syn > n_syn-1:
+			break
+
+		syn_tag = 'GLUsyn%i' % i_syn
+		seg_tag = 'GLUseg%i' % i_syn
+
+		# Record from synapse POINT_PROCESS and postsynaptic segment
+		rec_segs[syn_tag] = nc.syn()
+		rec_segs[seg_tag] = nc.syn().get_segment()
+
+		# Record synaptic variables
+		traceSpecs['gA_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_AMPA'}
+		traceSpecs['gN_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_NMDA'}
+
+
+def rec_Vm(self, protocol, traceSpecs):
+	"""
+	Record membrane voltages in all recorded segments
+	"""
+	rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
+	
+	for seclabel, seg in rec_segs.iteritems():
+		if isinstance(seg, neuron.nrn.Segment):
+			traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}

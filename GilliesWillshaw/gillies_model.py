@@ -507,4 +507,5 @@ if __name__ == '__main__':
 	# stn_cell_gillies()
 	# runtest_reboundburst()
 
-	runtest_multithreaded(runtest_reboundburst, 6)
+	runtest_singlethreaded(runtest_reboundburst)
+	# runtest_multithreaded(runtest_reboundburst, 6)

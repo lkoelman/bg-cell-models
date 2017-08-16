@@ -41,22 +41,16 @@ from common import analysis
 
 # Physiological parameters
 import cellpopdata as cpd
-from cellpopdata import PhysioState, Populations as Pop, NTReceptors as NTR, ParameterSource as Cit
+from cellpopdata import PhysioState, Populations, NTReceptors as NTR, ParameterSource as Cit
+Pop = Populations
 
-class StimProtocol(Enum):
-	"""
-	Synaptic stimulus sets or electrode stimulation protocols
-	to administer to STN cell
-	"""
-	SPONTANEOUS = 0 # spontaneous firing (no inputs)
-	CLAMP_PLATEAU = 1 # plateau potential (Gillies 2006, Fig. 10C-D)
-	CLAMP_REBOUND = 2 # rebound burst (Gillies 2006, Fig. 3-4)
-	SYN_BACKGROUND_HIGH = 3 # synaptic bombardment, high background activity
-	SYN_BACKGROUND_LOW = 4 # synaptic bombardment, low background activity
-	SYN_PARK_PATTERNED = 5 # pathological input, strong patterned cortical input with strong GPi input in antiphase
-	SINGLE_SYN_GABA = 6
-	SINGLE_SYN_GLU = 7
-	MIN_SYN_BURST = 8 # burst using minimal combination of GLU + GABA synapses
+# Experimental protocols
+import proto_common
+proto_common.logger = logger
+from proto_common import *
+import proto_simple_syn as proto_simple
+import proto_background
+
 
 class StnModel(Enum):
 	"""
@@ -67,50 +61,6 @@ class StnModel(Enum):
 	Gillies_GIF = 2
 	Gillies_BranchZip = 3
 
-
-def pick_random_segments(secrefs, n_segs, elig_func, rng=None):
-	"""
-	Pick random segments with spatially uniform distribution.
-	"""
-	# Get random number generator
-	if rng is None:
-		rng = np.random
-
-	# Gather segments that are eligible.
-	elig_segs = [seg for ref in secrefs for seg in ref.sec if elig_func(seg)]
-	logger.debug("Found {} eligible target segments".format(len(elig_segs)))
-
-	# Sample segments
-	# 	Note that nseg/L is not necessarily uniform so that randomly picking
-	# 	segments will not lead to a uniform spatial distribution of synapses.
-	target_segs = [] # target segments, including their x-location
-	Ltotal = sum((seg.sec.L/seg.sec.nseg for seg in elig_segs)) # summed length of all found segments
-	for i in xrange(n_segs):
-		sample = rng.random_sample() # in [0,1)
-		# Pick segment at random fraction of combined length of Sections
-		Ltraversed = 0.0
-		for seg in elig_segs:
-			Lseg = seg.sec.L/seg.sec.nseg
-			if Ltraversed <= (sample*Ltotal) < Ltraversed+Lseg:
-				# Find x on Section by interpolation
-				percent_seg = (sample*Ltotal - Ltraversed)/Lseg
-				xwidth = 1.0/seg.sec.nseg
-				x0_seg = seg.x - 0.5*xwidth
-				x_on_sec = x0_seg + percent_seg*xwidth
-				target_segs.append(seg.sec(x_on_sec))
-			Ltraversed += Lseg
-
-	return target_segs
-
-def extend_dictitem(d, key, val, append=True):
-	"""
-	Append value to the item in d[key]
-	"""
-	item = d.setdefault(key, [])
-	if append:
-		item.append(val) # append to list
-	else:
-		item.extend(val) # if val is list, join lists
 
 class StnModelEvaluator(object):
 	"""
@@ -142,7 +92,18 @@ class StnModelEvaluator(object):
 
 		self.sim_dur = 1000.
 		self.sim_dt = 0.025
-		self.rng = np.random.RandomState(25031989)
+		self.base_seed = 25031989
+		self.rng = np.random.RandomState(self.base_seed)
+
+		# SIGNATURE: make_inputs(evaluator, connector)
+		self.MAKE_INPUT_FUNCS = {
+			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.make_inputs,
+		}
+
+		# SIGNATURE: rec_traces(evaluator, protocol, traceSpecs)
+		self.REC_TRACE_FUNCS = {
+			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.rec_traces,
+		}
 
 	@property
 	def physio_state(self):
@@ -192,6 +153,7 @@ class StnModelEvaluator(object):
 
 		# Indicate that given model has been built
 		self.model_data[model]['built'] = True
+		self.model_data[model]['gid'] = 1 # we only have one cell
 
 		return somaref, dendrefs
 
@@ -348,6 +310,18 @@ class StnModelEvaluator(object):
 		return next(gen_pop, None)
 
 
+	def get_num_syns(self, model):
+		"""
+		Get total number of synapses that have been creates on given model.
+		"""
+		num_syn = 0
+		for pop in list(Populations):
+			pops_inputs = self.model_data[model]['inputs']
+			if pop in pops_inputs.keys():
+				num_syn += len(pops_inputs[pop]['synapses'])
+		
+		return num_syn
+
 	def _init_con_dict(self, model, pre_pops):
 		"""
 		Initialize dict with connection data for given model
@@ -363,153 +337,6 @@ class StnModelEvaluator(object):
 				'HocInitHandlers': [],
 				'PyInitHandlers': [],
 			}
-
-
-	def make_GABA_inputs(self, n_gpe_syn, connector=None):
-		"""
-		Make GABAergic synapses on the STN neuron.
-		"""
-		if connector is None:
-			cc = cpd.CellConnector(self.physio_state, self.rng)
-		else:
-			cc = connector
-
-		model = self.target_model
-			
-		# Add GPe inputs using Tsodyks-Markram synapses
-		# NOTE: one synapse represents a multi-synaptic contact from one GPe axon
-		new_inputs = {}
-
-		# Pick random segments in dendrites for placing synapses
-		is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
-		dendrites = self.model_data[model]['sec_refs']['dendrites']
-		dend_secrefs = sum(dendrites, [])
-		gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
-
-		# Make synapses
-		for target_seg in gpe_target_segs:
-
-			# Make poisson spike generator
-			stim_rate = 100.0 # hz
-			stim_T = stim_rate**-1*1e3
-			stimsource = h.NetStim() # Create a NetStim
-			stimsource.interval = stim_T # Interval between spikes
-			stimsource.number = 8 # max number of spikes
-			stimsource.noise = 0.0 # Fractional noise in timing
-
-			# Custom synapse parameters
-			syn_mech = 'GABAsyn'
-			syn_params = {
-				'use_stdp_A': 1,
-				'use_stdp_B': 1,
-			}
-
-			# Make synapse and NetCon
-			syn, nc, wvecs = cc.make_synapse((Pop.GPE, Pop.STN), (stimsource, target_seg), 
-								syn_mech, (NTR.GABAA, NTR.GABAB), 
-								(Cit.Custom, Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013),
-								custom_synpar=syn_params)
-
-			print("Made {} synapse with following parameters:".format(syn_mech))
-			for pname in cc.getSynMechParamNames(syn_mech):
-				print("{} : {}".format(pname, str(getattr(syn, pname))))
-
-			# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
-			syn.gmax_GABAA = syn.gmax_GABAA / syn.U1
-			syn.gmax_GABAB = syn.gmax_GABAB / 0.21
-
-			# Control netstim
-			tstart = 700
-			tstop = tstart + 5*stim_T
-			stimsource.start = tstart
-			turn_off = h.NetCon(None, stimsource)
-			turn_off.weight[0] = -1
-			def queue_events():
-				turn_off.event(tstop)
-			
-			extend_dictitem(new_inputs, 'PyInitHandlers', queue_events)
-			extend_dictitem(new_inputs, 'HocInitHandlers', h.FInitializeHandler(queue_events))
-			extend_dictitem(new_inputs, 'syn_NetCons', nc)
-			extend_dictitem(new_inputs, 'com_NetCons', turn_off)
-			extend_dictitem(new_inputs, 'synapses', syn)
-			extend_dictitem(new_inputs, 'NetStims', stimsource)
-			extend_dictitem(new_inputs, 'stimweightvec', wvecs)
-
-		# Save inputs
-		self.add_inputs('gpe', model, **new_inputs)
-
-
-	def make_GLU_inputs(self, n_ctx_syn, connector=None):
-		"""
-		Make a single Glutamergic synapse on the STN neuron.
-		"""
-		if connector is None:
-			cc = cpd.CellConnector(self.physio_state, self.rng)
-		else:
-			cc = connector
-
-		model = self.target_model
-			
-		# Add CTX inputs using Tsodyks-Markram synapses
-		# Distribute synapses over dendritic trees
-		is_ctx_target = lambda seg: seg.diam <= 1.0			
-		dendrites = self.model_data[model]['sec_refs']['dendrites']
-		dend_secrefs = sum(dendrites, [])
-		ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
-
-		# Make synapses
-		new_inputs = {}
-		for target_seg in ctx_target_segs:
-
-			# Make poisson spike generator
-			stim_rate = 100.0 # hz
-			stim_T = stim_rate**-1*1e3
-			stimsource = h.NetStim() # Create a NetStim
-			stimsource.interval = stim_T # Interval between spikes
-			stimsource.number = 5 # max number of spikes
-			stimsource.noise = 0.0 # Fractional noise in timing
-
-			# Custom synapse parameters
-			syn_mech = 'GLUsyn'
-			syn_params = {
-				'U1': 0.7,
-				'tau_rec': 200., # 1./20. / 2. * 1e3, # 95% recovery of RRP under 20Hz stim (Gradinaru 2009)
-				'tau_facil': 1., # no facilitation
-			}
-
-			# Make synapse and NetCon
-			syn, nc, wvecs = cc.make_synapse((Pop.CTX, Pop.STN), (stimsource, target_seg), 
-								syn_mech, (NTR.AMPA, NTR.NMDA), (Cit.Custom, Cit.Default),
-								custom_synpar=syn_params)
-
-			print("Made {} synapse with following parameters:".format(syn_mech))
-			for pname in cc.getSynMechParamNames(syn_mech):
-				print("{} : {}".format(pname, str(getattr(syn, pname))))
-
-			# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
-			syn.gmax_AMPA = syn.gmax_AMPA / syn.U1
-			syn.gmax_NMDA = syn.gmax_NMDA / syn.U1
-
-			# Control netstim
-			tstart = 850
-			tstop = tstart + 10*stim_T
-			stimsource.start = tstart
-			turn_off = h.NetCon(None, stimsource)
-			turn_off.weight[0] = -1
-			def queue_events():
-				turn_off.event(tstop)
-			fih = h.FInitializeHandler(queue_events)
-
-			# Save inputs
-			extend_dictitem(new_inputs, 'PyInitHandlers', queue_events)
-			extend_dictitem(new_inputs, 'HocInitHandlers', fih)
-			extend_dictitem(new_inputs, 'syn_NetCons', nc)
-			extend_dictitem(new_inputs, 'com_NetCons', turn_off)
-			extend_dictitem(new_inputs, 'synapses', syn)
-			extend_dictitem(new_inputs, 'NetStims', stimsource)
-			extend_dictitem(new_inputs, 'stimweightvec', wvecs)
-
-		self.add_inputs('ctx', model, **new_inputs)
 
 
 	def make_inputs(self, stim_protocol):
@@ -590,30 +417,18 @@ class StnModelEvaluator(object):
 			self.model_data[self.target_model]['inputs']['IClamps'] = [stim1, stim2, stim3]
 			self.model_data[self.target_model]['inputs']['SEClamps'] = [clamp]
 
-		elif stim_protocol == StimProtocol.SYN_BACKGROUND_HIGH:
-			# TODO: implement inputs for SYN_BACKGROUND_HIGH : 
-			# - see approach BBP, Week 6 graded assignment
-			#     - 1 Poisson spikegen per multisynaptic contacts
-			# - BBP use 1/4 Hz for exc/inh neurons in Ctx, but we can use lit values for avg. rates in awake condition
-			# - see typical nb. of synapses on STN neurons in observations DB
-			raise NotImplementedError()
-
-		elif stim_protocol == StimProtocol.SYN_BACKGROUND_LOW:
-			# TODO: implement inputs for SYN_BACKGROUND_LOW
-			raise NotImplementedError()
-
 		elif stim_protocol == StimProtocol.SINGLE_SYN_GABA:
 			# Make single GABA synapse
-			self.make_GABA_inputs(1, connector=cc)
+			proto_simple.make_GABA_inputs(self, 1, connector=cc)
 
 		elif stim_protocol == StimProtocol.SINGLE_SYN_GLU:
 			# Make single GLU synapse
-			self.make_GLU_inputs(1, connector=cc)
+			proto_simple.make_GLU_inputs(self, 1, connector=cc)
 
 		elif stim_protocol == StimProtocol.MIN_SYN_BURST:
 			# Minimal number of GABA + GLU synapses to trigger burst
-			self.make_GABA_inputs(1)
-			self.make_GLU_inputs(4)
+			proto_simple.make_GABA_inputs(self, 1)
+			proto_simple.make_GLU_inputs(self, 4)
 
 		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED:
 			
@@ -674,8 +489,8 @@ class StnModelEvaluator(object):
 
 				# Make synapse and NetCon
 				syn, nc, wvecs = cc.make_synapse((Pop.CTX, Pop.STN), (stimsource, target_seg), 
-									'GLUsyn', (NTR.AMPA, NTR.NMDA), (Cit.Chu2015,), 
-									[stimweightvec], [stimtimevec])
+									'GLUsyn', (NTR.AMPA, NTR.NMDA), use_sources=(Cit.Chu2015,), 
+									weight_scales=[stimweightvec], weight_times=[stimtimevec])
 
 				# Save inputs
 				extend_dictitem(new_inputs, 'synapses', syn)
@@ -737,8 +552,9 @@ class StnModelEvaluator(object):
 
 				# Make synapse and NetCon
 				syn, nc, wvecs = cc.make_synapse((Pop.GPE, Pop.STN), (stimsource, target_seg), 
-									'GABAsyn', (NTR.GABAA, NTR.GABAB), (Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013), 
-									[stimweightvec], [stimtimevec])
+									'GABAsyn', (NTR.GABAA, NTR.GABAB), 
+									use_sources=(Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013), 
+									weight_scales=[stimweightvec], weight_times=[stimtimevec])
 
 				# Save inputs
 				extend_dictitem(new_inputs, 'synapses', syn)
@@ -750,6 +566,15 @@ class StnModelEvaluator(object):
 			extend_dictitem(new_inputs, 'stimtimevec', stimtimevec)
 			extend_dictitem(new_inputs, 'stimweightvec', stimweightvec)
 			self.add_inputs('gpe', self.target_model, **new_inputs)
+
+		else: # standard action: look up in dict
+
+			try:
+				make_inputs_func = self.MAKE_INPUT_FUNCS[stim_protocol]
+			except KeyError:
+				raise NotImplementedError("Make inputs function for protocol {} not implemented".format(stim_protocol))
+
+			make_inputs_func(self, connector=cc)
 
 
 
@@ -880,9 +705,6 @@ class StnModelEvaluator(object):
 
 
 		elif protocol == StimProtocol.CLAMP_PLATEAU: # plateau potential (Gillies 2006, Fig. 10C-D):
-			####################################################################
-			# Record CLAMP_PLATEAU
-			####################################################################
 			
 			# Trace specs for membrane voltages
 			for seclabel, seg in rec_segs.iteritems():
@@ -901,9 +723,6 @@ class StnModelEvaluator(object):
 
 
 		elif protocol == StimProtocol.CLAMP_REBOUND: # rebound burst (Gillies 2006, Fig. 3-4)
-			####################################################################
-			# Record CLAMP_REBOUND
-			####################################################################
 
 			# Trace specs for membrane voltages
 			for seclabel, seg in rec_segs.iteritems():
@@ -918,6 +737,7 @@ class StnModelEvaluator(object):
 
 
 		elif protocol == StimProtocol.SINGLE_SYN_GABA:
+			
 			# Record synaptic variables
 			self.rec_GABA_traces(protocol, traceSpecs)
 
@@ -925,19 +745,12 @@ class StnModelEvaluator(object):
 			self.rec_Vm(protocol, traceSpecs)
 
 		elif protocol == StimProtocol.SINGLE_SYN_GLU:
+			
 			# Record synaptic variables
 			self.rec_GLU_traces(protocol, traceSpecs)
 
 			# Record membrane voltages
 			self.rec_Vm(protocol, traceSpecs)
-
-		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH: # synaptic bombardment, high background activity
-			# TODO: decide what to record for SYN_BACKGROUND_HIGH
-			raise NotImplementedError()
-
-		elif protocol == StimProtocol.SYN_BACKGROUND_LOW: # synaptic bombardment, low background activity
-			# TODO: decide what to record for SYN_BACKGROUND_LOW
-			raise NotImplementedError()
 
 		elif protocol == StimProtocol.MIN_SYN_BURST:
 			# Record both GABA and GLU synapses
@@ -995,6 +808,15 @@ class StnModelEvaluator(object):
 				# traceSpecs['I_CaL_'+seclabel] = {'sec':'dist_dend','loc':seg.x,'mech':'HVA','var':'iLCa'}
 				# traceSpecs['I_CaN_'+seclabel] = {'sec':'dist_dend','loc':seg.x,'mech':'HVA','var':'iNCa'}
 				# traceSpecs['I_CaT_'+seclabel] = {'sec':'dist_dend','loc':seg.x,'mech':'CaT','var':'iCaT'}
+
+		else: # standard action: look up in dict
+
+			try:
+				rec_trace_func = self.REC_TRACE_FUNCS[protocol]
+				rec_trace_func(self, protocol, traceSpecs)
+			except KeyError:
+				raise NotImplementedError("Recording function for protocol {} not implemented".format(stim_protocol))
+
 
 
 		# Prepare dictionary (label -> Section)
@@ -1365,9 +1187,12 @@ def run_protocol_MIN_SYN_BURST():
 
 if __name__ == '__main__':
 	# Run Gillies 2005 model
-	# evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
-	# evaluator.build_cell(StnModel.Gillies2005)
-	
-	map_protocol_MIN_SYN_BURST()
+	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
+	evaluator.build_cell(StnModel.Gillies2005)
 
+	proto = StimProtocol.SYN_BACKGROUND_HIGH
+	evaluator.setup_run_protocol(proto)
+
+	# Analyze results
+	evaluator.plot_traces(proto)
 
