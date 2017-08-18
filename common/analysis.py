@@ -173,11 +173,12 @@ def plot_currents_activations(recData, recordStep, timeRange=None, sec_tag=None)
 	return figs, cursors
 
 def recordTraces(secs, traceSpecs, recordStep, duration=None):
-	""" Record the given traces from section
+	"""
+	Record the given traces from section
 
 	EXAMPLE USE:
 
-	secs = {'soma': soma, 'dend', dends[1], 'izhpp', izh, 'synpp':syn}
+	secs = {'soma': soma, 'dend': dends[1], 'izhpp': izh, 'synpp': syn}
 
 	traceSpecs = {
 		'V_izhi': {'pointp': 'izh'},
@@ -218,13 +219,21 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 			else:
 				pp = h.PointProcessMark(seg)
 				pp_markers.append(pp)
-		else:
-			if 'pointp' in spec: # eg. soma.izh._ref_u
-				if spec['pointp'] in secs:
-					pp = secs[spec['pointp']]
-					ptr = pp.__getattribute__('_ref_'+spec['var'])
-			else:
-				ptr = h.__getattribute__('_ref_'+spec['var'])
+		
+		elif 'pointp' in spec: # POINT_PROCESS objects
+			if spec['pointp'] in secs:
+				pp = secs[spec['pointp']]
+				ptr = pp.__getattribute__('_ref_'+spec['var'])
+		
+		elif 'netcon' in spec: # NetCon and objects that send events
+			# Dont make ptr
+			nc = secs[spec['netcon']]
+			vec = h.Vector()
+			nc.record(vec)
+			recData[trace] = vec
+
+		else: # global vars, e.g. h.t
+			ptr = h.__getattribute__('_ref_'+spec['var'])
 
 		if ptr:  # if pointer has been created, then setup recording
 			if duration is not None:
@@ -520,4 +529,81 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 		plt.show(block=False)
 	return fig
 
-				
+
+def plotRaster(spikeData, timeRange=None, showFig=True, 
+				includeTraces=None, excludeTraces=None, 
+				showGrid=True, title=None, color='b'):
+	"""
+	Plot rastergram of spike times.
+
+	ARGUMENTS:
+
+	- spikeData
+		dict(trace_name -> h.Vector()) containing spike times
+
+	- timeRange ([start:stop])
+		Time range of spikes shown; if None shows all (default: None)
+	
+	- showFig (True|False)
+		Whether to show the figure or not (default: True)
+
+	@return			tuple(fig, ax)
+	"""
+
+	# Select traces to be plotted
+	traceNames = spikeData.keys()
+	if includeTraces is not None:
+		traceNames = [trace for trace in traceNames if trace in includeTraces]
+	if excludeTraces is not None:
+		traceNames = [trace for trace in traceNames if trace not in excludeTraces]
+
+	# create X and Y data for scatter plot
+	spike_vecs = [spikeData[trace].as_numpy() for trace in traceNames]
+	x_data = np.concatenate(spike_vecs) # X data is concatenated spike times
+	y_data = np.concatenate([np.zeros_like(vec)+j for j, vec in enumerate(spike_vecs)]) # Y-data is trace IDs
+	
+	# Filter data within given time interval
+	if timeRange is not None:
+		mask = (x_data > timeRange[0]) & (x_data < timeRange[1])
+		x_data = x_data[mask]
+		y_data = y_data[mask]
+	
+	# Plot data as scatter plot
+	fig, ax = plt.subplots()
+	plt.scatter(x_data, y_data, s=4, c=color, lw=0, marker=',')
+	plt.xlabel('time (ms)')
+	
+	# X-Y limits
+	if timeRange is not None:
+		plt.xlim(timeRange)
+
+	# X-ticks labels examples
+	# https://matplotlib.org/examples/ticks_and_spines/ticklabels_demo_rotation.html
+	# https://matplotlib.org/devdocs/gallery/ticks_and_spines/tick_labels_from_values.html
+	plt.yticks(range(len(spike_vecs)), traceNames, rotation='horizontal')
+	# plt.margins(0.2) # Pad margins so that markers don't get clipped by the axes
+	plt.subplots_adjust(left=0.15) # Tweak spacing to prevent clipping of tick-labels
+
+	# Cosmetics
+	ax.grid(showGrid, axis='x')
+	
+	if title:
+		plt.suptitle(title) # suptitle() is Fig title, title() is ax title
+
+	if showFig:
+		plt.show(block=False)
+
+	return fig, ax
+
+
+def test_plotRaster():
+	"""
+	Test for plotRaster() function
+	"""
+	trace_names = ['trace'+str(i) for i in range(12)]
+	trace_dict = dict([(tname, h.Vector(np.random.uniform(0,2000,50))) for tname in trace_names])
+	plotRaster(trace_dict, timeRange=(0,2000))
+
+
+if __name__ == '__main__':
+	test_plotRaster()

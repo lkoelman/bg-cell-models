@@ -32,9 +32,6 @@ import gillies_model as gillies
 # Cell reduction
 import reduce_marasco as marasco
 import mapsyn
-# Adjust verbosity of loggers
-marasco.logger.setLevel(logging.WARNING)
-mapsyn.logger.setLevel(logging.WARNING)
 
 # Plotting & recording
 from common import analysis
@@ -51,6 +48,10 @@ from proto_common import *
 import proto_simple_syn as proto_simple
 import proto_background
 
+# Adjust verbosity of loggers
+marasco.logger.setLevel(logging.WARNING)
+mapsyn.logger.setLevel(logging.WARNING)
+cpd.logger.setLevel(logging.WARNING)
 
 class StnModel(Enum):
 	"""
@@ -103,6 +104,11 @@ class StnModelEvaluator(object):
 		# SIGNATURE: rec_traces(evaluator, protocol, traceSpecs)
 		self.REC_TRACE_FUNCS = {
 			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.rec_traces,
+		}
+
+		# SIGNATURE: plot_traces(evaluator, model, protocol)
+		self.PLOT_TRACE_FUNCS = {
+			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.plot_traces,
 		}
 
 	@property
@@ -300,6 +306,24 @@ class StnModelEvaluator(object):
 				pop_inputs[input_type] = input_objs
 
 		self.model_data[model]['inputs'][pre_pop] = pop_inputs
+
+
+	def _add_recorded_obj(self, tag, obj, protocol, model=None):
+		"""
+		Add given object to list of recorded objects for given model & protocol.
+		"""
+		if model is None:
+			model = self.target_model
+
+		rec_objs = self.model_data[model]['rec_segs'][protocol]
+		
+		# Check if tag already exists
+		prev_obj = rec_objs.get(tag, None)
+		if prev_obj is not None:
+			logger.warning("A recorded object with name {} already exists. Overwriting.".format(tag))
+		
+		rec_objs[tag] = obj
+
 
 	def get_pre_pop(self, syn, model):
 		"""
@@ -648,13 +672,13 @@ class StnModelEvaluator(object):
 				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
 
 
-	def rec_traces(self, protocol, recordStep=0.025):
+	def rec_traces(self, stim_protocol, recordStep=0.025):
 		"""
 		Set up recording Vectors to record from relevant pointers
 		"""
 		# Initialize data
 		model = self.target_model
-		self.model_data[model]['rec_data'][protocol] = {}
+		self.model_data[model]['rec_data'][stim_protocol] = {}
 
 		# Specify sections to record from
 		if model == StnModel.Gillies2005:
@@ -686,7 +710,7 @@ class StnModelEvaluator(object):
 					besides {} not yet implemented""".format(StnModel.Gillies2005))
 
 		# Save recorded segments list
-		self.model_data[model]['rec_segs'][protocol] = rec_segs
+		self.model_data[model]['rec_segs'][stim_protocol] = rec_segs
 
 		# Start trace specification
 		traceSpecs = collections.OrderedDict() # for ordered plotting (Order from large to small)
@@ -694,7 +718,7 @@ class StnModelEvaluator(object):
 		self.rec_dt = recordStep
 
 		# PROTOCOL-SPECIFIC TRACES
-		if protocol == StimProtocol.SPONTANEOUS: # spontaneous firing (no inputs)
+		if stim_protocol == StimProtocol.SPONTANEOUS: # spontaneous firing (no inputs)
 			
 			# Trace specs for membrane voltages
 			for seclabel, seg in rec_segs.iteritems():
@@ -704,7 +728,7 @@ class StnModelEvaluator(object):
 			analysis.rec_currents_activations(traceSpecs, 'soma', 0.5)
 
 
-		elif protocol == StimProtocol.CLAMP_PLATEAU: # plateau potential (Gillies 2006, Fig. 10C-D):
+		elif stim_protocol == StimProtocol.CLAMP_PLATEAU: # plateau potential (Gillies 2006, Fig. 10C-D):
 			
 			# Trace specs for membrane voltages
 			for seclabel, seg in rec_segs.iteritems():
@@ -722,7 +746,7 @@ class StnModelEvaluator(object):
 			traceSpecs['I_CaT_d'] = {'sec':'dist_dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
 
 
-		elif protocol == StimProtocol.CLAMP_REBOUND: # rebound burst (Gillies 2006, Fig. 3-4)
+		elif stim_protocol == StimProtocol.CLAMP_REBOUND: # rebound burst (Gillies 2006, Fig. 3-4)
 
 			# Trace specs for membrane voltages
 			for seclabel, seg in rec_segs.iteritems():
@@ -736,31 +760,31 @@ class StnModelEvaluator(object):
 			analysis.rec_currents_activations(traceSpecs, 'dist_dend', dendloc, ion_species=['ca','k'])
 
 
-		elif protocol == StimProtocol.SINGLE_SYN_GABA:
+		elif stim_protocol == StimProtocol.SINGLE_SYN_GABA:
 			
 			# Record synaptic variables
-			self.rec_GABA_traces(protocol, traceSpecs)
+			self.rec_GABA_traces(stim_protocol, traceSpecs)
 
 			# Record membrane voltages
-			self.rec_Vm(protocol, traceSpecs)
+			self.rec_Vm(stim_protocol, traceSpecs)
 
-		elif protocol == StimProtocol.SINGLE_SYN_GLU:
+		elif stim_protocol == StimProtocol.SINGLE_SYN_GLU:
 			
 			# Record synaptic variables
-			self.rec_GLU_traces(protocol, traceSpecs)
+			self.rec_GLU_traces(stim_protocol, traceSpecs)
 
 			# Record membrane voltages
-			self.rec_Vm(protocol, traceSpecs)
+			self.rec_Vm(stim_protocol, traceSpecs)
 
-		elif protocol == StimProtocol.MIN_SYN_BURST:
+		elif stim_protocol == StimProtocol.MIN_SYN_BURST:
 			# Record both GABA and GLU synapses
-			self.rec_GABA_traces(protocol, traceSpecs)
-			self.rec_GLU_traces(protocol, traceSpecs)
+			self.rec_GABA_traces(stim_protocol, traceSpecs)
+			self.rec_GLU_traces(stim_protocol, traceSpecs)
 
 			# Record membrane voltages
-			self.rec_Vm(protocol, traceSpecs)
+			self.rec_Vm(stim_protocol, traceSpecs)
 
-		elif protocol == StimProtocol.SYN_PARK_PATTERNED: # pathological input, strong patterned cortical input with strong GPi input in antiphase
+		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED: # pathological input, strong patterned cortical input with strong GPi input in antiphase
 			####################################################################
 			# Record SYN_PARK_PATTERNED
 			####################################################################
@@ -812,10 +836,11 @@ class StnModelEvaluator(object):
 		else: # standard action: look up in dict
 
 			try:
-				rec_trace_func = self.REC_TRACE_FUNCS[protocol]
-				rec_trace_func(self, protocol, traceSpecs)
+				rec_trace_func = self.REC_TRACE_FUNCS[stim_protocol]
 			except KeyError:
 				raise NotImplementedError("Recording function for protocol {} not implemented".format(stim_protocol))
+
+			rec_trace_func(self, stim_protocol, traceSpecs)
 
 
 
@@ -831,7 +856,7 @@ class StnModelEvaluator(object):
 		recData, markers = analysis.recordTraces(rec_secs, traceSpecs, recordStep)
 
 		# Save trace specs and recording Vectors
-		self.model_data[model]['rec_data'][protocol].update({
+		self.model_data[model]['rec_data'][stim_protocol].update({
 			'trace_specs': traceSpecs,
 			'trace_data': recData,
 			'rec_dt': recordStep,
@@ -852,6 +877,38 @@ class StnModelEvaluator(object):
 		figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
 										traceSharex=True, oneFigPer=fig_per)
 		return figs_vm
+	
+
+	def _plot_all_spikes(self, model, protocol, **kwargs):
+		"""
+		Plot all recorded spikes.
+
+		@pre		all traces containing spike times have been tagged
+					with prefix 'AP_'. If not, provide a custom filter
+					function in param 'trace_filter'
+
+		@param trace_filter		filter function for matching spike traces.
+
+		@param kwargs			can be used to pass any arguments of analysis.plotRaster()
+		"""
+		# Get data
+		rec_dict = self.model_data[model]['rec_data'][protocol]
+		recData, rec_dt = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
+
+		# Get duration
+		tvec = recData['t_global']
+		trace_dur = tvec.x[int(tvec.size() - 1)] # last time point
+		kwargs.setdefault('timeRange', (0, trace_dur)) # set interval if not given
+
+		# Get spikes
+		trace_filter = kwargs.pop('trace_filter', None)
+		if trace_filter is None:
+			trace_filter = lambda t: t.startswith('AP_')
+		spikeData = analysis.match_traces(recData, trace_filter)
+		
+		# Plot spikes in rastergram
+		fig, ax = analysis.plotRaster(spikeData, **kwargs)
+		return fig, ax
 
 
 	def _plot_GABA_traces(self, model, protocol, fig_per='trace'):
@@ -928,14 +985,6 @@ class StnModelEvaluator(object):
 			figs = figs_soma + figs_dend
 			cursors = cursors_soma + cursors_dend
 
-		elif protocol == StimProtocol.SYN_BACKGROUND_HIGH:
-			
-			self._plot_all_Vm(model, protocol) # only plot membrane voltages
-
-		elif protocol == StimProtocol.SYN_BACKGROUND_LOW:
-			
-			self._plot_all_Vm(model, protocol) # only plot membrane voltages
-
 		elif protocol == StimProtocol.SINGLE_SYN_GABA:
 			
 			# Plot membrane voltages (one figure)
@@ -974,6 +1023,16 @@ class StnModelEvaluator(object):
 								title='Distal sections')
 			analysis.plotTraces(V_postsyn, recordStep, yRange=(-80,40), traceSharex=True,
 								title='Post-synaptic segments')
+		
+		
+		else: # standard action: look up in dict
+
+			try:
+				plot_trace_func = self.PLOT_TRACE_FUNCS[protocol]	
+			except KeyError:
+				raise NotImplementedError("Plotting function for protocol {} not implemented".format(protocol))
+
+			plot_trace_func(self, model, protocol)
 
 	def run_sim(self, nthread=1):
 		"""

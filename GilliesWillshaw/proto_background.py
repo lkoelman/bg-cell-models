@@ -109,6 +109,9 @@ Nambu2014Frontiers8
 
 """
 
+# Python stdlib
+import re
+
 # NEURON
 import neuron
 h = neuron.h
@@ -121,9 +124,24 @@ from cellpopdata import PhysioState, Populations as Pop, NTReceptors as NTR, Par
 from proto_common import *
 
 # Global parameters
+
+# PROBLEM:
+#	- we have estimates for the total number of synapses
+#	- we have measurements of the post-synaptic response to axonal stimulation
+#	- However, this response is most likely due to multiple synapses (MULTI SYNAPSE RULE: axons make multi-synaptic contacts)
+#	- so when we calibrate a synapse mechanism to match this response, our synapse mechanism emulates the effect of multiple real synapses
+
 n_syn_stn_tot = 300		# [SETPARAM] 300 total synapses on STN
 frac_ctx_syn = 2.0/3.0	# [SETPARAM] fraction of CTX/GPE of STN afferent synapses
-gsyn_unitary = 0.8e-3	# [SETPARAM] average unitary conductance [uS]
+
+gsyn_single = 0.8e-3	# [SETPARAM] average unitary conductance [uS])
+CALC_MSR_FROM_GBAR = False
+
+MSR_NUM_SYN = {			# [SETPARAM] average number of contacts per multi-synaptic contact
+	Pop.CTX: 5,
+	Pop.GPE: 5,
+}
+
 FRAC_SYN = {
 	Pop.CTX: frac_ctx_syn,
 	Pop.GPE: 1.0 - frac_ctx_syn,
@@ -179,6 +197,36 @@ def make_inputs(self, connector=None):
 	make_background_inputs(self, Pop.GPE, is_gpe_target, syn_mech_NTRs, fire_par, con_par, cc)
 
 
+def rec_traces(self, protocol, traceSpecs):
+	"""
+	Record all traces for this protocol.
+	"""
+	# record synaptic traces
+	rec_GABA_traces(self, protocol, traceSpecs)
+	rec_GLU_traces(self, protocol, traceSpecs)
+
+	# record membrane voltages
+	rec_Vm(self, protocol, traceSpecs)
+
+	# Record input spikes
+	rec_spikes(self, protocol, traceSpecs)
+
+
+def plot_traces(self, model, protocol):
+	"""
+	Plot all traces for this protocol
+	"""
+
+	# Plot Vm in select number of segments
+	self._plot_all_Vm(model, protocol, fig_per='cell')
+
+	# Plot rastergrams
+	gpe_filter = lambda trace: re.search('AP_'+Pop.GPE.name, trace)
+	self._plot_all_spikes(model, protocol, trace_filter=gpe_filter, color='r')
+
+	ctx_filter = lambda trace: re.search('AP_'+Pop.CTX.name, trace)
+	self._plot_all_spikes(model, protocol, trace_filter=ctx_filter, color='g')
+
 
 def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par, con_par, connector):
 	"""
@@ -197,10 +245,14 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 	gsyn_multi = max((con_par[NTR].get('gbar', 0) for NTR in syn_NTRs))
 
 	# Calculate number of synapses
-	n_aff_unitary = int(FRAC_SYN[POP_PRE] * n_syn_stn_tot) # number of unitary synapses for this population
-	gsyn_tot = n_aff_unitary * gsyn_unitary # total parallel condutance desired [uS]
-	n_aff_multi = int(gsyn_tot / gsyn_multi)
-	n_syn = n_aff_multi
+	n_syn_single = int(FRAC_SYN[POP_PRE] * n_syn_stn_tot) # number of unitary synapses for this population
+	if CALC_MSR_FROM_GBAR:
+		gsyn_tot = n_syn_single * gsyn_single # total parallel condutance desired [uS]
+		n_syn_multi = int(gsyn_tot / gsyn_multi)
+	else:
+		n_syn_multi = int(n_syn_single / MSR_NUM_SYN[POP_PRE])
+	
+	n_syn = n_syn_multi
 	logger.debug("Number of {}->STN MSR synapses = {}".format(POP_PRE.name, n_syn))
 
 	# Get target segments: distribute synapses over dendritic trees
@@ -222,10 +274,14 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 
 		# Make Exponential noise generator
 		stimrand = h.Random() # see CNS2014 Dura-Bernal example or EPFL cell synapses.hoc file
-		stimrand.MCellRan4()
-		stimrand.MCellRan4(i_syn*100000+100, gid+250+self.base_seed ) # EPFL BBP doesn't use .seq()
-		stimrand.poisson(1.0) # use 1.0 since NetStim.interval will be multiplied
-		# stimrand.seq((randseed+gid)*1e9) # Set RNG seed, when not set in constructor
+
+		# MCellRan4: each stream should be statistically independent as long as the highindex values differ by more than the eventual length of the stream. See http://www.neuron.yale.edu/neuron/static/py_doc/programming/math/random.html?highlight=MCellRan4
+		dur_max_ms, dt_ms = 10000.0, 0.025
+		num_indep_repicks = dur_max_ms / dt_ms
+		low_index, high_index = gid+250+self.base_seed, int(i_syn*num_indep_repicks + 100)
+		logger.debug("Seeding RNG with index {}".format(high_index))
+		stimrand.MCellRan4(high_index, low_index) # high_index can also be set using .seq()
+		stimrand.negexp(1) # if num arrivals is poisson distributed, ISIs are negexp-distributed
 		
 		# Create a NetStim
 		stimsource = h.NetStim()
@@ -239,7 +295,7 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 							syn_mech, syn_NTRs, con_par_data=con_par)
 
 		# Control netstim
-		tstart = 850
+		tstart = 300
 		stimsource.start = tstart
 
 		# Save inputs
@@ -250,19 +306,6 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 		extend_dictitem(new_inputs, 'stimweightvec', wvecs)
 
 	self.add_inputs(POP_PRE.name.lower(), model, **new_inputs)
-
-
-
-def rec_traces(self, protocol, traceSpecs):
-	"""
-	Record all traces for this protocol.
-	"""
-	# record synaptic traces
-	rec_GABA_traces(self, protocol, traceSpecs)
-	rec_GLU_traces(self, protocol, traceSpecs)
-
-	# record membrane voltages
-	rec_Vm(self, protocol, traceSpecs)
 
 
 def rec_GABA_traces(self, protocol, traceSpecs):
@@ -332,3 +375,23 @@ def rec_Vm(self, protocol, traceSpecs):
 	for seclabel, seg in rec_segs.iteritems():
 		if isinstance(seg, neuron.nrn.Segment):
 			traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
+
+
+def rec_spikes(self, protocol, traceSpecs):
+	"""
+	Record input spikes delivered to synapses.
+	"""
+	model = self.target_model
+	rec_pops = [Pop.GPE, Pop.CTX]
+
+	for pre_pop in rec_pops:
+		nc_list = self.model_data[model]['inputs'][pre_pop.name.lower()]['syn_NetCons']
+		for i_syn, nc in enumerate(nc_list):
+
+			# Add NetCon to list of recorded objects
+			syn_tag = pre_pop.name + 'syn' + str(i_syn)
+			self._add_recorded_obj(syn_tag, nc, protocol)
+
+			# Specify trace
+			traceSpecs['AP_'+syn_tag] = {'netcon':syn_tag}
+			
