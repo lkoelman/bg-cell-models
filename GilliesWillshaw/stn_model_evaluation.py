@@ -111,6 +111,11 @@ class StnModelEvaluator(object):
 			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.plot_traces,
 		}
 
+		# SIGNATURE: init_sim(evaluator, protocol)
+		self.INIT_SIM_FUNCS = {
+			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.init_sim,
+		}
+
 	@property
 	def physio_state(self):
 		"""
@@ -1057,11 +1062,30 @@ class StnModelEvaluator(object):
 		logger.debug("Simulated for {:.6f} seconds".format(t1-t0))
 
 
-	def init_sim(self, dur=2000., dt=0.025, celsius=35., v_init=-60):
+	def init_sim(self, stim_protocol, dur=2000., dt=0.025, celsius=35., v_init=-60):
 		"""
 		Initialize simulation.
 		"""
-		# Set simulation parameters
+		try:
+			init_sim_func = self.INIT_SIM_FUNCS[stim_protocol]
+		
+		except KeyError:
+			logger.warning("Simulator initializaton function for protocol {} not implemented. Falling back to default initialization function.".format(stim_protocol))
+
+			self._init_sim()
+
+		else:
+			init_sim_func(self, stim_protocol)
+
+	
+	def _init_sim(self, dur=2000.0, dt=0.025, celsius=35., v_init=-60):
+		"""
+		Default initialization function.
+
+		Sets simulation duration, time step, temperature, 
+		initial membrane voltage and ion concentrations.
+		"""
+
 		self.sim_dur = dur
 		h.tstop = dur
 		
@@ -1078,7 +1102,9 @@ class StnModelEvaluator(object):
 
 	def _setup_run_proto(self, proto, stdinit=False):
 		"""
-		Standard simulation function
+		Standard simulation function.
+
+		Dispatches protocol-specific setup functions.
 		"""
 		# Make inputs
 		self.make_inputs(proto)
@@ -1090,7 +1116,7 @@ class StnModelEvaluator(object):
 		if stdinit:
 			h.stdinit()
 		else:
-			self.init_sim()
+			self.init_sim(proto)
 
 		# Simulate
 		self.run_sim()

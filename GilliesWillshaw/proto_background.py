@@ -132,7 +132,7 @@ from proto_common import *
 #	- so when we calibrate a synapse mechanism to match this response, our synapse mechanism emulates the effect of multiple real synapses
 
 n_syn_stn_tot = 300		# [SETPARAM] 300 total synapses on STN
-frac_ctx_syn = 2.0/3.0	# [SETPARAM] fraction of CTX/GPE of STN afferent synapses
+frac_ctx_syn = 3.0/4.0	# [SETPARAM] fraction of CTX/GPE of STN afferent synapses
 
 gsyn_single = 0.8e-3	# [SETPARAM] average unitary conductance [uS])
 CALC_MSR_FROM_GBAR = False
@@ -146,6 +146,14 @@ FRAC_SYN = {
 	Pop.CTX: frac_ctx_syn,
 	Pop.GPE: 1.0 - frac_ctx_syn,
 }
+
+def init_sim(self, protocol):
+	"""
+	Initialize simulator to simulate background protocol
+	"""
+
+	# Only adjust duration
+	self._init_sim(dur=5000)
 
 
 def make_inputs(self, connector=None):
@@ -187,7 +195,7 @@ def make_inputs(self, connector=None):
 	# Parameters for making connection
 	syn_mech_NTRs = ('GABAsyn', [NTR.GABAA, NTR.GABAB])
 	refs_con = [Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013]
-	refs_fire = [Cit.Mallet2016]
+	refs_fire = [Cit.Bergman2015RetiCh3]
 
 	# Get connection & firing parameters
 	con_par = cc.getConParams(Pop.GPE, Pop.STN, refs_con)
@@ -261,9 +269,15 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 	target_segs = pick_random_segments(dend_secrefs, n_syn, is_target_seg, rng=self.rng)
 
 	# Data for configuring inputs
-	stim_rate = fire_par['rate_mean']
 	gid = self.model_data[model]['gid']
 	n_syn_existing = self.get_num_syns(model)
+
+	tstart = 300
+	stim_rate = fire_par['rate_mean']
+	pause_rate = fire_par.get('pause_rate_mean', 0)
+	pause_dur = fire_par.get('pause_dur_mean', 0)
+	discharge_dur = fire_par.get('discharge_dur_mean', 0)
+	# TODO: set intra-burst rate (higher than mean rate), set burst dur, calculate 'number' from these two, then set controlling stim rate to pause rate
 
 	# Make synapses
 	new_inputs = {}
@@ -272,9 +286,8 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 		# Index of the new synapse
 		i_syn = n_syn_existing + i_seg
 
-		# Make Exponential noise generator
+		# Make RNG for spikes
 		stimrand = h.Random() # see CNS2014 Dura-Bernal example or EPFL cell synapses.hoc file
-
 		# MCellRan4: each stream should be statistically independent as long as the highindex values differ by more than the eventual length of the stream. See http://www.neuron.yale.edu/neuron/static/py_doc/programming/math/random.html?highlight=MCellRan4
 		dur_max_ms, dt_ms = 10000.0, 0.025
 		num_indep_repicks = dur_max_ms / dt_ms
@@ -283,20 +296,53 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 		stimrand.MCellRan4(high_index, low_index) # high_index can also be set using .seq()
 		stimrand.negexp(1) # if num arrivals is poisson distributed, ISIs are negexp-distributed
 		
-		# Create a NetStim
+		# make NetStim spike generator
 		stimsource = h.NetStim()
 		stimsource.interval = stim_rate**-1*1e3 # Interval between spikes
 		stimsource.number = 1e9 # inexhaustible for our simulation
 		stimsource.noise = 1.0
 		stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
+		stimsource.start = tstart
+
+		if pause_rate > 0:
+			assert (discharge_dur < 1/pause_rate), "Discharge duration must be smaller than inter-pause interval"
+			logger.debug("Creating pausing NetStim with pause_rate={} and pause_dur={}".format(pause_rate, pause_dur))
+
+			# Make spike generator exhaustible
+			stimsource.number = discharge_dur*stim_rate # expected number of spikes in discharge duration
+
+			# Make RNG for spike control
+			ctlrand = h.Random()
+			low_index, high_index = gid+100+self.base_seed, int(i_syn*num_indep_repicks + 100)
+			ctlrand.MCellRan4(high_index, low_index) # high_index can also be set using .seq()
+			ctlrand.negexp(1)
+
+			# control spike generator spiking pattern
+			stimctl = h.NetStim()
+			# stimctl.interval = pause_rate**-1*1e3
+			stimctl.interval = pause_dur*1e3 # replenish only works when spikes exhaused
+			stimctl.number = 1e9
+			stimctl.noise = 1.0
+			stimctl.noiseFromRandom(ctlrand)
+			stimctl.start = tstart
+
+			# Connect to spike generator
+			# off_nc = h.NetCon(stimctl, stimsource)
+			# off_nc.weight[0] = -1 # turn off spikegen
+			# off_nc.delay = 0
+			
+			ctl_nc = h.NetCon(stimctl, stimsource)
+			ctl_nc.weight[0] = 1 # turn on spikegen (resets available spikes)
+			# ctl_nc.delay = pause_dur*1e3
+
+			extend_dictitem(new_inputs, 'com_NetCons', ctl_nc)
+			# extend_dictitem(new_inputs, 'com_NetCons', off_nc)
+			extend_dictitem(new_inputs, 'NetStims', stimctl)
+			extend_dictitem(new_inputs, 'RNGs', ctlrand)
 
 		# Make synapse and NetCon
 		syn, nc, wvecs = cc.make_synapse((POP_PRE, Pop.STN), (stimsource, target_seg), 
 							syn_mech, syn_NTRs, con_par_data=con_par)
-
-		# Control netstim
-		tstart = 300
-		stimsource.start = tstart
 
 		# Save inputs
 		extend_dictitem(new_inputs, 'syn_NetCons', nc)

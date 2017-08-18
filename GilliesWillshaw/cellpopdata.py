@@ -161,9 +161,13 @@ class CellConnector(object):
 			'rate_mean': 60.0,
 			'rate_deviation': 10.0,
 			'rate_units': 'Hz',
-			'pause_mean': 0.6, # average pause duration 0.5-0.7 s in monkeys
-			'pause_units': 's',
-			'pause_dist': 'poisson', # Can control rate NetStim with pause NetStim (stim.number resets, see mod file)
+			'pause_dur_mean': 0.6, # average pause duration 0.5-0.7 s in monkeys
+			'pause_dur_units': 's',
+			'pause_rate_mean': 15.0/60.0, # 10-20 pauses per minute
+			'pause_rate_units': 'Hz',
+			'pause_rate_dist': 'poisson', # Can control rate NetStim with pause NetStim (stim.number resets, see mod file)
+			'discharge_dur_mean': 1.0, # must be < 1/pause_rate_mean
+			'discharge_dur_units': 'Hz',
 			'species': 'primates',
 		}
 
