@@ -42,7 +42,7 @@ class PhysioState(IntEnum):
 	# Combinations
 	NORMAL = 0
 	PARK_DBS = PARKINSONIAN | DBS
-	ALL = int(2**32 - 1)
+	# ALL = 2**32 - 1
 
 	def __contains__(self, item):
 		"""
@@ -86,6 +86,28 @@ class NTReceptors(Enum):
 	GABAA = 2
 	GABAB = 3
 
+
+@unique
+class MSRCorrection(Enum):
+	"""
+	Correction method to take into account multi-synaptic contacts
+	(Multi Synapse Rule).
+	"""
+	SCALE_GSYN_MSR = 0,			# Divide synaptic conductance by average number of contacts
+	SCALE_NUMSYN_MSR = 1,		# Number of SYNAPSE objects = number of synapses (observed) divided by average number of contacts
+	SCALE_NUMSYN_GSYN = 2,		# Number of SYNAPSE objects = number needed to get total observed synaptic conductance
+
+# MSRC = MSRCorrection
+
+@unique
+class StnModel(Enum):
+	"""
+	STN cell models
+	"""
+	Gillies2005 = 0
+	Miocinovic2006 = 1
+	Gillies_GIF = 2
+	Gillies_BranchZip = 3
 
 @unique
 class ParameterSource(Enum):
@@ -226,13 +248,21 @@ class CellConnector(object):
 
 		return fp_final
 
-	def getConParams(self, pre_pop, post_pop, use_sources, custom_params=None):
+	def getConParams(self, pre_pop, post_pop, use_sources, custom_params=None,
+					adjust_gsyn_msr=None):
 		"""
 		Get parameters for afferent connections onto given population,
 		in given physiological state.
 
 		@param custom_params	custom parameters in the form of a dict
 								{NTR_0: {params_0}, NTR_1: {params_1}} etc.
+
+
+		@param adjust_gsyn_msr		Number of synapses per axonal contact (int), 
+									and whether the synaptic condcutance for each synapse
+									should be scaled to take this into account.
+									If an int > 0 is given, each synaptic condcutance
+									is divided by this number.
 		"""
 
 		pop = Populations
@@ -451,6 +481,10 @@ class CellConnector(object):
 				# Successively overwrite with params of each source
 				cp_final[receptor].update(ntr_params)
 
+			# Adjust for multi synapse rule
+			if (adjust_gsyn_msr) and ('gbar' in cp_final[receptor]):
+				cp_final[receptor]['gbar'] = cp_final[receptor]['gbar']/adjust_gsyn_msr
+
 		return cp_final
 
 	#######################################################################
@@ -572,8 +606,7 @@ class CellConnector(object):
 
 	def make_synapse(self, pre_post_pop, pre_post_obj, syn_type, receptors, 
 						use_sources=None, custom_conpar=None, custom_synpar=None,
-						con_par_data=None,
-						weight_scales=None, weight_times=None):
+						con_par_data=None, weight_scales=None, weight_times=None):
 		"""
 		Insert synapse POINT_PROCESS in given section.
 

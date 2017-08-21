@@ -37,8 +37,15 @@ import mapsyn
 from common import analysis
 
 # Physiological parameters
-import cellpopdata as cpd
-from cellpopdata import PhysioState, Populations, NTReceptors as NTR, ParameterSource as Cit
+import cellpopdata
+cpd = cellpopdata
+from cellpopdata import (
+	StnModel,
+	PhysioState,
+	Populations,
+	NTReceptors as NTR,
+	ParameterSource as Cit
+)
 Pop = Populations
 
 # Experimental protocols
@@ -52,15 +59,6 @@ import proto_background
 marasco.logger.setLevel(logging.WARNING)
 mapsyn.logger.setLevel(logging.WARNING)
 cpd.logger.setLevel(logging.WARNING)
-
-class StnModel(Enum):
-	"""
-	STN cell models
-	"""
-	Gillies2005 = 0
-	Miocinovic2006 = 1
-	Gillies_GIF = 2
-	Gillies_BranchZip = 3
 
 
 class StnModelEvaluator(object):
@@ -93,7 +91,7 @@ class StnModelEvaluator(object):
 
 		self.sim_dur = 1000.
 		self.sim_dt = 0.025
-		self.base_seed = 25031989
+		self.base_seed = 25031989 # used: 25031989
 		self.rng = np.random.RandomState(self.base_seed)
 
 		# SIGNATURE: make_inputs(evaluator, connector)
@@ -313,6 +311,33 @@ class StnModelEvaluator(object):
 		self.model_data[model]['inputs'][pre_pop] = pop_inputs
 
 
+	def get_inputs(self, pre_pop, model):
+		"""
+		Get inputs from given pre-synaptic population.
+		"""
+		if isinstance(pre_pop, cellpopdata.Populations):
+			pre_pop = pre_pop.name.lower()
+		return self.model_data[model]['inputs'].get(pre_pop, None)
+
+
+	def _init_con_dict(self, model, pre_pops):
+		"""
+		Initialize dict with connection data for given model
+		and presynaptic populations.
+		"""
+		for pop in pre_pops:
+			self.model_data[model]['inputs'][pop] = {
+				'stimweightvec': [],
+				'synapses': [],
+				'syn_NetCons': [], # NetCons targetting synapses
+				'com_NetCons': [], # NetCons for command & control
+				'NetStims': [],
+				'HocInitHandlers': [],
+				'PyInitHandlers': [],
+				'RNG_data': [],
+			}
+
+
 	def _add_recorded_obj(self, tag, obj, protocol, model=None):
 		"""
 		Add given object to list of recorded objects for given model & protocol.
@@ -350,22 +375,6 @@ class StnModelEvaluator(object):
 				num_syn += len(pops_inputs[pop]['synapses'])
 		
 		return num_syn
-
-	def _init_con_dict(self, model, pre_pops):
-		"""
-		Initialize dict with connection data for given model
-		and presynaptic populations.
-		"""
-		for pop in pre_pops:
-			self.model_data[model]['inputs'][pop] = {
-				'stimweightvec': [],
-				'synapses': [],
-				'syn_NetCons': [], # NetCons targetting synapses
-				'com_NetCons': [], # NetCons for command & control
-				'NetStims': [],
-				'HocInitHandlers': [],
-				'PyInitHandlers': [],
-			}
 
 
 	def make_inputs(self, stim_protocol):
@@ -1100,9 +1109,9 @@ class StnModelEvaluator(object):
 		h.init() # calls finitialize()
 
 
-	def _setup_run_proto(self, proto, stdinit=False):
+	def _setup_proto(self, proto):
 		"""
-		Standard simulation function.
+		Standard setup function.
 
 		Dispatches protocol-specific setup functions.
 		"""
@@ -1111,6 +1120,14 @@ class StnModelEvaluator(object):
 
 		# Set up recording
 		self.rec_traces(proto, recordStep=0.05)
+
+
+	def _run_proto(self, proto, stdinit=False):
+		"""
+		Standard simulation function.
+
+		Dispatches protocol-specific init & run functions.
+		"""
 
 		# Initialize
 		if stdinit:
@@ -1206,11 +1223,13 @@ class StnModelEvaluator(object):
 				for seg in sec:
 					seg.gk_sKCa = 0.6 * seg.gk_sKCa
 
-			self._setup_run_proto(protocol)
+			self._setup_proto(protocol)
+			self._run_proto(protocol)
 
 		else:
 			# Standard simulation function
-			self._setup_run_proto(protocol)
+			self._setup_proto(protocol)
+			self._run_proto(protocol)
 
 ################################################################################
 # EXPERIMENTS
@@ -1270,14 +1289,33 @@ def run_protocol_MIN_SYN_BURST():
 	globals().update(locals())
 
 
-if __name__ == '__main__':
-	# Run Gillies 2005 model
+def map_protocol_SYN_BACKGROUND_HIGH():
+	"""
+	Run the MIN_SYN_BURST protocol, then reduce the cell, map the synapses
+	and run the protocol again to compare responses.
+	"""
+	# Make cell model and evaluator
 	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
 	evaluator.build_cell(StnModel.Gillies2005)
-
+	
+	# Run protocol
 	proto = StimProtocol.SYN_BACKGROUND_HIGH
 	evaluator.setup_run_protocol(proto)
-
-	# Analyze results
 	evaluator.plot_traces(proto)
+
+	###################################
+
+	# # Model reduction
+	# evaluator.build_cell(StnModel.Gillies_BranchZip)
+	# evaluator.target_model = StnModel.Gillies_BranchZip
+
+	# # Run Protocol
+	# evaluator.setup_run_protocol(proto)
+	# evaluator.plot_traces(proto)
+
+	globals().update(locals())
+
+
+if __name__ == '__main__':
+	map_protocol_SYN_BACKGROUND_HIGH()
 
