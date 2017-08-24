@@ -20,25 +20,20 @@ from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
-# Add our own modules to Python path
-import sys, os.path
-scriptdir, scriptfile = os.path.split(__file__)
-modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
-sys.path.append(modulesbase)
-
 # Gillies-Willshaw STN model
 import gillies_model as gillies
 
 # Cell reduction
-import reduce_marasco as marasco
-import mapsyn
+from reducemodel import (
+	reduce_marasco as marasco,
+	mapsyn,
+)
 
 # Plotting & recording
 from common import analysis
 
 # Physiological parameters
 import cellpopdata
-cpd = cellpopdata
 from cellpopdata import (
 	StnModel,
 	PhysioState,
@@ -46,6 +41,7 @@ from cellpopdata import (
 	NTReceptors as NTR,
 	ParameterSource as Cit
 )
+cpd = cellpopdata
 Pop = Populations
 
 # Experimental protocols
@@ -264,6 +260,16 @@ class StnModelEvaluator(object):
 		# Create reduced cell
 		eq_secs, newsecrefs = marasco.reduce_gillies_incremental(
 										n_passes=7, zips_per_pass=100)
+
+		# Apply correction TODO: remove this after fixing reduction
+		for sec in h.allsec():
+			if sec.name().endswith('soma'):
+				print("Skipping soma")
+				continue
+			for seg in sec:
+				# seg.gna_NaL = 1.075 * seg.gna_NaL
+				seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
+				n_adjusted += 1
 
 		# Reassign SectionRef vars
 		somaref = next(ref for ref in newsecrefs if 'soma' in ref.sec.name())
@@ -1317,5 +1323,6 @@ def map_protocol_SYN_BACKGROUND_HIGH():
 
 
 if __name__ == '__main__':
+	map_protocol_MIN_SYN_BURST()
 	map_protocol_SYN_BACKGROUND_HIGH()
 

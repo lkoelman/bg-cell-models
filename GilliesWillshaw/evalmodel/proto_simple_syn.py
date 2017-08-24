@@ -3,6 +3,9 @@ Functions to set up STN experimental protocol with
 simple synaptic inputs.
 """
 
+import neuron
+h = neuron.h
+
 # Physiological parameters
 import cellpopdata as cpd
 from cellpopdata import PhysioState, Populations as Pop, NTReceptors as NTR, ParameterSource as Cit

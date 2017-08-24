@@ -1,5 +1,5 @@
 """
-Test class for Marasco reduction module
+Test suite for Marasco reduction module
 
 @author Lucas Koelman
 @date	14-12-2016
@@ -15,10 +15,13 @@ h = neuron.h
 # Own modules
 import reduction_tools
 import reduce_marasco as marasco
-from reduction_tools import ExtSecRef, Cluster, getsecref
+from reduction_tools import ExtSecRef, getsecref
+from cluster import Cluster
 
 def test_Rin_Ycluster():
-	""" Test input resistance of simple tree before & after reduction """
+	"""
+	Test input resistance of simple tree before & after reduction
+	"""
 	# Child section A
 	asec = h.Section()
 	asec.L = 50.
@@ -54,9 +57,9 @@ def test_Rin_Ycluster():
 	psec.connect(somasec, 1, 0)
 
 	# Compute input resistances
-	lambA = reduction_tools.electrotonic_length(asec, asec.gl_hh, 0.)
+	lambA = reduction_tools.sec_lambda(asec, asec.gl_hh, 0.)
 	RinA = reduction_tools.inputresistance_sealed(asec, asec.gl_hh, 0.)
-	lambB = reduction_tools.electrotonic_length(bsec, bsec.gl_hh, 0.)
+	lambB = reduction_tools.sec_lambda(bsec, bsec.gl_hh, 0.)
 	RinB = reduction_tools.inputresistance_sealed(bsec, bsec.gl_hh, 0.)
 	R_end = 1./(1./RinA	+ 1./RinB)
 	RinP = reduction_tools.inputresistance_leaky(psec, psec.gl_hh, 0., R_end)
@@ -74,7 +77,7 @@ def test_Rin_Ycluster():
 	cluster = Cluster('trunk')
 
 	# Merge cluster
-	marasco.merge_cluster(cluster, allsecrefs)
+	marasco.merge_sec_cluster(cluster, allsecrefs, True)
 
 	# Create equivalent sections
 	eq_secs, eq_secrefs = marasco.equivalent_sections([cluster], allsecrefs, gradients=False)
@@ -82,3 +85,7 @@ def test_Rin_Ycluster():
 
 	# Compute inputresistance
 	RinC = reduction_tools.inputresistance_sealed(csec, csec.gl_hh, 0.)
+
+
+if __name__ == '__main__':
+	test_Rin_Ycluster()

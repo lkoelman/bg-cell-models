@@ -181,7 +181,7 @@ def test_spontaneous():
 
     # Connect pointers to recording vectors
     recordStep = 0.025
-    recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+    recData, _ = analysis.recordTraces(secs, traceSpecs, recordStep)
 
     # Simulate
     h.tstop = dur

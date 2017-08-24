@@ -12,41 +12,38 @@ for the different features of STN cell dynamics
 
 import collections
 import math
+import sys, os.path
 
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
 # Make sure other modules are on Python path
-import sys, os.path
 scriptdir, scriptfile = os.path.split(__file__)
-modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
-sys.path.append(modulesbase)
+repo_root = os.path.normpath(os.path.join(scriptdir, '..'))
+sys.path.append(repo_root)
+
+# Our own modules
+import gillies_model as gillies
+from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 
 # Load NEURON
 import neuron
 from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
-# Load own NEURON mechanisms
-NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
-neuron.load_mechanisms(NRN_MECH_PATH)
-
-# Our own modules
-import gillies_model as gillies
-from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 
 from common import analysis
 from common.analysis import rec_currents_activations, plot_currents_activations
 
-import reduction_tools
-from reduction_tools import lambda_AC, ExtSecRef, getsecref
-from interpolation import *
+from reducemodel import (
+	reduction_analysis,
+	reduce_marasco as marasco,
+	reduce_bush_sejnowski as bush
+)
+from reducemodel.reduction_tools import lambda_AC, ExtSecRef, getsecref
+from reducemodel.interpolation import *
 
-import reduction_analysis
-import reduce_marasco as marasco
-import reduce_bush_sejnowski as bush
-# from optimization import STNCellController, Protocol
 
 # Global variables
 soma = None
@@ -432,7 +429,7 @@ def test_spontaneous(soma, dends_locs, stims, resurgent=False):
 
 	# Set up recording vectors
 	recordStep = 0.05
-	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+	recData, _ = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Simulate
 	h.tstop = dur
@@ -542,7 +539,7 @@ def test_plateau(soma, dends_locs, stims):
 
 	# Start recording
 	recordStep = 0.05
-	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+	recData, _ = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Simulate
 	h.tstop = dur
@@ -658,7 +655,7 @@ def test_reboundburst(soma, dends_locs, stims):
 
 	# Start recording
 	recordStep = 0.025
-	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+	recData, _ = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Simulate
 	h.tstop = dur
@@ -763,7 +760,7 @@ def test_slowbursting(soma, dends_locs, stims):
 	traceSpecs['dI_CaT'] = {'sec':'dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
 	# Start recording
 	recordStep = 0.05
-	recData = analysis.recordTraces(secs, traceSpecs, recordStep)
+	recData, _ = analysis.recordTraces(secs, traceSpecs, recordStep)
 
 	# Simulate
 	h.tstop = dur
@@ -835,12 +832,11 @@ def compare_conductance_dist(gnames):
 					filter_func, label_func)
 
 # if __name__ == '__main__':
-def run_experimental_protocol():
+def run_experimental_protocol(reduction_method):
 	"""
 	Run one of the experiments using full or reduced STN model
 	"""
 	# Make cell
-	reduction_method = 1
 	soma, dends_locs, stims, allsecs = stn_cell(cellmodel=reduction_method)
 
 	# Manual cell adjustments
@@ -898,6 +894,6 @@ def run_experimental_protocol():
 	
 
 if __name__ == '__main__':
-	run_experimental_protocol()
+	run_experimental_protocol(reduction_method=8)
 	# compare_conductance_dist(gillies_glist)
 	# stn_cell_gillies(resurgent=False)

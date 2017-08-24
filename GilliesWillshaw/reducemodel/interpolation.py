@@ -10,12 +10,6 @@ Manual reduction of Gillies & Willshaw (2006) STN neuron model
 import math
 import numpy as np
 
-# Make sure other modules are on Python path
-import sys, os.path
-scriptdir, scriptfile = os.path.split(__file__)
-modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
-sys.path.append(modulesbase)
-
 # Enable logging
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
@@ -28,17 +22,12 @@ h = neuron.h
 # Our own modules
 import reduction_tools as redtools
 from reduction_tools import ExtSecRef, getsecref # for convenience
+from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 
-# Gillies & Willshaw model mechanisms
-gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel
-				'Na': ['gna'], 'NaL': ['gna'], # Na channels
-				'KDR': ['gk'], 'Kv31': ['gk'], 'sKCa':['gk'], # K channels
-				'Ih': ['gk'], # nonspecific channels
-				'CaT': ['gcaT'], 'HVA': ['gcaL', 'gcaN'], # Ca channels
-				'Cacum': []} # No channels
-mechs_chans = gillies_mechs_chans
+mechs_chans = gillies_gdict
+glist = gillies_glist
 gleak_name = 'gpas_STh'
-glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
+
 
 def loadgstruct(gext):
 	""" Return structured array with conductance values for given
@@ -51,11 +40,13 @@ def loadgstruct(gext):
 									   'formats': ('i4', 'i4', 'f4', 'f4')})
 	return np.unique(gstruct) # unique and sorted rows
 
+
 def gillies_gstructs():
 	""" Load all structured arrays with conductance values """
 	gfromfile = ["gk_KDR", "gk_Kv31", "gk_Ih", "gk_sKCa", "gcaT_CaT", "gcaN_HVA", "gcaL_HVA"]
 	gmats = {gname: loadgstruct(gname) for gname in gfromfile}
 	return gmats
+
 
 def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals=None):
 	""" Calculate parameters of the linear conductance distribution
@@ -102,6 +93,7 @@ def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals
 		xg0 = next((xg for xg in xgvals if xg[1] > gmin), xgvals[0]) # first g > gmin
 		xg1 = next((xg for xg in reversed(xgvals) if xg[1] > gmin), xgvals[-1]) # last g > gmin
 		return (xg0, xg1), (xgvals[0], xgvals[-1]), (gmin, gmax)
+
 
 def find_adj_path_segs(interp_prop, interp_L, path_secs):
 	"""
@@ -182,6 +174,7 @@ def find_adj_path_segs(interp_prop, interp_L, path_secs):
 	# Return pairs of boundary segments and boundary path lengths
 	return bound_segs, bound_L
 
+
 def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):
 	""" Linear interpolation of gbar according to the given
 		electrotonic path length and boundaries.
@@ -224,6 +217,7 @@ def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):
 			return g_b # distal distribution, after bounds
 		else:
 			return gmin # proximal distribution, after bounds
+
 
 def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
 	""" For each pair of boundary segments (and corresponding electrotonic
@@ -275,6 +269,7 @@ def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
 
 	gbar_interp /= len(bound_segs) # take average
 	return gbar_interp
+
 
 def interp_gbar_pick_neighbor(L_elec, gname, bound_segs, bound_L, method='nearest'):
 	""" Nearest/left/right neighbor interpolation 

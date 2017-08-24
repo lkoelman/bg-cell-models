@@ -28,11 +28,6 @@ fmtr = logging.Formatter('%(levelname)s:%(message)s')
 # ch.setFormatter(fmtr)
 # logger.addHandler(ch)
 
-import os.path
-scriptdir, scriptfile = os.path.split(__file__)
-modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
-sys.path.append(modulesbase)
-
 # NEURON modules
 import neuron
 h = neuron.h
@@ -40,14 +35,6 @@ h = neuron.h
 # Load NEURON function libraries
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
-
-# Load NEURON mechanisms
-# add this line to nrn/lib/python/neuron/__init__.py/load_mechanisms()
-# from sys import platform as osplatform
-# if osplatform == 'win32':
-# 	lib_path = os.path.join(path, 'nrnmech.dll')
-NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
-neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Own modules
 import reduction_tools as redtools
@@ -58,17 +45,11 @@ import interpolation as interp
 import reduce_bush_sejnowski as redbush
 import reduction_analysis as analysis
 
-# Global variables (convert to class members in future)
-gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel
-				'Na': ['gna'], 'NaL': ['gna'], # Na channels
-				'KDR': ['gk'], 'Kv31': ['gk'], 'sKCa':['gk'], # K channels
-				'Ih': ['gk'], # nonspecific channels
-				'CaT': ['gcaT'], 'HVA': ['gcaL', 'gcaN'], # Ca channels
-				'Cacum': []} # No channels
+from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 
-mechs_chans = gillies_mechs_chans
+mechs_chans = gillies_gdict
+glist = gillies_glist
 gleak_name = 'gpas_STh'
-glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
 f_lambda = 100.0
 
 def merge_parallel(childrefs, allsecrefs):
@@ -515,7 +496,7 @@ def zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion):
 
 		# Calculate electrotonic path length
 		cluster.or_L_elec = sum(redtools.seg_L_elec(seg, gleak_name, f_lambda) for seg in clu_segs)
-		cluster.eq_lambda = redtools.lambda_AC_raw(f_lambda, cluster.eqdiam, cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
+		cluster.eq_lambda = redtools.calc_lambda_AC(f_lambda, cluster.eqdiam, cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
 		cluster.eq_L_elec = cluster.eqL/cluster.eq_lambda
 		eq_min_nseg = redtools.calc_min_nseg_hines(f_lambda, cluster.eqL, cluster.eqdiam, 
 											cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)

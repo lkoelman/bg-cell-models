@@ -14,12 +14,6 @@ from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
-# Make sure other modules are on Python path
-import sys, os.path
-scriptdir, scriptfile = os.path.split(__file__)
-modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
-sys.path.append(modulesbase)
-
 import gillies_model as gillies
 import reduce_marasco as marasco
 import mapsyn

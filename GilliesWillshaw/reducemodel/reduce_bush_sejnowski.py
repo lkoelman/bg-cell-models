@@ -12,12 +12,6 @@ import math
 import pickle
 import re
 
-# Make sure other modules are on Python path
-import sys, os.path
-scriptdir, scriptfile = os.path.split(__file__)
-modulesbase = os.path.normpath(os.path.join(scriptdir, '..'))
-sys.path.append(modulesbase)
-
 # Enable logging
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
@@ -25,12 +19,9 @@ logger = logging.getLogger(__name__) # create logger for this module
 
 # Load NEURON
 import neuron
-from neuron import h
+h = neuron.h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
-# Load own NEURON mechanisms
-# NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
-# neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Our own modules
 import reduction_tools as redtools
@@ -38,17 +29,11 @@ from reduction_tools import ExtSecRef, getsecref # for convenience
 from cluster import Cluster
 import interpolation as interp
 import reduction_analysis as analysis
+from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 
-# Gillies & Willshaw model mechanisms
-gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel
-				'Na': ['gna'], 'NaL': ['gna'], # Na channels
-				'KDR': ['gk'], 'Kv31': ['gk'], 'sKCa':['gk'], # K channels
-				'Ih': ['gk'], # nonspecific channels
-				'CaT': ['gcaT'], 'HVA': ['gcaL', 'gcaN'], # Ca channels
-				'Cacum': []} # No channels
-mechs_chans = gillies_mechs_chans
+mechs_chans = gillies_gdict
+glist = gillies_glist
 gleak_name = 'gpas_STh'
-glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
 
 def cluster_sec_properties(clusters, orsecrefs):
 	"""

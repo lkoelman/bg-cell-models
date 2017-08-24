@@ -8,18 +8,22 @@ NOTE: this script relies on commenting out the 'graphics=1' line in sample.hoc
 """
 
 import neuron
-from neuron import h
+h = neuron.h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from nrnutil import ExtSecRef
+from common.treeutils import ExtSecRef
 
 # Load NEURON mechanisms
 import os.path
 scriptdir, scriptfile = os.path.split(__file__)
+# add this line to nrn/lib/python/neuron/__init__.py/load_mechanisms()
+# from sys import platform as osplatform
+# if osplatform == 'win32':
+# 	lib_path = os.path.join(path, 'nrnmech.dll')
 NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
 
