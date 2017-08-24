@@ -24,11 +24,11 @@ h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 # Our own modules
-import reduction_tools as redtools
-from reduction_tools import ExtSecRef, getsecref # for convenience
+import redutils as redtools
+from redutils import ExtSecRef, getsecref # for convenience
 from cluster import Cluster
 import interpolation as interp
-import reduction_analysis as analysis
+import analyze_reduction as analysis
 from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 
 mechs_chans = gillies_gdict

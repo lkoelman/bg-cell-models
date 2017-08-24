@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 from neuron import h
 
 # Own modules
-import reduction_tools
-from reduction_tools import ExtSecRef, getsecref
+import redutils
+from redutils import ExtSecRef, getsecref
 
 def get_gillies_cells():
 	""" Get references to cells in Gillies & Willshaw models, annotated
@@ -102,8 +102,8 @@ def compare_models(or_secrefs, eq_secrefs, plot_glist):
 
 	# Compare input resistance of large/left tree 
 	rootsecs = [dendLrefs[0].sec, eq_dendLrefs[0].sec, dendRrefs[0].sec, eq_dendRrefs[0].sec]
-	Rin_DC = [reduction_tools.inputresistance_tree(sec, 0., 'gpas_STh') for sec in rootsecs]
-	Rin_AC = [reduction_tools.inputresistance_tree(sec, 100., 'gpas_STh') for sec in rootsecs]
+	Rin_DC = [redutils.inputresistance_tree(sec, 0., 'gpas_STh') for sec in rootsecs]
+	Rin_AC = [redutils.inputresistance_tree(sec, 100., 'gpas_STh') for sec in rootsecs]
 	
 	print("\n=== INPUT RESISTANCE ===\
 	\nLarge tree (Original model):\

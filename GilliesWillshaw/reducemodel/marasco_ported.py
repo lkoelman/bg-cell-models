@@ -3,7 +3,7 @@ This is an attempt to a literal port of the code & algorithms supplied
 with the Marasco & Miglieri (2013) paper to Python. It is incomplete
 and untested, and was solely used to gain insight into the algorithms.
 
-DEPRECATED: all functionality is in reduce_marasco and reduction_tools
+DEPRECATED: all functionality is in reduce_marasco and redutils
 
 @author Lucas Koelman
 @date	28-11-2016
@@ -22,7 +22,7 @@ import neuron
 h = neuron.h
 
 # Own modules
-from reduction_tools import * # since general functions were moved to that module
+from redutils import * # since general functions were moved to that module
 
 ################################################################################
 # Merging
@@ -385,5 +385,5 @@ def reduce_marasco():
 	create_equivalent_sections(eq_clusters, allsecrefs)
 
 if __name__ == '__main__':
-	stn_tree = reduction_tools.combinedtree()
+	stn_tree = redutils.combinedtree()
 	assign_strahler(stn_tree)

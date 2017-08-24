@@ -1,6 +1,6 @@
 """
-Automated optimization of a reduced STN cell with respect to 
-the full Gillies & Willshaw model.
+Optimization of a single STN cell model with the 
+the full Gillies & Willshaw model as target.
 
 @author Lucas Koelman
 @date	08-02-2017

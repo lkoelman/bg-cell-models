@@ -13,8 +13,8 @@ logger = logging.getLogger(logname) # create logger for this module
 # hdlr.setFormatter(fmtr)
 # logger.addHandler(hdlr) 
 
-import reduction_tools as redtools
-from reduction_tools import getsecref
+import redutils as redtools
+from redutils import getsecref
 
 class Cluster(object):
 	""" A cluster representing merged sections """

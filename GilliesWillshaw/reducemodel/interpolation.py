@@ -20,8 +20,8 @@ import neuron
 h = neuron.h
 
 # Our own modules
-import reduction_tools as redtools
-from reduction_tools import ExtSecRef, getsecref # for convenience
+import redutils as redtools
+from redutils import ExtSecRef, getsecref # for convenience
 from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 
 mechs_chans = gillies_gdict
@@ -109,7 +109,7 @@ def find_adj_path_segs(interp_prop, interp_L, path_secs):
 
 	@pre				path lengths must be assigned along searched path
 	"""
-	# attribute names corresponding to path property (see reduction_tools.sec_path_props())
+	# attribute names corresponding to path property (see redutils.sec_path_props())
 	if interp_prop == 'path_L':
 		sec_prop0 = 'pathL0'
 		sec_prop1 = 'pathL1'
@@ -317,7 +317,7 @@ def interpconductances(sec, tree_index, path_indices, glist=None):
 	"""
 
 	# Load channel conductances from file
-	allgmats = reduction_tools.loadgstructs()
+	allgmats = redutils.loadgstructs()
 	if glist is None:
 		glist = list(gillies_glist)
 
@@ -328,7 +328,7 @@ def interpconductances(sec, tree_index, path_indices, glist=None):
 	h("default_gNaL_dend = 0.81e-5")
 
 	# branch indices along longest path
-	geostruct = reduction_tools.loadgeotopostruct(tree_index)
+	geostruct = redutils.loadgeotopostruct(tree_index)
 	pathL = np.array([geostruct[i-1]['L'] for i in path_indices]) # length of each branch along path
 
 	# Distributed conductances: interpolate each conductance along longest path
@@ -387,7 +387,7 @@ def setconductances(sec, dendidx, fixbranch=None, fixloc=None, glist=None):
 	"""
 
 	# Load channel conductances from file
-	allgmats = reduction_tools.loadgstructs()
+	allgmats = redutils.loadgstructs()
 	if glist is None:
 		glist = list(gillies_glist)
 
@@ -399,11 +399,11 @@ def setconductances(sec, dendidx, fixbranch=None, fixloc=None, glist=None):
 
 	# branch indices along longest path
 	if dendidx == 1:
-		geostruct = reduction_tools.loadgeotopostruct(dendidx)
+		geostruct = redutils.loadgeotopostruct(dendidx)
 		longestpath = np.array([1,2,5])
 		pathL = np.array([geostruct[i-1]['L'] for i in longestpath])
 	elif dendidx == 0:
-		geostruct = reduction_tools.loadgeotopostruct(dendidx)
+		geostruct = redutils.loadgeotopostruct(dendidx)
 		longestpath = np.array([1,2,4,7])
 		pathL = np.array([geostruct[i-1]['L'] for i in longestpath])
 	else: # -1: soma

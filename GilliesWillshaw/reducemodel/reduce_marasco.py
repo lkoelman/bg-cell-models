@@ -37,13 +37,13 @@ h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 # Own modules
-import reduction_tools as redtools
-from reduction_tools import ExtSecRef, EqProps, getsecref, lambda_AC, prev_seg, seg_index, same_seg # for convenience
+import redutils as redtools
+from redutils import ExtSecRef, EqProps, getsecref, lambda_AC, prev_seg, seg_index, same_seg # for convenience
 import cluster as clutools
 from cluster import Cluster
 import interpolation as interp
 import reduce_bush_sejnowski as redbush
-import reduction_analysis as analysis
+import analyze_reduction as analysis
 
 from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 

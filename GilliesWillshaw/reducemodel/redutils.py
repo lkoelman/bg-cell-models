@@ -930,4 +930,4 @@ def duplicate_subtree(rootsec, mechs_pars, tree_copy):
 
 
 if __name__ == '__main__':
-	print("Main of reduction_tools.py: TODO: execute tests")
+	print("Main of redutils.py: TODO: execute tests")

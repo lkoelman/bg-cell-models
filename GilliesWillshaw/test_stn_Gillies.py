@@ -37,11 +37,11 @@ from common import analysis
 from common.analysis import rec_currents_activations, plot_currents_activations
 
 from reducemodel import (
-	reduction_analysis,
+	analyze_reduction,
 	reduce_marasco as marasco,
 	reduce_bush_sejnowski as bush
 )
-from reducemodel.reduction_tools import lambda_AC, ExtSecRef, getsecref
+from reducemodel.redutils import lambda_AC, ExtSecRef, getsecref
 from reducemodel.interpolation import *
 
 
@@ -798,7 +798,7 @@ def compare_conductance_dist(gnames):
 	"""
 
 	# Get cells of original model
-	or_somaref, or_treeL, or_treeR = reduction_analysis.get_gillies_cells()
+	or_somaref, or_treeL, or_treeR = analyze_reduction.get_gillies_cells()
 	or_secrefs = [or_somaref] + or_treeL + or_treeR
 	or_spinysec = next(ref for ref in or_treeR if ref.table_index==8)
 	seg = or_spinysec.sec(0.9)
@@ -811,7 +811,7 @@ def compare_conductance_dist(gnames):
 	filter_func = lambda secref: (secref.tree_index==1) and (secref.table_index in (1,3,8))
 	label_func = lambda secref: "sec {}".format(secref.table_index)
 	for gname in gnames:
-		reduction_analysis.plot_tree_ppty(or_somaref, or_secrefs, gname, 
+		analyze_reduction.plot_tree_ppty(or_somaref, or_secrefs, gname, 
 					filter_func, label_func)
 
 	# Get cells of reduced model
@@ -828,7 +828,7 @@ def compare_conductance_dist(gnames):
 	filter_func = lambda ref: True # plot all sections
 	label_func = lambda ref: ref.sec.name() + '_bush'
 	for gname in gnames:
-		reduction_analysis.plot_tree_ppty(eq_somaref, eq_refs, gname, 
+		analyze_reduction.plot_tree_ppty(eq_somaref, eq_refs, gname, 
 					filter_func, label_func)
 
 # if __name__ == '__main__':
@@ -878,7 +878,7 @@ def run_experimental_protocol(reduction_method):
 
 
 	# Attach duplicate of one tree
-	# from reduction_tools import dupe_subtree
+	# from redutils import dupe_subtree
 	# copy_mechs = {'STh': ['gpas']} # use var gillies_gdict for full copy
 	# trunk_copy = duplicate_subtree(h.trunk_0, copy_mechs	, [])
 	# trunk_copy.connect(soma, h.trunk_0.parentseg().x, 0)
