@@ -71,7 +71,7 @@
 		- => they fail, likely due to different input resistance
 	
 	- [x] check if mergingYmethod correctly implemented 
-		- => NO: i used newri2 for `ri_seq -> diam_seq` (see merge_sequential())
+		- => NO: i used newri2 for `ri_seq -> diam_seq` (see merge_sec_sequential())
 		- however Marasco used newri2 only for `ri_seq` but not for `diam_seq` (see mergingYMethod())
 	
 	- [ ] Correct spontaneous firing rate through scaling/fitting

@@ -25,6 +25,12 @@ def getsecref(sec, refs):
 	# Section names are unique, but alternatively use sec.same(ref.sec)
 	return next((ref for ref in refs if (ref.exists() and ref.sec.name()==sec.name())), None)
 
+def contains_sec(seclist, sec):
+	"""
+	Check if enumerable contains given section
+	"""
+	return any([sec_b.same(sec) for sec_b in seclist])
+
 def prev_seg(curseg):
 	""" Get segment preceding seg: this can be on same or parent Section """
 	# NOTE: cannot use seg.next() since this changed content of seg

@@ -70,6 +70,13 @@ def min_nseg_hines(sec, f=100.):
 	return int(sec.L/(0.1*lambda_AC(sec, f))) + 1
 
 
+def min_nseg_marasco(sec):
+	"""
+	Minimum number of segments based on electrotonic length
+	"""
+	return int((sec.L/(0.1*lambda_AC(sec,100.))+0.9)/2)*2 + 1  
+
+
 def calc_min_nseg_hines(f, L, diam, Ra, cm):
 	lamb_AC = 1e5 * math.sqrt(diam/(4*math.pi*f*Ra*cm))
 	return int(L/(0.1*lamb_AC)) + 1
