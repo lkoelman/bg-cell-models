@@ -15,7 +15,7 @@ h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 import gillies_model as gillies
-import reduce_marasco as marasco
+import marasco_foldbased as marasco
 import mapsyn
 from common import analysis
 

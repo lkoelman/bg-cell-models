@@ -10,42 +10,62 @@ from enum import Enum, IntEnum, unique
 from common.treeutils import ExtSecRef, getsecref
 from neuron import h
 
-import reduce_marasco as marasco
+import marasco_foldbased as marasco
 
 @unique
 class ReductionMethod(Enum):
 	Rall = 0
 	StratfordMason = 1		# Stratford, K., Mason, A., Larkman, A., Major, G., and Jack, J. J. B. (1989) - The modelling of pyramidal neurones in the visual cortex
-	BushSejnowski = 2		# Bush, P. C. & Sejnowski, T. J. Reduced compartmental models of neocortical pyramidal cells. Journal of Neuroscience Methods 46, 159–166 (1993).
+	BushSejnowski = 2		# Bush, P. C. & Sejnowski, T. J. Reduced compartmental models of neocortical pyramidal cells. Journal of Neuroscience Methods 46, 159-166 (1993).
 	Marasco = 3				# Marasco, A., Limongiello, A. & Migliore, M. Fast and accurate low-dimensional reduction of biophysically detailed neuron models. Scientific Reports 2, (2012).
 
 
-class CollapsingReduction(object):
+class FoldReduction(object):
 	"""
 	Class grouping methods and data used for reducing
 	a compartmental cable model of a NEURON cell.
 	"""
 
+	# For each step in reduction process: a dict mapping ReductionMethod -> (func, arg_names)
+	
 	_PREPROC_FUNCS = {
-		ReductionMethod.Marasco:	marasco.preprocess_impl,
+		ReductionMethod.Marasco:	(marasco.preprocess_impl, [])
 	}
 
-	_PREP_COLLAPSE_FUNCS = {
-		ReductionMethod.Marasco:	marasco.prepare_collapse_impl,
+	_PREP_FOLD_FUNCS = {
+		ReductionMethod.Marasco:	(marasco.prepare_folds_impl, [])
 	}
 
-	def __init__(self, soma_secs, dends_secs, subtree_root_secs):
+	_CALC_FOLD_FUNCS = {
+		ReductionMethod.Marasco:	(marasco.calc_folds_impl, [])
+	}
+
+	_MAKE_FOLD_EQ_FUNCS = {
+		ReductionMethod.Marasco:	(marasco.make_folds_impl, [])
+	}
+
+
+
+	def __init__(self, soma_secs, dend_secs, fold_root_secs, method):
 		"""
 		Initialize reduction of NEURON cell with given root Section.
 
 		@param	soma_secs		list of root Sections for the cell (up to first branch points).
-								This list must not contain any Section in dends_secs
+								This list must not contain any Section in dend_secs
 
-		@param	dends_secs		list of dendritic section for each trunk section,
+		@param	dend_secs		list of dendritic section for each trunk section,
 								i.e. the lists are non-overlapping / containing
 								unique Sections
 
+		@param	method			ReductionMethod instance
 		"""
+
+		# Parameters for reduction method (set by user)
+		self._REDUCTION_PARAMS = dict((method, {}) for method in list(ReductionMethod))
+
+		# Reduction method
+		self.active_method = method
+		self.mechs_gbars_dict = None
 
 		# Find true root section
 		first_root_sec = soma_secs[0]
@@ -55,85 +75,165 @@ class CollapsingReduction(object):
 
 		# Save unique sections
 		self._soma_refs = [ExtSecRef(sec=sec) for sec in soma_secs]
-		self._dends_refs = [[ExtSecRef(sec=sec) for sec in dend] for dend in dends_secs]
+		self._dend_refs = [ExtSecRef(sec=sec) for sec in dend_secs]
 
 		# Save root sections
 		self._root_ref = getsecref(root_sec, self._soma_refs)
-		allsecrefs = all_sec_refs
-		self._subtree_root_refs = [getsecref(sec, allsecrefs) for sec in subtree_root_secs]
+		allsecrefs = self.all_sec_refs
+		self._fold_root_refs = [getsecref(sec, allsecrefs) for sec in fold_root_secs]
 
 
 	@property
 	def all_sec_refs(self):
-	    return list(self._soma_refs) + sum(self._dends_refs, [])
-	
+		return list(self._soma_refs) + list(self._dend_refs)
 
 
-	def preprocess_cell(self, red_method):
+	def update_refs(self, soma_refs=None, dend_refs=None):
+		"""
+		Update Section references after sections have been created/destroyed/substituted.
+
+		@param soma_refs	list of SectionRef to at least all new soma sections
+							(may also contain existing sections)
+
+		@param dend_refs	list of SectionRef to at least all new dendritic sections
+							(may also contain existing sections)
+		"""
+		if soma_refs is not None:
+			self._soma_refs = [ref for ref in self._soma_refs if ref.exists()]
+			self._soma_refs = list(set(self._soma_refs + soma_refs)) # get unique references
+
+		if dend_refs is not None:
+			self._dend_refs = [ref for ref in self._dend_refs if ref.exists()]
+			self._dend_refs = list(set(self._dend_refs + dend_refs)) # get unique references
+
+
+	def set_reduction_params(self, method, params):
+		"""
+		Set parameters for given reduction method.
+		"""
+		self._REDUCTION_PARAMS[method] = params
+
+
+	def preprocess_cell(self, method):
 		"""
 		Pre-process cell: calculate properties & prepare data structures
 		for reduction procedure
 
-		@param	red_method		ReductionMethod instance: the reduction method that we
+		@param	method		ReductionMethod instance: the reduction method that we
 								should preprocess for.
 
 		@pre		The somatic and dendritic sections have been set
 
 		@post		Computed properties will be available as attributes
-					on Section references in _soma_refs and _dends_refs,
+					on Section references in _soma_refs and _dend_refs,
 					in addition to other side effects specified by the
 					specific preprocessing function called.
 		"""
-
 		try:
-			preproc_func = self._PREPROC_FUNCS[red_method]
+			preproc_func = self._PREPROC_FUNCS[method][0]
 		except KeyError:
-			raise NotImplementedError("Preprocessing function for reduction method {} not implemented".format(red_method))
+			raise NotImplementedError("Preprocessing function not implemented for "
+			                          "reduction method {}".format(method))
 		else:
 			preproc_func(self)
 
 
-	def prepare_collapse(self):
+	def prepare_folds(self, method):
 		"""
-		Prepare next collapse operation.
+		Prepare next fold operation.
 		"""
-		
 		try:
-			prepare_func = self._PREP_COLLAPSE_FUNCS[red_method]
+			prepare_func = self._PREP_FOLD_FUNCS[method][0]
 		except KeyError:
-			raise NotImplementedError("Collapse preparation function for reduction method {} not implemented".format(red_method))
+			raise NotImplementedError("Fold preparation function not implemented for "
+			                          "reduction method {}".format(method))
 		else:
 			prepare_func(self)
 
 
-	def calculate_collapse(self):
+	def calc_folds(self, method, i_pass):
 		"""
-		Collapse branches at branch points identified by given criterion.
+		Fold branches at branch points identified by given criterion.
 		"""
-		pass
+		try:
+			calc_func, arg_names = self._CALC_FOLD_FUNCS[method]
+		except KeyError:
+			raise NotImplementedError("Fold calculation function not implemented for "
+			                          "reduction method {}".format(method))
+		else:
+			args = [i_pass]
+			user_params = self._REDUCTION_PARAMS[method]
+			kwargs = dict((kv for kv in user_params.iteritems() if kv[0] in arg_names))
+			calc_func(self, *args, **kwargs)
 
-	def substitute_collapse(self):
-		pass
+
+	def make_fold_equivalents(self, method):
+		"""
+		Make equivalent Sections for branches that have been folded.
+		"""
+		try:
+			make_fold_func = self._CALC_FOLD_FUNCS[method][0]
+		except KeyError:
+			raise NotImplementedError("Fold equivalents creation function not implemented for "
+			                          "reduction method {}".format(method))
+		else:
+			make_fold_func(self)
 
 
-	def build_equivalent(self):
+	def reduce_model(self, num_passes, method=None):
 		"""
-		Build equivalent Sections for branches that have been previously collapsed.
+		Do a fold-based reduction of the compartmental cell model.
+
+		@param	num_passes		number of 'folding' passes to be done. One pass corresponds to
+								folding at a particular node level (usually the highest).
 		"""
+		if method is None:
+			method = self.active_method
+
+		# Start reduction process
+		self.preprocess_cell(method)
+
+		# Fold one pass at a time
+		for i_pass in xrange(num_passes):
+			self.prepare_folds(method)
+			self.calc_folds(method, i_pass)
+
+
+
 
 
 ################################################################################
 # Reduction Experiments
 ################################################################################
 
-def collapse_gillies_marasco(export_locals=True):
+def fold_gillies_marasco(export_locals=True):
 	"""
-	Collapse Gillies STN model using Marasco (2012) algorithm.
+	Fold Gillies STN model using Marasco (2012) algorithm.
 	"""
+	import gillies_model
+	gillies_model.stn_cell_gillies()
+
+	# Make sections accesible by name and index
+	soma = h.SThcell[0].soma
+	dendL = list(h.SThcell[0].dend0) # 0 is left tree
+	dendR = list(h.SThcell[0].dend1) # 1 is right tree
+	dends = dendL + dendR
+
+	# Get references to root sections of the 3 identical trees
+	dendR_root			= h.SThcell[0].dend1[0]
+	dendL_juction		= h.SThcell[0].dend0[0]
+	dendL_upper_root	= h.SThcell[0].dend0[1] # root section of upper left dendrite
+	dendL_lower_root	= h.SThcell[0].dend0[2] # root section of lower left dendrite
+	fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
+
+	# Reduce model
+	reduction = FoldReduction([soma], dends, fold_roots, ReductionMethod.Marasco)
+	reduction.mechs_gbars_dict = gillies_model.gillies_gdict
+	reduction.reduce_model(num_passes=1)
 
 	if export_locals:
 		globals().update(locals())
 
 
 if __name__ == '__main__':
-	collapse_gillies_marasco()
+	fold_gillies_marasco()

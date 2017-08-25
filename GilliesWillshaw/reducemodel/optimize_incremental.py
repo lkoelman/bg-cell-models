@@ -22,7 +22,7 @@ from neurotune import controllers
 
 # Own modules
 from common import analysis as recording
-from reduce_marasco import *
+import marasco_foldbased as marasco
 
 
 # Print which modules we are using
@@ -331,7 +331,12 @@ class STNCellController(object):
 
 			############################################################################
 			# 1. Merge a number of Y-sections
-			clusters = zip_fork_branches(allsecrefs, i_pass, zips_per_pass, Y_criterion='highest_level')
+
+			# Find collapsable branch points
+			target_Y_secs = marasco.find_collapsable(allsecrefs, i_pass, 'highest_level', zips_per_pass)
+
+			# Do collapse operation at each branch points
+			clusters = marasco.calc_collapses(target_Y_secs, i_pass)
 
 			############################################################################
 			# 2. Create equivalent sections
@@ -340,9 +345,9 @@ class STNCellController(object):
 				secref.is_substituted = False
 				secref.is_deleted = False
 
-			eq_secs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, path_props,
-								interp_prop='path_L', interp_method='linear_neighbors', 
-								gbar_scaling='area')
+			eq_refs, newsecrefs = marasco.sub_equivalent_Y_sections(clusters, allsecrefs, path_props,
+											interp_prop='path_L', interp_method='linear_neighbors', 
+											gbar_scaling='area')
 
 			allsecrefs = newsecrefs # prepare for next iteration
 

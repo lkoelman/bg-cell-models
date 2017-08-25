@@ -12,22 +12,6 @@ import re
 import math
 PI = math.pi
 
-# logging of DEBUG/INFO/WARNING messages
-import logging
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
-logname = "reduction" # __name__
-logger = logging.getLogger(logname) # create logger for this module
-fmtr = logging.Formatter('%(levelname)s:%(message)s')
-
-# Log to file
-# fh = logging.FileHandler('reduce_marasco.log')
-# fh.setFormatter(fmtr)
-# logger.addHandler(fh)
-# Log to stream
-# ch = logging.StreamHandler(sys.stdout)
-# ch.setFormatter(fmtr)
-# logger.addHandler(ch)
-
 # NEURON modules
 import neuron
 h = neuron.h
@@ -48,6 +32,22 @@ glist = gillies_glist
 gleak_name = 'gpas_STh'
 f_lambda = 100.0
 
+# logging of DEBUG/INFO/WARNING messages
+import logging
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logname = "reduction" # __name__
+logger = logging.getLogger(logname) # create logger for this module
+fmtr = logging.Formatter('%(levelname)s:%(message)s')
+
+# Log to file
+# fh = logging.FileHandler('reduce_marasco.log')
+# fh.setFormatter(fmtr)
+# logger.addHandler(fh)
+# Log to stream
+# ch = logging.StreamHandler(sys.stdout)
+# ch.setFormatter(fmtr)
+# logger.addHandler(ch)
+
 
 
 ################################################################################
@@ -55,7 +55,7 @@ f_lambda = 100.0
 ################################################################################
 
 
-def find_collapsable(allsecrefs, Y_criterion, i_pass, zips_per_pass):
+def find_collapsable(allsecrefs, i_pass, Y_criterion='highest_level', zips_per_pass=1e9):
 	"""
 	Find branch points with child branches that can be collapsed.
 
@@ -435,7 +435,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='pat
 	# build new list of valid SectionRef
 	newsecrefs = [ref for ref in orsecrefs if not (ref.is_substituted or ref.is_deleted)]
 	newsecrefs.extend(eq_refs)
-	return eq_secs, newsecrefs
+	return eq_refs, newsecrefs
 
 
 ################################################################################
@@ -466,6 +466,7 @@ def assign_sth_indices(noderef, allsecrefs, parref=None):
 	"""
 	if not hasattr(noderef, 'tree_index'):
 		noderef.tree_index = parref.tree_index
+	
 	if not hasattr(noderef, 'table_index'):
 		noderef.table_index = -1 # unassigned
 
@@ -481,9 +482,11 @@ def assign_sth_indices(noderef, allsecrefs, parref=None):
 	for childref in childrefs:
 		assign_sth_indices(childref, allsecrefs, parref=noderef)
 
+
 ################################################################################
 # Interface implementations (reduce_cell.py)
 ################################################################################
+
 
 def preprocess_impl(reduction):
 	"""
@@ -494,30 +497,25 @@ def preprocess_impl(reduction):
 	@param	reduction		reduce_cell.CollapseReduction object
 	"""
 
-	root_ref = reduction._root_ref
-	soma_refs = reduction._soma_refs
-	dends_refs = reduction._dends_refs
 	allsecrefs = reduction.all_sec_refs
 
 	dendL_secs = list(h.SThcell[0].dend0)
 	dendR_secs = list(h.SThcell[0].dend1)
+	dend_lists = [dendL_secs, dendR_secs]
 
 	# Assign indices used in Gillies code (sth-data folder)
-	for somaref in soma_refs
+	for somaref in reduction._soma_refs:
 		somaref.tree_index = -1
 		somaref.table_index = 0
 
-	for dendlist in dends_refs:
-		for i, secref in enumerate(dendlist):
-
-			if contains_sec(dendL_secs, secref.sec):
-				secref.tree_index = 0
-			else:
-				secref.tree_index = 1
-
-			secref.table_index = i+1 # same as in /sth-data/treeX-nom.dat
-	
-	assign_sth_indices(root_ref, allsecrefs) # assign cell GIDs
+	for secref in reduction._dend_refs:
+		for i_dend, dendlist in enumerate(dend_lists):
+			if any([sec.same(secref.sec) for sec in dendlist]):
+				secref.tree_index = i_dend
+				secref.table_index= next((i+1 for i,sec in enumerate(dendlist) if sec.same(secref.sec)))
+		
+	# Assign unique GID to each Section
+	assign_sth_indices(reduction._root_ref, allsecrefs)
 
 	# Calculate section path properties for entire tree
 	for secref in allsecrefs:
@@ -528,16 +526,17 @@ def preprocess_impl(reduction):
 	# Choose stereotypical path for interpolation
 	interp_tree_id = 1
 	interp_table_ids = (1,3,8)
-	path_secs = [secref for secref in orsecrefs if (secref.tree_index == interp_tree_id and 
+	path_secs = [secref for secref in allsecrefs if (secref.tree_index == interp_tree_id and 
 													secref.table_index in interp_table_ids)]
 
 	# Compute properties along this path
 	sec_props = ['pathL0', 'pathL1', 'pathri0', 'pathri1', 'pathLelec0', 'pathLelec1']
 	seg_props = ['pathL_seg', 'pathri_seg', 'pathL_elec']
-	reduction.path_props = [redtools.get_sec_props_obj(ref, mechs_chans, seg_assigned, sec_assigned) for ref in path_secs]
+	mechs_chans = reduction.mechs_gbars_dict
+	reduction.path_props = [redtools.get_sec_props_obj(ref, mechs_chans, seg_props, sec_props) for ref in path_secs]
 
 
-def prepare_collapse_impl(reduction):
+def prepare_folds_impl(reduction):
 	"""
 	Prepare next collapse operation: assign topology information
 	to each Section.
@@ -557,10 +556,12 @@ def prepare_collapse_impl(reduction):
 	logger.info("\n###############################################################"
 				"\nAssigning topology & path properties ...\n")
 
-	for subroot_ref in reduction._subtree_root_refs:
-		clutools.assign_topology_attrs(subroot_ref, allsecrefs)
+	for fold_root in reduction._fold_root_refs:
+		clutools.assign_topology_attrs(fold_root, allsecrefs)
 
 	dendL_juction = getsecref(h.SThcell[0].dend0[0], allsecrefs)
+	dendL_upper_root = getsecref(h.SThcell[0].dend0[1], allsecrefs)
+
 	dendL_juction.order = 1
 	dendL_juction.level = 0
 	dendL_juction.strahlernumber = dendL_upper_root.strahlernumber+1
@@ -575,6 +576,46 @@ def prepare_collapse_impl(reduction):
 		# Calculate path length, path resistance, electrotonic path length to each segment
 		redtools.sec_path_props(secref, f_lambda, gleak_name)
 
+
+def calc_folds_impl(reduction, i_pass, Y_criterion='highest_level'):
+	"""
+	Collapse branches at branch points identified by given criterion.
+	"""
+	allsecrefs = reduction.all_sec_refs
+
+	# Find collapsable branch points
+	target_Y_secs = find_collapsable(allsecrefs, i_pass, Y_criterion)
+
+	# Do collapse operation at each branch points
+	clusters = calc_collapses(target_Y_secs, i_pass)
+
+	# Save results
+	reduction.clusters = clusters
+
+
+def make_folds_impl(reduction):
+	"""
+	Make equivalent Sections for branches that have been folded.
+	"""
+
+	# Mark Sections
+	for secref in reduction.all_sec_refs:
+		secref.is_substituted = False
+		secref.is_deleted = False
+
+	# Make new Sections
+	eq_refs, newsecrefs = sub_equivalent_Y_sections(reduction.clusters, 
+							reduction.all_sec_refs, reduction.path_props,
+							interp_prop='path_L', interp_method='linear_neighbors', 
+							gbar_scaling='area')
+
+	# Set ion styles
+	for sec in h.allsec(): # makes each section the CAS
+		h.ion_style("na_ion",1,2,1,0,1)
+		h.ion_style("k_ion",1,2,1,0,1)
+		h.ion_style("ca_ion",3,2,1,1,1)
+
+	reduction.update_refs(dend_refs=eq_refs) # prepare for next iteration
 
 ################################################################################
 # Reduction Experiments
@@ -623,6 +664,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 		for i, secref in enumerate(dendlist):
 			secref.tree_index = j # left tree is 0, right is 1
 			secref.table_index = i+1 # same as in /sth-data/treeX-nom.dat
+	
 	assign_sth_indices(somaref, allsecrefs) # assign cell GIDs
 
 	# Calculate section path properties for entire tree
@@ -685,7 +727,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 					"\nFinding Y-sections to merge...\n")
 
 		# Find collapsable branch points
-		target_Y_secs = find_collapsable(allsecrefs, 'highest_level', i_pass, zips_per_pass)
+		target_Y_secs = find_collapsable(allsecrefs, i_pass, 'highest_level', zips_per_pass)
 
 		# Do collapse operation at each branch points
 		clusters = calc_collapses(target_Y_secs, i_pass)
@@ -700,7 +742,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 			secref.is_substituted = False
 			secref.is_deleted = False
 
-		eq_secs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, path_props,
+		eq_refs, newsecrefs = sub_equivalent_Y_sections(clusters, allsecrefs, path_props,
 							interp_prop='path_L', interp_method='linear_neighbors', 
 							gbar_scaling='area')
 
@@ -722,6 +764,8 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 
 	# Make sure all sections have identifiers
 	assign_sth_indices(somaref, allsecrefs)
+
+	eq_secs = [ref.sec for sec in eq_refs]
 	return eq_secs, newsecrefs
 
 

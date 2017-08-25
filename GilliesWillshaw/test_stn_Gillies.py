@@ -38,8 +38,9 @@ from common.analysis import rec_currents_activations, plot_currents_activations
 
 from reducemodel import (
 	analyze_reduction,
-	reduce_marasco as marasco,
 	reduce_bush_sejnowski as bush
+	marasco_clusterbased as marasco_cluster
+	marasco_foldbased as marasco_fold
 )
 from reducemodel.redutils import lambda_AC, ExtSecRef, getsecref
 from reducemodel.interpolation import *
@@ -342,8 +343,8 @@ def stn_cell(cellmodel):
 	elif cellmodel==4 or cellmodel==5: # Marasco - custom clustering
 		marasco_method = True # whether trees will be averaged (True, as in paper) or Rin conserved (False)
 		if cellmodel==5:
-			marasco_method = False
-		clusters, eq_secs, eq_refs = marasco.reduce_gillies_pathRi(
+			marasco_method = Fals
+		clusters, eq_secs, eq_refs = marasco_cluster.reduce_gillies_pathRi(
 			customclustering=True, average_Ri=marasco_method)
 		soma, dendLsecs, dendRsecs = eq_secs
 		dendsec = dendRsecs[-1] # last/most distal section of small dendrite
@@ -351,7 +352,7 @@ def stn_cell(cellmodel):
 		allsecs = [soma] + dendLsecs + dendRsecs
 
 	elif cellmodel==8: # Lucas ZipBranch algorithm
-		eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
+		eq_secs, newsecrefs = marasco_fold.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
 		soma = next(ref.sec for ref in newsecrefs if ref.sec.name().endswith('soma'))
 		dendsec = next(ref.sec for ref in newsecrefs if (len(ref.sec.children())==0))
 		# 					hasattr(ref, 'strahlernumber') and ref.strahlernumber==1))

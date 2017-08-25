@@ -25,7 +25,7 @@ import gillies_model as gillies
 
 # Cell reduction
 from reducemodel import (
-	reduce_marasco as marasco,
+	marasco_foldbased as marasco,
 	mapsyn,
 )
 

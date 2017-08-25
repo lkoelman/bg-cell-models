@@ -14,7 +14,7 @@ h = neuron.h
 
 # Own modules
 import redutils
-import reduce_marasco as marasco
+import marasco_foldbased as marasco
 from redutils import ExtSecRef, getsecref
 from cluster import Cluster
 
@@ -80,7 +80,7 @@ def test_Rin_Ycluster():
 	marasco.merge_sec_cluster(cluster, allsecrefs, True)
 
 	# Create equivalent sections
-	eq_secs, eq_secrefs = marasco.equivalent_sections([cluster], allsecrefs, gradients=False)
+	eq_secs, eq_secrefs = marasco.make_equivalent_secs([cluster], allsecrefs, gradients=False)
 	csec = eq_secs[0]
 
 	# Compute inputresistance

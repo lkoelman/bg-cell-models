@@ -62,13 +62,16 @@ def get_stn_refs():
 	allsecrefs = [somaref] + dendLrefs + dendRrefs
 	
 	for noderef in allsecrefs:
+		
 		# Assign indices in /sth-data/treeX-nom.dat
 		if noderef in dendLrefs:
 			noderef.tree_index = 0
 			noderef.table_index = dendLrefs.index(noderef) + 1
+		
 		elif noderef in dendRrefs:
 			noderef.tree_index = 1
 			noderef.table_index = dendRrefs.index(noderef) + 1
+		
 		elif noderef is somaref:
 			noderef.tree_index = -1
 			noderef.table_index = 0
