@@ -12,27 +12,11 @@ import matplotlib.pyplot as plt
 from neuron import h
 
 # Own modules
-import redutils
-from redutils import ExtSecRef, getsecref
+from reducemodel import redutils
+from reducemodel.redutils import ExtSecRef, getsecref
+import gillies_model
+from reducemodel import reduce_cell
 
-def get_gillies_cells():
-	""" Get references to cells in Gillies & Willshaw models, annotated
-		with their indices in the original publication and code """
-	if not hasattr(h, 'SThcells'):
-		h.xopen("createcell.hoc")
-
-	# Make sections accesible by name and index
-	somaref = ExtSecRef(sec=h.SThcell[0].soma)
-	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
-	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree
-	allsecrefs = [somaref] + dendLrefs + dendRrefs
-	somaref.tree_index = -1
-	somaref.table_index = 0
-	for j, dendlist in enumerate((dendLrefs, dendRrefs)):
-		for i, secref in enumerate(dendlist):
-			secref.tree_index = j
-			secref.table_index = i+1
-	return somaref, dendLrefs, dendRrefs
 
 def plot_tree_ppty(secref, allsecrefs, propname, secfilter, labelfunc, y_range=None, fig=None, ax=None):
 	""" Descend the given dendritic tree start from the given root section
@@ -96,7 +80,10 @@ def plot_tree_ppty(secref, allsecrefs, propname, secfilter, labelfunc, y_range=N
 
 
 def compare_models(or_secrefs, eq_secrefs, plot_glist):
-	""" Compare model properties """
+	"""
+	Compare model properties
+	"""
+	
 	somaref, dendLrefs, dendRrefs = or_secrefs[0], or_secrefs[1], or_secrefs[2]
 	eq_somaref, eq_dendLrefs, eq_dendRrefs = eq_secrefs[0], eq_secrefs[1], eq_secrefs[2]
 
@@ -127,3 +114,43 @@ def compare_models(or_secrefs, eq_secrefs, plot_glist):
 		print("\n=== REDUCED {} channel distribution ===".format(gname))
 		plot_chan_dist(eq_somaref, eq_dendLrefs+eq_dendRrefs, gname, 'cluster_label')
 		plt.show(block=True)
+
+
+def inspect_passive_electrotonic_structure(reduced=True):
+	"""
+	Inspect passive electrotonic strucutre in NEURON GUI.
+
+	After running this function, plot attenuation properties via Tools > Electrotonic Analysis
+	"""
+	if reduced:
+		soma_refs, dend_refs = reduce_cell.fold_gillies_marasco(False)
+		allsecrefs = soma_refs + dend_refs
+
+	else:
+		somaref, dendLrefs, dendRrefs = gillies_model.get_stn_refs()
+		allsecrefs = [somaref] + dendLrefs + dendRrefs
+
+	# Disable all active conductances (can also use 'uninsert' on all sections)
+	gbar_active = [g for g in gillies_model.gillies_glist if (g != gillies_model.gleak_name)]
+
+	sec_modified = 0
+	seg_modified = 0
+
+	# for sec in h.allsec():
+	for secref in allsecrefs:
+		sec = secref.sec
+		secref.orig_range_props = redutils.get_range_props(secref, gbar_active)
+
+		for seg in sec:
+			for gbar in gbar_active:
+				setattr(seg, gbar, 0.0)
+			seg_modified += 1
+		
+		sec_modified += 1
+
+	print("Set gbar to zero in {} sections and {} segments".format(sec_modified, seg_modified))
+
+	from neuron import gui # opens GUI in another thread
+
+if __name__ == '__main__':
+	inspect_passive_electrotonic_structure()

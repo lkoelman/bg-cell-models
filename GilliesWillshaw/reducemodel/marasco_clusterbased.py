@@ -33,10 +33,10 @@ f_lambda = 100.0
 
 # logging of DEBUG/INFO/WARNING messages
 import logging
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
 logname = "reduction" # __name__
 logger = logging.getLogger(logname) # create logger for this module
-fmtr = logging.Formatter('%(levelname)s:%(message)s')
+fmtr = logging.Formatter('%(levelname)s:%(message)s @%(filename)s:%(lineno)s')
 
 
 ################################################################################

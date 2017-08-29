@@ -23,6 +23,7 @@ from redutils import ExtSecRef, EqProps, getsecref, lambda_AC, prev_seg, seg_ind
 import cluster as clutools
 from cluster import Cluster
 import interpolation as interp
+from marasco_merging import merge_seg_subtree
 
 # Gillies STN model
 from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
@@ -34,12 +35,12 @@ f_lambda = 100.0
 
 # logging of DEBUG/INFO/WARNING messages
 import logging
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
 logname = "reduction" # __name__
 logger = logging.getLogger(logname) # create logger for this module
-fmtr = logging.Formatter('%(levelname)s:%(message)s')
 
 # Log to file
+# fmtr = logging.Formatter('%(levelname)s:%(message)s @%(filename)s:%(lineno)s')
 # fh = logging.FileHandler('reduce_marasco.log')
 # fh.setFormatter(fmtr)
 # logger.addHandler(fh)
@@ -55,78 +56,7 @@ fmtr = logging.Formatter('%(levelname)s:%(message)s')
 ################################################################################
 
 
-def find_collapsable(allsecrefs, i_pass, Y_criterion='highest_level', zips_per_pass=1e9):
-	"""
-	Find branch points with child branches that can be collapsed.
-
-	@return		list of SectionRef to the branchpoint-Sections with
-				collapsable children
-	"""
-
-	if Y_criterion=='max_electrotonic':
-		
-		# Find Y with longest electrotonic length to first Y among its children.
-		# This corresponds to  Y with child section that has longest L/lambda.
-		# (Collapsing this Y will eliminate most compartments.)
-
-		# Get minimum distance to next branch point (determines collapsable length)
-		for secref in allsecrefs:
-			
-			child_secs = secref.sec.children()
-			secref.collapsable_L_elec = 0.0
-			
-			if any(child_secs):
-				min_child_L = min(sec.L for sec in child_secs)
-			
-			for chi_sec in child_secs:
-				# Get segment that is that distance away from child
-				furthest_seg = chi_sec(min_child_L/chi_sec.L)
-				furthest_L_elec = redtools.seg_path_L_elec(furthest_seg, f_lambda, gleak_name)
-				secref.collapsable_L_elec += (secref.pathLelec1 - furthest_L_elec)
-
-		# Get maximum collapsable length
-		max_L_collapsable = max(ref.collapsable_L_elec for ref in allsecrefs)
-
-		# Find all branch points that have +/- same collapsable length
-		low, high = 0.95*max_L_collapsable, 1.05*max_L_collapsable
-		candidate_Y_secs = [ref for ref in allsecrefs if (any(ref.sec.children())) and (
-															low<ref.collapsable_L_elec<high)]
-		
-		# Off these, pick the one with highest level, and select all branch points at this level
-		target_level = max(ref.level for ref in candidate_Y_secs)
-		target_Y_secs = [ref for ref in candidate_Y_secs if ref.level==target_level]
-
-		# Report findings
-		logger.debug("The maximal collapsable electrotonic length is %f", max_L_collapsable)
-		logger.debug("Found %i sections with collapsable length within 5%% of this value", 
-						len(candidate_Y_secs))
-		logger.debug(("The highest level of a parent node with this value is %i, "
-						"and the number of nodes at this level with the same value is %i"), 
-						target_level, len(target_Y_secs))
-
-
-	elif Y_criterion=='highest_level':
-
-		# Simplify find all branch points at highest level
-		max_level = max(ref.level for ref in allsecrefs)
-		target_Y_secs = [ref for ref in allsecrefs if (ref.level==max_level-1) and (
-						 i_pass+1 <= ref.max_passes) and (len(ref.sec.children()) >= 2)]
-
-	else:
-		raise Exception("Unknow Y-section selection criterion '{}'".format(Y_criterion))
-
-
-	# Prune branchpoints: can't collapse more branchpoints than given maximum
-	n_Y = len(target_Y_secs)
-	logger.debug("Found {0} Y-sections that meet selection criterion. Keeping {1}/{2}\n\n".format(
-					n_Y, min(n_Y, zips_per_pass), n_Y))
-	target_Y_secs = [ref for i,ref in enumerate(target_Y_secs) if i<zips_per_pass]
-
-	# Return branch points identified for collapsing
-	return target_Y_secs
-
-
-def calc_collapses(target_Y_secs, i_pass):
+def calc_collapses(target_Y_secs, i_pass, allsecrefs):
 	"""
 	Do collapse operations: calculate equivalent Section properties for each collapse.
 
@@ -193,6 +123,7 @@ def calc_collapses(target_Y_secs, i_pass):
 		cluster.bound_segs = far_bound_segs # Save boundaries (for substitution)
 
 		# Calculate cluster statistics #########################################
+		
 		# Gather all cluster sections & segments
 		clu_secs = [secref for secref in allsecrefs if (cluster.label in secref.zip_labels)]
 		clu_segs = [seg for ref in clu_secs for jseg,seg in enumerate(ref.sec) if (
@@ -391,21 +322,30 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='pat
 		# Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
 		if gbar_scaling is not None:
 			for gname in active_glist:
+				
 				eq_gtot = sum(getattr(seg, gname)*seg.area() for seg in eqsec)
 				if eq_gtot <= 0.:
 					eq_gtot = 1.
+				
 				or_gtot = cluster.or_gtot[gname]
+				
 				for j_seg, seg in enumerate(eqsec):
+					
 					if gbar_scaling == 'area':
 						# conserves ratio in each segment but not total original conductance
 						scale = cluster.or_area/cluster.eq_area
+					
 					elif gbar_scaling == 'gbar_integral':
 						# does not conserve ratio but conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
 						scale = or_gtot/eq_gtot
+					
 					else:
 						raise Exception("Unknown gbar scaling method'{}'.".format(gbar_scaling))
+					
+					# Set gbar
 					gval = getattr(seg, gname) * scale
 					seg.__setattr__(gname, gval)
+					
 					cluster.eq_gbar[gname][j_seg] = gval # save for reconstruction
 
 		# Check gbar calculation
@@ -423,6 +363,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='pat
 	# Substitute equivalent section into tree
 	logger.info("\n###############################################################"
 				"\nSubstituting equivalent sections...\n")
+	
 	for i_clu, cluster in enumerate(clusters):
 		eqsec = eq_secs[i_clu]
 		# Disconnect substituted segments and attach segment after Y boundary
@@ -552,10 +493,10 @@ def prepare_folds_impl(reduction):
 	assign_sth_indices(root_ref, allsecrefs)
 	assign_attributes(root_ref, allsecrefs, {'max_passes': 100})
 
-	# Assign topology numbers
 	logger.info("\n###############################################################"
 				"\nAssigning topology & path properties ...\n")
 
+	# Assign topology info (order, level, strahler number)
 	for fold_root in reduction._fold_root_refs:
 		clutools.assign_topology_attrs(fold_root, allsecrefs)
 
@@ -587,7 +528,7 @@ def calc_folds_impl(reduction, i_pass, Y_criterion='highest_level'):
 	target_Y_secs = find_collapsable(allsecrefs, i_pass, Y_criterion)
 
 	# Do collapse operation at each branch points
-	clusters = calc_collapses(target_Y_secs, i_pass)
+	clusters = calc_collapses(target_Y_secs, i_pass, allsecrefs)
 
 	# Save results
 	reduction.clusters = clusters
@@ -684,6 +625,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	############################################################################
 	# Iterative/recursive collapsing
 
+	eq_secrefs = []
 	for i_pass in xrange(n_passes):
 		# Check that we haven't collapsed too many levels
 		if not (dendL_upper_root.exists() and dendL_lower_root.exists()):
@@ -730,7 +672,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 		target_Y_secs = find_collapsable(allsecrefs, i_pass, 'highest_level', zips_per_pass)
 
 		# Do collapse operation at each branch points
-		clusters = calc_collapses(target_Y_secs, i_pass)
+		clusters = calc_collapses(target_Y_secs, i_pass, allsecrefs)
 
 		############################################################################
 		# 2. Create equivalent sections
@@ -747,6 +689,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 							gbar_scaling='area')
 
 		allsecrefs = newsecrefs # prepare for next iteration
+		eq_secrefs.extend(eq_refs)
 
 		############################################################################
 		# 3. Finalize
@@ -765,12 +708,12 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	# Make sure all sections have identifiers
 	assign_sth_indices(somaref, allsecrefs)
 
-	eq_secs = [ref.sec for sec in eq_refs]
-	return eq_secs, newsecrefs
+	eq_refs = [ref for ref in eq_secrefs if ref.exists()]
+	return eq_refs, newsecrefs
 
 
 
 if __name__ == '__main__':
 	# clusters, eq_secs = reduce_gillies_partial(delete_old_cells=True)
-	eq_secs, newsecrefs = reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
+	eq_refs, newsecrefs = reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
 	from neuron import gui # check in ModelView: conductance distribution, structure

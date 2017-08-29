@@ -65,7 +65,7 @@ class FoldReduction(object):
 
 		# Reduction method
 		self.active_method = method
-		self.mechs_gbars_dict = None
+		self._mechs_gbars_dict = None
 
 		# Find true root section
 		first_root_sec = soma_secs[0]
@@ -87,6 +87,23 @@ class FoldReduction(object):
 	def all_sec_refs(self):
 		return list(self._soma_refs) + list(self._dend_refs)
 
+
+	def get_mechs_gbars_dict(self):
+		"""
+		Get dictionary of mechanism names and their conductances.
+		"""
+	    return self._mechs_gbars_dict
+	
+	def set_mechs_gbars_dict(self, val):
+		"""
+		Set mechanism names and their conductances
+		"""
+		self._mechs_gbars_dict = val
+		self.active_gbars = [gname+'_'+mech for mech,chans in val.iteritems() for gname in chans]
+		self.active_gbars.remove(self.gleak_name)
+
+	# make property
+	mechs_gbars_dict = property(get_mechs_gbars_dict, set_mechs_gbars_dict)
 
 	def update_refs(self, soma_refs=None, dend_refs=None):
 		"""
@@ -163,7 +180,7 @@ class FoldReduction(object):
 		else:
 			args = [i_pass]
 			user_params = self._REDUCTION_PARAMS[method]
-			kwargs = dict((kv for kv in user_params.iteritems() if kv[0] in arg_names))
+			kwargs = dict((kv for kv in user_params.iteritems() if kv[0] in arg_names)) # get required args
 			calc_func(self, *args, **kwargs)
 
 
@@ -172,7 +189,7 @@ class FoldReduction(object):
 		Make equivalent Sections for branches that have been folded.
 		"""
 		try:
-			make_fold_func = self._CALC_FOLD_FUNCS[method][0]
+			make_fold_func = self._MAKE_FOLD_EQ_FUNCS[method][0]
 		except KeyError:
 			raise NotImplementedError("Fold equivalents creation function not implemented for "
 			                          "reduction method {}".format(method))
@@ -197,6 +214,7 @@ class FoldReduction(object):
 		for i_pass in xrange(num_passes):
 			self.prepare_folds(method)
 			self.calc_folds(method, i_pass)
+			self.make_fold_equivalents(method)
 
 
 
@@ -228,11 +246,14 @@ def fold_gillies_marasco(export_locals=True):
 
 	# Reduce model
 	reduction = FoldReduction([soma], dends, fold_roots, ReductionMethod.Marasco)
+	reduction.gleak_name = gillies_model.gleak_name
 	reduction.mechs_gbars_dict = gillies_model.gillies_gdict
-	reduction.reduce_model(num_passes=1)
+	reduction.reduce_model(num_passes=7)
 
 	if export_locals:
 		globals().update(locals())
+
+	return reduction._soma_refs, reduction._dend_refs
 
 
 if __name__ == '__main__':

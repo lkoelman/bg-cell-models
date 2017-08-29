@@ -336,7 +336,7 @@ class STNCellController(object):
 			target_Y_secs = marasco.find_collapsable(allsecrefs, i_pass, 'highest_level', zips_per_pass)
 
 			# Do collapse operation at each branch points
-			clusters = marasco.calc_collapses(target_Y_secs, i_pass)
+			clusters = marasco.calc_collapses(target_Y_secs, i_pass, allsecrefs)
 
 			############################################################################
 			# 2. Create equivalent sections

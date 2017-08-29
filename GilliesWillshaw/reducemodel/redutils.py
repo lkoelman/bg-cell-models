@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import math
 
 import logging
-logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
 logname = "reduction" # __name__
 logger = logging.getLogger(logname) # create logger for this module
 
@@ -197,8 +197,11 @@ def sec_path_props(secref, f, gleak_name):
 
 	# Create attribute for storing path resistance
 	secref.pathL_seg =  [0.0] * secref.sec.nseg
-	secref.pathL_elec = [0.0] * secref.sec.nseg
 	secref.pathri_seg = [0.0] * secref.sec.nseg
+	secref.seg_path_Lelec0 = [0.0] * secref.sec.nseg
+	secref.seg_path_Lelec1 = [0.0] * secref.sec.nseg
+	# Aliases
+	secref.pathL_elec = secref.seg_path_Lelec0
 	
 	# Get path from root section to end of given section
 	calc_path = h.RangeVarPlot('v')
@@ -219,13 +222,16 @@ def sec_path_props(secref, f, gleak_name):
 	# Compute path length
 	path_secs = list(root_path)
 	path_len = len(path_secs)
+	
 	for isec, psec in enumerate(path_secs):
 		arrived_sec = (isec==path_len-1) # alternative: use sec.same()
+		
 		for j_seg, seg in enumerate(psec):
+			
 			# store path length to start of segment
 			if arrived_sec:
 				secref.pathri_seg[j_seg] = path_ri
-				secref.pathL_elec[j_seg] = path_L_elec
+				secref.seg_path_Lelec0[j_seg] = path_L_elec
 				if j_seg==0:
 					secref.pathL0 = path_L
 					secref.pathLelec0 = path_L_elec
@@ -242,6 +248,7 @@ def sec_path_props(secref, f, gleak_name):
 			# store path length to end of segment
 			if arrived_sec:
 				secref.pathL_seg[j_seg] = path_L
+				secref.seg_path_Lelec1[j_seg] = path_L_elec
 				if (j_seg==psec.nseg-1):
 					secref.pathL1 = path_L
 					secref.pathLelec1 = path_L_elec
@@ -834,10 +841,20 @@ def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
 			sec_props.seg[j_seg][prop] = getattr(secref, prop)[j_seg]
 	return sec_props
 
+
 def store_seg_props(secref, mechs_pars, attr_name='or_seg_props', assigned_props=None):
 	"""
 	Store each segment's properties (RANGE variables) in a dictionary
 	on the given SectionRef.
+
+	@param mechs_pars		dict mechanism_name -> [paramerter_names] with segment properties
+							to store
+
+	@param assigned_props	list of assigned properties (assigned attributed of SectionRef)
+							that should be saved
+
+	@param attr_name		the attribute name to use for saving the properties, in format:
+							list(dict(param : value))
 
 	@effect		SectionRef will have an attribute 'attr_name' that is
 				a list with a dict for each segment containing all its properties.
@@ -856,6 +873,34 @@ def store_seg_props(secref, mechs_pars, attr_name='or_seg_props', assigned_props
 		# Store self-assigned properties (stored on SectionRef)
 		for prop in ref_props:
 			secref.__getattribute__(attr_name)[j_seg][prop] = getattr(secref, prop)[j_seg]
+
+
+def get_range_props(secref, prop_names):
+	"""
+	Get Section's requested RANGE properties for each segment.
+	"""
+
+	seg_prop_dicts = [dict() for i in xrange(secref.sec.nseg)]
+
+	for j_seg, seg in enumerate(secref.sec):
+		for prop in prop_names:
+			seg_prop_dicts[j_seg][prop] = getattr(seg, prop)
+
+	return seg_prop_dicts
+
+
+def set_range_props(secref, seg_prop_dicts):
+	"""
+	Set Section's RANGE properties stored in given dictionaries.
+	"""
+	if secref.sec.nseg != len(seg_prop_dicts):
+		raise ValueError("Must provide one dictionary for each segment.")
+	
+	for j_seg, seg in enumerate(secref.sec):
+		propdict = seg_prop_dicts[j_seg]
+		for pname, pval in propdict.iteritems():
+			setattr(seg, pname, pval)
+
 
 def copy_sec_properties(src_sec, tar_sec, mechs_pars):
 	"""

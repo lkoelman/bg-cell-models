@@ -38,9 +38,10 @@ from common.analysis import rec_currents_activations, plot_currents_activations
 
 from reducemodel import (
 	analyze_reduction,
-	reduce_bush_sejnowski as bush
-	marasco_clusterbased as marasco_cluster
-	marasco_foldbased as marasco_fold
+	reduce_bush_sejnowski as bush,
+	marasco_clusterbased as marasco_cluster,
+	marasco_foldbased as marasco_fold,
+	reduce_cell
 )
 from reducemodel.redutils import lambda_AC, ExtSecRef, getsecref
 from reducemodel.interpolation import *
@@ -341,6 +342,7 @@ def stn_cell(cellmodel):
 		allsecs = [soma] + dendsecs
 
 	elif cellmodel==4 or cellmodel==5: # Marasco - custom clustering
+
 		marasco_method = True # whether trees will be averaged (True, as in paper) or Rin conserved (False)
 		if cellmodel==5:
 			marasco_method = Fals
@@ -352,10 +354,14 @@ def stn_cell(cellmodel):
 		allsecs = [soma] + dendLsecs + dendRsecs
 
 	elif cellmodel==8: # Lucas ZipBranch algorithm
-		eq_secs, newsecrefs = marasco_fold.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
+
+		# eq_refs, newsecrefs = marasco_fold.reduce_gillies_incremental(n_passes=7, zips_per_pass=100)
+
+		soma_refs, dend_refs = reduce_cell.fold_gillies_marasco(False)
+		newsecrefs = soma_refs + dend_refs
+		
 		soma = next(ref.sec for ref in newsecrefs if ref.sec.name().endswith('soma'))
 		dendsec = next(ref.sec for ref in newsecrefs if (len(ref.sec.children())==0))
-		# 					hasattr(ref, 'strahlernumber') and ref.strahlernumber==1))
 		dendloc = 0.9
 		print("Distal segment for recording is {0}".format(dendsec(dendloc)))
 		allsecs = [ref.sec for ref in newsecrefs]
@@ -867,14 +873,18 @@ def run_experimental_protocol(reduction_method):
 	# Adjustments to incremental reduction method
 	if reduction_method == 8:
 		n_adjusted = 0
+		
 		for sec in h.allsec():
+			
 			if sec.name().endswith('soma'):
 				print("Skipping soma")
 				continue
+			
 			for seg in sec:
 				# seg.gna_NaL = 1.075 * seg.gna_NaL
 				seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
 				n_adjusted += 1
+		
 		print("Adjusted parameters of {} segments".format(n_adjusted))
 
 

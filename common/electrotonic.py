@@ -31,6 +31,17 @@ def calc_lambda_AC(f, diam, Ra, cm):
 	return 1e5 * math.sqrt(diam/(4*math.pi*f*Ra*cm))
 
 
+def calc_lambda(f, diam, Ra, gleak, cm):
+	"""
+	Compute electrotonic length constant
+	"""
+	if f <= 0:
+		R_m = 1./gleak # units [Ohm*cm^2]
+		return 1e2 * math.sqrt(diam*R_m/(4*Ra))
+	else:
+		return 1e5 * math.sqrt(diam/(4*math.pi*f*Ra*cm))
+
+
 def sec_lambda(sec, gleak, f):
 	"""
 	Compute electrotonic length constant at given frequency

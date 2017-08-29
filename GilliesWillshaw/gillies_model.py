@@ -56,6 +56,9 @@ def get_stn_refs():
 	"""
 	Make SectionRef for each section and assign identifiers
 	"""
+	if not hasattr(h, 'SThcell'):
+		stn_cell_gillies()
+	
 	somaref = ExtSecRef(sec=h.SThcell[0].soma)
 	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0] # 0 is left tree
 	dendRrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend1] # 1 is right tree

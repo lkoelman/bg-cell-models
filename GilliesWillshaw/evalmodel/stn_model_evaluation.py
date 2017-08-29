@@ -258,7 +258,7 @@ class StnModelEvaluator(object):
 							attr_mappers=pop_mapper, syn_nc_tomap=(syns_tomap, ncs_tomap))
 		
 		# Create reduced cell
-		eq_secs, newsecrefs = marasco.reduce_gillies_incremental(
+		eq_refs, newsecrefs = marasco.reduce_gillies_incremental(
 										n_passes=7, zips_per_pass=100)
 
 		# Apply correction TODO: remove this after fixing reduction

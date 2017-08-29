@@ -4,7 +4,7 @@
 # make classes available at package level
 # from mymodule import myclass
 
-# Make sure other modules are on Python path
+# Make sure top-level modules are on Python path
 import sys, os.path
 scriptdir, scriptfile = os.path.split(__file__)
 repo_root = os.path.normpath(os.path.join(scriptdir, '..', '..'))

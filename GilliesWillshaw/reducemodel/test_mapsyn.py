@@ -77,7 +77,7 @@ def test_map_synapses(export_locals=False):
 						init_cell=stn_setstate, save_ref_attrs=save_ref_attrs)
 
 	# Create reduced cell
-	eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, 
+	eq_refs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, 
 									zips_per_pass=100)
 	logger.debug("STN cell reduction complete.")
 
@@ -184,7 +184,7 @@ def map_run_single_input(reduced=True):
 
 	# Create reduced cell
 	marasco.logger.setLevel(logging.WARNING) # ignore lower than warning
-	eq_secs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, 
+	eq_refs, newsecrefs = marasco.reduce_gillies_incremental(n_passes=7, 
 									zips_per_pass=100)
 
 	# Map synapses to reduced cell

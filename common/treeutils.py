@@ -7,13 +7,36 @@ Utilities for dealing with NEURON cell models
 import neuron
 from neuron import h
 
+
 class ExtSection(neuron.hclass(h.Section)):
 	""" Extension of Section to allow modifying attributes """
 	pass
 
+
 class ExtSecRef(neuron.hclass(h.SectionRef)):
 	""" Extension of SectionRef to allow modifying attributes """
 	pass
+
+
+# Create equivalent section
+def create_hoc_section(secname):
+	"""
+	Create Section with given name on global Hoc object
+
+	@return			tuple(Section, SectionRef)
+	"""
+
+	if secname in [sec.name() for sec in h.allsec()]:
+		raise Exception('Section named {} already exists'.format(cluster.label))
+	
+	created = h("create %s" % cluster.label)
+	if created != 1:
+		raise Exception("Could not create section with name '{}'".format(cluster.label))
+	
+	eqsec = getattr(h, cluster.label)
+	eqref = ExtSecRef(sec=eqsec)
+	return eqsec, eqref
+
 
 def getsecref(sec, refs):
 	"""
@@ -25,17 +48,20 @@ def getsecref(sec, refs):
 	# Section names are unique, but alternatively use sec.same(ref.sec)
 	return next((ref for ref in refs if (ref.exists() and ref.sec.name()==sec.name())), None)
 
+
 def contains_sec(seclist, sec):
 	"""
 	Check if enumerable contains given section
 	"""
 	return any([sec_b.same(sec) for sec_b in seclist])
 
+
 def prev_seg(curseg):
 	""" Get segment preceding seg: this can be on same or parent Section """
 	# NOTE: cannot use seg.next() since this changed content of seg
 	allseg = reversed([seg for seg in curseg.sec if seg_index(seg) < seg_index(curseg)])
 	return next(allseg, curseg.sec.parentseg())
+
 
 def next_segs(curseg):
 	""" Get child segments of given segment """
@@ -50,18 +76,31 @@ def next_segs(curseg):
 		child_segs = [next((seg for seg in sec)) for sec in cursec.children()]
 	return child_segs
 
+
 def seg_at_index(sec, iseg):
 	""" Get the i-th segment of Section """
 	xmid = (2.*(iseg+1)-1.)/(2.*sec.nseg) # See NEURON book p. 8
 	# return next(seg for i,seg in enumerate(sec) if i==iseg)
 	return sec(xmid)
 
+
 def seg_index(tar_seg):
 	""" Get index of given segment on Section """
 	# return next(i for i,seg in enumerate(tar_seg.sec) if seg.x==tar_seg.x) # DOES NOT WORK if you use a seg object obtained using sec(my_x)
-	seg_xwidth = 1.0/tar_seg.sec.nseg
-	seg_id = int(tar_seg.x/seg_xwidth)
+	seg_dx = 1.0/tar_seg.sec.nseg
+	seg_id = int(tar_seg.x/seg_dx) # same as tar_seg.x // seg_dx
 	return min(seg_id, tar_seg.sec.nseg-1)
+
+
+def interp_seg(seg, a, b):
+	"""
+	Interpolate values [a,b] at segment boundaries using segment's x-loc
+	"""
+	seg_dx = 1.0/tar_seg.sec.nseg
+	iseg = min(int(tar_seg.x/seg_dx), tar_seg.sec.nseg-1)
+	x_a = iseg * seg_dx
+	return a + (seg.x - x_a)/seg_dx * (b-a)
+
 
 def same_seg(seg_a, seg_b):
 	"""
@@ -70,9 +109,10 @@ def same_seg(seg_a, seg_b):
 	"""
 	if not(seg_a.sec.same(seg_b.sec)):
 		return False
-	seg_xwidth = 1.0/seg_a.sec.nseg
+	seg_dx = 1.0/seg_a.sec.nseg
 	# check if x locs map to same section
-	return int(seg_a.x/seg_xwidth) == int(seg_b.x/seg_xwidth)
+	return int(seg_a.x/seg_dx) == int(seg_b.x/seg_dx)
+
 
 def sameparent(secrefA, secrefB):
 	""" Check if sections have same parent section """
@@ -83,6 +123,7 @@ def sameparent(secrefA, secrefB):
 	h.pop_section()
 	h.pop_section()
 	return apar.same(bpar)
+
 
 def subtreeroot(secref):
 	"""
