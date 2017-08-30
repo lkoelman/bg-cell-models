@@ -47,13 +47,15 @@ def clusterroot(secref, allsecrefs):
 		else:
 			return clusterroot(parref)
 
-def assign_topology_attrs(noderef, secrefs, parref=None):
+
+def assign_topology_attrs(root_ref, all_refs, par_ref=None, root_order=None):
 	""" 
 	Assign numbers that reflect topological location of sections
 
 	@pre	a precondition/assumption for the procedure is that NEURON's
 			standard assumption that a Section = a continuous length of
 			UNBRANCHED cable is TRUE (i.e. branch points can only occur at 0/1 ends).
+
 
 	@post	Each SectionRef has the following attributes:
 			
@@ -65,47 +67,73 @@ def assign_topology_attrs(noderef, secrefs, parref=None):
 			  n=max(n_i) for children i if n_i are different, n=n_i+1 if n_i equal
 			  (i.e. assign level starting from leaf nodes, and keep minimum)
 
-	@param	noderef		SectionRef to current node
 
-	@param	secrefs		list(SectionRef) to all sections in the cell
+	@param	root_ref		SectionRef to current node
+
+
+	@param	all_refs		list(SectionRef) to all sections in the cell
+
 
 	@param	par_order	order of parent sections (distance in #sections from soma)
+	
 	"""
-	if noderef is None: return
+	if root_ref is None: return
 
 	# assign order and level
-	if parref is None:
-		noderef.order = 1
-		noderef.level = 1
+	if root_order is not None:
+		root_ref.order = root_order
+		root_ref.level = root_order
+	
+	elif par_ref is None:	
+		root_ref.order = 1
+		root_ref.level = 1
+	
 	else:
-		noderef.order = parref.order + 1
-		if parref.end_branchpoint:
-			noderef.level = parref.level + 1
+		
+		root_ref.order = par_ref.order + 1
+		
+		if par_ref.end_branchpoint:
+			root_ref.level = par_ref.level + 1
+		
 		else:
-			noderef.level = parref.level
+			root_ref.level = par_ref.level
 
-	# LEAF NODE: strahler number = 1, stop descending
-	childsecs = noderef.sec.children()
+	childsecs = root_ref.sec.children()
+	childrefs = [getsecref(sec, all_refs) for sec in childsecs]
+
+	# Check if current cylinder ends in branch point (fork)
 	if not any(childsecs):
-		noderef.strahlernumber = 1
-		noderef.end_branchpoint = False
+
+		# LEAF NODE: strahler number = 1, stop descending
+		root_ref.strahlernumber = 1
+		root_ref.end_branchpoint = False
 		return
+	
 	elif len(childsecs) > 1:
-		noderef.end_branchpoint = True
+
+		# Cylinder ends in branchpoint (fork)
+		root_ref.end_branchpoint = True
+	
 	else:
-		noderef.end_branchpoint = False
-	childrefs = [getsecref(sec, secrefs) for sec in childsecs]
+
+		# Single child (no branching)
+		root_ref.end_branchpoint = False
 
 	# NON LEAF NODE: descend tree and calculate strahler
 	for childref in childrefs:
-		assign_topology_attrs(childref, secrefs, parref=noderef)
+		assign_topology_attrs(childref, all_refs, par_ref=root_ref)
 
+	# After return from tree ascent: query Strahler numbers
 	strahler_numbers = [ref.strahlernumber for ref in childrefs]
 	max_strahler = max(strahler_numbers)
+	
+	# Only increase if all the same, else take maximum
 	if all([ref.strahlernumber==max_strahler for ref in childrefs]):
-		noderef.strahlernumber = max_strahler + 1
+		root_ref.strahlernumber = max_strahler + 1
+	
 	else:
-		noderef.strahlernumber = max_strahler
+		root_ref.strahlernumber = max_strahler
+
 
 def clusterize_custom(noderef, allsecrefs, clusterlist, labelsuffix, clusterfun, cluster_args):
 	"""

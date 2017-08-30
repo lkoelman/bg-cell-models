@@ -184,11 +184,14 @@ def sec_path_props(secref, f, gleak_name):
 			- pathL0, pathL1	path length to start and end of section
 			- pathL_seg			path length to END of each segment
 
-			- pathLelec0, pathLelec1 electrotonic path length to start and end of section
-			- pathL_elec		electrotonic path length to START of each segment
-
 			- pathri0, pathri1	axial path resistance to start and end of section
 			- pathri_seg		axial path resistance to START of each segment
+
+			- pathLelec0			electrotonic path length to START of SECTION
+			- pathLelec1			electrotonic path length to END of SECTION
+			
+			- seg_path_Lelec0		electrotonic path length to START of each SEGMENT
+			- seg_path_Lelec1		electrotonic path length to END of each SEGMENT
 	"""
 	rootsec = subtreeroot(secref)
 	rootparent = rootsec.parentseg()
@@ -817,7 +820,22 @@ def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
 	"""
 	Get both RANGE properties and assigned properties for each segment.
 
-	The properties are stored on an 'bunch'/struct-like object named EqProps.
+	The properties are stored on an struct-like object named EqProps.
+
+
+	@pre		all listed properties in seg_assigned and sec_assigned must
+				be already computed and stored on the SectionRef object
+
+
+	@param	secref		SectionRef object to Section for which you want to
+						save the properties
+
+	@param	seg_assigned	list of SectionRef attributes you wish to save
+							(properties per segment)
+
+	@param	sec_assigned	list of SectionRef attributes you wish to save
+							(properties of entire Section)
+
 
 	@return		object EqProps with the desired properties stored as attributes
 	"""
@@ -833,12 +851,15 @@ def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
 	
 	# Store segment RANGE properties
 	for j_seg, seg in enumerate(secref.sec):
+		
 		# Store built-in properties
 		for prop in bprops:
 			sec_props.seg[j_seg][prop] = getattr(seg, prop)
+		
 		# Store self-assigned properties (stored on SectionRef)
 		for prop in seg_assigned:
 			sec_props.seg[j_seg][prop] = getattr(secref, prop)[j_seg]
+	
 	return sec_props
 
 
@@ -928,24 +949,76 @@ def copy_sec_properties(src_sec, tar_sec, mechs_pars):
 	# ion styles
 	copy_ion_styles(src_sec, tar_sec)
 
-def copy_ion_styles(src_sec, tar_sec):
+
+def copy_ion_styles(src_sec, tar_sec, ions=None):
 	"""
 	Copy ion styles from source to target section
+
+	NOTE:
+
+	oldstyle = ion_style("name_ion")
+
+	oldstyle = int:
+		int( 1*c_style + 4*cinit + 8*e_style + 32*einit + 64*eadvance )
+		c_style:	0, 1, 2, 3	(2 bits)
+		e_style:	0, 1, 2, 3	(2 bits)
+		einit:		0, 1		(1 bits)
+		eadvance:	0, 1		(1 bits)
+		cinit:		0, 1		(1 bits)
+
+	ion_style("name_ion", c_style, e_style, einit, eadvance, cinit)
+
 	"""
+	if ions is None:
+		ions = ['na', 'k', 'ca']
+
+	# Get ion style for each ion species
 	src_sec.push()
-	ions = ['na', 'k', 'ca']
-	styles = [h.ion_style(ion+'_ion') for ion in ions]
+	styles = dict(((ion, h.ion_style(ion+'_ion')) for ion in ions))
+	
+	# Copy to target Section
+	set_ion_styles(tar_sec, **styles)
+
+	h.pop_section()
+
+
+def get_ion_styles(src_sec, ions=None):
+	"""
+	Get ion styles as integer for each ion.
+	"""
+	if ions is None:
+		ions = ['na', 'k', 'ca']
+
+	# Get ion style for each ion species
+	src_sec.push()
+	styles = dict(((ion, h.ion_style(ion+'_ion')) for ion in ions))
+	h.pop_section()
+
+	return styles
+
+
+def set_ion_styles(tar_sec, **kwargs):
+	"""
+	Set ion styles from integer containing bit flags.
+
+	@param	kwargs		keyword arguments ion_name: style_int
+	"""
+	# Copy to target Section
 	tar_sec.push()
-	for i, ion in enumerate(ions):
-		style = styles[i]
+	for ion, style in kwargs.iteritems():
+
+		# Decompose int into bit flags
 		c_style = int(style) & (1+2)
 		cinit = (int(style) & 4) >> 2
 		e_style = (int(style) & (8+16)) >> 3
 		einit = (int(style) & 32) >> 5
 		eadvance = (int(style) & 64) >> 6
+
+		# Copy to new section
 		h.ion_style(ion+'_ion', c_style, e_style, einit, eadvance, cinit)
+	
 	h.pop_section()
-	h.pop_section()
+
 
 def duplicate_subtree(rootsec, mechs_pars, tree_copy):
 	""" Duplicate tree of given section

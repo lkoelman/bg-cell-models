@@ -23,17 +23,21 @@ def create_hoc_section(secname):
 	"""
 	Create Section with given name on global Hoc object
 
+	@post	Section will be available as attribute on global Hoc object (neuron.h).
+			This will ensure that the Section is not destroyed, even though
+			no Python reference to it exists.
+
 	@return			tuple(Section, SectionRef)
 	"""
 
 	if secname in [sec.name() for sec in h.allsec()]:
-		raise Exception('Section named {} already exists'.format(cluster.label))
+		raise Exception('Section named {} already exists'.format(secname))
 	
-	created = h("create %s" % cluster.label)
+	created = h("create %s" % secname)
 	if created != 1:
-		raise Exception("Could not create section with name '{}'".format(cluster.label))
+		raise Exception("Could not create section with name '{}'".format(secname))
 	
-	eqsec = getattr(h, cluster.label)
+	eqsec = getattr(h, secname)
 	eqref = ExtSecRef(sec=eqsec)
 	return eqsec, eqref
 
@@ -96,8 +100,8 @@ def interp_seg(seg, a, b):
 	"""
 	Interpolate values [a,b] at segment boundaries using segment's x-loc
 	"""
-	seg_dx = 1.0/tar_seg.sec.nseg
-	iseg = min(int(tar_seg.x/seg_dx), tar_seg.sec.nseg-1)
+	seg_dx = 1.0/seg.sec.nseg
+	iseg = min(int(seg.x/seg_dx), seg.sec.nseg-1)
 	x_a = iseg * seg_dx
 	return a + (seg.x - x_a)/seg_dx * (b-a)
 

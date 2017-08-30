@@ -12,15 +12,18 @@ import matplotlib.pyplot as plt
 from neuron import h
 
 # Own modules
-from reducemodel import redutils
+from common import electrotonic
 from reducemodel.redutils import ExtSecRef, getsecref
+
 import gillies_model
 from reducemodel import reduce_cell
 
 
 def plot_tree_ppty(secref, allsecrefs, propname, secfilter, labelfunc, y_range=None, fig=None, ax=None):
-	""" Descend the given dendritic tree start from the given root section
-		and plot the given propertie.
+	"""
+	Descend the given dendritic tree start from the given root section
+	and plot the given propertie.
+
 
 	@param	secref		SectionRef to root section
 
@@ -79,41 +82,20 @@ def plot_tree_ppty(secref, allsecrefs, propname, secfilter, labelfunc, y_range=N
 	return fig
 
 
-def compare_models(or_secrefs, eq_secrefs, plot_glist):
+def calc_subtree_Rin(root_secs):
 	"""
 	Compare model properties
 	"""
-	
-	somaref, dendLrefs, dendRrefs = or_secrefs[0], or_secrefs[1], or_secrefs[2]
-	eq_somaref, eq_dendLrefs, eq_dendRrefs = eq_secrefs[0], eq_secrefs[1], eq_secrefs[2]
 
 	# Compare input resistance of large/left tree 
-	rootsecs = [dendLrefs[0].sec, eq_dendLrefs[0].sec, dendRrefs[0].sec, eq_dendRrefs[0].sec]
-	Rin_DC = [redutils.inputresistance_tree(sec, 0., 'gpas_STh') for sec in rootsecs]
-	Rin_AC = [redutils.inputresistance_tree(sec, 100., 'gpas_STh') for sec in rootsecs]
+	Rin_DC = [redutils.inputresistance_tree(sec, 0., 'gpas_STh') for sec in root_secs]
+	Rin_AC = [redutils.inputresistance_tree(sec, 100., 'gpas_STh') for sec in root_secs]
 	
-	print("\n=== INPUT RESISTANCE ===\
-	\nLarge tree (Original model):\
-	\nRin_AC={:.3f} \tRin_DC={:.3f}\
-	\nLeft tree (Equivalent model):\
-	\nRin_AC={:.3f} \tRin_DC={:.3f}\
-	\n\
-	\nSmall tree (Original model):\
-	\nRin_AC={:.3f} \tRin_DC={:.3f}\
-	\nRight tree (Equivalent model):\
-	\nRin_AC={:.3f} \tRin_DC={:.3f}".format(
-	Rin_AC[0], Rin_DC[0], Rin_AC[1], Rin_DC[1],
-	Rin_AC[2], Rin_DC[2], Rin_AC[3], Rin_DC[3]))
+	for i, root_sec in enumerate(root_secs):
+		print("\n=== INPUT RESISTANCE ===\
+			\nSubtree of {}:\
+			\nRin_AC={:.3f} \tRin_DC={:.3f}".format(root_sec, Rin_AC[i], Rin_DC[i]))
 
-	# Plot ion channel distribution
-	for gname in plot_glist:
-		print("\n=== FULL ion channel distribution ===")
-		plot_chan_dist(somaref, dendLrefs+dendRrefs, gname, 'cluster_label')
-		plt.show(block=True)
-
-		print("\n=== REDUCED {} channel distribution ===".format(gname))
-		plot_chan_dist(eq_somaref, eq_dendLrefs+eq_dendRrefs, gname, 'cluster_label')
-		plt.show(block=True)
 
 
 def inspect_passive_electrotonic_structure(reduced=True):
@@ -149,8 +131,47 @@ def inspect_passive_electrotonic_structure(reduced=True):
 		sec_modified += 1
 
 	print("Set gbar to zero in {} sections and {} segments".format(sec_modified, seg_modified))
-
+	print("Please plot electrotonic structure via Tools > Impedance ")
 	from neuron import gui # opens GUI in another thread
+
+
+def inspect_diameter(mech_param_names=None):
+	"""
+	Inspect diameter using NEURON GUI
+
+	USAGE
+
+	- after calling this function, open NEURON Main Menu > ModelView > plot mechanism 'd_dum'
+	"""
+
+	if mech_param_names is None:
+
+		# THIS WORKS BUT MAKES MODELVIEW CRASH
+		# Create a dummy mechanism for tracking diameter
+		# h("""
+		# begintemplate Dum
+		# public d
+		# d = 0
+		# endtemplate Dum
+
+		# make_mechanism(\"dum\", \"Dum\", \"d\")
+		# """)
+
+		mech_param_names = {'hh', 'gl'}
+
+	mech = mech_param_names.keys()[0]
+	param = mech_param_names[mech]
+	pname = '{}_{}'.format(param, mech)
+
+	# In each segment: assign diameter to dummy parameter
+	for sec in h.allsec():
+		sec.insert(mech)
+		for seg in sec:
+			setattr(seg, pname, seg.diam)
+
+	# Plot dummy parameter in GUI
+	print("Please plot parameter '{}' via Tools > ModelView ".format(pname))
+	from neuron import gui
 
 if __name__ == '__main__':
 	inspect_passive_electrotonic_structure()

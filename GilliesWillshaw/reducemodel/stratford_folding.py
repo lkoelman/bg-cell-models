@@ -14,13 +14,30 @@ Reduce model by folding/collapsing branches according to algorithm described in 
 @date	28-08-2017
 """
 
+import re
+
 import folding
-from common.treeutils import next_segs, seg_index, interp_seg
+import redutils
+import interpolation as interp
+
+from redutils import get_sec_props_obj
+from cluster import Cluster, assign_topology_attrs
+
+from common import treeutils
+from common.treeutils import getsecref, next_segs, seg_index, interp_seg
 from common.electrotonic import calc_lambda
+
+from neuron import h
 
 # Global parameters
 f_lambda = 0.0
 alphabet_uppercase = [chr(i) for i in xrange(65,90+1)] # A-Z are ASCII 65-90
+
+# logging of DEBUG/INFO/WARNING messages
+import logging
+logging.basicConfig(format='%(message)s %(levelname)s:@%(filename)s:%(lineno)s', level=logging.DEBUG)
+logname = "reduction" # __name__
+logger = logging.getLogger(logname) # create logger for this module
 
 ################################################################################
 # Folding Algorithm
@@ -43,7 +60,7 @@ def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction):
 	"""
 	allsecrefs = reduction.all_sec_refs
 	gleak_name = reduction.gleak_name
-	gbar_list = reduction.active_gbars
+	gbar_list = reduction.active_gbar_names
 
 	# electrotonic distance to last segment where diam was calculated
 	last_X = root_X + a_i*dX
@@ -60,10 +77,17 @@ def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction):
 	# Get child segments
 	child_segs = next_segs(a_seg) # segments/nodes connected to this one
 	if not any(child_segs):
-		return
+		if (a_seg.x == 1.0):
+			logger.debug((a_i*"-") + "Folding: reached end of branch @ {}".format(a_seg))
+			return # reached end of branch
+		else:
+			child_segs = [a_seg.sec(1.0)] # test end of branch
 	
 	# Get new segment at (a_i+1) * dX
 	for b_seg in child_segs:
+
+		# NOTE: depth-first tree traversal: look for next point ta calculate diam
+		#       (next discretization step) along current branch, then ascend further
 
 		# Get electronic distance to following/adjacent segment
 		b_ref = getsecref(b_seg.sec, allsecrefs)
@@ -79,9 +103,10 @@ def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction):
 			# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
 			#	[-----|-s-a-|b--t-] - [t----|-----|-----]
 			#	[-----|---sa|--b--] - [t----|-----|-----]
+			logger.debug((a_i*"-") + "Skipping {} since bX={} < tarX={}".format(b_seg, b_X, target_X))
 
 			# Ascend but don't increase index
-			next_eq_diam(b_seg, a_i, root_X, dX, cluster, allsecrefs)
+			next_eq_diam(b_seg, a_i, root_X, dX, cluster, reduction)
 
 		else: # target_X <= b_X
 			# target X value is between previous and next segment -> get new segment by interpolation
@@ -89,6 +114,7 @@ def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction):
 			# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
 			#	[-----|-s-a-|t--b-] - [-----|-----|-----]
 			#	[-----|---s-|a-t--] - [b----|-----|-----]
+			logger.debug((a_i*"-") + "Interpolating between {} (X={}) and {} (X={})".format(a_seg, a_X, b_seg, b_X))
 			
 			fX = (target_X - a_X) / (b_X - a_X)
 			new_seg = None
@@ -128,10 +154,10 @@ def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction):
 			step_attrs['step_Rm'] = [1.0 / getattr(new_seg, gleak_name)]
 			step_attrs['step_Ra'] = [new_seg.sec.Ra]
 			step_attrs['step_cm'] = [new_seg.cm]
-			step_attrs['step_gbar'] = [dict((gname, getattr(new_seg, gname) for gname in gbar_list))]
+			step_attrs['step_gbar'] = [dict(((gname, getattr(new_seg, gname)) for gname in gbar_list))]
 
 			# Save them on cluster object
-			for attr_name, new_seg_attr in step_attrs.iteritems():
+			for attr_name, new_seg_vals in step_attrs.iteritems():
 
 				# Get cluster attribute
 				step_attr_list = getattr(cluster, attr_name)
@@ -139,17 +165,19 @@ def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction):
 				# Save values for new segment
 				if len(step_attr_list) <= a_i:
 					# First entry (first branch for this step) : start new list
-					step_attr_list.append(new_seg_attr)
+					step_attr_list.append(new_seg_vals)
 				else:
 					# Subsequent branches: add to list for this step
-					step_attr_list.extend(new_seg_attr)
+					step_attr_list.extend(new_seg_vals)
 
 
 			# Ascend and increase index
-			next_eq_diam(new_seg, a_i+1, root_X, dX, cluster, allsecrefs)
+			next_eq_diam(new_seg, a_i+1, root_X, dX, cluster, reduction)
+
+		return
 
 
-def calc_collapses(target_Y_secs, i_pass, allsecrefs, dX=0.1):
+def calc_folds(target_Y_secs, i_pass, reduction, dX=0.1):
 	"""
 	Do folding operation
 
@@ -157,38 +185,53 @@ def calc_collapses(target_Y_secs, i_pass, allsecrefs, dX=0.1):
 					Section for each set of collapsed branches.
 	"""
 
+	allsecrefs = reduction.all_sec_refs
+	gbar_list = reduction.active_gbar_names
+
 	clusters = []
 	for j_zip, root_ref in enumerate(target_Y_secs):
 
 		# Fold name
-		name_sanitized = re.sub(r"[\[\]\.]", "", root_ref.sec.name())
-		fold_label = "foldAt_{0}".format(name_sanitized)
+		p = re.compile(r'(?P<cellname>\w+)\[(?P<cellid>\d+)\]\.(?P<seclist>\w+)\[(?P<secid>\d+)\]')
+		pmatch = p.search(root_ref.sec.name())
+		if pmatch:
+			pdict = pmatch.groupdict()
+			name_sanitized = "{}_{}".format(pdict['seclist'], pdict['secid'])
+		else:
+			name_sanitized = re.sub(r"[\[\]\.]", "", root_ref.sec.name())
+		fold_label = "fold_{0}".format(name_sanitized)
 
 		# Make Cluster object that represents collapsed segments
 		cluster = Cluster(fold_label)
 
-		# Equivalent parameters
+		# Branch parameters
 		cluster.step_diams = []
 		cluster.step_Rm = []
 		cluster.step_Ra = []
 		cluster.step_cm = []
+		cluster.step_gbar = []
 
 		# Topological info
-		cluster.parent_seg = root_ref(1.0)
+		cluster.parent_seg = root_ref.sec(1.0)
 
 		# Ascend subtree from root and compute diameters
 		start_seg = root_ref.sec(1.0) # end of cylinder
 		start_X = root_ref.pathLelec1
-		dX = 0.1
-		next_eq_diam(start_seg, 0, start_X, dX, cluster, allsecrefs)
+		logger.debug("Folding: start tree ascent @ {}".format(start_seg))
+		next_eq_diam(start_seg, 0, start_X, dX, cluster, reduction)
 
-		# TODO: don't use as fine dX: check papers for what value they used
-		#		- use course dX, then refine\
-		#		- make one Section for
-
+		# Equivalent parameters
+		cluster.num_sec = len(cluster.step_diams)
+		cluster.eq_diam =	[0.0] * cluster.num_sec
+		cluster.eq_L =		[0.0] * cluster.num_sec
+		cluster.eq_Rm =		[0.0] * cluster.num_sec
+		cluster.eq_Ra =		[0.0] * cluster.num_sec
+		cluster.eq_cm =		[0.0] * cluster.num_sec
+		cluster.eq_lambda =	[0.0] * cluster.num_sec
+		cluster.eq_gbar =	[0.0] * cluster.num_sec
 
 		# Finalize diam calculation
-		cluster.num_sec = len(cluster.step_diams)
+		
 		for i_step, diams in enumerate(cluster.step_diams):
 
 			# Number of parallel branches found at this step
@@ -202,6 +245,12 @@ def calc_collapses(target_Y_secs, i_pass, allsecrefs, dX=0.1):
 			cluster.eq_Ra[i_step] = sum(cluster.step_Ra[i_step]) / num_parallel
 			cluster.eq_cm[i_step] = sum(cluster.step_cm[i_step]) / num_parallel
 
+			# Combine dict of gbar for each parallel section
+			cluster.eq_gbar[i_step] = dict(((gname, 0.0) for gname in gbar_list))
+			for gdict in cluster.step_gbar[i_step]:
+				for gname, gval in gdict.iteritems():
+					cluster.eq_gbar[i_step][gname] += (gval / num_parallel) # average of parallel branches
+
 			# Physical length 
 			# NOTE: it is important to use the same lambda equation as the one
 			#       used for electrotonic path lengths
@@ -213,8 +262,10 @@ def calc_collapses(target_Y_secs, i_pass, allsecrefs, dX=0.1):
 		# Save cluster
 		clusters.append(cluster)
 
+	return clusters
 
-def start_new_section(cluster, i_step, j_sec):
+
+def new_fold_section(cluster, i_step, j_sec, reduction):
 	"""
 	Start new Section for discretization step i of the cluster.
 	"""
@@ -222,16 +273,42 @@ def start_new_section(cluster, i_step, j_sec):
 								cluster.label, alphabet_uppercase[j_sec]))
 	
 	sec.L		= cluster.eq_L[i_step]
+	sec.nseg	= 1
 	sec.diam	= cluster.eq_diam[i_step]
 	sec.Ra		= cluster.eq_Ra[i_step]
 	sec.cm		= cluster.eq_cm[i_step]
 
-	setattr(sec(0.5), cluster.gleak_name, 1.0/cluster.eq_Rm[i_step])
+	# Insert mechanisms
+	for mech in reduction.mechs_gbars_dict:
+		sec.insert(mech)
+
+	# Set conductances
+	setattr(sec(1.0), reduction.gleak_name, 1.0/cluster.eq_Rm[i_step])
+	for gname in reduction.active_gbar_names:
+		setattr(sec(1.0), gname, cluster.eq_gbar[i_step][gname])
 
 	return sec, ref
 
 
-def sub_fold_equivalents(clusters, orsecrefs, mechs_chans):
+def extend_fold_section(cluster, i_step, sec, reduction):
+	"""
+	Extend existing fold Section with a new segment for given discretization step.
+	"""
+
+	sec.L			= sec.L + cluster.eq_L[i_step]
+	sec.nseg		= sec.nseg + 1
+	sec(1.0).diam	= cluster.eq_diam[i_step]
+	sec(1.0).cm		= cluster.eq_cm[i_step]
+	# NOTE: Ra is not RANGE var -> only set once per Section
+
+	# Set conductances
+	setattr(sec(1.0), reduction.gleak_name, 1.0/cluster.eq_Rm[i_step])
+	for gname in reduction.active_gbar_names:
+		setattr(sec(1.0), gname, cluster.eq_gbar[i_step][gname])
+
+
+
+def make_substitute_folds(clusters, reduction):
 	"""
 	Make equivalent Sections for each cluster, and substitute them into cell
 	to replace the folded compartments.
@@ -240,22 +317,19 @@ def sub_fold_equivalents(clusters, orsecrefs, mechs_chans):
 	# Create one Section for each region with uniform diam
 	# (uniform diam also means uniform length: see equation for physical length)
 	diam_tolerance = 0.05 # 5 percent
-	eq_secs = []
-	eq_refs = []
 
 	for i_clu, cluster in enumerate(clusters):
 
 		# Save equivalent sections
-		clu_eq_secs = []
-		clu_eq_refs = []
+		cluster.eq_refs = []
 
 		# Create first Section for this fold
-		num_fold_secs = 0
 		cur_diam = cluster.eq_diam[0]
-		cur_sec, cur_ref = start_new_section(cluster, 0, num_fold_secs)
+		cur_sec, cur_ref = new_fold_section(cluster, 0, 0, reduction)
 		cur_sec.connect(cluster.parent_seg, 0.0) # for electrotonic properties
-		clu_eq_secs.append(cur_sec)
-		clu_eq_refs.append(cur_ref)
+		
+		num_fold_secs = 1
+		cluster.eq_refs.append(cur_ref)
 
 		# Create Section for each region with uniform diam
 		for i_step, diam in enumerate(cluster.eq_diam):
@@ -263,33 +337,53 @@ def sub_fold_equivalents(clusters, orsecrefs, mechs_chans):
 			if (1.0 - diam_tolerance) <= (diam / cur_diam) <= (1.0 + diam_tolerance):
 				
 				# Uniform: extend current Section with new segment
-				cur_sec.L			= cur_sec.L + cluster.eq_L[i_step]
-				cur_sec.nseg		= cur_sec.nseg + 1
-				cur_sec(1.0).diam	= cluster.eq_diam[i_step]
-				cur_sec(1.0).cm		= cluster.eq_cm[i_step]
-				setattr(cur_sec(1.0), cluster.gleak_name, 1.0/cluster.eq_Rm[i_step])	
+				extend_fold_section(cluster, i_step, cur_sec, reduction)
 
 			else:
 				
 				# Not uniform: start new Section
-				num_fold_secs += 1
-				cur_diam = diam
-				new_sec, new_ref = start_new_section(cluster, i_step, num_fold_secs)
-				clu_eq_secs.append(new_sec)
-				clu_eq_refs.append(new_ref)
+				new_sec, new_ref = new_fold_section(cluster, i_step, num_fold_secs, reduction)
+				cluster.eq_refs.append(new_ref)
 
 				# Connect to previous sections
 				new_sec.connect(cur_sec(1.0), 0.0)
 
-		# Set active properties using interpolation
-		glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
-		glist.remove(cluster.gleak_name)
+				# Update current value
+				num_fold_secs += 1
+				cur_diam = diam
+				cur_sec, cur_ref = new_sec, new_ref
 
-		# TODO: interpolate active poperties (along predefined path, or use average, or just one entry in list)
 
-		# Attach to subtree root segment and disconnect substituted Sections
-		redtools.sub_equivalent_Y_sec(clu_eq_secs[0], cluster.parent_seg, [], 
-								orsecrefs, mechs_chans, delete_substituted=True)
+		# Set nonuniform active conductances
+		# TODO: plot response and test different dX
+		for eq_ref in cluster.eq_refs:
+
+			# first calculate electrotonic properties of equivalent sections
+			redutils.sec_path_props(eq_ref, f_lambda, reduction.gleak_name)
+
+			# interpolate conductance in each segment
+			for j_seg, seg in enumerate(eq_ref.sec):
+			
+				# Get adjacent segments along path
+				seg_X0, seg_X1 = eq_ref.seg_path_Lelec0[j_seg], eq_ref.seg_path_Lelec1[j_seg]
+				seg_X = interp_seg(seg, seg_X0, seg_X1)
+				bound_segs, bound_X = interp.find_adj_path_segs('path_L_elec', seg_X, reduction.interp_path)
+
+				# Set conductances by interpolating neighbors
+				for gname in reduction.active_gbar_names:
+					gval = interp.interp_gbar_linear_neighbors(seg_X, gname, bound_segs, bound_X)
+					seg.__setattr__(gname, gval)
+
+
+		# Disconnect substituted Sections
+		clu_root_sec = cluster.eq_refs[0].sec
+		redutils.sub_equivalent_Y_sec(clu_root_sec, cluster.parent_seg, [], 
+								reduction.all_sec_refs, reduction.mechs_gbars_dict, 
+								delete_substituted=True)
+
+		# Set ion styles
+		for ref in cluster.eq_refs:
+			redutils.set_ion_styles(ref.sec, **reduction._ion_styles)
 
 
 
@@ -306,7 +400,41 @@ def preprocess_impl(reduction):
 
 	@param	reduction		reduce_cell.CollapseReduction object
 	"""
-	pass
+	
+	dendL_secs = list(h.SThcell[0].dend0)
+	dendR_secs = list(h.SThcell[0].dend1)
+
+	allsecrefs = reduction.all_sec_refs
+	dend_lists = [dendL_secs, dendR_secs]
+
+	# Assign indices used in Gillies code (sth-data folder)
+	for somaref in reduction._soma_refs:
+		somaref.tree_index = -1
+		somaref.table_index = 0
+
+	for secref in reduction._dend_refs:
+		for i_dend, dendlist in enumerate(dend_lists):
+			if any([sec.same(secref.sec) for sec in dendlist]):
+				secref.tree_index = i_dend
+				secref.table_index= next((i+1 for i,sec in enumerate(dendlist) if sec.same(secref.sec)))
+
+	# Choose representative path for interpolation
+	interp_tree_id = 1
+	interp_table_ids = (1,3,8) # from soma to end of SThcell[0].dend1[7]
+	reduction.interp_path = []
+
+	# Save properties along this path
+	for ref in allsecrefs:
+		if (ref.tree_index==interp_tree_id) and (ref.table_index in interp_table_ids):
+			
+			# calculate properties
+			redutils.sec_path_props(ref, f_lambda, reduction.gleak_name)
+
+			# Save properties
+			reduction.interp_path.append(get_sec_props_obj(ref, reduction.mechs_gbars_dict,
+										['pathL_elec'], ['pathLelec0', 'pathLelec1']))
+	
+		
 
 
 def prepare_folds_impl(reduction):
@@ -315,11 +443,23 @@ def prepare_folds_impl(reduction):
 	to each Section.
 
 	(Implementation of interface declared in reduce_cell.CollapseReduction)
-	"""	
+
+	NOTE: topology is ONLY used for when using multiple folding passes, 
+	      for determining the folding branch point
+	"""
+	all_refs = reduction.all_sec_refs
+	root_ref = reduction._soma_refs[0]
+
+	# Assign topology info (order, level, strahler number)
+	root_ref.order = 0
+	root_ref.level = 0
+	assign_topology_attrs(root_ref, all_refs, root_order=0)
+	root_ref.strahlernumber = max((ref.strahlernumber for ref in all_refs))
 	
 	# For each segment: compute path length, path resistance, electrotonic path length
 	for secref in reduction.all_sec_refs:
-		redtools.sec_path_props(secref, f_lambda, gleak_name)
+		redutils.sec_path_props(secref, f_lambda, reduction.gleak_name)
+		secref.max_passes = 100
 
 
 def calc_folds_impl(reduction, i_pass, dX=0.1):
@@ -330,10 +470,11 @@ def calc_folds_impl(reduction, i_pass, dX=0.1):
 	allsecrefs = reduction.all_sec_refs
 
 	# Find collapsable branch points
-	target_Y_secs = folding.find_collapsable(allsecrefs, i_pass, 'highest_level')
+	# target_Y_secs = folding.find_collapsable(allsecrefs, i_pass, 'highest_level')
+	target_Y_secs = reduction._fold_root_refs
 
 	# Do collapse operation at each branch points
-	clusters = calc_collapses(target_Y_secs, i_pass, allsecrefs, dX=dX)
+	clusters = calc_folds(target_Y_secs, i_pass, reduction, dX=dX)
 
 	# Save results
 	reduction.clusters = clusters
@@ -343,4 +484,11 @@ def make_folds_impl(reduction):
 	"""
 	Make equivalent Sections for branches that have been folded.
 	"""
-	pass
+	clusters = reduction.clusters
+
+	# Make new sections
+	make_substitute_folds(clusters, reduction) # SectionRef stored on each Cluster
+
+	# Update Sections
+	new_dend_refs = sum((cluster.eq_refs for cluster in clusters), []) # concatenate lists
+	reduction.update_refs(dend_refs=new_dend_refs) # prepare for next iteration

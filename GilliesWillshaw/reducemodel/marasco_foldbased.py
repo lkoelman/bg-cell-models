@@ -289,6 +289,7 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='pat
 
 		# Calculate path lengths in equivalent section
 		redtools.sec_path_props(eqref, f_lambda, gleak_name)
+		
 		if interp_prop == 'path_L':
 			seg_prop = 'pathL_seg'
 		elif interp_prop == 'path_ri':
@@ -307,10 +308,12 @@ def sub_equivalent_Y_sections(clusters, orsecrefs, interp_path, interp_prop='pat
 			# bounds_info = "\n".join(("\t- bounds {0} - {1}".format(a, b) for a,b in bound_segs))
 			# logger.debug("Found boundary segments at same path length x={0:.3f}:\n{1}".format(path_L, bounds_info))
 
-			# Set conductances by interpolating neighbors
+			# INTERPOLATE: Set conductances by interpolating neighbors
 			for gname in active_glist:
+				
 				if interp_method == 'linear_neighbors':
 					gval = interp.interp_gbar_linear_neighbors(path_L, gname, bound_segs, bound_L)
+				
 				else:
 					match_method = re.search(r'^[a-z]+', interp_method)
 					method = match_method.group() # should be nearest, left, or right

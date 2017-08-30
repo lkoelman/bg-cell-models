@@ -49,8 +49,9 @@ def gillies_gstructs():
 
 
 def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals=None):
-	""" Calculate parameters of the linear conductance distribution
-		as defined in the Gillies & Willshaw paper (A/B/C/D)
+	"""
+	Calculate parameters of the linear conductance distribution
+	as defined in the Gillies & Willshaw paper (A/B/C/D)
 
 	@type	orsecrefs	list(h.SectionRef)
 	@param	orsecrefs	References to sections in original model. Eac SectionRef
@@ -114,14 +115,17 @@ def find_adj_path_segs(interp_prop, interp_L, path_secs):
 		sec_prop0 = 'pathL0'
 		sec_prop1 = 'pathL1'
 		seg_prop = 'pathL_seg'
+	
 	elif interp_prop == 'path_ri':
 		sec_prop0 = 'pathri0'
 		sec_prop1 = 'pathri1'
 		seg_prop = 'pathri_seg'
+	
 	elif interp_prop == 'path_L_elec':
 		sec_prop0 = 'pathLelec0'
 		sec_prop1 = 'pathLelec1'
 		seg_prop = 'pathL_elec'
+	
 	else:
 		raise ValueError("Unknown path property '{}'".format(interp_prop))
 
@@ -144,6 +148,7 @@ def find_adj_path_segs(interp_prop, interp_L, path_secs):
 	bound_segs = [] # bounding segments (lower, upper)
 	bound_L = []    # path lengths to (lower, upper)
 	for secref in map_secs:
+		
 		# in each section find the two segments with L(seg_a) <= interp_L <= L(seg_b)
 		if isinstance(path_secs[0], ExtSecRef):
 			segs_internal = [seg for seg in secref.sec]
@@ -153,6 +158,7 @@ def find_adj_path_segs(interp_prop, interp_L, path_secs):
 			vals_internal = [sprops[seg_prop] for sprops in secref.seg]
 
 		if len(segs_internal) == 1: # single segment: just use midpoint
+			
 			midseg = segs_internal[0]
 			midL = vals_internal[0]
 			bound_segs.append((midseg, midseg))

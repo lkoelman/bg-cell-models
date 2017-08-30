@@ -11,11 +11,12 @@ from common.treeutils import ExtSecRef, getsecref
 from neuron import h
 
 import marasco_foldbased as marasco
+import stratford_folding as stratford
 
 @unique
 class ReductionMethod(Enum):
 	Rall = 0
-	StratfordMason = 1		# Stratford, K., Mason, A., Larkman, A., Major, G., and Jack, J. J. B. (1989) - The modelling of pyramidal neurones in the visual cortex
+	Stratford = 1			# Stratford, K., Mason, A., Larkman, A., Major, G., and Jack, J. J. B. (1989) - The modelling of pyramidal neurones in the visual cortex
 	BushSejnowski = 2		# Bush, P. C. & Sejnowski, T. J. Reduced compartmental models of neocortical pyramidal cells. Journal of Neuroscience Methods 46, 159-166 (1993).
 	Marasco = 3				# Marasco, A., Limongiello, A. & Migliore, M. Fast and accurate low-dimensional reduction of biophysically detailed neuron models. Scientific Reports 2, (2012).
 
@@ -29,19 +30,31 @@ class FoldReduction(object):
 	# For each step in reduction process: a dict mapping ReductionMethod -> (func, arg_names)
 	
 	_PREPROC_FUNCS = {
-		ReductionMethod.Marasco:	(marasco.preprocess_impl, [])
+		ReductionMethod.Marasco:	(marasco.preprocess_impl, []),
+		ReductionMethod.Stratford:	(stratford.preprocess_impl, []),
 	}
 
 	_PREP_FOLD_FUNCS = {
-		ReductionMethod.Marasco:	(marasco.prepare_folds_impl, [])
+		ReductionMethod.Marasco:	(marasco.prepare_folds_impl, []),
+		ReductionMethod.Stratford:	(stratford.prepare_folds_impl, []),
 	}
 
 	_CALC_FOLD_FUNCS = {
-		ReductionMethod.Marasco:	(marasco.calc_folds_impl, [])
+		ReductionMethod.Marasco:	(marasco.calc_folds_impl, []),
+		ReductionMethod.Stratford:	(stratford.calc_folds_impl, ['dX']),
 	}
 
 	_MAKE_FOLD_EQ_FUNCS = {
-		ReductionMethod.Marasco:	(marasco.make_folds_impl, [])
+		ReductionMethod.Marasco:	(marasco.make_folds_impl, []),
+		ReductionMethod.Stratford:	(stratford.make_folds_impl, []),
+	}
+
+	# Make accessible by step
+	_REDUCTION_STEPS_FUNCS = {
+		'preprocess':		_PREPROC_FUNCS,
+		'prepare_fold':		_PREP_FOLD_FUNCS,
+		'calculate_fold':	_CALC_FOLD_FUNCS,
+		'make_fold':		_MAKE_FOLD_EQ_FUNCS,
 	}
 
 
@@ -70,12 +83,16 @@ class FoldReduction(object):
 		# Find true root section
 		first_root_sec = soma_secs[0]
 		first_root_ref = ExtSecRef(sec=soma_secs[0])
-		root_sec = first_root_ref.root
-		h.pop_section()
-
+		root_sec = first_root_ref.root # pushes CAS
+		
 		# Save unique sections
 		self._soma_refs = [ExtSecRef(sec=sec) for sec in soma_secs]
 		self._dend_refs = [ExtSecRef(sec=sec) for sec in dend_secs]
+
+		# Save ion styles
+		ions = ['na', 'k', 'ca']
+		self._ion_styles = dict(((ion, h.ion_style(ion+'_ion')) for ion in ions))
+		h.pop_section() # pops CAS
 
 		# Save root sections
 		self._root_ref = getsecref(root_sec, self._soma_refs)
@@ -92,18 +109,20 @@ class FoldReduction(object):
 		"""
 		Get dictionary of mechanism names and their conductances.
 		"""
-	    return self._mechs_gbars_dict
+		return self._mechs_gbars_dict
 	
+
 	def set_mechs_gbars_dict(self, val):
 		"""
 		Set mechanism names and their conductances
 		"""
 		self._mechs_gbars_dict = val
-		self.active_gbars = [gname+'_'+mech for mech,chans in val.iteritems() for gname in chans]
-		self.active_gbars.remove(self.gleak_name)
+		self.active_gbar_names = [gname+'_'+mech for mech,chans in val.iteritems() for gname in chans]
+		self.active_gbar_names.remove(self.gleak_name)
 
 	# make property
 	mechs_gbars_dict = property(get_mechs_gbars_dict, set_mechs_gbars_dict)
+
 
 	def update_refs(self, soma_refs=None, dend_refs=None):
 		"""
@@ -131,6 +150,27 @@ class FoldReduction(object):
 		self._REDUCTION_PARAMS[method] = params
 
 
+	def _exec_reduction_step(self, step, method, step_args=None):
+		"""
+		Execute reduction step 'step' using method 'method'
+		"""
+		try:
+			func, arg_names = self._REDUCTION_STEPS_FUNCS[step][method]
+		
+		except KeyError:
+			raise NotImplementedError("{} function not implemented for "
+									  "reduction method {}".format(step, method))
+		
+		else:
+			user_params = self._REDUCTION_PARAMS[method]
+			user_kwargs = dict((kv for kv in user_params.iteritems() if kv[0] in arg_names)) # get required args
+			
+			if step_args is None:
+				step_args = []
+
+			func(*step_args, **user_kwargs)
+
+
 	def preprocess_cell(self, method):
 		"""
 		Pre-process cell: calculate properties & prepare data structures
@@ -146,55 +186,28 @@ class FoldReduction(object):
 					in addition to other side effects specified by the
 					specific preprocessing function called.
 		"""
-		try:
-			preproc_func = self._PREPROC_FUNCS[method][0]
-		except KeyError:
-			raise NotImplementedError("Preprocessing function not implemented for "
-			                          "reduction method {}".format(method))
-		else:
-			preproc_func(self)
+		self._exec_reduction_step('preprocess', method, step_args=[self])
 
 
 	def prepare_folds(self, method):
 		"""
 		Prepare next fold operation.
 		"""
-		try:
-			prepare_func = self._PREP_FOLD_FUNCS[method][0]
-		except KeyError:
-			raise NotImplementedError("Fold preparation function not implemented for "
-			                          "reduction method {}".format(method))
-		else:
-			prepare_func(self)
+		self._exec_reduction_step('prepare_fold', method, step_args=[self])
 
 
 	def calc_folds(self, method, i_pass):
 		"""
 		Fold branches at branch points identified by given criterion.
 		"""
-		try:
-			calc_func, arg_names = self._CALC_FOLD_FUNCS[method]
-		except KeyError:
-			raise NotImplementedError("Fold calculation function not implemented for "
-			                          "reduction method {}".format(method))
-		else:
-			args = [i_pass]
-			user_params = self._REDUCTION_PARAMS[method]
-			kwargs = dict((kv for kv in user_params.iteritems() if kv[0] in arg_names)) # get required args
-			calc_func(self, *args, **kwargs)
+		self._exec_reduction_step('calculate_fold', method, step_args=[self, i_pass])
 
 
 	def make_fold_equivalents(self, method):
 		"""
 		Make equivalent Sections for branches that have been folded.
 		"""
-		try:
-			make_fold_func = self._MAKE_FOLD_EQ_FUNCS[method][0]
-		except KeyError:
-			raise NotImplementedError("Fold equivalents creation function not implemented for "
-			                          "reduction method {}".format(method))
-		else:
-			make_fold_func(self)
+		self._exec_reduction_step('make_fold', method, step_args=[self])
 
 
 	def reduce_model(self, num_passes, method=None):
@@ -224,9 +237,47 @@ class FoldReduction(object):
 # Reduction Experiments
 ################################################################################
 
+def fold_gillies_stratford(export_locals=True):
+	"""
+	Fold Gillies STN model using given reduction method
+	
+	@param	export_locals		if True, local variables will be exported to the global
+								namespace for easy inspection
+	"""
+	import gillies_model
+	gillies_model.stn_cell_gillies()
+
+	# Make sections accesible by name and index
+	soma = h.SThcell[0].soma
+	dendL = list(h.SThcell[0].dend0) # 0 is left tree
+	dendR = list(h.SThcell[0].dend1) # 1 is right tree
+	dends = dendL + dendR
+
+	# Get references to root sections of the 3 identical trees
+	dendR_root			= h.SThcell[0].dend1[0]
+	dendL_juction		= h.SThcell[0].dend0[0]
+	dendL_upper_root	= h.SThcell[0].dend0[1] # root section of upper left dendrite
+	dendL_lower_root	= h.SThcell[0].dend0[2] # root section of lower left dendrite
+	fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
+
+	# Reduce model
+	reduction = FoldReduction([soma], dends, fold_roots, ReductionMethod.Stratford)
+	reduction.gleak_name = gillies_model.gleak_name
+	reduction.mechs_gbars_dict = gillies_model.gillies_gdict
+	reduction.reduce_model(num_passes=1)
+
+	if export_locals:
+		globals().update(locals())
+
+	return reduction._soma_refs, reduction._dend_refs
+
+
 def fold_gillies_marasco(export_locals=True):
 	"""
-	Fold Gillies STN model using Marasco (2012) algorithm.
+	Fold Gillies STN model using given reduction method
+	
+	@param	export_locals		if True, local variables will be exported to the global
+								namespace for easy inspection
 	"""
 	import gillies_model
 	gillies_model.stn_cell_gillies()
