@@ -154,6 +154,11 @@ FRAC_SYN = {
 
 MSR_METHOD = MSRC.SCALE_NUMSYN_MSR # How to take into account multi-synapse rule
 
+################################################################################
+# Interface functions
+################################################################################
+
+# @register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.SYN_BACKGROUND_HIGH)
 def init_sim(self, protocol):
 	"""
 	Initialize simulator to simulate background protocol
@@ -165,6 +170,8 @@ def init_sim(self, protocol):
 	# Reset RNGs
 	for pre_pop in (Pop.CTX, Pop.GPE):
 		input_dict = self.get_inputs(pre_pop, cpd.StnModel.Gillies2005)
+
+		# Reset each instance of Hoc.Random
 		for RNG_data in input_dict['RNG_data']:
 
 			# Get RNG and sequence number (highindex)
@@ -261,6 +268,11 @@ def plot_traces(self, model, protocol):
 
 	# Plot Vm in select number of segments
 	self._plot_all_Vm(model, protocol, fig_per='cell')
+
+
+################################################################################
+# Building block functions
+################################################################################
 
 
 def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par, con_par, connector):

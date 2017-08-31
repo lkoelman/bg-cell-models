@@ -48,8 +48,10 @@ Pop = Populations
 import proto_common
 proto_common.logger = logger
 from proto_common import *
+
 import proto_simple_syn as proto_simple
 import proto_background
+import proto_passive_syn
 
 # Adjust verbosity of loggers
 marasco.logger.setLevel(logging.WARNING)
@@ -69,6 +71,47 @@ class StnModelEvaluator(object):
 	Improvements:
 	- make evaluator subclasses for the different protocols
 	"""
+
+	# SIGNATURE: make_inputs(evaluator, connector)
+	_MAKE_INPUT_FUNCS = {
+		StimProtocol.SYN_BACKGROUND_HIGH : proto_background.make_inputs,
+	}
+
+	# SIGNATURE: rec_traces(evaluator, protocol, traceSpecs)
+	_REC_TRACE_FUNCS = {
+		StimProtocol.SYN_BACKGROUND_HIGH : proto_background.rec_traces,
+	}
+
+	# SIGNATURE: plot_traces(evaluator, model, protocol)
+	_PLOT_TRACE_FUNCS = {
+		StimProtocol.SYN_BACKGROUND_HIGH : proto_background.plot_traces,
+	}
+
+	# SIGNATURE: init_sim(evaluator, protocol)
+	_INIT_SIM_FUNCS = {
+		StimProtocol.SYN_BACKGROUND_HIGH : proto_background.init_sim,
+	}
+
+	# Make accessible by step
+	_EVALUATION_STEP_FUNCS = {
+		EvaluationStep.INIT_SIMULATION :	_INIT_SIM_FUNCS,
+		EvaluationStep.MAKE_INPUTS :		_MAKE_INPUT_FUNCS,
+		EvaluationStep.RECORD_TRACES :		_REC_TRACE_FUNCS,
+		EvaluationStep.PLOT_TRACES :		_PLOT_TRACE_FUNCS,
+	}
+
+	# Fill dictionaries with registered functions (see proto_common.register_step)
+	for step in list(EvaluationStep):
+		for proto in list(StimProtocol):
+			
+			# If no function set for this protocol and step
+			if (proto not in _EVALUATION_STEP_FUNCS[step].keys()):
+
+				# Check if a function was registered for this step and protocol
+				step_func = proto_common.EVALUATION_FUNCS[proto].get(step, None)
+				if step_func is not None:
+					_EVALUATION_STEP_FUNCS[step][proto] = step_func
+
 
 	def __init__(self, target_model, physio_state=PhysioState.NORMAL):
 		"""
@@ -90,25 +133,6 @@ class StnModelEvaluator(object):
 		self.base_seed = 25031989 # used: 25031989
 		self.rng = np.random.RandomState(self.base_seed)
 
-		# SIGNATURE: make_inputs(evaluator, connector)
-		self.MAKE_INPUT_FUNCS = {
-			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.make_inputs,
-		}
-
-		# SIGNATURE: rec_traces(evaluator, protocol, traceSpecs)
-		self.REC_TRACE_FUNCS = {
-			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.rec_traces,
-		}
-
-		# SIGNATURE: plot_traces(evaluator, model, protocol)
-		self.PLOT_TRACE_FUNCS = {
-			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.plot_traces,
-		}
-
-		# SIGNATURE: init_sim(evaluator, protocol)
-		self.INIT_SIM_FUNCS = {
-			StimProtocol.SYN_BACKGROUND_HIGH : proto_background.init_sim,
-		}
 
 	@property
 	def physio_state(self):
@@ -116,6 +140,7 @@ class StnModelEvaluator(object):
 		Get cell physiological state.
 		"""
 		return self._physio_state
+
 
 	@physio_state.setter
 	def set_physio_state(self, state):
@@ -125,6 +150,7 @@ class StnModelEvaluator(object):
 		# ! All changes should be enacted in build_cell() and make_inputs()
 		# Set the state flag
 		self._physio_state = state
+
 
 	def build_cell(self, model, state=None):
 		"""
@@ -141,7 +167,13 @@ class StnModelEvaluator(object):
 							model))
 
 		if model == StnModel.Gillies2005:
+
+			# Build gillies STN cell model
 			somaref, dendrefs = self._build_gillies(state)
+			
+			self.model_data[model]['mechs_gbars_dict'] = gillies.gillies_gdict
+			self.model_data[model]['gleak_name'] = gillies.gleak_name
+			self.model_data[model]['active_gbar_names'] = gillies.active_gbar_names
 
 		elif model == StnModel.Gillies_BranchZip:
 			somaref, dendrefs = self._reduce_map_gillies()
@@ -155,12 +187,15 @@ class StnModelEvaluator(object):
 			'soma': somaref,
 			'dendrites': dendrefs # one list(SectionRef) per dendrite
 		}
+		self.model_data[model]['soma_refs'] = [somaref]
+		self.model_data[model]['dend_refs'] = sum((dend for dend in dendrefs), [])
 
 		# Indicate that given model has been built
 		self.model_data[model]['built'] = True
 		self.model_data[model]['gid'] = 1 # we only have one cell
 
 		return somaref, dendrefs
+
 
 	def _build_gillies(self, state):
 		"""
@@ -286,6 +321,14 @@ class StnModelEvaluator(object):
 			self.model_data[red_model]['inputs'][syndata.pre_pop]['syn_NetCons'].extend(syndata.afferent_netcons)
 
 		return somaref, dendrefs
+
+
+	def all_sec_refs(self, model):
+		"""
+		Get SectionRef's to all sections in model.
+		"""
+		return self.model_data[model]['soma_refs'] + self.model_data[model]['dend_refs']
+
 
 	def reset_handlers(self, pre_pop):
 		"""
@@ -614,7 +657,7 @@ class StnModelEvaluator(object):
 		else: # standard action: look up in dict
 
 			try:
-				make_inputs_func = self.MAKE_INPUT_FUNCS[stim_protocol]
+				make_inputs_func = self._MAKE_INPUT_FUNCS[stim_protocol]
 			except KeyError:
 				raise NotImplementedError("Make inputs function for protocol {} not implemented".format(stim_protocol))
 
@@ -687,6 +730,7 @@ class StnModelEvaluator(object):
 		Record membrane voltages in all recorded segments
 		"""
 		rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
+		
 		for seclabel, seg in rec_segs.iteritems():
 			if isinstance(seg, neuron.nrn.Segment):
 				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
@@ -856,7 +900,7 @@ class StnModelEvaluator(object):
 		else: # standard action: look up in dict
 
 			try:
-				rec_trace_func = self.REC_TRACE_FUNCS[stim_protocol]
+				rec_trace_func = self._REC_TRACE_FUNCS[stim_protocol]
 			except KeyError:
 				raise NotImplementedError("Recording function for protocol {} not implemented".format(stim_protocol))
 
@@ -1048,7 +1092,7 @@ class StnModelEvaluator(object):
 		else: # standard action: look up in dict
 
 			try:
-				plot_trace_func = self.PLOT_TRACE_FUNCS[protocol]	
+				plot_trace_func = self._PLOT_TRACE_FUNCS[protocol]	
 			except KeyError:
 				raise NotImplementedError("Plotting function for protocol {} not implemented".format(protocol))
 
@@ -1082,7 +1126,7 @@ class StnModelEvaluator(object):
 		Initialize simulation.
 		"""
 		try:
-			init_sim_func = self.INIT_SIM_FUNCS[stim_protocol]
+			init_sim_func = self._INIT_SIM_FUNCS[stim_protocol]
 		
 		except KeyError:
 			logger.warning("Simulator initializaton function for protocol {} not implemented. Falling back to default initialization function.".format(stim_protocol))
@@ -1240,6 +1284,23 @@ class StnModelEvaluator(object):
 ################################################################################
 # EXPERIMENTS
 ################################################################################
+
+
+def run_protocol(proto, model, export_locals=True):
+	"""
+	Run given stimulation protocol.
+	"""
+
+	# Make cell model and evaluator
+	evaluator = StnModelEvaluator(model, PhysioState.NORMAL)
+	evaluator.build_cell(model)
+	
+	# Run protocol
+	evaluator.setup_run_protocol(proto)
+	evaluator.plot_traces(proto)
+
+	if export_locals:
+		globals().update(locals())
 
 
 def map_protocol_MIN_SYN_BURST():

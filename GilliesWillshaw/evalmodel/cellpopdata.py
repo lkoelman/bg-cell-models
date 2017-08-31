@@ -610,13 +610,15 @@ class CellConnector(object):
 		"""
 		Insert synapse POINT_PROCESS in given section.
 
+
 		USAGE:
 
 		- either provide argument 'use_sources' to fetch connection parameters
 		  or provide them yourself in argument 'con_par_data'
 
+		
 		ARGUMENTS:
-
+		
 		@param pre_post_pop		tuple(str, str) containing keys for pre-synaptic
 								and post-synaptic populations, e.g.
 								(Populations.GPE, Populations.STN)

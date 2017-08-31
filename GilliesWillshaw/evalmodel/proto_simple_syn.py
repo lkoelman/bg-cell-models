@@ -1,6 +1,8 @@
 """
-Functions to set up STN experimental protocol with 
-simple synaptic inputs.
+Experimental protocol with minimal number / configuration of synapses
+to elicit interesting behaviours, e.g. a burst.
+
+@author Lucas Koelman
 """
 
 import neuron
@@ -13,10 +15,19 @@ from cellpopdata import PhysioState, Populations as Pop, NTReceptors as NTR, Par
 # Stimulation protocols
 from proto_common import *
 
+################################################################################
+# Interface functions
+################################################################################
+
+# see StnModelEvaluator
+
+################################################################################
+# Building block functions
+################################################################################
 
 def make_GLU_inputs(self, n_ctx_syn, connector=None):
 	"""
-	Make a single Glutamergic synapse on the STN neuron.
+	Make excitatory inputs distributed randomly over the dendrite
 	"""
 	if connector is None:
 		cc = cpd.CellConnector(self.physio_state, self.rng)
