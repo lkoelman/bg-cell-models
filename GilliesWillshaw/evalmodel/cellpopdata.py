@@ -108,6 +108,12 @@ class StnModel(Enum):
 	Miocinovic2006 = 1
 	Gillies_GIF = 2
 	Gillies_BranchZip = 3
+	Gillies_FoldStratford = 4
+	Gillies_FoldMarasco = 5
+
+# Indicate which of the STN models are reduced models
+ReducedModels = (StnModel.Gillies_GIF, StnModel.Gillies_BranchZip, 
+					StnModel.Gillies_FoldMarasco, StnModel.Gillies_FoldStratford)
 
 @unique
 class ParameterSource(Enum):

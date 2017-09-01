@@ -25,6 +25,12 @@ class StimProtocol(Enum):
 	PASSIVE_SYN = 10			# propagation of EPSP/IPSP in passive cell
 
 
+ClampProtocols = (StimProtocol.CLAMP_REBOUND, StimProtocol.CLAMP_PLATEAU)
+
+SynapticProtocols = tuple(proto for proto in list(StimProtocol) if (
+							(proto not in ClampProtocols) and
+							(proto != StimProtocol.SPONTANEOUS)))
+
 @unique
 class EvaluationStep(Enum):
 	"""

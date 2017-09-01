@@ -290,7 +290,7 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False)
 
 
 def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq, 
-					syn_mod_pars=None, method='Ztransfer'):
+					syn_mod_pars=None, method='Ztransfer', linearize_gating=False):
 	"""
 	Map synapses to equivalent synaptic inputs on given morphologically
 	reduced cell.
@@ -317,12 +317,18 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 		syn_mod_pars = synmech_parnames
 
 	# Compute transfer impedances
+	logger.debug("Initializing cell for electrotonic measurements...")
 	init_cell()
 	logger.debug("Placing impedance measuring electrode...")
+	
 	imp = h.Impedance() # imp = h.zz # previously created
-	imp.loc(0.5, sec=rootref.sec)
-	linearize_gating = 1 # 0 = calculation with current values of gating vars, 1 = linearize gating vars around V
-	imp.compute(Z_freq, linearize_gating) # compute transfer impedance between loc and all segments
+	imp.loc(0.5, sec=rootref.sec) # injection site
+
+	# NOTE: linearize_gating corresponds to checkbox 'include dstate/dt contribution' in NEURON GUI Impedance Tool
+	#		- (see equations in Impedance doc) 
+	#		- 0 = calculation with current values of gating vars
+	#		- 1 = linearize gating vars around V
+	imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
 
 	# Loop over all synapses
 	logger.debug("Mapping synapses to reduced cell...")
@@ -368,12 +374,24 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 					map_Zc, map_k, map_Zin, syn_info.Zc/map_Zc)))
 
 		# Calculate scale factor
+		#	`Vsoma = k_{syn->soma} * Vsyn`			(Vsyn is local EPSP)
+		#	`Vsoma = k_{syn->soma} * Zin * Isyn`	(Isyn is synaptic current source)
+		#	`Vsoma = (Zc / Zin) * Zin * Isyn`
+		#	`Vsoma = Zc * Isyn`
+		#	`Vsoma = Zc * gsyn * (V-Esyn)`
 		if method == 'Ztransfer':
-			# method 1: conserve Zc*Isyn (no local response): place at loc with approx same Zc, correct using exact Zc measurement
+			# method 1: (don't conserve local Vsyn):
+			#			- place at x with +/- same Zc 
+			#			- ensure Isyn is the same
+			#				- correct gsyn using exact Zc measurement (see below)
 			scale_g = syn_info.Zc/map_Zc
 		
 		elif method == 'Vratio':
-			# Method 2: conserve Zin*Isyn (local response): place at loc with same k_{syn->soma}, correct using Zin measurement
+			# Method 2: (conserve local Vsyn):
+			#			- place at x with +/- same k_{syn->soma}
+			#			- ensure that Vsyn is the same (EPSP, local depolarization)
+			#				- to maintain Vsyn = Zin * gsyn * (V-Esyn) : scale gsyn
+			#				  to compensate for discrepancy in Zin
 			scale_g = syn_info.Zin/map_Zin
 		
 		else:

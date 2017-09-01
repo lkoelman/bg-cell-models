@@ -15,7 +15,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 import matplotlib.pyplot as plt
 import numpy as np
 
-from common.treeutils import ExtSecRef
+from common.treeutils import ExtSecRef, getsecref
 
 # Load NEURON mechanisms
 import os.path
@@ -46,7 +46,11 @@ def stn_cell_gillies():
 	"""
 	Initialize Gillies & Willshaw cell model
 	"""
-	h.xopen("createcell.hoc")
+	if not hasattr(h, 'SThcell'):
+		h.xopen("createcell.hoc")
+	else:
+		print("Gillies STN cell already exists. Cannot create more than one instance.")
+	
 	soma = h.SThcell[0].soma
 	dends = h.SThcell[0].dend0, h.SThcell[0].dend1
 	stims = h.stim1, h.stim2, h.stim3
@@ -84,6 +88,31 @@ def get_stn_refs():
 		noderef.gid = min(0,noderef.tree_index)*100 + noderef.table_index
 
 	return somaref, dendLrefs, dendRrefs
+
+
+def get_soma_refs(all_refs):
+	"""
+	Return SectionRef to soma sections
+	"""
+	return [ref for ref in all_refs if ref.sec.same(h.SThcell[0].soma)]
+
+
+def get_each_dend_refs(all_refs):
+	"""
+	Get one list of SectionRef for each dendrite.
+	"""
+	dend0 = [getsecref(sec, all_refs) for sec in h.SThcell[0].dend0]
+	dend1 = [getsecref(sec, all_refs) for sec in h.SThcell[0].dend0]
+	return dend0, dend1
+
+
+def get_all_dend_refs(all_refs):
+	"""
+	Return list of SectionRef to unique dendritic sections.
+	"""
+	dend0, dend1 = get_each_dend_refs(all_refs)
+	return dend0 + dend1
+
 
 def reset_channel_gbar():
 	"""

@@ -24,6 +24,7 @@ import cluster as clutools
 from cluster import Cluster
 import interpolation as interp
 from marasco_merging import merge_seg_subtree
+import folding
 
 # Gillies STN model
 from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
@@ -528,7 +529,7 @@ def calc_folds_impl(reduction, i_pass, Y_criterion='highest_level'):
 	allsecrefs = reduction.all_sec_refs
 
 	# Find collapsable branch points
-	target_Y_secs = find_collapsable(allsecrefs, i_pass, Y_criterion)
+	target_Y_secs = folding.find_collapsable(allsecrefs, i_pass, Y_criterion)
 
 	# Do collapse operation at each branch points
 	clusters = calc_collapses(target_Y_secs, i_pass, allsecrefs)

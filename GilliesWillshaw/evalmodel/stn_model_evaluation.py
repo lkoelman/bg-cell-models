@@ -26,6 +26,7 @@ import gillies_model as gillies
 # Cell reduction
 from reducemodel import (
 	marasco_foldbased as marasco,
+	reduce_cell,
 	mapsyn,
 )
 
@@ -49,14 +50,16 @@ import proto_common
 proto_common.logger = logger
 from proto_common import *
 
+# Importing protocols will run module and register functions
+import proto_gillies_article
 import proto_simple_syn as proto_simple
 import proto_background
 import proto_passive_syn
 
 # Adjust verbosity of loggers
-marasco.logger.setLevel(logging.WARNING)
-mapsyn.logger.setLevel(logging.WARNING)
-cpd.logger.setLevel(logging.WARNING)
+# marasco.logger.setLevel(logging.WARNING)
+# mapsyn.logger.setLevel(logging.WARNING)
+# cpd.logger.setLevel(logging.WARNING)
 
 
 class StnModelEvaluator(object):
@@ -127,6 +130,7 @@ class StnModelEvaluator(object):
 			self.model_data[model]['rec_data'] = dict(((proto, {}) for proto in StimProtocol))
 			self.model_data[model]['rec_segs'] = dict(((proto, {}) for proto in StimProtocol))
 			self.model_data[model]['inputs'] = {} # key for each pre-synaptic population
+			self.model_data[model]['user_params'] = {} # parameters for model building
 
 		self.sim_dur = 1000.
 		self.sim_dt = 0.025
@@ -169,32 +173,40 @@ class StnModelEvaluator(object):
 		if model == StnModel.Gillies2005:
 
 			# Build gillies STN cell model
-			somaref, dendrefs = self._build_gillies(state)
+			soma_refs, dend_refs = self._build_gillies(state)
 			
 			self.model_data[model]['mechs_gbars_dict'] = gillies.gillies_gdict
 			self.model_data[model]['gleak_name'] = gillies.gleak_name
 			self.model_data[model]['active_gbar_names'] = gillies.active_gbar_names
 
-		elif model == StnModel.Gillies_BranchZip:
-			somaref, dendrefs = self._reduce_map_gillies()
+			self.model_data[model]['sec_refs'] = {
+				'soma': soma_refs[0],
+				'dendrites': list(gillies.get_each_dend_refs(dend_refs))
+			}
+
+		elif model in cpd.ReducedModels:
+
+			# Reduce Gillies model
+			soma_refs, dend_refs = self._reduce_map_gillies(model)
+
+			dendL = [ref for ref in dend_refs if 'dend0' in ref.sec.name()]
+			dendR = [ref for ref in dend_refs if 'dend1' in ref.sec.name()]
+			self.model_data[model]['sec_refs'] = {
+				'soma': soma_refs[0],
+				'dendrites': dendL + dendR,
+			}
 
 		else:
 			raise Exception("Model '{}' not supported".format(
 					model))
 
 		# Save Sections
-		self.model_data[model]['sec_refs'] = {
-			'soma': somaref,
-			'dendrites': dendrefs # one list(SectionRef) per dendrite
-		}
-		self.model_data[model]['soma_refs'] = [somaref]
-		self.model_data[model]['dend_refs'] = sum((dend for dend in dendrefs), [])
+		self.model_data[model]['soma_refs'] = soma_refs
+		self.model_data[model]['dend_refs'] = dend_refs
 
 		# Indicate that given model has been built
 		self.model_data[model]['built'] = True
 		self.model_data[model]['gid'] = 1 # we only have one cell
-
-		return somaref, dendrefs
 
 
 	def _build_gillies(self, state):
@@ -205,7 +217,10 @@ class StnModelEvaluator(object):
 		# Make Gillies STN cell
 		soma, dends, stims = gillies.stn_cell_gillies()
 		somaref, dendL_refs, dendR_refs = gillies.get_stn_refs()
-		dendrefs = [dendL_refs, dendR_refs]
+		
+		soma_refs = [somaref]
+		dend_refs = dendL_refs + dendR_refs
+		all_refs = soma_refs + dend_refs
 
 		# State-dependent changes to model specification
 		if state == PhysioState.NORMAL:
@@ -217,7 +232,7 @@ class StnModelEvaluator(object):
 
 			# 1. Reduce sKCA channel conductance by 90%, from sources:
 			#	- Gillies & Willshaw 2005 (see refs)
-			for secref in [somaref] + dendrefs:
+			for secref in all_refs:
 				for seg in secrref.sec:
 					seg.gk_sKCa = 0.1 * seg.gk_sKCa
 
@@ -243,16 +258,15 @@ class StnModelEvaluator(object):
 		else:
 			raise NotImplementedError('Unrecognized state %s' % repr(state))
 
-		return somaref, dendrefs
+		return soma_refs, dend_refs
 
 
-	def _reduce_map_gillies(self):
+	def _reduce_map_gillies(self, model):
 		"""
 		Reduce Gillies model and map synapses.
 		"""
 
 		full_model = StnModel.Gillies2005
-		red_model = StnModel.Gillies_BranchZip
 
 		# Make sure gillies model is built
 		if not self.model_data[full_model]['built']:
@@ -260,6 +274,9 @@ class StnModelEvaluator(object):
 			self.build_cell(full_model)
 		else:
 			logger.warn("Gillies STN model will be modified")
+
+		########################################################################
+		# Gather full model info
 
 		# Restore conductances
 		gillies.reset_channel_gbar()
@@ -280,47 +297,71 @@ class StnModelEvaluator(object):
 		soma = somaref.sec
 
 		# Get synapses and NetCon we want to map
-		cdict = self.model_data[full_model]['inputs']
-		pre_pops = cdict.keys()
-		syns_tomap = sum((cdict[pop]['synapses'] for pop in pre_pops), [])
-		ncs_tomap = sum((cdict[pop]['syn_NetCons'] for pop in pre_pops), [])
+		inputs = self.model_data[full_model]['inputs']
+		pre_pops = inputs.keys()
+		syns_tomap, ncs_tomap = [], []
+
+		for pop in pre_pops:
+
+			if 'synapses' in inputs[pop]:
+				syns_tomap.extend(inputs[pop]['synapses'] )
+			
+			if 'syn_NetCons' in inputs[pop]:
+				ncs_tomap.extend(inputs[pop]['syn_NetCons'] )
 
 		# Get synapse info
-		save_ref_attrs = ['table_index', 'tree_index', 'gid'] # SecRef attributes to save
-		pop_mapper = {'pre_pop': lambda syn: self.get_pre_pop(syn, full_model)}
-		syn_info = mapsyn.get_syn_info(soma, allsecrefs, Z_freq=Z_freq, 
-							init_cell=stn_setstate, save_ref_attrs=save_ref_attrs,
-							attr_mappers=pop_mapper, syn_nc_tomap=(syns_tomap, ncs_tomap))
+		if any(syns_tomap):
+			save_ref_attrs = ['table_index', 'tree_index', 'gid'] # SecRef attributes to save
+			pop_mapper = {'pre_pop': lambda syn: self.get_pre_pop(syn, full_model)}
+			syn_info = mapsyn.get_syn_info(soma, allsecrefs, Z_freq=Z_freq, 
+								init_cell=stn_setstate, save_ref_attrs=save_ref_attrs,
+								attr_mappers=pop_mapper, syn_nc_tomap=(syns_tomap, ncs_tomap))
+
+		########################################################################
+		# Reduce
+		logger.debug("Starting model reduction...")
 		
 		# Create reduced cell
-		eq_refs, newsecrefs = marasco.reduce_gillies_incremental(
-										n_passes=7, zips_per_pass=100)
+		if model in (StnModel.Gillies_FoldMarasco, StnModel.Gillies_BranchZip):
+			# Bush/Marasco folding
+			soma_refs, dend_refs = reduce_cell.fold_gillies_marasco(export_locals=False)
 
-		# Apply correction TODO: remove this after fixing reduction
-		for sec in h.allsec():
-			if sec.name().endswith('soma'):
-				print("Skipping soma")
-				continue
-			for seg in sec:
-				# seg.gna_NaL = 1.075 * seg.gna_NaL
-				seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
-				n_adjusted += 1
+		elif model == StnModel.Gillies_FoldStratford:
+			# Stratford folding
+			soma_refs, dend_refs = reduce_cell.fold_gillies_stratford(export_locals=False)
 
-		# Reassign SectionRef vars
-		somaref = next(ref for ref in newsecrefs if 'soma' in ref.sec.name())
-		dendrefs = [[ref] for ref in newsecrefs if not 'soma' in ref.sec.name()]
+		# # Apply correction (TODO: remove this after fixing reduction)
+		# for sec in h.allsec():
+		# 	if sec.name().endswith('soma'):
+		# 		print("Skipping soma")
+		# 		continue
+		# 	for seg in sec:
+		# 		# seg.gna_NaL = 1.075 * seg.gna_NaL
+		# 		seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
+		# 		n_adjusted += 1
+
+		########################################################################
+		# Map inputs
+		logger.debug("Mapping synapses...")
+
+		self._init_con_dict(model, pre_pops)
+		new_inputs = self.model_data[model]['inputs']
 
 		# Map synapses to reduced cell
-		mapsyn.map_synapses(somaref, newsecrefs, syn_info, stn_setstate, Z_freq,
-							method='Vratio')
+		if any(syns_tomap):
+			default_map_method = 'Vratio'
+			map_method = self.model_data[model]['user_params'].get(
+									'synapse_mapping_method', default_map_method)
+			
+			mapsyn.map_synapses(soma_refs[0], soma_refs+dend_refs, syn_info, 
+								stn_setstate, Z_freq, method=map_method)
 
-		# Save inputs
-		self._init_con_dict(red_model, pre_pops)
-		for syndata in syn_info:
-			self.model_data[red_model]['inputs'][syndata.pre_pop]['synapses'].append(syndata.mapped_syn)
-			self.model_data[red_model]['inputs'][syndata.pre_pop]['syn_NetCons'].extend(syndata.afferent_netcons)
+			# Save mapped inputs
+			for syn in syn_info:
+				new_inputs[syn.pre_pop]['synapses'].append(syn.mapped_syn)
+				new_inputs[syn.pre_pop]['syn_NetCons'].extend(syn.afferent_netcons)
 
-		return somaref, dendrefs
+		return soma_refs, dend_refs
 
 
 	def all_sec_refs(self, model):
@@ -430,16 +471,15 @@ class StnModelEvaluator(object):
 		"""
 		Make the inputs for given stimulation protocol.
 		"""
-		if self.target_model == StnModel.Gillies_BranchZip:
+		if ((self.target_model in cpd.ReducedModels) and 
+			(stim_protocol in SynapticProtocols)):
+			
 			logger.info("""\
 			\nSkip making inputs for model {}.\
 			\nInputs for reduced model should have been mapped from full model.
 			""".format(StnModel.Gillies_BranchZip))
+			
 			return
-
-		elif self.target_model != StnModel.Gillies2005:
-			raise Exception("Found target model '{}'. Only model '{}' is supported as a target model").format(
-				self.target_model, StnModel.Gillies2005)
 
 		cc = cpd.CellConnector(self.physio_state, self.rng)
 
@@ -449,60 +489,6 @@ class StnModelEvaluator(object):
 		if stim_protocol == StimProtocol.SPONTANEOUS:
 			# Spontaneous firing has no inputs
 			pass
-
-		elif stim_protocol == StimProtocol.CLAMP_PLATEAU:
-			
-			# Set up stimulation (5 mA/cm2 for 80 ms)
-			I_hyper = -0.17 # hyperpolarize to -70 mV (see fig. 10C)
-			I_depol = I_hyper + 0.2 # see fig. 10D: 0.2 nA (=stim.amp) over hyperpolarizing current
-			dur_depol = 50 # see fig. 10D, top right
-			del_depol = 1000
-			burst_time = [del_depol-50, del_depol+200] # empirical
-
-			stim1, stim2 = h.stim1, h.stim2
-
-			stim1.delay = 0
-			stim1.dur = del_depol
-			stim1.amp = I_hyper
-
-			stim2.delay = del_depol
-			stim2.dur = dur_depol
-			stim2.amp = I_depol
-
-			stim3.delay = del_depol + dur_depol
-			stim3.dur = dur - (del_depol + dur_depol)
-			stim3.amp = I_hyper
-
-			# Save inputs
-			self.model_data[self.target_model]['inputs']['IClamps'] = [stim1, stim2]
-
-		elif stim_protocol == StimProtocol.CLAMP_REBOUND:
-			
-			stim1, stim2, stim3 = h.stim1, h.stim2, h.stim3
-
-			stim1.delay = 0
-			stim1.dur = 500
-			stim1.amp = 0.0
-
-			# stim2.delay = 200
-			# stim2.dur = 500
-			# stim2.amp = -0.11 # -0.25 in full model (hyperpolarize to -75 mV steady state)
-			stim2.amp = 0
-
-			# Use voltage clamp (space clamp) instead of current clamp
-			clamp = h.SEClamp(soma(0.5))
-			clamp.dur1 = 0
-			clamp.dur2 = 0
-			clamp.dur3 = 500
-			clamp.amp3 = -75
-
-			stim3.delay = 1000
-			stim3.dur = 1000
-			stim3.amp = 0.0
-
-			# Save inputs
-			self.model_data[self.target_model]['inputs']['IClamps'] = [stim1, stim2, stim3]
-			self.model_data[self.target_model]['inputs']['SEClamps'] = [clamp]
 
 		elif stim_protocol == StimProtocol.SINGLE_SYN_GABA:
 			# Make single GABA synapse
@@ -756,11 +742,10 @@ class StnModelEvaluator(object):
 				'dist_dend': dendsec(0.8), # approximate location along dendrite in fig. 5C
 			}
 
-		elif model == StnModel.Gillies_BranchZip:
+		elif model in cpd.ReducedModels:
 
-			somasec = self.model_data[model]['sec_refs']['soma'].sec
-			dends = self.model_data[model]['sec_refs']['dendrites'] # list of lists
-			dendrefs = sum(dends, []) # flatten it
+			somasec = self.model_data[model]['soma_refs'][0].sec
+			dendrefs = self.model_data[model]['dend_refs']
 			dendsec = next(ref.sec for ref in dendrefs if not any(ref.sec.children()))
 
 			# Default recorded segments
@@ -790,39 +775,7 @@ class StnModelEvaluator(object):
 
 			# Trace specs for recording ionic currents, channel states
 			analysis.rec_currents_activations(traceSpecs, 'soma', 0.5)
-
-
-		elif stim_protocol == StimProtocol.CLAMP_PLATEAU: # plateau potential (Gillies 2006, Fig. 10C-D):
 			
-			# Trace specs for membrane voltages
-			for seclabel, seg in rec_segs.iteritems():
-				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
-
-			# Record Ca and Ca-activated currents in dendrite
-			dendloc = rec_segs['dist_dend'].x
-
-			# K currents (dendrite)
-			traceSpecs['I_KCa_d'] = {'sec':'dist_dend','loc':dendloc,'mech':'sKCa','var':'isKCa'}
-			
-			# Ca currents (dendrite)
-			traceSpecs['I_CaL_d'] = {'sec':'dist_dend','loc':dendloc,'mech':'HVA','var':'iLCa'}
-			traceSpecs['I_CaN_d'] = {'sec':'dist_dend','loc':dendloc,'mech':'HVA','var':'iNCa'}
-			traceSpecs['I_CaT_d'] = {'sec':'dist_dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
-
-
-		elif stim_protocol == StimProtocol.CLAMP_REBOUND: # rebound burst (Gillies 2006, Fig. 3-4)
-
-			# Trace specs for membrane voltages
-			for seclabel, seg in rec_segs.iteritems():
-				traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
-
-			# Trace specs for recording ionic currents, channel states
-			analysis.rec_currents_activations(traceSpecs, 'soma', 0.5)
-			
-			# Ca and K currents in distal dendrites
-			dendloc = rec_segs['dist_dend'].x
-			analysis.rec_currents_activations(traceSpecs, 'dist_dend', dendloc, ion_species=['ca','k'])
-
 
 		elif stim_protocol == StimProtocol.SINGLE_SYN_GABA:
 			
@@ -1028,26 +981,6 @@ class StnModelEvaluator(object):
 			# Plot ionic currents, (in)activation variables
 			figs, cursors = analysis.plot_currents_activations(self.recData, recordStep)
 
-		elif protocol == StimProtocol.CLAMP_PLATEAU:
-
-			self._plot_all_Vm(model, protocol)
-
-			# Plot ionic currents, (in)activation variables
-			figs, cursors = analysis.plot_currents_activations(recData, recordStep)
-
-			# Dendrite currents during burst
-			recDend = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.endswith('_d')])
-			analysis.cumulPlotTraces(recDend, recordStep, timeRange=burst_time)
-
-		elif protocol == StimProtocol.CLAMP_REBOUND:
-
-			self._plot_all_Vm(model, protocol)
-
-			# Plot ionic currents, (in)activation variables
-			figs_soma, cursors_soma = analysis.plot_currents_activations(recData, recordStep, sec_tag='soma')
-			figs_dend, cursors_dend = analysis.plot_currents_activations(recData, recordStep, sec_tag='dist_dend')
-			figs = figs_soma + figs_dend
-			cursors = cursors_soma + cursors_dend
 
 		elif protocol == StimProtocol.SINGLE_SYN_GABA:
 			
@@ -1224,48 +1157,6 @@ class StnModelEvaluator(object):
 			h.init()
 			self.run_sim()
 
-		elif protocol == StimProtocol.CLAMP_PLATEAU: # plateau potential (Gillies 2006, Fig. 10C-D):
-			
-			# Set simulation parameters
-			self.sim_dur = 2000
-			h.dt = 0.025
-			self.sim_dt = h.dt
-
-			h.celsius = 30 # different temp from paper
-			h.v_init = -60 # paper simulations sue default v_init
-			gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
-
-			# Make inputs
-			self.make_inputs(protocol)
-
-			# Set up recording
-			self.rec_traces(protocol, recordStep=0.025)
-
-			# Simulate
-			h.init()
-			self.run_sim()
-
-		elif protocol == StimProtocol.CLAMP_REBOUND: # rebound burst (Gillies 2006, Fig. 3-4)
-			
-			# Set simulation parameters
-			self.sim_dur = 2000
-			h.dt = 0.025
-			self.sim_dt = h.dt
-
-			h.celsius = 35 # different temp from paper
-			h.v_init = -60 # paper simulations sue default v_init
-			gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
-
-			# Make inputs
-			self.make_inputs(protocol)
-
-			# Set up recording
-			self.rec_traces(protocol, recordStep=0.05)
-
-			# Simulate
-			h.init()
-			self.run_sim()
-
 		elif protocol == StimProtocol.MIN_SYN_BURST:
 
 			# Change SKCa conductance
@@ -1296,6 +1187,37 @@ def run_protocol(proto, model, export_locals=True):
 	evaluator.build_cell(model)
 	
 	# Run protocol
+	evaluator.setup_run_protocol(proto)
+	evaluator.plot_traces(proto)
+
+	if export_locals:
+		globals().update(locals())
+
+
+def map_protocol(proto, model, export_locals=True):
+	"""
+	Run given stimulation protocol.
+
+	@param	model		the reduced model you want to test
+	"""
+	full_model = StnModel.Gillies2005
+	red_model = model
+
+	# Make cell model and evaluator
+	evaluator = StnModelEvaluator(full_model, PhysioState.NORMAL)
+	evaluator.build_cell(full_model)
+	
+	# Run protocol
+	evaluator.setup_run_protocol(proto)
+	evaluator.plot_traces(proto)
+
+	##################################################
+
+	# Model reduction
+	evaluator.build_cell(red_model)
+	evaluator.target_model = red_model
+
+	# Run Protocol
 	evaluator.setup_run_protocol(proto)
 	evaluator.plot_traces(proto)
 
@@ -1384,6 +1306,7 @@ def map_protocol_SYN_BACKGROUND_HIGH():
 
 
 if __name__ == '__main__':
-	map_protocol_MIN_SYN_BURST()
-	map_protocol_SYN_BACKGROUND_HIGH()
+	# map_protocol_MIN_SYN_BURST()
+	# map_protocol_SYN_BACKGROUND_HIGH()
+	map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldMarasco)
 

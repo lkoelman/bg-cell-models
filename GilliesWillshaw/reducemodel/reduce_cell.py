@@ -13,6 +13,12 @@ from neuron import h
 import marasco_foldbased as marasco
 import stratford_folding as stratford
 
+# logging of DEBUG/INFO/WARNING messages
+import logging
+logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
+logname = "reduction" # __name__
+logger = logging.getLogger(logname) # create logger for this module
+
 @unique
 class ReductionMethod(Enum):
 	Rall = 0
@@ -134,12 +140,15 @@ class FoldReduction(object):
 		@param dend_refs	list of SectionRef to at least all new dendritic sections
 							(may also contain existing sections)
 		"""
+		# Destroy references to deleted sections
+		self._soma_refs = [ref for ref in self._soma_refs if ref.exists()]
+		self._dend_refs = [ref for ref in self._dend_refs if ref.exists()]
+		
+		# Add newly created sections
 		if soma_refs is not None:
-			self._soma_refs = [ref for ref in self._soma_refs if ref.exists()]
 			self._soma_refs = list(set(self._soma_refs + soma_refs)) # get unique references
 
 		if dend_refs is not None:
-			self._dend_refs = [ref for ref in self._dend_refs if ref.exists()]
 			self._dend_refs = list(set(self._dend_refs + dend_refs)) # get unique references
 
 
@@ -245,7 +254,8 @@ def fold_gillies_stratford(export_locals=True):
 								namespace for easy inspection
 	"""
 	import gillies_model
-	gillies_model.stn_cell_gillies()
+	if not hasattr(h, 'SThcell'):
+		gillies_model.stn_cell_gillies()
 
 	# Make sections accesible by name and index
 	soma = h.SThcell[0].soma
@@ -261,10 +271,13 @@ def fold_gillies_stratford(export_locals=True):
 	fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
 
 	# Reduce model
-	reduction = FoldReduction([soma], dends, fold_roots, ReductionMethod.Stratford)
+	red_method = ReductionMethod.Stratford
+	reduction = FoldReduction([soma], dends, fold_roots, red_method)
 	reduction.gleak_name = gillies_model.gleak_name
 	reduction.mechs_gbars_dict = gillies_model.gillies_gdict
 	reduction.reduce_model(num_passes=1)
+
+	logger.debug("Successfully folded Gillies model using {}!".format(red_method))
 
 	if export_locals:
 		globals().update(locals())
@@ -280,7 +293,8 @@ def fold_gillies_marasco(export_locals=True):
 								namespace for easy inspection
 	"""
 	import gillies_model
-	gillies_model.stn_cell_gillies()
+	if not hasattr(h, 'SThcell'):
+		gillies_model.stn_cell_gillies()
 
 	# Make sections accesible by name and index
 	soma = h.SThcell[0].soma
@@ -296,10 +310,14 @@ def fold_gillies_marasco(export_locals=True):
 	fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
 
 	# Reduce model
-	reduction = FoldReduction([soma], dends, fold_roots, ReductionMethod.Marasco)
+	red_method = ReductionMethod.Marasco
+	reduction = FoldReduction([soma], dends, fold_roots, red_method)
 	reduction.gleak_name = gillies_model.gleak_name
 	reduction.mechs_gbars_dict = gillies_model.gillies_gdict
 	reduction.reduce_model(num_passes=7)
+	reduction.update_refs()
+
+	logger.debug("Successfully folded Gillies model using {}!".format(red_method))
 
 	if export_locals:
 		globals().update(locals())
