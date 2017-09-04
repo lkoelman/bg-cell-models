@@ -57,6 +57,8 @@ import proto_background
 import proto_passive_syn
 
 # Adjust verbosity of loggers
+logging.getLogger('redops').setLevel(logging.WARNING)
+logging.getLogger('folding').setLevel(logging.WARNING)
 # marasco.logger.setLevel(logging.WARNING)
 # mapsyn.logger.setLevel(logging.WARNING)
 # cpd.logger.setLevel(logging.WARNING)
@@ -311,8 +313,12 @@ class StnModelEvaluator(object):
 
 		# Get synapse info
 		if any(syns_tomap):
-			save_ref_attrs = ['table_index', 'tree_index', 'gid'] # SecRef attributes to save
+
+			# Existing synapse attributes to save (SectionRef attributes)
+			save_ref_attrs = ['table_index', 'tree_index', 'gid']
+			# Additonal synapse attributes to compute and save
 			pop_mapper = {'pre_pop': lambda syn: self.get_pre_pop(syn, full_model)}
+			
 			syn_info = mapsyn.get_syn_info(soma, allsecrefs, Z_freq=Z_freq, 
 								init_cell=stn_setstate, save_ref_attrs=save_ref_attrs,
 								attr_mappers=pop_mapper, syn_nc_tomap=(syns_tomap, ncs_tomap))
@@ -329,16 +335,6 @@ class StnModelEvaluator(object):
 		elif model == StnModel.Gillies_FoldStratford:
 			# Stratford folding
 			soma_refs, dend_refs = reduce_cell.fold_gillies_stratford(export_locals=False)
-
-		# # Apply correction (TODO: remove this after fixing reduction)
-		# for sec in h.allsec():
-		# 	if sec.name().endswith('soma'):
-		# 		print("Skipping soma")
-		# 		continue
-		# 	for seg in sec:
-		# 		# seg.gna_NaL = 1.075 * seg.gna_NaL
-		# 		seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
-		# 		n_adjusted += 1
 
 		########################################################################
 		# Map inputs
@@ -1172,6 +1168,7 @@ class StnModelEvaluator(object):
 			self._setup_proto(protocol)
 			self._run_proto(protocol)
 
+
 ################################################################################
 # EXPERIMENTS
 ################################################################################
@@ -1308,5 +1305,5 @@ def map_protocol_SYN_BACKGROUND_HIGH():
 if __name__ == '__main__':
 	# map_protocol_MIN_SYN_BURST()
 	# map_protocol_SYN_BACKGROUND_HIGH()
-	map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldMarasco)
-
+	# map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldMarasco)
+	map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldStratford)

@@ -13,7 +13,7 @@ import redutils
 # logging of DEBUG/INFO/WARNING messages
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = "reduction" # __name__
+logname = "folding" # __name__
 logger = logging.getLogger(logname) # create logger for this module
 
 

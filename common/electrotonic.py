@@ -139,3 +139,83 @@ def inputresistance_tree(rootsec, f, glname):
 	for childsec in childsecs:
 		g_end += 1./inputresistance_tree(childsec, f, glname)
 	return inputresistance_leaky(rootsec, gleak, f, 1./g_end)
+
+
+def measure_Zin(seg, Z_freq, linearize_gating, init_func):
+	"""
+	Measure input impedance using NEURON Impedance tool
+
+	See Impedance class documentation at:
+	http://www.neuron.yale.edu/neuron/static/new_doc/analysis/programmatic/impedance.html
+
+	NOTES: 
+
+	- linearize_gating corresponds to checkbox 'include dstate/dt contribution' in NEURON GUI Impedance Tool
+		- (see equations in Impedance doc) 
+		- 0 = calculation with current values of gating vars
+		- 1 = linearize gating vars around V
+	"""
+	# Initialize the cell
+	if init_func is not None:
+		init_func()
+	
+	imp = h.Impedance() # imp = h.zz # previously created
+	imp.loc(seg.x, sec=seg.sec) # injection site
+	imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
+
+	Zin = imp.input(seg.x, sec=seg.sec)
+	return Zin
+
+
+def segs_at_dX(cur_seg, dX, f, gleak):
+	"""
+	Get next segments (in direction 0 to 1 end) at electrotonic distance dX
+	from current segment (dX = L/lambda).
+
+	I.e. get the segment at X(cur_seg) + dX
+
+	Assumes entire section has same diameter
+	"""
+	nseg = cur_seg.sec.nseg
+	sec_L = cur_seg.sec.L
+	sec_dL = sec_L / nseg
+	sec_lamb = [seg_lambda(seg, gleak, f) for seg in cur_seg.sec]
+	sec_Xi = [sec_dL / sec_lamb[i] for i in xrange(nseg)]
+	sec_Xtot = sum(sec_Xi) # total L/lambda
+	sec_Xacc = [sum((sec_Xi[j] for j in xrange(i)), 0.0) for i in xrange(nseg)] # accumulated X to left border
+	sec_dx = 1.0/nseg
+
+	# Get electrotonic length from start of Section to current x
+	cur_i = min(int(cur_seg.x/sec_dx), nseg-1)
+	l_x = cur_i*sec_dx		# x of left boundary
+	l_X = sec_Xacc[cur_i]	# L/lambda of left boundary
+
+	frac = (cur_seg.x - l_x) / sec_dx
+	assert 0.0 <= frac <= 1.01
+	frac = min(1.0, frac)
+	cur_X = l_X + frac*sec_Xi[i]
+
+	# Get length to next discretization step
+	bX = cur_X + dX
+	next_segs = []
+
+	if bX <= sec_Xtot:
+
+		# Find segment that X falls in
+		i_b = next((i for i, Xsum in enumerate(sec_Xacc) if Xsum+sec_Xi[i] >= bX))
+		
+		# Interpolate
+		frac = (bX - sec_Xacc[i_b]) / sec_Xi[i_b]
+		assert 0.0 <= frac <= 1.01
+		frac = min(1.0, frac)
+		
+		b_x = i_b*sec_dx + frac*sec_dx
+		next_segs.append(cur_seg.sec(b_x))
+
+	else:
+		ddX = bX - sec_Xtot # how far to advance in next section
+		next_segs = []
+		for child_sec in cur_seg.sec.children():
+			next_segs.extend(segs_at_dX(child_sec(0.0), ddX, f, gleak))
+
+	return next_segs

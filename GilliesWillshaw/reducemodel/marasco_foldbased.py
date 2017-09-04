@@ -37,7 +37,7 @@ f_lambda = 100.0
 # logging of DEBUG/INFO/WARNING messages
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = "reduction" # __name__
+logname = "marasco" # __name__
 logger = logging.getLogger(logname) # create logger for this module
 
 # Log to file
@@ -561,6 +561,17 @@ def make_folds_impl(reduction):
 		h.ion_style("ca_ion",3,2,1,1,1)
 
 	reduction.update_refs(dend_refs=eq_refs) # prepare for next iteration
+
+
+def postprocess_impl(reduction):
+	"""
+	Post-process cell for Marasco reduction.
+
+	(interface declared in reduce_cell.CollapseReduction)
+
+	@param	reduction		reduce_cell.CollapseReduction object
+	"""
+	pass # don't put steps specific to cell model here
 
 ################################################################################
 # Reduction Experiments

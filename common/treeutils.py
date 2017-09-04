@@ -80,6 +80,30 @@ def next_segs(curseg):
 		child_segs = [next((seg for seg in sec)) for sec in cursec.children()]
 	return child_segs
 
+def next_segs_dx(curseg, dx):
+	"""
+	Get next segments (in direction 0 to 1 end) with discretization step x
+	"""
+	x = curseg.x
+	if x + dx <= 1.0:
+		return curseg.sec(x + dx)
+	else:
+		xb = x + dx - 1.0
+		child_segs = [sec(xb) for sec in curseg.sec.children()]
+
+def next_segs_dL(curseg, dL):
+	"""
+	Get next segments (in direction 0 to 1 end) with step size dL [um]
+	"""
+	x = curseg.x
+	aL = curseg.x * curseg.sec.L
+	bL = aL + dL
+	if bL <= curseg.sec.L:
+		return curseg.sec(bL/curseg.sec.L)
+	else:
+		sL = bL - curseg.sec.L
+		child_segs = [sec(sL/sec.L) for sec in curseg.sec.children()]
+
 
 def seg_at_index(sec, iseg):
 	""" Get the i-th segment of Section """
@@ -146,3 +170,15 @@ def subtreeroot(secref):
 		if secref.sec in roottree:
 			return root
 	return orig
+
+
+def subtree_secs(rootsec):
+	"""
+	Get all Sections in subtree of but not including rootsec.
+	"""
+	tree_secs = h.SectionList()
+	rootsec.push()
+	tree_secs.subtree() # includes rootsec itself
+	h.pop_section()
+
+	return [sec for sec in tree_secs if not rootsec.same(sec)]

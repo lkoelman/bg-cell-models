@@ -15,6 +15,7 @@ Reduce model by folding/collapsing branches according to algorithm described in 
 """
 
 import re
+import math
 
 import folding
 import redutils
@@ -24,8 +25,8 @@ from redutils import get_sec_props_obj
 from cluster import Cluster, assign_topology_attrs
 
 from common import treeutils
-from common.treeutils import getsecref, next_segs, seg_index, interp_seg
-from common.electrotonic import calc_lambda
+from common.treeutils import getsecref, seg_index, interp_seg
+from common.electrotonic import calc_lambda, measure_Zin, segs_at_dX
 
 from neuron import h
 
@@ -36,14 +37,16 @@ alphabet_uppercase = [chr(i) for i in xrange(65,90+1)] # A-Z are ASCII 65-90
 # logging of DEBUG/INFO/WARNING messages
 import logging
 logging.basicConfig(format='%(message)s %(levelname)s:@%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = "reduction" # __name__
+logname = "stratford" # __name__
 logger = logging.getLogger(logname) # create logger for this module
 
 ################################################################################
 # Folding Algorithm
 ################################################################################
 
-def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction):
+maxlvl = 0
+
+def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction, lvl=0):
 	"""
 	Compute equivalent diameter at next discretization step (a_i+1) * dX
 	in the Stratford et al. (1989) reduction method.
@@ -63,118 +66,136 @@ def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction):
 	gbar_list = reduction.active_gbar_names
 
 	# electrotonic distance to last segment where diam was calculated
-	last_X = root_X + a_i*dX
-	target_X = last_X + dX
+	# last_X = root_X + a_i*dX
+	# target_X = last_X + dX
 
 	# electrotonic distance to last visited segment (not necessarily used)
-	a_ref = getsecref(a_seg.sec, allsecrefs)
-	a_index = seg_index(a_seg)
-	a_X0 = a_ref.seg_path_Lelec0[a_index]
-	a_X1 = a_ref.seg_path_Lelec1[a_index]
-	a_X = interp_seg(a_seg, a_X0, a_X1)
-	assert target_X > a_X # should be guaranteed by last call
+	# a_ref		= getsecref(a_seg.sec, allsecrefs)
+	# a_index		= seg_index(a_seg)
+	# a_lambda	= a_ref.seg_lambda[a_index]
+	# a_X0		= a_ref.seg_path_Lelec0[a_index]
+	# a_X1		= a_ref.seg_path_Lelec1[a_index]
+	# a_X			= interp_seg(a_seg, a_X0, a_X1)
+	# assert target_X > a_X # should be guaranteed by last call
+	
+	pref = (lvl*"-") # prefix for printing
+	global maxlvl
+	if lvl > maxlvl:
+		maxlvl += 1
+		brk = ""
+	else:
+		maxlvl = lvl
+		brk = "\n"
 
 	# Get child segments
-	child_segs = next_segs(a_seg) # segments/nodes connected to this one
+	child_segs = segs_at_dX(a_seg, dX, f_lambda, reduction.gleak_name) # segments/nodes connected to this one
 	if not any(child_segs):
 		if (a_seg.x == 1.0):
-			logger.debug((a_i*"-") + "Folding: reached end of branch @ {}".format(a_seg))
+			logger.debug(pref+"Folding: reached end of branch @ {} (NOT USED)".format(a_seg))
 			return # reached end of branch
 		else:
 			child_segs = [a_seg.sec(1.0)] # test end of branch
 	
 	# Get new segment at (a_i+1) * dX
-	for b_seg in child_segs:
+	for iseg, b_seg in enumerate(child_segs):
 
 		# NOTE: depth-first tree traversal: look for next point ta calculate diam
 		#       (next discretization step) along current branch, then ascend further
+		if len(child_segs) > 1:
+			logger.debug(brk+pref+"Branched at {}".format(a_seg))
+		logger.debug(pref+"Child [{}/{}] = {}".format(iseg+1, len(child_segs), b_seg))
 
 		# Get electronic distance to following/adjacent segment
-		b_ref = getsecref(b_seg.sec, allsecrefs)
-		b_index = seg_index(b_seg)
-		b_X0 = b_ref.seg_path_Lelec0[b_index]
-		b_X1 = b_ref.seg_path_Lelec1[b_index]
-		b_X = interp_seg(b_seg, b_X0, b_X1)
+		# b_ref = getsecref(b_seg.sec, allsecrefs)
+		# b_index = seg_index(b_seg)
+		# b_X0 = b_ref.seg_path_Lelec0[b_index]
+		# b_X1 = b_ref.seg_path_Lelec1[b_index]
+		# b_X = interp_seg(b_seg, b_X0, b_X1)
 		# last_dX = b_X - last_X
 
-		# If distance to last used segment is smaller than step size: ascend to next segment
-		if target_X > b_X: # (if dX > last_dX)
+		# # If distance to last used segment is smaller than step size: ascend to next segment
+		# if target_X > b_X: # (if dX > last_dX)
 			
-			# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
-			#	[-----|-s-a-|b--t-] - [t----|-----|-----]
-			#	[-----|---sa|--b--] - [t----|-----|-----]
-			logger.debug((a_i*"-") + "Skipping {} since bX={} < tarX={}".format(b_seg, b_X, target_X))
+		# 	# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
+		# 	#	[-----|-s-a-|b--t-] - [t----|-----|-----]
+		# 	#	[-----|---sa|--b--] - [t----|-----|-----]
+		# 	print(pref+"Skip child {}".format(b_seg))
+		# 	# print((a_i*"-") + "Skipping {} since bX={} < tarX={}".format(b_seg, b_X, target_X))
 
-			# Ascend but don't increase index
-			next_eq_diam(b_seg, a_i, root_X, dX, cluster, reduction)
+		# 	# Ascend but don't increase index
+		# 	next_eq_diam(b_seg, a_i, root_X, dX, cluster, reduction, lvl=lvl+1)
 
-		else: # target_X <= b_X
-			# target X value is between previous and next segment -> get new segment by interpolation
+		# else: # target_X <= b_X
+		# 	# target X value is between previous and next segment -> get new segment by interpolation
 			
-			# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
-			#	[-----|-s-a-|t--b-] - [-----|-----|-----]
-			#	[-----|---s-|a-t--] - [b----|-----|-----]
-			logger.debug((a_i*"-") + "Interpolating between {} (X={}) and {} (X={})".format(a_seg, a_X, b_seg, b_X))
+		# 	# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
+		# 	#	[-----|-s-a-|t--b-] - [-----|-----|-----]
+		# 	#	[-----|---s-|a-t--] - [b----|-----|-----]
+		# 	print(pref+"Interp child {}".format(b_seg))
+		# 	# print((a_i*"-") + "Interpolating between {} (X={}) and {} (X={})".format(a_seg, a_X, b_seg, b_X))
 			
-			fX = (target_X - a_X) / (b_X - a_X)
-			new_seg = None
+		# 	fX = (target_X - a_X) / (b_X - a_X)
+		# 	new_seg = None
 		
-			if b_seg.sec.same(a_seg.sec): # segment A and B are in same cylinder
+		# 	if b_seg.sec.same(a_seg.sec): # segment A and B are in same cylinder
 				
-				# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
-				#	[-----|-s-a-|t--b-] - [t----|-----|-----]
+		# 		# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
+		# 		#	[-----|-s-a-|t--b-] - [t----|-----|-----]
 				
-				# linear interpolation
-				assert b_seg.x > a_seg.x
-				d_x = b_seg.x - a_seg.x
-				new_x = a_seg.x + (fX * d_x)
-				new_seg = a_seg.sec(new_x)
+		# 		# linear interpolation
+		# 		assert b_seg.x > a_seg.x
+		# 		d_x = b_seg.x - a_seg.x
+		# 		new_x = a_seg.x + (fX * d_x)
+		# 		new_seg = a_seg.sec(new_x)
 
-			else: # segment B is in next cylinder (Section)
+		# 	else: # segment B is in next cylinder (Section)
 
-				# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
-				#	[-----|---s-|a-t--] - [b----|-----|-----]
+		# 		# Examples: (s=last_seg, a=a_seg, b=b_seg, b=target_seg)
+		# 		#	[-----|---s-|a-t--] - [b----|-----|-----]
 
-				if fX <= 0.5: # new segment is in cylinder A
+		# 		if fX <= 0.5: # new segment is in cylinder A
 
-					d_x = 1.0 - a_seg.x
-					frac = fX/0.5
-					new_x = a_seg.x + (frac * d_x)
-					new_seg = a_seg.sec(new_x)
+		# 			d_x = 1.0 - a_seg.x
+		# 			frac = fX/0.5
+		# 			new_x = a_seg.x + (frac * d_x)
+		# 			new_seg = a_seg.sec(new_x)
 
-				else: # new segment is in cylinder B
+		# 		else: # new segment is in cylinder B
 
-					frac = (fX-0.5) / 0.5
-					new_x = frac*b_seg.x
-					new_seg = b_seg.sec(new_x)
+		# 			frac = (fX-0.5) / 0.5
+		# 			new_x = frac*b_seg.x
+		# 			new_seg = b_seg.sec(new_x)
 
-			# Save attributes at this electrotonic distance from root
-			step_attrs = {}
-			step_attrs['step_diams'] = [new_seg.diam]
-			step_attrs['step_Rm'] = [1.0 / getattr(new_seg, gleak_name)]
-			step_attrs['step_Ra'] = [new_seg.sec.Ra]
-			step_attrs['step_cm'] = [new_seg.cm]
-			step_attrs['step_gbar'] = [dict(((gname, getattr(new_seg, gname)) for gname in gbar_list))]
+		new_seg = b_seg
 
-			# Save them on cluster object
-			for attr_name, new_seg_vals in step_attrs.iteritems():
+		# Save attributes at this electrotonic distance from root
+		step_attrs = {}
+		step_attrs['step_diams'] = [new_seg.diam]
+		step_attrs['step_Rm'] = [1.0 / getattr(new_seg, gleak_name)]
+		step_attrs['step_Ra'] = [new_seg.sec.Ra]
+		step_attrs['step_cm'] = [new_seg.cm]
+		step_attrs['step_gbar'] = [dict(((gname, getattr(new_seg, gname)) for gname in gbar_list))]
 
-				# Get cluster attribute
-				step_attr_list = getattr(cluster, attr_name)
-				
-				# Save values for new segment
-				if len(step_attr_list) <= a_i:
-					# First entry (first branch for this step) : start new list
-					step_attr_list.append(new_seg_vals)
-				else:
-					# Subsequent branches: add to list for this step
-					step_attr_list.extend(new_seg_vals)
+		# Save them on cluster object
+		for attr_name, new_seg_vals in step_attrs.iteritems():
+
+			# Get cluster attribute
+			step_attr_list = getattr(cluster, attr_name) # list(list()) : [[step1_d1...], [step2_d1...], ...]
+			
+			# Save values for new segment
+			if len(step_attr_list) <= a_i:
+				# First entry (first branch for this step) : start new list
+				step_attr_list.append(new_seg_vals) # add new list to the [[step1...], [step2...], ...]
+			else:
+				# Subsequent branches: add to list for this step
+				step_parallel_list = step_attr_list[a_i]
+				step_parallel_list.extend(new_seg_vals)
 
 
-			# Ascend and increase index
-			next_eq_diam(new_seg, a_i+1, root_X, dX, cluster, reduction)
+		# Ascend and increase index
+		next_eq_diam(new_seg, a_i+1, root_X, dX, cluster, reduction, lvl=lvl+1)
 
-		return
+	return
 
 
 def calc_folds(target_Y_secs, i_pass, reduction, dX=0.1):
@@ -213,6 +234,17 @@ def calc_folds(target_Y_secs, i_pass, reduction, dX=0.1):
 
 		# Topological info
 		cluster.parent_seg = root_ref.sec(1.0)
+		clu_secs = treeutils.subtree_secs(root_ref.sec)
+		clu_segs = [seg for sec in clu_secs for seg in sec]
+
+		# Geometrical and electrical info
+		cluster.or_area = sum(seg.area() for seg in clu_segs)
+		cluster.or_cmtot = sum(seg.cm*seg.area() for seg in clu_segs)
+		cluster.or_cm = cluster.or_cmtot / cluster.or_area
+		cluster.or_gtot = dict((gname, 0.0) for gname in reduction.gbar_names)
+		
+		for gname in reduction.gbar_names:
+			cluster.or_gtot[gname] += sum(getattr(seg, gname)*seg.area() for seg in clu_segs)
 
 		# Ascend subtree from root and compute diameters
 		start_seg = root_ref.sec(1.0) # end of cylinder
@@ -231,11 +263,12 @@ def calc_folds(target_Y_secs, i_pass, reduction, dX=0.1):
 		cluster.eq_gbar =	[0.0] * cluster.num_sec
 
 		# Finalize diam calculation
-		
 		for i_step, diams in enumerate(cluster.step_diams):
 
 			# Number of parallel branches found at this step
 			num_parallel = len(diams)
+			logger.anal("Combining diameters of {} parallel branches in discretization step {}".format(num_parallel, i_step))
+			assert len(cluster.step_diams[i_step]) == len(cluster.step_Rm[i_step]) == len(cluster.step_Ra[i_step]) == len(cluster.step_cm[i_step])
 
 			# Equivalent properties at this step
 			cluster.eq_diam[i_step] = sum((d**(3.0/2.0) for d in diams)) ** (2.0/3.0)
@@ -353,6 +386,10 @@ def make_substitute_folds(clusters, reduction):
 				cur_diam = diam
 				cur_sec, cur_ref = new_sec, new_ref
 
+		# Calculate new total area
+		cluster.eq_area = sum(seg.area() for ref in cluster.eq_refs for seg in ref.sec)
+		logger.debug("Cluster @ {} : original area = {} , new area = {} [um^2]".format(
+						cluster.parent_seg, cluster.or_area, cluster.eq_area))
 
 		# Set nonuniform active conductances
 		# TODO: plot response and test different dX
@@ -372,6 +409,39 @@ def make_substitute_folds(clusters, reduction):
 				# Set conductances by interpolating neighbors
 				for gname in reduction.active_gbar_names:
 					gval = interp.interp_gbar_linear_neighbors(seg_X, gname, bound_segs, bound_X)
+					seg.__setattr__(gname, gval)
+
+			# Check if conductances need scaling
+			gbar_scaling = reduction.get_reduction_param(reduction.active_method, 'gbar_scaling')
+			if (gbar_scaling is None) or (gbar_scaling == 'none'):
+				continue
+
+			# Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
+			for gname in reduction.gbar_names:
+				
+				# Get original and current total conductance
+				eq_gtot = sum(getattr(seg, gname)*seg.area() for seg in eq_ref.sec)
+				if eq_gtot <= 0.:
+					eq_gtot = 1.
+				
+				or_gtot = cluster.or_gtot[gname]
+				
+				# Scale each gbar
+				for j_seg, seg in enumerate(eq_ref.sec):
+					
+					if gbar_scaling == 'area':
+						# conserves ratio in each segment but not total original conductance
+						scale = cluster.or_area/cluster.eq_area
+					
+					elif gbar_scaling == 'gbar_integral':
+						# does not conserve ratio but conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
+						scale = or_gtot/eq_gtot
+					
+					else:
+						raise ValueError("Unknown gbar scaling method '{}'.".format(gbar_scaling))
+					
+					# Set gbar
+					gval = getattr(seg, gname) * scale
 					seg.__setattr__(gname, gval)
 
 
@@ -408,11 +478,11 @@ def preprocess_impl(reduction):
 	dend_lists = [dendL_secs, dendR_secs]
 
 	# Assign indices used in Gillies code (sth-data folder)
-	for somaref in reduction._soma_refs:
+	for somaref in reduction.soma_refs:
 		somaref.tree_index = -1
 		somaref.table_index = 0
 
-	for secref in reduction._dend_refs:
+	for secref in reduction.dend_refs:
 		for i_dend, dendlist in enumerate(dend_lists):
 			if any([sec.same(secref.sec) for sec in dendlist]):
 				secref.tree_index = i_dend
@@ -434,6 +504,16 @@ def preprocess_impl(reduction):
 			reduction.interp_path.append(get_sec_props_obj(ref, reduction.mechs_gbars_dict,
 										['pathL_elec'], ['pathLelec0', 'pathLelec1']))
 	
+	# Compute input resistance at soma
+	method				= reduction.active_method
+	somaref				= reduction.soma_refs[0]
+	Z_freq				= reduction.get_reduction_param(method, 'Z_freq')
+	init_func			= reduction.get_reduction_param(method, 'Z_init_func')
+	linearize_gating	= reduction.get_reduction_param(method, 'Z_linearize_gating')
+	Zin_DC = measure_Zin(somaref.sec(0.5), 0.0, linearize_gating, init_func)
+	Zin_AC = measure_Zin(somaref.sec(0.5), Z_freq, linearize_gating, init_func)
+	somaref.orig_Zin_DC = Zin_DC
+	somaref.orig_Zin_AC = Zin_AC
 		
 
 
@@ -462,7 +542,7 @@ def prepare_folds_impl(reduction):
 		secref.max_passes = 100
 
 
-def calc_folds_impl(reduction, i_pass, dX=0.1):
+def calc_folds_impl(reduction, i_pass):
 	"""
 	Collapse branches at branch points identified by given criterion.
 	"""
@@ -474,6 +554,7 @@ def calc_folds_impl(reduction, i_pass, dX=0.1):
 	target_Y_secs = reduction._fold_root_refs
 
 	# Do collapse operation at each branch points
+	dX = reduction.get_reduction_param(reduction.active_method, 'fold_dX')
 	clusters = calc_folds(target_Y_secs, i_pass, reduction, dX=dX)
 
 	# Save results
@@ -492,3 +573,111 @@ def make_folds_impl(reduction):
 	# Update Sections
 	new_dend_refs = sum((cluster.eq_refs for cluster in clusters), []) # concatenate lists
 	reduction.update_refs(dend_refs=new_dend_refs) # prepare for next iteration
+
+
+def post_process_impl(reduction):
+	"""
+	Post-process cell for Stratford reduction.
+
+	(interface declared in reduce_cell.CollapseReduction)
+
+	@pre		somatic section must consist of single compartment (segment)
+
+	@effect		Measure DC and AC input impedance at soma, and compensate discrepancy
+				with original cell model by adding a somatic resistive shunt 
+				(decreasing membrane resistance, i.e. increasing leak conductance)
+				and a somatic capacitive shunt (increasing membrane capacitance).
+
+	@post		segment.gleak and segment.cm of middle somatic segment will be
+				modified
+	"""
+	somaref = reduction.soma_refs[0]
+	somasec = somaref.sec
+	somaseg = somasec(0.5)
+	assert somasec.nseg == 1, "Method only works for soma sections consisting of one segment."
+
+	# Get parameters
+	red_method = reduction.active_method
+	Z_freq = reduction.get_reduction_param(red_method, 'Z_freq')
+	init_cell = reduction.get_reduction_param(red_method, 'Z_init_func')
+	linearize_gating = reduction.get_reduction_param(red_method, 'Z_linearize_gating')
+	
+	# Compute transfer impedances
+	init_cell()
+	imp = h.Impedance() # imp = h.zz # previously created
+	imp.loc(somaseg.x, sec=somasec) # injection site
+
+	# DC Measurement ###########################################################
+	
+	# Compute input impedance at soma
+	imp.compute(0.0, int(linearize_gating)) 
+	red_Zin_DC = imp.input(somaseg.x, sec=somasec)
+
+	# Get discrepancy between Zin (Gin), and compensate using somatic shunt 
+	# (gradient descent until Gin matches?)
+	old_Zin_DC = somaref.orig_Zin_DC
+	diff_Gin_DC = (1.0 / old_Zin_DC) - (1.0 / red_Zin_DC) # red_Gin should be lower -> diff_Gin > 0
+
+	# Gtot = Glocal + Gend
+	# we can change Glocal = jwC + 1/Rm
+	# first correct Rm using DC measurement
+	# put an extra gm in parallel to make up the difference
+	gm_old = getattr(somaseg, reduction.gleak_name)
+	gm_shunt = diff_Gin_DC / somaseg.area()
+	gm_new = gm_old + gm_shunt
+	setattr(somaseg, reduction.gleak_name, gm_new)
+
+	logger.debug('[DC:0Hz] Original Zin = {}, Reduced model has Zin = {}'.format(old_Zin_DC, red_Zin_DC))
+	logger.debug('Added shunt conductance of {} [S/cm2] to segment {}'.format(gm_shunt, somaseg))
+	logger.debug('Changed gleak from {} -> {} [S/cm2]'.format(gm_old, gm_new))
+
+	# Check result
+	imp.compute(0.0, int(linearize_gating)) 
+	red_Zin_DC_new = imp.input(somaseg.x, sec=somasec)
+	tolerance = 0.05
+	
+	if not (1.0-tolerance <= (red_Zin_DC_new / old_Zin_DC) <= 1.0+tolerance):
+		logger.warning("Zin_DC not fixed within tolerance: "
+				"Zin_old = {}, Zin_new = {}".format(old_Zin_DC, red_Zin_DC_new))
+	
+	logger.debug('After resistive shunt placement: Zin = {}'.format(red_Zin_DC_new))
+
+	# AC Measurement ###########################################################
+
+	if Z_freq == 0.0:
+		return # same as previous calculation
+
+	# Compute AC input impedance at soma
+	imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
+	red_Zin_AC = imp.input(somaseg.x, sec=somasec)
+	
+	# Get discrepancy between Zin (Gin), and compensate using capactive shunt
+	old_Zin_AC = somaref.orig_Zin_AC
+	ratio_Zin_AC = red_Zin_AC / old_Zin_AC
+	diff_Gin_AC = (1.0/old_Zin_AC) - (1.0/red_Zin_AC)
+
+	# Test if shunt is needed
+	logger.debug('[AC:{}Hz] Original Zin = {}, Reduced model has Zin = {}'.format(Z_freq, old_Zin_AC, red_Zin_AC))
+	if (1.0-tolerance <= ratio_Zin_AC <= 1.0+tolerance):
+		logger.debug("Zin_AC is already within tolerance. Skip scaling Cm.")
+		return
+
+	# Gtot = Glocal + Gend
+	# we will only change jwC part of Glocal = jwC + 1/Rm
+	cm_old = somaseg.cm
+	cm_shunt = diff_Gin_AC / (somaseg.area() * 2.0 * math.pi * Z_freq)
+	cm_new = cm_old + cm_shunt
+	somaseg.cm = cm_new
+
+	logger.debug('Added shunt capacitance of {} [uf/cm2] to segment {}'.format(gm_shunt, somaseg))
+	logger.debug('Changed cm from {} -> {} [uf/cm2]'.format(cm_old, cm_new))
+
+	# Check result
+	imp.compute(Z_freq, int(linearize_gating)) 
+	red_Zin_AC_new = imp.input(somaseg.x, sec=somasec)
+	
+	if not (1.0-tolerance <= (red_Zin_AC_new / old_Zin_AC) <= 1.0+tolerance):
+		logger.warning("Zin_AC not fixed within tolerance: "
+				"Zin_old = {}, Zin_new = {}".format(old_Zin_AC, red_Zin_AC_new))
+
+	logger.debug('After capacitive shunt placement: Zin = {}'.format(red_Zin_AC_new))

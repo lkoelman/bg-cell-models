@@ -14,7 +14,7 @@ import math
 
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = "reduction" # __name__
+logname = "redops" # __name__
 logger = logging.getLogger(logname) # create logger for this module
 
 import neuron
@@ -175,7 +175,8 @@ def sec_path_L(secref):
 			path_L += seg_L
 			secref.pathL_seg[j_seg] = path_L
 
-def sec_path_props(secref, f, gleak_name):
+
+def sec_path_props(secref, f, gleak_name, linearize_gating=False, init_cell=None):
 	"""
 	Assign path properties to start and end of section, and to all internal segments
 
@@ -199,23 +200,30 @@ def sec_path_props(secref, f, gleak_name):
 		return # if we are soma/topmost root: path length is zero
 
 	# Create attribute for storing path resistance
-	secref.pathL_seg =  [0.0] * secref.sec.nseg
-	secref.pathri_seg = [0.0] * secref.sec.nseg
-	secref.seg_path_Lelec0 = [0.0] * secref.sec.nseg
-	secref.seg_path_Lelec1 = [0.0] * secref.sec.nseg
+	secref.pathL_seg 		= [0.0] * secref.sec.nseg
+	secref.pathri_seg		= [0.0] * secref.sec.nseg
+	secref.seg_path_Lelec0	= [0.0] * secref.sec.nseg
+	secref.seg_path_Lelec1	= [0.0] * secref.sec.nseg
+	secref.seg_lambda		= [0.0] * secref.sec.nseg
 	# Aliases
 	secref.pathL_elec = secref.seg_path_Lelec0
 	
-	# Get path from root section to end of given section
+	# Initialize path length calculation
+	## Get path from root section to end of given section
 	calc_path = h.RangeVarPlot('v')
+	
 	rootsec.push()
 	calc_path.begin(0.0) # x doesn't matter since we only use sections
+	
 	secref.sec.push()
 	calc_path.end(1.0) # x doesn't matter (idem)
+	
 	root_path = h.SectionList() # SectionList structure to store path
 	calc_path.list(root_path) # copy path sections to SectionList
+	
 	h.pop_section()
 	h.pop_section()
+
 
 	# Initialize variables
 	path_L = 0.0
@@ -252,6 +260,7 @@ def sec_path_props(secref, f, gleak_name):
 			if arrived_sec:
 				secref.pathL_seg[j_seg] = path_L
 				secref.seg_path_Lelec1[j_seg] = path_L_elec
+				secref.seg_lambda[j_seg] = seg_lamb
 				if (j_seg==psec.nseg-1):
 					secref.pathL1 = path_L
 					secref.pathLelec1 = path_L_elec

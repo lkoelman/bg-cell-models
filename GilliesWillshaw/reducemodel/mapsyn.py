@@ -106,27 +106,36 @@ synmech_parnames = {
 				'gmax_AMPA', 'gmax_NMDA', 'tau_rec', 'tau_facil', 'U1', 'e'],
 }
 
-def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., 
+def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_gating=False,
 					init_cell=None, save_ref_attrs=None, sever_netcons=True,
 					attr_mappers=None, syn_nc_tomap=None):
 	"""
 	For each synapse on the neuron, calculate and save information for placing an equivalent
 	synaptic input on a morphologically simplified neuron.
 
-	@param rootsec		any section of the cell
+	
+	ARGUMENTS
 
-	@param syn_mod_pars	dict of <synaptic mechanism name> : list(<attribute names>)
-						containing attributes that need to be stored
+	@param rootsec			any section of the cell
 
-	@param init_cell	function to bring the cell to the desired state to measure transfer
-						impedances, e.g. simulating under a particular input
+	@param syn_mod_pars		dict of <synaptic mechanism name> : list(<attribute names>)
+							containing attributes that need to be stored
+
+	@param init_cell		function to bring the cell to the desired state to measure transfer
+							impedances, e.g. simulating under a particular input
 
 	@param sever_netcons	Set NetCon target to None for each connection, this is useful
 							when the cell or synapses are destroyed
 
-	@param syn_list		list(Synapse) you wish to remap
+	@param syn_list			list(Synapse) you wish to remap
 
-	@param nc_list		list(Synapse) you want to move to the new (mapped) Synapse
+	@param nc_list			list(Synapse) you want to move to the new (mapped) Synapse
+
+
+	RETURN VALUES
+
+	@return					list(SynInfo) containing information about each synapse
+							to be mapped
 	"""
 	if syn_mod_pars is None:
 		syn_mod_pars = synmech_parnames
@@ -142,11 +151,18 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25.,
 		redtools.sec_path_props(secref, 100., gillies.gleak_name)
 
 	# Measure transfer impedance and filter parameters
-	init_cell() # Make sure cell is in a physiological state
-	imp = h.Impedance()
-	imp.loc(0.5, sec=rootsec)
-	linearize_gating = 1 # 0 = calculation with current values of gating vars, 1 = linearize gating vars around V
-	imp.compute(Z_freq, linearize_gating) # compute transfer impedance between loc and all segments
+	logger.debug("Initializing cell for electrotonic measurements...")
+	init_cell()
+	
+	imp = h.Impedance() # imp = h.zz # previously created
+	imp.loc(0.5, sec=rootsec) # injection site
+
+	# NOTE: linearize_gating corresponds to checkbox 'include dstate/dt contribution' in NEURON GUI Impedance Tool
+	#		- (see equations in Impedance doc) 
+	#		- 0 = calculation with current values of gating vars
+	#		- 1 = linearize gating vars around V
+	imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
+
 
 	# Find all Synapses on cell (all Sections in whole tree)
 	if syn_nc_tomap is None:

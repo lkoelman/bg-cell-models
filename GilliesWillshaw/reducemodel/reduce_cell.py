@@ -19,6 +19,38 @@ logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s',
 logname = "reduction" # __name__
 logger = logging.getLogger(logname) # create logger for this module
 
+
+################################################################################
+# Cell model-specific tweaks
+################################################################################
+
+def post_process_marasco(reduction):
+	"""
+	Post-process cell for Marasco reduction.
+
+	(interface declared in reduce_cell.CollapseReduction)
+	"""
+	# Apply correction (TODO: remove this after fixing reduction)
+	for ref in reduction.all_sec_refs:
+		sec = ref.sec
+		
+		if sec.name().endswith('soma'):
+			print("Skipping soma")
+			continue
+		
+		print("POST-PROCESS section {}".format(sec))
+		for seg in sec:
+			# seg.gna_NaL = 1.075 * seg.gna_NaL
+			seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
+
+
+
+
+################################################################################
+# Reduction classes
+################################################################################
+
+
 @unique
 class ReductionMethod(Enum):
 	Rall = 0
@@ -47,12 +79,17 @@ class FoldReduction(object):
 
 	_CALC_FOLD_FUNCS = {
 		ReductionMethod.Marasco:	(marasco.calc_folds_impl, []),
-		ReductionMethod.Stratford:	(stratford.calc_folds_impl, ['dX']),
+		ReductionMethod.Stratford:	(stratford.calc_folds_impl, []),
 	}
 
 	_MAKE_FOLD_EQ_FUNCS = {
 		ReductionMethod.Marasco:	(marasco.make_folds_impl, []),
 		ReductionMethod.Stratford:	(stratford.make_folds_impl, []),
+	}
+
+	_POSTPROC_FUNCS = {
+		ReductionMethod.Marasco:	(post_process_marasco, []),
+		ReductionMethod.Stratford:	(stratford.post_process_impl, []),
 	}
 
 	# Make accessible by step
@@ -61,8 +98,21 @@ class FoldReduction(object):
 		'prepare_fold':		_PREP_FOLD_FUNCS,
 		'calculate_fold':	_CALC_FOLD_FUNCS,
 		'make_fold':		_MAKE_FOLD_EQ_FUNCS,
+		'postprocess':		_POSTPROC_FUNCS,
 	}
 
+
+	def register_reduction_step(self, method, step, func, kwarg_list=None):
+		"""
+		Register function to perform reduction step 'step' for reduction method 'method'/
+
+		@param	method			ReductionMethod member
+
+		@param	step			ReductionStep member
+		"""
+		if kwarg_list is None:
+			kwarg_list = []
+		self._REDUCTION_STEPS_FUNCS[step][method] = (func, kwarg_list)
 
 
 	def __init__(self, soma_secs, dend_secs, fold_root_secs, method):
@@ -111,6 +161,22 @@ class FoldReduction(object):
 		return list(self._soma_refs) + list(self._dend_refs)
 
 
+	@property
+	def soma_refs(self):
+		"""
+		Get references to somatic sections.
+		"""
+		return self._soma_refs
+	
+
+	@property
+	def dend_refs(self):
+		"""
+		Get references to dendritic sections.
+		"""
+		return self._dend_refs
+	
+
 	def get_mechs_gbars_dict(self):
 		"""
 		Get dictionary of mechanism names and their conductances.
@@ -123,7 +189,8 @@ class FoldReduction(object):
 		Set mechanism names and their conductances
 		"""
 		self._mechs_gbars_dict = val
-		self.active_gbar_names = [gname+'_'+mech for mech,chans in val.iteritems() for gname in chans]
+		self.gbar_names = [gname+'_'+mech for mech,chans in val.iteritems() for gname in chans]
+		self.active_gbar_names = list(self.gbar_names)
 		self.active_gbar_names.remove(self.gleak_name)
 
 	# make property
@@ -159,6 +226,13 @@ class FoldReduction(object):
 		self._REDUCTION_PARAMS[method] = params
 
 
+	def get_reduction_param(self, method, param):
+		"""
+		Get reduction parameter for given method.
+		"""
+		return self._REDUCTION_PARAMS[method][param]
+
+
 	def _exec_reduction_step(self, step, method, step_args=None):
 		"""
 		Execute reduction step 'step' using method 'method'
@@ -177,6 +251,8 @@ class FoldReduction(object):
 			if step_args is None:
 				step_args = []
 
+			logger.debug("Executing reduction step {}".format(step))
+			
 			func(*step_args, **user_kwargs)
 
 
@@ -219,6 +295,14 @@ class FoldReduction(object):
 		self._exec_reduction_step('make_fold', method, step_args=[self])
 
 
+	def postprocess_cell(self, method):
+		"""
+		Post-process cell: perform any additional modifications for reduction
+		algorithm.
+		"""
+		self._exec_reduction_step('postprocess', method, step_args=[self])
+
+
 	def reduce_model(self, num_passes, method=None):
 		"""
 		Do a fold-based reduction of the compartmental cell model.
@@ -228,6 +312,7 @@ class FoldReduction(object):
 		"""
 		if method is None:
 			method = self.active_method
+		self.active_method = method # indicate what method we are using
 
 		# Start reduction process
 		self.preprocess_cell(method)
@@ -238,7 +323,8 @@ class FoldReduction(object):
 			self.calc_folds(method, i_pass)
 			self.make_fold_equivalents(method)
 
-
+		# Finalize reduction process
+		self.postprocess_cell(method)
 
 
 
@@ -270,13 +356,31 @@ def fold_gillies_stratford(export_locals=True):
 	dendL_lower_root	= h.SThcell[0].dend0[2] # root section of lower left dendrite
 	fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
 
+	# Parameters for reduction
+	def stn_setstate():
+		# Initialize cell for analyzing electrical properties
+		h.celsius = 35
+		h.v_init = -68.0
+		h.set_aCSF(4)
+		h.init()
+
 	# Reduce model
 	red_method = ReductionMethod.Stratford
 	reduction = FoldReduction([soma], dends, fold_roots, red_method)
+	
+	# Reduction parameters
 	reduction.gleak_name = gillies_model.gleak_name
 	reduction.mechs_gbars_dict = gillies_model.gillies_gdict
-	reduction.reduce_model(num_passes=1)
+	reduction.set_reduction_params(red_method, {
+		'fold_dX' :				0.25,
+		'Z_freq' :				25.,
+		'Z_init_func' :			stn_setstate,
+		'Z_linearize_gating' :	False,
+		'gbar_scaling' :		None,
+	})
 
+	# Do reduction
+	reduction.reduce_model(num_passes=1)
 	logger.debug("Successfully folded Gillies model using {}!".format(red_method))
 
 	if export_locals:
@@ -309,11 +413,29 @@ def fold_gillies_marasco(export_locals=True):
 	dendL_lower_root	= h.SThcell[0].dend0[2] # root section of lower left dendrite
 	fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
 
+	# Parameters for reduction
+	def stn_setstate():
+		# Initialize cell for analyzing electrical properties
+		h.celsius = 35
+		h.v_init = -68.0
+		h.set_aCSF(4)
+		h.init()
+
 	# Reduce model
 	red_method = ReductionMethod.Marasco
 	reduction = FoldReduction([soma], dends, fold_roots, red_method)
+
+	# Reduction parameters
 	reduction.gleak_name = gillies_model.gleak_name
 	reduction.mechs_gbars_dict = gillies_model.gillies_gdict
+	reduction.set_reduction_params(red_method, {
+		'Z_freq' :				25.,
+		'Z_init_func' :			stn_setstate,
+		'Z_linearize_gating' :	False,
+		'gbar_scaling' :		'area',
+	})
+	
+	# Do reduction
 	reduction.reduce_model(num_passes=7)
 	reduction.update_refs()
 
