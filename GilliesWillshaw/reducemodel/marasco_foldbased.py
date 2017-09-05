@@ -19,7 +19,7 @@ h.load_file("stdlib.hoc") # Load the standard library
 
 # Own modules
 import redutils as redtools
-from redutils import ExtSecRef, EqProps, getsecref, lambda_AC, prev_seg, seg_index, same_seg # for convenience
+from redutils import ExtSecRef, getsecref, seg_index # for convenience
 import cluster as clutools
 from cluster import Cluster
 import interpolation as interp
@@ -27,7 +27,7 @@ from marasco_merging import merge_seg_subtree
 import folding
 
 # Gillies STN model
-from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
+from gillies_model import gillies_gdict, gillies_glist
 
 mechs_chans = gillies_gdict
 glist = gillies_glist
@@ -571,7 +571,18 @@ def postprocess_impl(reduction):
 
 	@param	reduction		reduce_cell.CollapseReduction object
 	"""
-	pass # don't put steps specific to cell model here
+	# Tweaking
+	tweak_funcs = reduction.get_reduction_param(reduction.active_method, 'post_tweak_funcs')
+	for func in tweak_funcs:
+		func(reduction)
+
+	# Assign identifiers (for synapse placement etc.)
+	assign_sth_indices(reduction._root_ref, reduction.all_sec_refs)
+
+	# Assign topology info (order, level, strahler number)
+	for fold_root in reduction._fold_root_refs:
+		clutools.assign_topology_attrs(fold_root, reduction.all_sec_refs)
+
 
 ################################################################################
 # Reduction Experiments

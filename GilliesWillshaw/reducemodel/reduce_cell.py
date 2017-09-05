@@ -12,38 +12,13 @@ from neuron import h
 
 import marasco_foldbased as marasco
 import stratford_folding as stratford
+import mapsyn
 
 # logging of DEBUG/INFO/WARNING messages
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
 logname = "reduction" # __name__
 logger = logging.getLogger(logname) # create logger for this module
-
-
-################################################################################
-# Cell model-specific tweaks
-################################################################################
-
-def post_process_marasco(reduction):
-	"""
-	Post-process cell for Marasco reduction.
-
-	(interface declared in reduce_cell.CollapseReduction)
-	"""
-	# Apply correction (TODO: remove this after fixing reduction)
-	for ref in reduction.all_sec_refs:
-		sec = ref.sec
-		
-		if sec.name().endswith('soma'):
-			print("Skipping soma")
-			continue
-		
-		print("POST-PROCESS section {}".format(sec))
-		for seg in sec:
-			# seg.gna_NaL = 1.075 * seg.gna_NaL
-			seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
-
-
 
 
 ################################################################################
@@ -88,7 +63,7 @@ class FoldReduction(object):
 	}
 
 	_POSTPROC_FUNCS = {
-		ReductionMethod.Marasco:	(post_process_marasco, []),
+		ReductionMethod.Marasco:	(marasco.postprocess_impl, []),
 		ReductionMethod.Stratford:	(stratford.post_process_impl, []),
 	}
 
@@ -155,6 +130,9 @@ class FoldReduction(object):
 		allsecrefs = self.all_sec_refs
 		self._fold_root_refs = [getsecref(sec, allsecrefs) for sec in fold_root_secs]
 
+		# Set NetCon to be mapped
+		self._map_netcons = []
+		self._map_syn_info = []
 
 	@property
 	def all_sec_refs(self):
@@ -175,6 +153,27 @@ class FoldReduction(object):
 		Get references to dendritic sections.
 		"""
 		return self._dend_refs
+
+
+	@property
+	def map_netcons(self):
+		"""
+		Get NetCon objects to be mapped from original to reduced cell
+		"""
+		return self._map_netcons
+	
+
+	@map_netcons.setter
+	def map_netcons(self, value):
+		"""
+		Set NetCon objects to be mapped from original to reduced cell
+		"""
+		self._map_netcons = value
+
+
+	@property
+	def map_syn_info(self):
+		return self._map_syn_info
 	
 
 	def get_mechs_gbars_dict(self):
@@ -271,7 +270,27 @@ class FoldReduction(object):
 					in addition to other side effects specified by the
 					specific preprocessing function called.
 		"""
+		# Execute custom preprocess function
 		self._exec_reduction_step('preprocess', method, step_args=[self])
+
+		# Compute synapse mapping info
+		if any(self.map_netcons):
+
+			# Existing synapse attributes to save (SectionRef attributes)
+			save_ref_attrs = ['table_index', 'tree_index', 'gid']
+
+			# Mapping parameters
+			Z_freq			= self.get_reduction_param(method, 'Z_freq')
+			init_func		= self.get_reduction_param(method, 'Z_init_func')
+			linearize_gating= self.get_reduction_param(method, 'Z_linearize_gating')
+			
+			# Compute mapping data
+			syn_info = mapsyn.get_syn_info(self.soma_refs[0].sec, self.all_sec_refs, 
+								nc_tomap=self.map_netcons, Z_freq=Z_freq, 
+								init_cell=init_func, linearize_gating=linearize_gating,
+								save_ref_attrs=save_ref_attrs)
+
+			self._map_syn_info = syn_info
 
 
 	def prepare_folds(self, method):
@@ -300,7 +319,25 @@ class FoldReduction(object):
 		Post-process cell: perform any additional modifications for reduction
 		algorithm.
 		"""
+		# Execute custom postprocess function
 		self._exec_reduction_step('postprocess', method, step_args=[self])
+
+		# Map synapses
+		# Map synapses to reduced cell
+		if any(self._map_syn_info):
+			logger.debug("Mapping synapses...")
+
+			# Mapping parameters
+			Z_freq			= self.get_reduction_param(method, 'Z_freq')
+			init_func		= self.get_reduction_param(method, 'Z_init_func')
+			linearize		= self.get_reduction_param(method, 'Z_linearize_gating')
+			map_method		= self.get_reduction_param(method, 'syn_map_method')
+			
+			# Map synapses (this modifies syn_info objects)
+			mapsyn.map_synapses(self.soma_refs[0], self.all_sec_refs, self._map_syn_info, 
+								init_func, Z_freq, linearize_gating=linearize,
+								method=map_method)
+
 
 
 	def reduce_model(self, num_passes, method=None):
@@ -327,17 +364,35 @@ class FoldReduction(object):
 		self.postprocess_cell(method)
 
 
+################################################################################
+# Cell model-specific tweaks
+################################################################################
+
+def adjust_gbar_spontaneous(reduction):
+	"""
+	Adjust gbar (NaL) to fix spontaneous firing rate.
+	"""
+	# Apply correction (TODO: remove this after fixing reduction)
+	for ref in reduction.all_sec_refs:
+		sec = ref.sec
+		
+		if sec.name().endswith('soma'):
+			print("Skipping soma")
+			continue
+		
+		print("POST-PROCESS section {}".format(sec))
+		for seg in sec:
+			# seg.gna_NaL = 1.075 * seg.gna_NaL
+			seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
+
 
 ################################################################################
 # Reduction Experiments
 ################################################################################
 
-def fold_gillies_stratford(export_locals=True):
+def gillies_stratford_reduction():
 	"""
-	Fold Gillies STN model using given reduction method
-	
-	@param	export_locals		if True, local variables will be exported to the global
-								namespace for easy inspection
+	Make FoldReduction object with Stratford method.
 	"""
 	import gillies_model
 	if not hasattr(h, 'SThcell'):
@@ -377,11 +432,25 @@ def fold_gillies_stratford(export_locals=True):
 		'Z_init_func' :			stn_setstate,
 		'Z_linearize_gating' :	False,
 		'gbar_scaling' :		None,
+		'syn_map_method' :		'Ztransfer',
 	})
+
+	return reduction
+
+
+def fold_gillies_stratford(export_locals=True):
+	"""
+	Fold Gillies STN model using given reduction method
+	
+	@param	export_locals		if True, local variables will be exported to the global
+								namespace for easy inspection
+	"""
+	# Make reduction object
+	reduction = gillies_stratford_reduction()
 
 	# Do reduction
 	reduction.reduce_model(num_passes=1)
-	logger.debug("Successfully folded Gillies model using {}!".format(red_method))
+	logger.debug("Successfully folded Gillies model using Stratford method!")
 
 	if export_locals:
 		globals().update(locals())
@@ -389,13 +458,11 @@ def fold_gillies_stratford(export_locals=True):
 	return reduction._soma_refs, reduction._dend_refs
 
 
-def fold_gillies_marasco(export_locals=True):
+def gillies_marasco_reduction():
 	"""
-	Fold Gillies STN model using given reduction method
-	
-	@param	export_locals		if True, local variables will be exported to the global
-								namespace for easy inspection
+	Make FoldReduction object with Marasco method.
 	"""
+
 	import gillies_model
 	if not hasattr(h, 'SThcell'):
 		gillies_model.stn_cell_gillies()
@@ -433,13 +500,28 @@ def fold_gillies_marasco(export_locals=True):
 		'Z_init_func' :			stn_setstate,
 		'Z_linearize_gating' :	False,
 		'gbar_scaling' :		'area',
+		'syn_map_method' :		'Ztransfer',
+		'post_tweak_funcs' :	[adjust_gbar_spontaneous],
 	})
+
+	return reduction
+
+
+def fold_gillies_marasco(export_locals=True):
+	"""
+	Fold Gillies STN model using given reduction method
+	
+	@param	export_locals		if True, local variables will be exported to the global
+								namespace for easy inspection
+	"""
+	# Make reduction object
+	reduction = gillies_marasco_reduction()
 	
 	# Do reduction
 	reduction.reduce_model(num_passes=7)
 	reduction.update_refs()
 
-	logger.debug("Successfully folded Gillies model using {}!".format(red_method))
+	logger.debug("Successfully folded Gillies model using Marsco method!")
 
 	if export_locals:
 		globals().update(locals())

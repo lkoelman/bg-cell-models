@@ -108,7 +108,7 @@ synmech_parnames = {
 
 def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_gating=False,
 					init_cell=None, save_ref_attrs=None, sever_netcons=True,
-					attr_mappers=None, syn_nc_tomap=None):
+					attr_mappers=None, nc_tomap=None):
 	"""
 	For each synapse on the neuron, calculate and save information for placing an equivalent
 	synaptic input on a morphologically simplified neuron.
@@ -165,14 +165,17 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_g
 
 
 	# Find all Synapses on cell (all Sections in whole tree)
-	if syn_nc_tomap is None:
+	if nc_tomap is None:
 		dummy_syn = h.Exp2Syn(rootsec(0.5))
 		dummy_nc = h.NetCon(None, dummy_syn)
+
+		# unique synapses targeting the same cell
 		cell_ncs = [nc for nc in list(dummy_nc.postcelllist()) if not nc.same(dummy_nc)] # all NetCon targeting same tree as dummy
-		cell_syns = set([nc.syn() for nc in cell_ncs]) # unique synapses targeting the same cell
+		cell_syns = set([nc.syn() for nc in cell_ncs]) # NOTE: this works, since set uses == for uniqueness, which compares using syn.hocobjptr()
+	
 	else:
-		cell_syns = syn_nc_tomap[0]
-		cell_ncs = syn_nc_tomap[1]
+		cell_ncs = nc_tomap
+		cell_syns = set([nc.syn() for nc in cell_ncs]) # NOTE: this works, since set uses == for uniqueness, which compares using syn.hocobjptr()
 
 	if len(cell_syns) == 0:
 		logger.warn("No synapses found on tree of Section {}".format(rootsec))
@@ -249,16 +252,18 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False)
 	if method == 'Ztransfer':
 		Zc = syn_info.Zc
 		elec_fun = imp.transfer
+	
 	elif method == 'Vratio':
 		Zc = syn_info.k_syn_soma
 		elec_fun = imp.ratio
+	
 	else:
 		raise Exception("Unknown synapse placement method '{}'".format(method))
 
 	Zc_0 = elec_fun(0.0, sec=cur_sec)
 	Zc_1 = elec_fun(1.0, sec=cur_sec)
 
-	logger.debug("Entering section with Zc(0.0)={} , Zc(1.0)={} (target Zc={})".format(Zc_0, Zc_1, Zc))
+	logger.anal("Entering section with Zc(0.0)={} , Zc(1.0)={} (target Zc={})".format(Zc_0, Zc_1, Zc))
 
 	# Assume monotonically decreasing Zc away from root section
 	if (Zc_0 <= Zc <= Zc_1) or (Zc_1 <= Zc <= Zc_0) or (Zc >= Zc_0 and Zc >= Zc_1):
@@ -275,9 +280,10 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False)
 		return noderef, x_map	
 
 	else:
-		logger.debug("No map: descending further...")
-		childsecs = noderef.sec.children()
-		childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
+		logger.anal("No map: descending further...")
+		
+		# Get child branches
+		childrefs = [getsecref(sec, allsecrefs) for sec in noderef.sec.children()]
 
 		# If we are in correct tree but Zc smaller than endpoints, return endpoint
 		if not any(childrefs):
@@ -292,15 +298,21 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False)
 										(syn_info.gid in ref.zipped_sec_gids)
 										)
 									)
+		
+		# Did we pass the synapse's original section?
 		passed_synsec = passed_synsec or mapsto_synsec(noderef)
+		
 		# child_mapsto_synsec = [subtree_has_node(mapsto_synsec, ref, allsecrefs) for ref in childrefs]
 		# passed_synsec = not any(child_mapsto_synsec)
 		# if passed_synsec:
 		# 	assert mapsto_synsec(noderef) # assume that synapse was positioned on this Section
 
 		for childref in childrefs:
+
+			# Only descend if original synapse section already passed, or in subtree
 			if passed_synsec or subtree_has_node(mapsto_synsec, childref, allsecrefs):
 				return map_synapse(childref, allsecrefs, syn_info, imp, method, passed_synsec)
+		
 		raise Exception("The synapse did not map onto any segment in this subtree.")
 
 

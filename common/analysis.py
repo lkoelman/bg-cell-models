@@ -422,13 +422,20 @@ def pick_line(trace_name, trace_index, solid_only=False):
 	return colors[trace_index%len(colors)], styles[trace_index%len(styles)]
 
 
-def match_traces(recData, matchfun):
+def match_traces(recData, matchfun, orderfun=None, reverse=False):
 	"""
 	Get ordered dictionary with matching traces.
 
 	@param matchfun		lambda string -> bool
 	"""
-	return collections.OrderedDict([(trace_name,v) for trace_name,v in recData.iteritems() if matchfun(trace_name)])
+
+	traces = ((name,data) for name,data in recData.iteritems() if matchfun(name))
+
+	if orderfun is not None:
+		traces = sorted(traces, key=orderfun, reverse=reverse) # if no orderfun: keep recData order
+	
+	return collections.OrderedDict(traces)
+
 
 def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 					includeTraces=None, excludeTraces=None,

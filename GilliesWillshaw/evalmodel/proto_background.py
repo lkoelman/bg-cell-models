@@ -165,7 +165,7 @@ def init_sim(self, protocol):
 	"""
 
 	# Only adjust duration
-	self._init_sim(dur=10000)
+	self._init_sim(dur=1000)
 
 	# Reset RNGs
 	for pre_pop in (Pop.CTX, Pop.GPE):
@@ -181,7 +181,7 @@ def init_sim(self, protocol):
 			# Reset counter
 			old_seq = random.seq()
 			random.seq(start_seq)
-			# logger.debug("Changing RNG seq from {} to {}".format(old_seq, start_seq))
+			logger.debug("Changing RNG seq from {} to {}".format(old_seq, start_seq))
 
 
 def make_inputs(self, connector=None):
@@ -310,8 +310,7 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 	logger.debug("Number of {}->STN MSR synapses = {}".format(POP_PRE.name, n_syn))
 
 	# Get target segments: distribute synapses over dendritic trees
-	dendrites = self.model_data[model]['sec_refs']['dendrites']
-	dend_secrefs = sum(dendrites, [])
+	dend_secrefs = self.model_data[model]['dend_refs'] 
 	target_segs = pick_random_segments(dend_secrefs, n_syn, is_target_seg, rng=self.rng)
 
 	# Data for configuring inputs
@@ -387,7 +386,7 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 			extend_dictitem(new_inputs, 'NetStims', stimctl)
 			extend_dictitem(new_inputs, 'RNG_data', {
 				'HocRandomObj': ctlrand, 
-				'seq': ctlrand.seq()
+				'seq': ctlrand.seq(),
 			})
 
 		# Make synapse and NetCon
@@ -401,7 +400,7 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 		extend_dictitem(new_inputs, 'stimweightvec', wvecs)
 		extend_dictitem(new_inputs, 'RNG_data', {
 				'HocRandomObj': stimrand, 
-				'seq': stimrand.seq()
+				'seq': stimrand.seq(),
 		})
 
 	self.add_inputs(POP_PRE.name.lower(), model, **new_inputs)
@@ -488,7 +487,9 @@ def rec_spikes(self, protocol, traceSpecs):
 		for i_syn, nc in enumerate(nc_list):
 
 			# Add NetCon to list of recorded objects
-			syn_tag = pre_pop.name + 'syn' + str(i_syn)
+			match = re.search(r'\[[\d]+\]', nc.hname())
+			suffix = match.group() if match else ('syn' + str(i_syn))
+			syn_tag = pre_pop.name + suffix
 			self._add_recorded_obj(syn_tag, nc, protocol)
 
 			# Specify trace

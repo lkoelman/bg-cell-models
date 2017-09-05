@@ -59,6 +59,7 @@ import proto_passive_syn
 # Adjust verbosity of loggers
 logging.getLogger('redops').setLevel(logging.WARNING)
 logging.getLogger('folding').setLevel(logging.WARNING)
+logging.getLogger('marasco').setLevel(logging.WARNING)
 # marasco.logger.setLevel(logging.WARNING)
 # mapsyn.logger.setLevel(logging.WARNING)
 # cpd.logger.setLevel(logging.WARNING)
@@ -228,14 +229,14 @@ class StnModelEvaluator(object):
 		if state == PhysioState.NORMAL:
 			pass # this case corresponds to default model parameters
 
-		elif (state == PhysioState.PARKINSONIAN or state == rec.PARK_DBS):
+		elif (state == PhysioState.PARKINSONIAN or state == PhysioState.PARK_DBS):
 
 			# TODO: decide parameter modifications for DA-depleted state from literature
 
 			# 1. Reduce sKCA channel conductance by 90%, from sources:
 			#	- Gillies & Willshaw 2005 (see refs)
 			for secref in all_refs:
-				for seg in secrref.sec:
+				for seg in secref.sec:
 					seg.gk_sKCa = 0.1 * seg.gk_sKCa
 
 			# 2. Modifications to GPE GABA IPSPs
@@ -253,7 +254,7 @@ class StnModelEvaluator(object):
 
 			# 4. Changes to regularity/variability of spontaneous firing (summarize literature)
 
-			if state == rec.PARK_DBS:
+			if state == PhysioState.PARK_DBS:
 				# 5. Neurochemical effects of DBS?
 				raise NotImplementedError()
 
@@ -284,7 +285,6 @@ class StnModelEvaluator(object):
 		gillies.reset_channel_gbar()
 
 		# Settings for analyzing electrotonic properties
-		Z_freq = 25.
 		def stn_setstate():
 			""" Initialize cell for analyzing electrical properties """
 			h.celsius = 35
@@ -292,36 +292,10 @@ class StnModelEvaluator(object):
 			h.set_aCSF(4)
 			h.init()
 
-		# Get original model Sections
-		somaref = self.model_data[full_model]['sec_refs']['soma']
-		dendrefs = self.model_data[full_model]['sec_refs']['dendrites']
-		allsecrefs = [somaref] + dendrefs[0] + dendrefs[1]
-		soma = somaref.sec
-
 		# Get synapses and NetCon we want to map
 		inputs = self.model_data[full_model]['inputs']
 		pre_pops = inputs.keys()
-		syns_tomap, ncs_tomap = [], []
-
-		for pop in pre_pops:
-
-			if 'synapses' in inputs[pop]:
-				syns_tomap.extend(inputs[pop]['synapses'] )
-			
-			if 'syn_NetCons' in inputs[pop]:
-				ncs_tomap.extend(inputs[pop]['syn_NetCons'] )
-
-		# Get synapse info
-		if any(syns_tomap):
-
-			# Existing synapse attributes to save (SectionRef attributes)
-			save_ref_attrs = ['table_index', 'tree_index', 'gid']
-			# Additonal synapse attributes to compute and save
-			pop_mapper = {'pre_pop': lambda syn: self.get_pre_pop(syn, full_model)}
-			
-			syn_info = mapsyn.get_syn_info(soma, allsecrefs, Z_freq=Z_freq, 
-								init_cell=stn_setstate, save_ref_attrs=save_ref_attrs,
-								attr_mappers=pop_mapper, syn_nc_tomap=(syns_tomap, ncs_tomap))
+		ncs_tomap = sum([inputs[pop].get('syn_NetCons', []) for pop in pre_pops], [])
 
 		########################################################################
 		# Reduce
@@ -330,32 +304,29 @@ class StnModelEvaluator(object):
 		# Create reduced cell
 		if model in (StnModel.Gillies_FoldMarasco, StnModel.Gillies_BranchZip):
 			# Bush/Marasco folding
-			soma_refs, dend_refs = reduce_cell.fold_gillies_marasco(export_locals=False)
+			reduction = reduce_cell.gillies_marasco_reduction()
+			reduction.map_netcons = ncs_tomap
+			reduction.reduce_model(num_passes=7)
 
 		elif model == StnModel.Gillies_FoldStratford:
 			# Stratford folding
-			soma_refs, dend_refs = reduce_cell.fold_gillies_stratford(export_locals=False)
+			reduction = reduce_cell.gillies_stratford_reduction()
+			reduction.map_netcons = ncs_tomap
+			reduction.reduce_model(num_passes=1)
+			
+		soma_refs, dend_refs = reduction._soma_refs, reduction._dend_refs
 
 		########################################################################
-		# Map inputs
-		logger.debug("Mapping synapses...")
+		# Save mapped inputs
 
 		self._init_con_dict(model, pre_pops)
 		new_inputs = self.model_data[model]['inputs']
 
-		# Map synapses to reduced cell
-		if any(syns_tomap):
-			default_map_method = 'Vratio'
-			map_method = self.model_data[model]['user_params'].get(
-									'synapse_mapping_method', default_map_method)
-			
-			mapsyn.map_synapses(soma_refs[0], soma_refs+dend_refs, syn_info, 
-								stn_setstate, Z_freq, method=map_method)
-
-			# Save mapped inputs
-			for syn in syn_info:
-				new_inputs[syn.pre_pop]['synapses'].append(syn.mapped_syn)
-				new_inputs[syn.pre_pop]['syn_NetCons'].extend(syn.afferent_netcons)
+		# Save mapped inputs
+		for syn in reduction.map_syn_info:
+			pre_pop = self.get_pre_pop(syn.afferent_netcons[0], full_model)
+			new_inputs[pre_pop]['synapses'].append(syn.mapped_syn)
+			new_inputs[pre_pop]['syn_NetCons'].extend(syn.afferent_netcons)
 
 		return soma_refs, dend_refs
 
@@ -446,7 +417,12 @@ class StnModelEvaluator(object):
 		Get pre-synaptic population for given synapse.
 		"""
 		inputs = self.model_data[model]['inputs']
-		gen_pop = (pre_pop for (pre_pop, conn_data) in inputs.iteritems() if syn in conn_data['synapses'])
+
+		if 'NetCon' in syn.hname(): # dirty hack: cast to NetCon if named 'NetCon[xyz]'
+			gen_pop = (pop for (pop, conn_data) in inputs.iteritems() if syn in conn_data['syn_NetCons'])
+		else:
+			gen_pop = (pop for (pop, conn_data) in inputs.iteritems() if syn in conn_data['synapses'])
+		
 		return next(gen_pop, None)
 
 
@@ -478,9 +454,6 @@ class StnModelEvaluator(object):
 			return
 
 		cc = cpd.CellConnector(self.physio_state, self.rng)
-
-		# Get sections
-		somasec = h.SThcell[0].soma
 
 		if stim_protocol == StimProtocol.SPONTANEOUS:
 			# Spontaneous firing has no inputs
@@ -538,8 +511,7 @@ class StnModelEvaluator(object):
 
 			# Distribute synapses over dendritic trees
 			is_ctx_target = lambda seg: seg.diam <= 1.0			
-			dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
-			dend_secrefs = sum(dendrites, [])
+			dend_secrefs = self.model_data[self.target_model]['dend_refs']
 			ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
 
 			# Make synapses
@@ -597,12 +569,10 @@ class StnModelEvaluator(object):
 
 			# Pick random segments in dendrites for placing synapses
 			is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
-			dendrites = self.model_data[self.target_model]['sec_refs']['dendrites']
-			dend_secrefs = sum(dendrites, [])
+			dend_secrefs = self.model_data[self.target_model]['dend_refs']
 			gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
 
 			# Make synapses
-			gpe_wvecs = [stimweightvec]
 			for target_seg in gpe_target_segs:
 
 				# Make poisson spike generator
@@ -917,7 +887,10 @@ class StnModelEvaluator(object):
 		trace_filter = kwargs.pop('trace_filter', None)
 		if trace_filter is None:
 			trace_filter = lambda t: t.startswith('AP_')
-		spikeData = analysis.match_traces(recData, trace_filter)
+		
+		orderfun = lambda trace_data: trace_data[0] # alphabetical by trace name
+		spikeData = analysis.match_traces(recData, trace_filter, orderfun) # OrderedDict
+
 		
 		# Plot spikes in rastergram
 		fig, ax = analysis.plotRaster(spikeData, **kwargs)
@@ -962,7 +935,6 @@ class StnModelEvaluator(object):
 		if model is None:
 			model = self.target_model
 
-		traceSpecs = self.model_data[model]['rec_data'][protocol]['trace_specs']
 		recData = self.model_data[model]['rec_data'][protocol]['trace_data']
 		recordStep = self.model_data[model]['rec_data'][protocol]['rec_dt']
 
@@ -1026,6 +998,7 @@ class StnModelEvaluator(object):
 				raise NotImplementedError("Plotting function for protocol {} not implemented".format(protocol))
 
 			plot_trace_func(self, model, protocol)
+
 
 	def run_sim(self, nthread=1):
 		"""
@@ -1191,7 +1164,7 @@ def run_protocol(proto, model, export_locals=True):
 		globals().update(locals())
 
 
-def map_protocol(proto, model, export_locals=True):
+def map_protocol(proto, model, export_locals=True, pause=False):
 	"""
 	Run given stimulation protocol.
 
@@ -1208,6 +1181,10 @@ def map_protocol(proto, model, export_locals=True):
 	evaluator.setup_run_protocol(proto)
 	evaluator.plot_traces(proto)
 
+	# Inspect model before continuing
+	if pause:
+		from neuron import gui
+		raw_input("Use ModelView to inspect model. Press enter to continue.")
 	##################################################
 
 	# Model reduction
@@ -1222,88 +1199,9 @@ def map_protocol(proto, model, export_locals=True):
 		globals().update(locals())
 
 
-def map_protocol_MIN_SYN_BURST():
-	"""
-	Run the MIN_SYN_BURST protocol, then reduce the cell, map the synapses
-	and run the protocol again to compare responses.
-	"""
-	# Make cell model and evaluator
-	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
-	evaluator.build_cell(StnModel.Gillies2005)
-	
-	# Run protocol
-	proto = StimProtocol.MIN_SYN_BURST
-	#evaluator.make_inputs(proto)
-	evaluator.setup_run_protocol(proto)
-	evaluator.plot_traces(proto)
-
-	###################################
-	# Model reduction
-	evaluator.build_cell(StnModel.Gillies_BranchZip)
-	evaluator.target_model = StnModel.Gillies_BranchZip
-
-	# Run Protocol
-	evaluator.setup_run_protocol(proto)
-	evaluator.plot_traces(proto)
-
-
-def run_protocol_MIN_SYN_BURST():
-	"""
-	Try to elicit a rebound burst using synaptic inputs only.
-
-	SEE ALSO
-	- notebook file 'test_SYN_BURST_protocol.ipynb'
-	"""
-	# Make cell model and evaluator
-	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
-	evaluator.build_cell(StnModel.Gillies2005)
-
-	# Run protocol
-	proto = StimProtocol.MIN_SYN_BURST
-	evaluator.setup_run_protocol(proto)
-
-	# Plot protocol
-	evaluator.plot_traces(proto)
-
-	# # Print synapse list
-	# h.topology() # see console from which Jupyter was started
-	# print("List of synapses:")
-	# all_syns = sum((evaluator.model_data[evaluator.target_model]['inputs'][pop]['synapses'] for pop in ['gpe', 'ctx']),[])
-	# for syn in all_syns:
-	# 	print("Synapse {} in segment {}".format(syn, syn.get_segment()))
-
-	globals().update(locals())
-
-
-def map_protocol_SYN_BACKGROUND_HIGH():
-	"""
-	Run the MIN_SYN_BURST protocol, then reduce the cell, map the synapses
-	and run the protocol again to compare responses.
-	"""
-	# Make cell model and evaluator
-	evaluator = StnModelEvaluator(StnModel.Gillies2005, PhysioState.NORMAL)
-	evaluator.build_cell(StnModel.Gillies2005)
-	
-	# Run protocol
-	proto = StimProtocol.SYN_BACKGROUND_HIGH
-	evaluator.setup_run_protocol(proto)
-	evaluator.plot_traces(proto)
-
-	###################################
-
-	# # Model reduction
-	# evaluator.build_cell(StnModel.Gillies_BranchZip)
-	# evaluator.target_model = StnModel.Gillies_BranchZip
-
-	# # Run Protocol
-	# evaluator.setup_run_protocol(proto)
-	# evaluator.plot_traces(proto)
-
-	globals().update(locals())
-
-
 if __name__ == '__main__':
 	# map_protocol_MIN_SYN_BURST()
 	# map_protocol_SYN_BACKGROUND_HIGH()
 	# map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldMarasco)
-	map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldStratford)
+	# map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldStratford)
+	map_protocol(StimProtocol.SYN_BACKGROUND_HIGH, StnModel.Gillies_FoldMarasco)

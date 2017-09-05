@@ -39,8 +39,7 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 	# Add CTX inputs using Tsodyks-Markram synapses
 	# Distribute synapses over dendritic trees
 	is_ctx_target = lambda seg: seg.diam <= 1.0         
-	dendrites = self.model_data[model]['sec_refs']['dendrites']
-	dend_secrefs = sum(dendrites, [])
+	dend_secrefs = self.model_data[model]['dend_refs']
 	ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
 
 	# Make synapses
@@ -118,8 +117,7 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 
 	# Pick random segments in dendrites for placing synapses
 	is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
-	dendrites = self.model_data[model]['sec_refs']['dendrites']
-	dend_secrefs = sum(dendrites, [])
+	dend_secrefs = self.model_data[model]['dend_refs']
 	gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
 
 	# Make synapses
