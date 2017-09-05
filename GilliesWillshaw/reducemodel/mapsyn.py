@@ -365,7 +365,7 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 		# Find the segment with same tree index and closest Ztransfer match,
 		map_ref, map_x = map_synapse(rootref, allsecrefs, syn_info, imp, method)
 		map_sec = map_ref.sec
-		logger.debug("Synapse was in {}({}) -> mapped to {}\n".format(
+		logger.anal("Synapse was in {}({}) -> mapped to {}\n".format(
 						syn_info.sec_name, syn_info.sec_loc, map_sec(map_x)))
 
 		# Make the synapse
@@ -394,10 +394,10 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 		# using relationship `Vsoma = Zc*gsyn*(V-Esyn) = k_{syn->soma}*Zin*gsyn*(V-Esyn)`
 
 		# Report discrepancy
-		logger.debug(dedent("""
-		\nOriginal synapse:\nZc={}\tk={}\tZin={}
-		\nMapped synapse:\nZc={}\tk={}\tZin={}
-		\nDiscrepancy: Zc_old/Zc_new={} = scale factor for gmax
+		logger.anal(dedent("""
+			Original synapse:\nZc={}\tk={}\tZin={}
+			Mapped synapse:\nZc={}\tk={}\tZin={}
+			Discrepancy: Zc_old/Zc_new={} = scale factor for gmax
 		""".format(syn_info.Zc, syn_info.k_syn_soma, syn_info.Zin,
 					map_Zc, map_k, map_Zin, syn_info.Zc/map_Zc)))
 
@@ -433,7 +433,7 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 			
 			for i_w in xrange(int(nc.wcnt())):
 				nc.weight[i_w] = orig_weights[i_w] * scale_g
-				logger.debug("Scaled weight {} by factor {}".format(orig_weights[i_w], scale_g))
+				logger.anal("Scaled weight {} by factor {}".format(orig_weights[i_w], scale_g))
 
 			
 		

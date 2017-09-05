@@ -48,7 +48,10 @@ Pop = Populations
 # Experimental protocols
 import proto_common
 proto_common.logger = logger
-from proto_common import *
+from proto_common import (
+	StimProtocol, SynapticProtocols, EvaluationStep,
+	extend_dictitem, pick_random_segments
+)
 
 # Importing protocols will run module and register functions
 import proto_gillies_article
@@ -177,10 +180,6 @@ class StnModelEvaluator(object):
 
 			# Build gillies STN cell model
 			soma_refs, dend_refs = self._build_gillies(state)
-			
-			self.model_data[model]['mechs_gbars_dict'] = gillies.gillies_gdict
-			self.model_data[model]['gleak_name'] = gillies.gleak_name
-			self.model_data[model]['active_gbar_names'] = gillies.active_gbar_names
 
 			self.model_data[model]['sec_refs'] = {
 				'soma': soma_refs[0],
@@ -194,6 +193,7 @@ class StnModelEvaluator(object):
 
 			dendL = [ref for ref in dend_refs if 'dend0' in ref.sec.name()]
 			dendR = [ref for ref in dend_refs if 'dend1' in ref.sec.name()]
+			
 			self.model_data[model]['sec_refs'] = {
 				'soma': soma_refs[0],
 				'dendrites': dendL + dendR,
@@ -202,6 +202,11 @@ class StnModelEvaluator(object):
 		else:
 			raise Exception("Model '{}' not supported".format(
 					model))
+
+		# Set Gillies mechanism
+		self.model_data[model]['mechs_gbars_dict'] = gillies.gillies_gdict
+		self.model_data[model]['gleak_name'] = gillies.gleak_name
+		self.model_data[model]['active_gbar_names'] = gillies.active_gbar_names
 
 		# Save Sections
 		self.model_data[model]['soma_refs'] = soma_refs
@@ -845,7 +850,7 @@ class StnModelEvaluator(object):
 			'rec_dt': recordStep,
 			'rec_markers': markers,
 		})
-		
+
 
 	def _plot_all_Vm(self, model, protocol, fig_per='trace'):
 		"""
@@ -856,10 +861,17 @@ class StnModelEvaluator(object):
 		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
 
 		# Plot data
-		recV = analysis.match_traces(recData, lambda t: t.startswith('V_'))
-		figs_vm = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
-										traceSharex=True, oneFigPer=fig_per)
-		return figs_vm
+		filterfun = lambda t: t.startswith('V_')
+		orderfun = index_or_name
+		recV = analysis.match_traces(recData, filterfun, orderfun)
+
+		if fig_per == 'cell' and len(recV) > 5:
+			rot = 0
+
+		figs = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
+									traceSharex=True, oneFigPer=fig_per, 
+									labelRotation=rot)
+		return figs
 	
 
 	def _plot_all_spikes(self, model, protocol, **kwargs):
@@ -887,8 +899,8 @@ class StnModelEvaluator(object):
 		trace_filter = kwargs.pop('trace_filter', None)
 		if trace_filter is None:
 			trace_filter = lambda t: t.startswith('AP_')
+		orderfun = index_or_name
 		
-		orderfun = lambda trace_data: trace_data[0] # alphabetical by trace name
 		spikeData = analysis.match_traces(recData, trace_filter, orderfun) # OrderedDict
 
 		
@@ -1146,6 +1158,15 @@ class StnModelEvaluator(object):
 # EXPERIMENTS
 ################################################################################
 
+def index_or_name(trace_data):
+	"""
+	Ordering function: gets trace name or index.
+	"""
+	name = trace_data[0]
+	m = re.search(r'\[([\d]+)\]', name) # get index [i]
+	key = int(m.groups()[0]) if m else name
+	return key
+
 
 def run_protocol(proto, model, export_locals=True):
 	"""
@@ -1204,4 +1225,5 @@ if __name__ == '__main__':
 	# map_protocol_SYN_BACKGROUND_HIGH()
 	# map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldMarasco)
 	# map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldStratford)
-	map_protocol(StimProtocol.SYN_BACKGROUND_HIGH, StnModel.Gillies_FoldMarasco)
+	# map_protocol(StimProtocol.SYN_BACKGROUND_HIGH, StnModel.Gillies_FoldMarasco)
+	map_protocol(StimProtocol.PASSIVE_SYN, StnModel.Gillies_FoldMarasco, pause=True)

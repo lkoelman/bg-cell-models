@@ -687,7 +687,7 @@ class CellConnector(object):
 
 				# Check if parameters is available from given sources
 				if not phys_parname in phys_params:
-					logger.debug(dedent("""\
+					logger.anal(dedent("""\
 							Parameter {dictpar} not found for connection ({pre},{post},{rec}).
 							This means that parameter {mechpar} will not be set\n""").format(
 								dictpar=phys_parname, pre=pre_pop, post=post_pop, 
@@ -777,7 +777,7 @@ class CellConnector(object):
 				else: # weight is h.Vector
 					# If weight was assigned as part of synapse parameter, scale it
 					if ('weight' in netcon_assigned_pars):
-						logger.warning("Weight was assigned as part of synapse parameters. New weight Vector will be allocated.")
+						logger.anal("Weight was assigned as part of synapse parameters. New weight Vector will be allocated.")
 						wvec = h.Vector()
 						wvec.copy(weight)
 						wvec.mul(nc.weight[i_w]) # Vector.mul() : multiply in-place

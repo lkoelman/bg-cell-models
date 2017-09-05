@@ -250,7 +250,7 @@ class FoldReduction(object):
 			if step_args is None:
 				step_args = []
 
-			logger.debug("Executing reduction step {}".format(step))
+			logger.anal("Executing reduction step {}".format(step))
 			
 			func(*step_args, **user_kwargs)
 
@@ -380,7 +380,7 @@ def adjust_gbar_spontaneous(reduction):
 			print("Skipping soma")
 			continue
 		
-		print("POST-PROCESS section {}".format(sec))
+		logger.anal("Scaled gna_NaL in section {}".format(sec))
 		for seg in sec:
 			# seg.gna_NaL = 1.075 * seg.gna_NaL
 			seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6

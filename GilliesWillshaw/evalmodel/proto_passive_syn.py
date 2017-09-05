@@ -9,6 +9,8 @@ Test passive propagation of single EPSP & IPSP
 import neuron
 h = neuron.h
 
+import re
+
 # Physiological parameters
 import cellpopdata as cpd
 from cellpopdata import (
@@ -19,7 +21,14 @@ from cellpopdata import (
 )
 
 # Stimulation protocols
-from proto_common import *
+from proto_common import (
+	StimProtocol, EvaluationStep, 
+	register_step, pick_random_segments, extend_dictitem,
+	logger
+)
+
+# Plotting
+from common import analysis
 
 ################################################################################
 # Interface functions
@@ -75,6 +84,9 @@ def rec_traces(self, protocol, traceSpecs):
 	# Record Vm in all recorded segments
 	self.rec_Vm(protocol, traceSpecs)
 
+	# Record input spikes
+	rec_spikes(self, protocol, traceSpecs)
+
 
 @register_step(EvaluationStep.PLOT_TRACES, impl_proto)
 def plot_traces(self, model, protocol):
@@ -82,8 +94,23 @@ def plot_traces(self, model, protocol):
 	Plot all traces for this protocol
 	"""
 
+	# Plot rastergrams
+	spk_filter = lambda trace: 'AP' in trace
+	self._plot_all_spikes(model, protocol, trace_filter=spk_filter, color='r')
+
 	# Plot Vm in recorded segments
-	self._plot_all_Vm(model, protocol, fig_per='trace')
+	figs = self._plot_all_Vm(model, protocol, fig_per='cell')
+	for fig in figs:
+		fig.suptitle('Vm (cell model {})'.format(model))
+
+	# Get data
+	rec_dict = self.model_data[model]['rec_data'][protocol]
+	recData = rec_dict['trace_data']
+	rec_dt = rec_dict['rec_dt']
+
+	# Plot soma Vm separately
+	traces = analysis.match_traces(recData, lambda t: 'soma' in t)
+	figs = analysis.plotTraces(traces, rec_dt, oneFigPer='cell')
 
 
 ################################################################################
@@ -134,7 +161,7 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 		# Debug
 		# nc.weight[0] = 10
 		# nc.delay = 0
-		logger.debug("Made {} synapse with t={}ms, PRE_POP={} , NTR={}".format(
+		logger.anal("Made {} synapse with t={}ms, PRE_POP={} , NTR={}".format(
 				syn_mech, t_fire, syn_pre_post_pops[0], syn_NTR))
 
 		# Save inputs
@@ -201,6 +228,10 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 def rec_EPSP(self, protocol, traceSpecs):
 	"""
 	Record traces at GLU synapses
+
+	NOTE: all suffixes containing an index refer to the index of the
+	      synapse object => this makes them identifiable in
+	      NEURON GUI Point Process Manager
 	"""
 	model = self.target_model
 	inputs = self.model_data[model]['inputs']
@@ -219,9 +250,42 @@ def rec_EPSP(self, protocol, traceSpecs):
 		if i_syn > n_syn-1:
 			break
 
+		match = re.search(r'\[[\d]+\]', nc.syn().hname())
+		suffix = match.group() if match else str(i_syn)
+
 		# Add post-synaptic segment to recorded segments
-		seg_label = 'SYNseg%i' % i_syn
+		seg_label = 'sync' + suffix
 		rec_segs[seg_label] = nc.syn().get_segment()
 
 		# Record Vm in post-synaptic segment -> use evaluator.rec_Vm
 		# traceSpecs['V_'+seg_label] = {'sec':seg_label, 'loc':seg.x, 'var':'v'}
+
+
+def rec_spikes(self, protocol, traceSpecs):
+	"""
+	Record input spikes delivered to synapses.
+
+	NOTE: all suffixes containing an index refer to the index of the
+	      synapse object => this makes them identifiable in
+	      NEURON GUI Point Process Manager
+	"""
+	model = self.target_model
+	rec_pops = [Pop.GPE, Pop.CTX]
+
+	for pre_pop in rec_pops:
+		
+		inputs = self.model_data[model]['inputs'].get(pre_pop.name.lower(), None)
+		if inputs is None:
+			continue
+		
+		nc_list = inputs['syn_NetCons']
+		for i_syn, nc in enumerate(nc_list):
+
+			# Add NetCon to list of recorded objects
+			match = re.search(r'\[[\d]+\]', nc.syn().hname())
+			suffix = match.group() if match else ('syn' + str(i_syn))
+			syn_tag = pre_pop.name + suffix
+			self._add_recorded_obj(syn_tag, nc, protocol)
+
+			# Specify trace
+			traceSpecs['AP_'+syn_tag] = {'netcon':syn_tag}

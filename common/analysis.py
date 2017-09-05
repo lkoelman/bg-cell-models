@@ -252,7 +252,8 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell', 
 				includeTraces=None, excludeTraces=None, labelTime=False,
 				showFig=True, colorList=None, lineList=None, yRange=None,
-				traceSharex=False, showGrid=True, title=None, traceXforms=None):
+				traceSharex=False, showGrid=True, title=None, traceXforms=None,
+				fontSize=10, labelRotation=-90):
 	"""
 	Plot previously recorded traces
 
@@ -314,19 +315,26 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		shared_ax = traceSharex
 
 	figs = []
-	fontsiz=12
+	label_fontsize = fontSize
 	for itrace, trace in enumerate(tracesList):
+		
 		if oneFigPer == 'cell':
+			
 			if itrace == 0:
+
 				figs.append(plt.figure())
+				
 				ax = plt.subplot(len(tracesList), 1, itrace+1, sharex=shared_ax)
 				if traceSharex == True:
 					shared_ax = ax
 			else:
 				ax = plt.subplot(len(tracesList), 1, itrace+1, sharex=shared_ax)
+		
 		else: # one separate figure per trace
+			
 			fig = plt.figure()
 			figs.append(fig)
+			
 			ax = plt.subplot(111, sharex=shared_ax)
 			if itrace==0 and traceSharex==True:
 				shared_ax = ax
@@ -344,14 +352,19 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		plt.plot(t[:len(data)], data, linewidth=1.0, color=colorList[itrace%len(colorList)])
 
 		# Axes ranges/labels
-		plt.ylabel(trace, fontsize=fontsiz)
+		# plt.ylabel(trace, fontsize=label_fontsize)
+		ax.set_ylabel(trace, rotation=labelRotation, fontsize=label_fontsize)
+		
 		if labelTime:
-			plt.xlabel('Time (ms)', fontsize=fontsiz)
+			plt.xlabel('Time (ms)', fontsize=label_fontsize)
+		
 		if isinstance(yRange, dict):
 			if trace in yRange:
 				plt.ylim(yRange[trace])
+		
 		elif yRange is not None:
 			plt.ylim(yRange)
+		
 		plt.xlim(timeRange)
 
 		# Customize the grid
@@ -563,6 +576,7 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
 		traceNames = [trace for trace in traceNames if trace in includeTraces]
 	if excludeTraces is not None:
 		traceNames = [trace for trace in traceNames if trace not in excludeTraces]
+	traceNames = reversed(traceNames) # rasterplot top -> bottom
 
 	# create X and Y data for scatter plot
 	spike_vecs = [spikeData[trace].as_numpy() for trace in traceNames]

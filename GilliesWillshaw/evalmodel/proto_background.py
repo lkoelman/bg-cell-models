@@ -165,7 +165,7 @@ def init_sim(self, protocol):
 	"""
 
 	# Only adjust duration
-	self._init_sim(dur=1000)
+	self._init_sim(dur=10000)
 
 	# Reset RNGs
 	for pre_pop in (Pop.CTX, Pop.GPE):
@@ -181,7 +181,7 @@ def init_sim(self, protocol):
 			# Reset counter
 			old_seq = random.seq()
 			random.seq(start_seq)
-			logger.debug("Changing RNG seq from {} to {}".format(old_seq, start_seq))
+			logger.anal("Changing RNG seq from {} to {}".format(old_seq, start_seq))
 
 
 def make_inputs(self, connector=None):
@@ -487,8 +487,9 @@ def rec_spikes(self, protocol, traceSpecs):
 		for i_syn, nc in enumerate(nc_list):
 
 			# Add NetCon to list of recorded objects
-			match = re.search(r'\[[\d]+\]', nc.hname())
-			suffix = match.group() if match else ('syn' + str(i_syn))
+			# match = re.search(r'\[[\d]+\]', nc.hname())
+			# suffix = match.group() if match else ('syn' + str(i_syn))
+			suffix = 'syn' + str(i_syn)
 			syn_tag = pre_pop.name + suffix
 			self._add_recorded_obj(syn_tag, nc, protocol)
 
