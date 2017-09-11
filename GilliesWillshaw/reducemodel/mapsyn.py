@@ -360,6 +360,7 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 
 	# Loop over all synapses
 	logger.debug("Mapping synapses to reduced cell...")
+	# TODO: order synapses by PSP frequency, compute once per group, place
 	for syn_info in orig_syn_info:
 
 		# Find the segment with same tree index and closest Ztransfer match,

@@ -10,16 +10,49 @@ h = neuron.h
 
 # Physiological parameters
 import cellpopdata as cpd
-from cellpopdata import PhysioState, Populations as Pop, NTReceptors as NTR, ParameterSource as Cit
+from cellpopdata import (
+	Populations as Pop, 
+	NTReceptors as NTR, 
+	ParameterSource as Cit
+)
 
 # Stimulation protocols
-from proto_common import *
+from proto_common import (
+	StimProtocol, EvaluationStep, 
+	register_step, pick_random_segments, extend_dictitem,
+)
 
 ################################################################################
 # Interface functions
 ################################################################################
 
-# see StnModelEvaluator
+@register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.SINGLE_SYN_GLU)
+@register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.SINGLE_SYN_GABA)
+def init_sim(self, protocol):
+	"""
+	Initialize simulator to simulate background protocol
+	"""
+
+	# Change simulation duration
+	self._init_sim(dur=2000)
+
+	# Make cell passive: disable all active channels
+	gbar_active = self.model_data[self.target_model]['active_gbar_names']
+
+	# Disable spiking (SETPARAM: disable spiking if necessary)
+	disable_channels = 'spiking'
+	for ref in self.all_sec_refs(self.target_model):
+		for seg in ref.sec:
+
+			# Disable ion channels
+			if disable_channels == 'spiking':
+				setattr(seg, 'gna_NaL', 0.0)
+				setattr(seg, 'gna_Na', 0.0)
+
+			elif disable_channels == 'active':
+				for gbar in gbar_active:
+					setattr(seg, gbar, 0.0)
+
 
 ################################################################################
 # Building block functions
@@ -60,6 +93,7 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 			'U1': 0.7,
 			'tau_rec': 200., # 1./20. / 2. * 1e3, # 95% recovery of RRP under 20Hz stim (Gradinaru 2009)
 			'tau_facil': 1., # no facilitation
+			'gmax_NMDA': 0.0, # SETPARAM: enable only the GLU conductance you want to test
 		}
 
 		# Make synapse and NetCon
@@ -77,7 +111,7 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 
 		# Control netstim
 		tstart = 850
-		tstop = tstart + 10*stim_T
+		tstop = tstart + 10*stim_T # SETPARAM: number of spikes in burst
 		stimsource.start = tstart
 		turn_off = h.NetCon(None, stimsource)
 		turn_off.weight[0] = -1
@@ -136,6 +170,7 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 		syn_params = {
 			'use_stdp_A': 1,
 			'use_stdp_B': 1,
+			# 'gmax_GABAA': 0.0, # SETPARAM: enable only the GABA conductance you want to test
 		}
 
 		# Make synapse and NetCon
@@ -154,7 +189,7 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 
 		# Control netstim
 		tstart = 700
-		tstop = tstart + 5*stim_T
+		tstop = tstart + 5*stim_T # SETPARAM: number of spikes in burst
 		stimsource.start = tstart
 		turn_off = h.NetCon(None, stimsource)
 		turn_off.weight[0] = -1

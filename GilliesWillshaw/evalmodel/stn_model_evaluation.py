@@ -6,6 +6,9 @@ Evaluation of STN cell models under different physiological and stimulus conditi
 import collections
 import re
 from enum import Enum
+import pickle
+from copy import deepcopy
+
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
@@ -852,6 +855,26 @@ class StnModelEvaluator(object):
 		})
 
 
+	def save_proto_traces(self, model, protocol, filename):
+		"""
+		Save recorded traces for given model and stimulation protocol.
+		"""
+		rec_data = dict(self.model_data[model]['rec_data'][protocol]) # copy it
+		
+		# remove unnecessary data
+		rec_data.pop('rec_markers') # can't pickle/deepcopy HocObject
+		rec_data = deepcopy(rec_data) # don't modify original trace data
+
+		# convert h.Vector to numpy array
+		trace_data = rec_data['trace_data']
+		for k,v in trace_data.iteritems():
+			trace_data[k] = v.as_numpy()
+
+		# Write arrays to npz file
+		with open(filename, 'w') as recfile:
+			pickle.dump(rec_data, recfile)
+
+
 	def _plot_all_Vm(self, model, protocol, fig_per='trace'):
 		"""
 		Plot all membrane voltages.
@@ -867,6 +890,8 @@ class StnModelEvaluator(object):
 
 		if fig_per == 'cell' and len(recV) > 5:
 			rot = 0
+		else:
+			rot = 90
 
 		figs = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
 									traceSharex=True, oneFigPer=fig_per, 
@@ -1183,6 +1208,8 @@ def run_protocol(proto, model, export_locals=True):
 
 	if export_locals:
 		globals().update(locals())
+
+	return evaluator
 
 
 def map_protocol(proto, model, export_locals=True, pause=False):

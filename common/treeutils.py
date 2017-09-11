@@ -61,14 +61,18 @@ def contains_sec(seclist, sec):
 
 
 def prev_seg(curseg):
-	""" Get segment preceding seg: this can be on same or parent Section """
+	"""
+	Get segment preceding seg: this can be on same or parent Section
+	"""
 	# NOTE: cannot use seg.next() since this changed content of seg
 	allseg = reversed([seg for seg in curseg.sec if seg_index(seg) < seg_index(curseg)])
 	return next(allseg, curseg.sec.parentseg())
 
 
 def next_segs(curseg):
-	""" Get child segments of given segment """
+	"""
+	Get child segments of given segment
+	"""
 	cursec = curseg.sec
 	i_rootseg = seg_index(curseg)
 	child_segs = []
@@ -78,31 +82,35 @@ def next_segs(curseg):
 		child_segs.append(next((seg for seg in cursec if seg_index(seg)>i_rootseg)))
 	else: # Case 2: end segment
 		child_segs = [next((seg for seg in sec)) for sec in cursec.children()]
+	
 	return child_segs
+
 
 def next_segs_dx(curseg, dx):
 	"""
 	Get next segments (in direction 0 to 1 end) with discretization step x
 	"""
 	x = curseg.x
+
 	if x + dx <= 1.0:
-		return curseg.sec(x + dx)
+		return [curseg.sec(x + dx)]
 	else:
 		xb = x + dx - 1.0
-		child_segs = [sec(xb) for sec in curseg.sec.children()]
+		return [sec(xb) for sec in curseg.sec.children()]
+
 
 def next_segs_dL(curseg, dL):
 	"""
 	Get next segments (in direction 0 to 1 end) with step size dL [um]
 	"""
-	x = curseg.x
 	aL = curseg.x * curseg.sec.L
 	bL = aL + dL
+
 	if bL <= curseg.sec.L:
-		return curseg.sec(bL/curseg.sec.L)
+		return [curseg.sec(bL/curseg.sec.L)]
 	else:
 		sL = bL - curseg.sec.L
-		child_segs = [sec(sL/sec.L) for sec in curseg.sec.children()]
+		return [sec(sL/sec.L) for sec in curseg.sec.children()]
 
 
 def seg_at_index(sec, iseg):

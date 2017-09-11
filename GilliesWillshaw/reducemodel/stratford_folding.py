@@ -25,7 +25,7 @@ from redutils import get_sec_props_obj
 from cluster import Cluster, assign_topology_attrs
 
 from common import treeutils
-from common.treeutils import getsecref, seg_index, interp_seg
+from common.treeutils import getsecref, seg_index, interp_seg, next_segs
 from common.electrotonic import calc_lambda, measure_Zin, segs_at_dX
 
 from neuron import h
@@ -198,6 +198,90 @@ def next_eq_diam(a_seg, a_i, root_X, dX, cluster, reduction, lvl=0):
 	return
 
 
+def next_seg_diam(a_seg, a_i, cluster, reduction, lvl=0):
+	"""
+	Compute equivalent diameter at next parallel segments up the tree, assuming
+	they have the same electrotonic distance from the current segment.
+	
+	This would be approximately true if the segment width is chosen as a fraction
+	of lambda (but will unlikely be exactly true due to the discrete nseg).
+
+	@param	a_seg		nrn.Segment : last segment encountered when ascending the tree.
+
+	@param	a_i			discretization step index of last computed diameter
+						(use 0 for first call)
+	"""
+	allsecrefs = reduction.all_sec_refs
+	gleak_name = reduction.gleak_name
+	gbar_list = reduction.active_gbar_names
+
+	# electrotonic distance to last visited segment (not necessarily used)
+	a_ref		= getsecref(a_seg.sec, reduction.all_sec_refs)
+	a_index		= seg_index(a_seg)
+	a_X0		= a_ref.seg_path_Lelec0[a_index]
+	a_X1		= a_ref.seg_path_Lelec1[a_index]
+	a_X			= interp_seg(a_seg, a_X0, a_X1)
+
+	
+	# Get child segments
+	child_segs = next_segs(a_seg)
+	if not any(child_segs):
+		logger.debug("Folding: reached end of branch @ {} (NOT USED)".format(a_seg))
+	
+	# Keep track of electrotonic distance to children
+	cur_dX = None
+	tol = 0.01
+	within_tol = lambda a,b: (1.0 - tol) <= (a / b) <= (1.0 + tol)
+	
+	# Get new segment at (a_i+1) * dX
+	for iseg, b_seg in enumerate(child_segs):
+
+		new_seg = b_seg
+
+		# Get electronic distance to following/adjacent segment
+		b_ref = getsecref(b_seg.sec, allsecrefs)
+		b_index = seg_index(b_seg)
+		b_X0 = b_ref.seg_path_Lelec0[b_index]
+		b_X1 = b_ref.seg_path_Lelec1[b_index]
+		b_X = interp_seg(b_seg, b_X0, b_X1)
+		new_dX = b_X - a_X
+
+		# Check if precondition for function is still true
+		if (cur_dX is not None) and (not within_tol(new_dX, cur_dX)):
+			# FIXME: this will only check at branch point, also test for deeper parallel branches: basically all step[i] must occur at the same X
+			raise ValueError("Dendritic tree did not meet precondition that "
+					"segments must be at equal electronic distance from branch points")
+
+		# Save attributes at this electrotonic distance from root
+		step_attrs = {}
+		step_attrs['step_diams'] = [new_seg.diam]
+		step_attrs['step_Rm'] = [1.0 / getattr(new_seg, gleak_name)]
+		step_attrs['step_Ra'] = [new_seg.sec.Ra]
+		step_attrs['step_cm'] = [new_seg.cm]
+		step_attrs['step_gbar'] = [dict(((gname, getattr(new_seg, gname)) for gname in gbar_list))]
+
+		# Save them on cluster object
+		for attr_name, new_seg_vals in step_attrs.iteritems():
+
+			# Get cluster attribute
+			step_attr_list = getattr(cluster, attr_name) # list(list()) : [[step1_d1...], [step2_d1...], ...]
+			
+			# Save values for new segment
+			if len(step_attr_list) <= a_i:
+				# First entry (first branch for this step) : start new list
+				step_attr_list.append(new_seg_vals) # add new list to the [[step1...], [step2...], ...]
+			else:
+				# Subsequent branches: add to list for this step
+				step_parallel_list = step_attr_list[a_i]
+				step_parallel_list.extend(new_seg_vals)
+
+
+		# Ascend and increase index
+		next_seg_diam(new_seg, a_i+1, cluster, reduction, lvl=lvl+1)
+
+	return
+
+
 def calc_folds(target_Y_secs, i_pass, reduction, dX=0.1):
 	"""
 	Do folding operation
@@ -206,7 +290,6 @@ def calc_folds(target_Y_secs, i_pass, reduction, dX=0.1):
 					Section for each set of collapsed branches.
 	"""
 
-	allsecrefs = reduction.all_sec_refs
 	gbar_list = reduction.active_gbar_names
 
 	clusters = []

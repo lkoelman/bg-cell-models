@@ -271,8 +271,6 @@ class CellConnector(object):
 									is divided by this number.
 		"""
 
-		pop = Populations
-
 		physio_state = self._physio_state
 		rng = self._rng
 
@@ -320,6 +318,16 @@ class CellConnector(object):
 					'Vpre_threshold': 0.0,
 				}
 
+			cp[Pop.CTX][Rec.AMPA][Src.Default].update({
+				'f_med_PSP_single': 83.24,
+				'f_med_PSP_burst': 88.97,
+			})
+
+			cp[Pop.CTX][Rec.NMDA][Src.Default].update({
+				'f_med_PSP_single': 0.37,
+				'f_med_PSP_burst': 2.3,
+			})
+
 			# ---------------------------------------------------------------------
 			# AMPA from Chu (2015)
 			Ermp = -80.
@@ -362,9 +370,9 @@ class CellConnector(object):
 			# ---------------------------------------------------------------------
 			# Default parameters
 
-			# Copy params Chu (2015)
-			cp[Pop.CTX][Rec.AMPA][Src.Default] = dict(cp[Pop.CTX][Rec.AMPA][Src.Chu2015])
-			cp[Pop.CTX][Rec.NMDA][Src.Default] = dict(cp[Pop.CTX][Rec.NMDA][Src.Chu2015])
+			# Set params Chu (2015) as default parameters
+			cp[Pop.CTX][Rec.AMPA][Src.Default].update(cp[Pop.CTX][Rec.AMPA][Src.Chu2015])
+			cp[Pop.CTX][Rec.NMDA][Src.Default].update(cp[Pop.CTX][Rec.NMDA][Src.Chu2015])
 			
 			# Modification to NMDA conductance
 			#	-> NMDA conductance is typically 70% of that of AMPA (see EPFL MOOC)
@@ -394,6 +402,8 @@ class CellConnector(object):
 				'Erev': Erev_GABAA,
 				'delay': 1.0,
 				'Vpre_threshold': 0.0,
+				'f_med_PSP_single': 1.10, # median frequency of PSP triggered by burst
+				'f_med_PSP_burst': 17.68, # median frequency of PSP triggered by single spike
 			}
 
 			cp[Pop.GPE][Rec.GABAB][Src.Default] = {
@@ -401,6 +411,8 @@ class CellConnector(object):
 				'gbar': 350.*1e-3 / (Ermp - Erev_GABAB), # Chu2015 in healthy state
 				'delay': 1.0,
 				'Vpre_threshold': 0.0,
+				'f_med_PSP_single': 2.57,
+				'f_med_PSP_burst': 4.08,
 			}
 
 			# ---------------------------------------------------------------------

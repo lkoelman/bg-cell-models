@@ -475,7 +475,6 @@ def gillies_marasco_reduction():
 
 	# Get references to root sections of the 3 identical trees
 	dendR_root			= h.SThcell[0].dend1[0]
-	dendL_juction		= h.SThcell[0].dend0[0]
 	dendL_upper_root	= h.SThcell[0].dend0[1] # root section of upper left dendrite
 	dendL_lower_root	= h.SThcell[0].dend0[2] # root section of lower left dendrite
 	fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
