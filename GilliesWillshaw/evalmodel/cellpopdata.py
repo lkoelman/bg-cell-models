@@ -75,6 +75,14 @@ class Populations(Enum):
 	THA = 4
 	PPN = 5
 
+	def to_descr(self):
+		return self.name.lower()
+
+	@classmethod
+	def from_descr(cls, descr):
+		return cls._member_map_[descr.upper()]
+
+
 
 @unique
 class NTReceptors(Enum):
@@ -135,6 +143,16 @@ class ParameterSource(Enum):
 Pop = Populations
 Rec = NTReceptors
 Src = ParameterSource
+
+def get_mod_name(syn):
+	"""
+	Get NEURON mechanism name of given synapse object
+
+	@param	syn		HocObject: synapse POINT_PROCESS
+	"""
+	match_mod = re.search(r'^[a-zA-Z0-9]+', syn.hname())
+	modname = match_mod.group()
+	return modname
 
 
 def correct_GABAsyn(syn):
@@ -319,13 +337,13 @@ class CellConnector(object):
 				}
 
 			cp[Pop.CTX][Rec.AMPA][Src.Default].update({
-				'f_med_PSP_single': 83.24,
-				'f_med_PSP_burst': 88.97,
+				'f_med_PSP_single': 16.87,
+				'f_med_PSP_burst': 16.95,
 			})
 
 			cp[Pop.CTX][Rec.NMDA][Src.Default].update({
-				'f_med_PSP_single': 0.37,
-				'f_med_PSP_burst': 2.3,
+				'f_med_PSP_single': 0.58,
+				'f_med_PSP_burst': 2.14,
 			})
 
 			# ---------------------------------------------------------------------
@@ -402,8 +420,8 @@ class CellConnector(object):
 				'Erev': Erev_GABAA,
 				'delay': 1.0,
 				'Vpre_threshold': 0.0,
-				'f_med_PSP_single': 1.10, # median frequency of PSP triggered by burst
-				'f_med_PSP_burst': 17.68, # median frequency of PSP triggered by single spike
+				'f_med_PSP_single': 0.19, # median frequency of PSP triggered by burst
+				'f_med_PSP_burst': 0.05, # median frequency of PSP triggered by single spike
 			}
 
 			cp[Pop.GPE][Rec.GABAB][Src.Default] = {
@@ -411,8 +429,8 @@ class CellConnector(object):
 				'gbar': 350.*1e-3 / (Ermp - Erev_GABAB), # Chu2015 in healthy state
 				'delay': 1.0,
 				'Vpre_threshold': 0.0,
-				'f_med_PSP_single': 2.57,
-				'f_med_PSP_burst': 4.08,
+				'f_med_PSP_single': 4.22,
+				'f_med_PSP_burst': 8.72,
 			}
 
 			# ---------------------------------------------------------------------
@@ -595,9 +613,24 @@ class CellConnector(object):
 		return dict(self.syn_par_maps[syn_type]) # return a copy
 
 
+	def getSynMechReceptors(self, syn_type):
+		"""
+		Get receptor types implemented by the given synaptic mechanism.
+
+		@param	syn_type	str: name of the NEURON mechanism
+
+		@return				list(NTReceptors)
+		"""
+		return self.syn_par_maps[syn_type].keys()
+
+
 	def getSynMechParamNames(self, syn_type):
 		"""
-		Get parameter names for synaptic mechanism
+		Get parameter names for synaptic mechanism.
+
+		I.e. the parameter names defined in the .mod file that can be changed.
+
+		@return		list(str): list of parameter names declared in mod file
 		"""
 		ntr_params_names = self.syn_par_maps[syn_type]
 		mech_parnames = []

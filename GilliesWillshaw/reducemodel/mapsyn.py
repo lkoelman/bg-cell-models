@@ -9,62 +9,61 @@ import logging
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
 
-import neuron
 from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 import gillies_model as gillies
 import redutils as redtools
-from redutils import ExtSecRef, getsecref, seg_index
+from redutils import getsecref, seg_index
 
 class SynInfo(object):
 	"""
-	Data for constructing an equivalent synaptic input.
-	(This is just a struct/bunch-like class)
-
-	It has following attributes:
-
-	mod_name			str
+	Struct-like object containing synapse properties.
 	
-	sec_name			str
-	
-	sec_hname			str
-	
-	sec_loc				float
 
-	'mech_attr_i'		float
-						one attribute for each synaptic mechanism parameter
+	It may contain following attributes:
 
-	afferent_netcons	list(NetCon)
-	
-	afferent_weights	list(list(float))
-						weight vector for each incoming NetCon
+		mod_name			str
+		
+		sec_name			str
+		
+		sec_hname			str
+		
+		sec_loc				float
 
-	'secref_attr_i'		object
-						saved SectionRef attributes
+		'mech_attr_i'		float
+							one attribute for each synaptic mechanism parameter
+
+		afferent_netcons	list(NetCon)
+		
+		afferent_weights	list(list(float))
+							weight vector for each incoming NetCon
+
+		'secref_attr_i'		object
+							saved SectionRef attributes
 
 
-	path_ri				float
-						summed seg.ri() up to synapse segment
-	
-	max_path_ri			float
-						= max(syn_sec.pathri_seg) # max path resistance in Section
-	
-	min_path_ri			float
-						= min(syn_sec.pathri_seg) # min path resistance in Section
+		path_ri				float
+							summed seg.ri() up to synapse segment
+		
+		max_path_ri			float
+							= max(syn_sec.pathri_seg) # max path resistance in Section
+		
+		min_path_ri			float
+							= min(syn_sec.pathri_seg) # min path resistance in Section
 
-	Zc					float
-						Ztransfer, i.e. |v(soma)/i(syn)| or |v(syn)/i(soma)|
-	
-	Zin					float
-						Zinput, i.e. v(x)/i(x) measured at synapse
+		Zc					float
+							Ztransfer, i.e. |v(soma)/i(syn)| or |v(syn)/i(soma)|
+		
+		Zin					float
+							Zinput, i.e. v(x)/i(x) measured at synapse
 
-	k_syn_soma			float
-						voltage transfer ratio, i.e. |v(soma)/v(syn|
+		k_syn_soma			float
+							voltage transfer ratio, i.e. |v(soma)/v(syn|
 
-	mapped_syn			HocObject
-						the new synapse that the original was mapped to
+		mapped_syn			HocObject
+							the new synapse that the original was mapped to
 	"""
 	def __init__(self, **kwds):
 		self.__dict__.update(kwds)
@@ -108,7 +107,7 @@ synmech_parnames = {
 
 def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_gating=False,
 					init_cell=None, save_ref_attrs=None, sever_netcons=True,
-					attr_mappers=None, nc_tomap=None):
+					attr_mappers=None, nc_tomap=None, syn_tomap=None):
 	"""
 	For each synapse on the neuron, calculate and save information for placing an equivalent
 	synaptic input on a morphologically simplified neuron.
@@ -116,26 +115,28 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_g
 	
 	ARGUMENTS
 
-	@param rootsec			any section of the cell
+		@param rootsec			any section of the cell
 
-	@param syn_mod_pars		dict of <synaptic mechanism name> : list(<attribute names>)
-							containing attributes that need to be stored
+		@param syn_mod_pars		dict of <synaptic mechanism name> : list(<attribute names>)
+								containing attributes that need to be stored
 
-	@param init_cell		function to bring the cell to the desired state to measure transfer
-							impedances, e.g. simulating under a particular input
+		@param init_cell		function to bring the cell to the desired state to measure transfer
+								impedances, e.g. simulating under a particular input
 
-	@param sever_netcons	Set NetCon target to None for each connection, this is useful
-							when the cell or synapses are destroyed
-
-	@param syn_list			list(Synapse) you wish to remap
-
-	@param nc_list			list(Synapse) you want to move to the new (mapped) Synapse
+		@param sever_netcons	Set NetCon target to None for each connection, this is useful
+								when the cell or synapses are destroyed
 
 
 	RETURN VALUES
 
-	@return					list(SynInfo) containing information about each synapse
-							to be mapped
+		@return					list(SynInfo) containing information about each synapse
+								to be mapped
+
+
+	USAGE
+
+		- either provide syn_tomap (list(SynInfo)), or nc_tomap, or neither.
+		  In the latter case, all NetCon targetting the cell are used.
 	"""
 	if syn_mod_pars is None:
 		syn_mod_pars = synmech_parnames
@@ -161,43 +162,66 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_g
 	#		- (see equations in Impedance doc) 
 	#		- 0 = calculation with current values of gating vars
 	#		- 1 = linearize gating vars around V
-	imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
+	# imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
+	last_freq = None
 
 
 	# Find all Synapses on cell (all Sections in whole tree)
-	if nc_tomap is None:
-		dummy_syn = h.Exp2Syn(rootsec(0.5))
-		dummy_nc = h.NetCon(None, dummy_syn)
+	if syn_tomap is not None:
+		cell_syns = syn_tomap
 
-		# unique synapses targeting the same cell
-		cell_ncs = [nc for nc in list(dummy_nc.postcelllist()) if not nc.same(dummy_nc)] # all NetCon targeting same tree as dummy
-		cell_syns = set([nc.syn() for nc in cell_ncs]) # NOTE: this works, since set uses == for uniqueness, which compares using syn.hocobjptr()
-	
 	else:
-		cell_ncs = nc_tomap
-		cell_syns = set([nc.syn() for nc in cell_ncs]) # NOTE: this works, since set uses == for uniqueness, which compares using syn.hocobjptr()
+		# Get references to all synapses ourselves
+		if nc_tomap is None:
+			# Get all NetCon targetting the cell
+			dummy_syn = h.Exp2Syn(rootsec(0.5))
+			dummy_nc = h.NetCon(None, dummy_syn)
+
+			# unique synapses targeting the same cell
+			cell_ncs = [nc for nc in list(dummy_nc.postcelllist()) if not nc.same(dummy_nc)] # all NetCon targeting same tree as dummy
+			syns = set([nc.syn() for nc in cell_ncs]) # NOTE: this works, since set uses == for uniqueness, which compares using syn.hocobjptr()
+		
+		else:
+			cell_ncs = nc_tomap
+			syns = set([nc.syn() for nc in cell_ncs]) # NOTE: this works, since set uses == for comparison, which uses syn.hocobjptr()
+
+		# Make a list of SynInfo ourselves
+		cell_syns = [SynInfo(orig_syn=syn) for syn in syns]
+		for syn in cell_syns:
+			syn.PSP_median_frequency = Z_freq
+			syn.afferent_netcons = [nc for nc in cell_ncs if nc.syn().same(syn.orig_syn)]
+
 
 	if len(cell_syns) == 0:
 		logger.warn("No synapses found on tree of Section {}".format(rootsec))
-	logger.debug("Found {} NetCon with {} unique synapses".format(len(cell_ncs), len(cell_syns)))
+
 
 	# Save synapse properties
 	logger.debug("Getting synapse properties...")
-	syn_data = []
-	for syn in cell_syns:
+	for syn_info in sorted(cell_syns, key=lambda syn: syn.PSP_median_frequency):
+
+		# get synapse HocObject
+		syn = syn_info.orig_syn
+
+		# Compute transfer function at representative frequency
+		syn_freq = syn_info.PSP_median_frequency
+		if (last_freq is None) or (syn_freq != last_freq):
+			imp.compute(syn_freq, int(linearize_gating))
+		
 		# Get synaptic mechanism name
 		match_mechname = re.search(r'^[a-zA-Z0-9]+', syn.hname())
 		synmech = match_mechname.group()
 		if synmech not in syn_mod_pars:
 			raise Exception("Synaptic mechanism '{}' not in given mechanism list".format(synmech))
 
+		# Get its segment and location
 		syn_seg = syn.get_segment()
 		syn_sec = syn_seg.sec
 		syn_secref = getsecref(syn_sec, allsecrefs)
 		syn_loc = syn.get_loc() # changes CAS
 		h.pop_section()
 
-		syn_info = SynInfo()
+		# Create struct to save synapse information
 		syn_info.mod_name = synmech
 		syn_info.sec_name = syn_sec.name()
 		syn_info.sec_hname = syn_sec.hname()
@@ -209,10 +233,7 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_g
 			setattr(syn_info, par, getattr(syn, par))
 
 		# Save all NetCon objects targetting this synapse
-		aff_ncs = [nc for nc in cell_ncs if syn.same(nc.syn())]
-		aff_weight_vecs = [[nc.weight[i] for i in xrange(int(nc.wcnt()))] for nc in aff_ncs]
-		syn_info.afferent_netcons = aff_ncs
-		syn_info.afferent_weights = aff_weight_vecs
+		syn_info.afferent_weights = [[nc.weight[i] for i in xrange(int(nc.wcnt()))] for nc in syn_info.afferent_netcons]
 
 		# Save requested properties of synapse SectionRef
 		syn_info.saved_ref_attrs = save_ref_attrs
@@ -233,14 +254,16 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_g
 		syn_info.Zin = imp.input(syn_loc, sec=syn_sec) # query input impedance, i.e. v(x)/i(x)
 		syn_info.k_syn_soma = imp.ratio(syn_loc, sec=syn_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
 
-		syn_data.append(syn_info)
+		# Point all afferent NetCon connections to nothing
+		if sever_netcons:
+			for nc in syn_info.afferent_netcons:
+				nc.setpost(None)
 
-	# Point all afferent NetCon connections to nothing
-	if sever_netcons:
-		for nc in cell_ncs:
-			nc.setpost(None)
+		# Delete reference to synapse about to be deleted
+		syn_info.orig_syn = None
 
-	return syn_data
+	return cell_syns
+
 
 
 def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False):
@@ -276,7 +299,9 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False)
 		seg_index = Zc_diffs.index(min(Zc_diffs))
 		x_map = locs_Zc[seg_index][0]
 
-		logger.debug("Arrived: closest Zc={}".format(locs_Zc[seg_index][1]))
+		err_Zc = (locs_Zc[seg_index][1] - Zc) / Zc
+		logger.debug("Arrived: Zc relative error is {:.2f} %".format(err_Zc))
+		
 		return noderef, x_map	
 
 	else:
@@ -356,12 +381,21 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 	#		- (see equations in Impedance doc) 
 	#		- 0 = calculation with current values of gating vars
 	#		- 1 = linearize gating vars around V
-	imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
+	# imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
+	last_freq = None
+	for syn in orig_syn_info:
+		if not hasattr(syn, 'PSP_median_frequency'):
+			syn.PSP_median_frequency = Z_freq
 
 	# Loop over all synapses
 	logger.debug("Mapping synapses to reduced cell...")
-	# TODO: order synapses by PSP frequency, compute once per group, place
-	for syn_info in orig_syn_info:
+	for syn_info in sorted(orig_syn_info, key=lambda syn: syn.PSP_median_frequency):
+
+		# Compute transfer function at representative frequency
+		syn_freq = syn_info.PSP_median_frequency
+		if (last_freq is None) or (syn_freq != last_freq):
+			imp.compute(syn_freq, int(linearize_gating))
+
 
 		# Find the segment with same tree index and closest Ztransfer match,
 		map_ref, map_x = map_synapse(rootref, allsecrefs, syn_info, imp, method)

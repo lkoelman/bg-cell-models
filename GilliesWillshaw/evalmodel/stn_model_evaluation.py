@@ -303,7 +303,7 @@ class StnModelEvaluator(object):
 		# Get synapses and NetCon we want to map
 		inputs = self.model_data[full_model]['inputs']
 		pre_pops = inputs.keys()
-		ncs_tomap = sum([inputs[pop].get('syn_NetCons', []) for pop in pre_pops], [])
+		syns_tomap = self.get_synapse_data(full_model)
 
 		########################################################################
 		# Reduce
@@ -313,13 +313,13 @@ class StnModelEvaluator(object):
 		if model in (StnModel.Gillies_FoldMarasco, StnModel.Gillies_BranchZip):
 			# Bush/Marasco folding
 			reduction = reduce_cell.gillies_marasco_reduction()
-			reduction.map_netcons = ncs_tomap
+			reduction.set_syns_tomap(syns_tomap)
 			reduction.reduce_model(num_passes=7)
 
 		elif model == StnModel.Gillies_FoldStratford:
 			# Stratford folding
 			reduction = reduce_cell.gillies_stratford_reduction()
-			reduction.map_netcons = ncs_tomap
+			reduction.set_syns_tomap(syns_tomap)
 			reduction.reduce_model(num_passes=1)
 			
 		soma_refs, dend_refs = reduction._soma_refs, reduction._dend_refs
@@ -360,6 +360,62 @@ class StnModelEvaluator(object):
 		self.model_data[self.target_model]['inputs'][pre_pop]['HocInitHandlers'] = hoc_handlers
 
 
+	def get_synapse_data(self, model, pre_pops=None):
+		"""
+		Get list of SynInfo properties containing a reference
+		to each synapse, its NetCon and pre-synaptic population.
+
+		@param	pre_pops		pre-synaptic populations for synapses. If none
+								are given, return synapses for all populations.
+
+		@return		list(SynInfo)
+		"""
+
+		inputs = self.model_data[model]['inputs']
+		if pre_pops is None:
+			pre_pops = inputs.keys()
+
+		cc = cpd.CellConnector(self.physio_state, self.rng)
+		
+		syn_list = []
+		for pop in pre_pops:
+
+			# Get NetCon and unique synapses
+			ncs = inputs[pop].get('syn_NetCons', [])
+			syns = set(inputs[pop].get('synapses', [])) # unique Synapses
+
+			# Get connection parameters
+			# TODO: this should be saved when actually making the connections
+			if not isinstance(pop, Populations):
+				pre = Populations.from_descr(pop)
+			else:
+				pre = pop
+			con_par = cc.getConParams(pre, Pop.STN, [Cit.Default]) 
+
+			# Save properties
+			for syn in syns:
+				syn_info = mapsyn.SynInfo()
+
+				# HocObjects
+				syn_info.orig_syn = syn
+				syn_info.afferent_netcons = [nc for nc in ncs if nc.syn().same(syn)]
+				
+				# meta-information
+				syn_info.pre_pop = pop
+
+				# For PSP frequency: need to find the receptor types that this synaptic mechanism implements
+				modname = cpd.get_mod_name(syn)
+				syn_info.mod_name = modname
+
+				syn_receptors = cc.getSynMechReceptors(modname)
+				freqs = [con_par[receptor]['f_med_PSP_burst'] for receptor in syn_receptors]
+				syn_info.PSP_median_frequency = max(freqs)
+
+				syn_list.append(syn_info)
+
+		return syn_list
+
+
 	def add_inputs(self, pre_pop, model, **kwargs):
 		"""
 		Add inputs to dict of existing inputs.
@@ -379,9 +435,17 @@ class StnModelEvaluator(object):
 	def get_inputs(self, pre_pop, model):
 		"""
 		Get inputs from given pre-synaptic population.
+
+		@return		dictionary containing (optional) keys:
+						'synapses'
+						'syn_NetCons'
+						'NetStims'
+						'RNG_data'
+						...
 		"""
 		if isinstance(pre_pop, cellpopdata.Populations):
 			pre_pop = pre_pop.name.lower()
+		
 		return self.model_data[model]['inputs'].get(pre_pop, None)
 
 
@@ -401,23 +465,6 @@ class StnModelEvaluator(object):
 				'PyInitHandlers': [],
 				'RNG_data': [],
 			}
-
-
-	def _add_recorded_obj(self, tag, obj, protocol, model=None):
-		"""
-		Add given object to list of recorded objects for given model & protocol.
-		"""
-		if model is None:
-			model = self.target_model
-
-		rec_objs = self.model_data[model]['rec_segs'][protocol]
-		
-		# Check if tag already exists
-		prev_obj = rec_objs.get(tag, None)
-		if prev_obj is not None:
-			logger.warning("A recorded object with name {} already exists. Overwriting.".format(tag))
-		
-		rec_objs[tag] = obj
 
 
 	def get_pre_pop(self, syn, model):
@@ -445,6 +492,23 @@ class StnModelEvaluator(object):
 				num_syn += len(pops_inputs[pop]['synapses'])
 		
 		return num_syn
+
+
+	def _add_recorded_obj(self, tag, obj, protocol, model=None):
+		"""
+		Add given object to list of recorded objects for given model & protocol.
+		"""
+		if model is None:
+			model = self.target_model
+
+		rec_objs = self.model_data[model]['rec_segs'][protocol]
+		
+		# Check if tag already exists
+		prev_obj = rec_objs.get(tag, None)
+		if prev_obj is not None:
+			logger.warning("A recorded object with name {} already exists. Overwriting.".format(tag))
+		
+		rec_objs[tag] = obj
 
 
 	def make_inputs(self, stim_protocol):
@@ -1252,5 +1316,5 @@ if __name__ == '__main__':
 	# map_protocol_SYN_BACKGROUND_HIGH()
 	# map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldMarasco)
 	# map_protocol(StimProtocol.CLAMP_REBOUND, StnModel.Gillies_FoldStratford)
-	# map_protocol(StimProtocol.SYN_BACKGROUND_HIGH, StnModel.Gillies_FoldMarasco)
-	map_protocol(StimProtocol.PASSIVE_SYN, StnModel.Gillies_FoldMarasco, pause=True)
+	map_protocol(StimProtocol.SYN_BACKGROUND_HIGH, StnModel.Gillies_FoldMarasco)
+	# map_protocol(StimProtocol.PASSIVE_SYN, StnModel.Gillies_FoldMarasco, pause=True)

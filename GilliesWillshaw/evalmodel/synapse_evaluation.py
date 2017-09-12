@@ -37,17 +37,11 @@ def median_frequency(ft_freqs, ft_amps, f_upper):
 	return f_med
 
 
-def analyze_AMPA_spectrum(export_locals=True):
+def test_synapse_spectrum(export_locals=True):
 	"""
-	Analyze frequency contents of AMPA EPSPs.
+	Analyze frequency contents of PSPs. Test function with
+	plotting of intermediate results
 
-	RESULTS:
-
-	median frequency between 72-106 Hz depending on which method used
-
-	median frequency of EPSP triggered by single spike:
-		- FFT method:		102.9 Hz
-		- Welch method:		66.2 Hz
 	"""
 
 	# Run stimulation protocol to trigger an EPSP
@@ -70,13 +64,17 @@ def analyze_AMPA_spectrum(export_locals=True):
 	psp_interval = [t_AP-250, t_AP+250]
 	sig = Vpost[int(psp_interval[0]/dt):int(psp_interval[1]/dt)]
 	N = len(sig)
-	sig -= np.mean(sig)
+
+	# subtract baseline
+	baseline = (sig[0] + sig[-1])/2.0
+	sig -= baseline
 
 	################################################
 	# FFT
 
 	# window it
-	window = signal.blackmanharris(len(sig))
+	# window = signal.blackmanharris(len(sig))
+	window = signal.kaiser(len(sig), beta=14) # window with good side-lobe characteristics
 	sig_tapered = window * sig
 
 	# FFT of signal
@@ -106,12 +104,12 @@ def analyze_AMPA_spectrum(export_locals=True):
 	segment_length = 2**int(np.log2(len(sig)/4))
 	fx, Pxx = signal.welch(sig, fs=fs, nperseg=segment_length)
 
-	# plt.figure()
-	# plt.subplot(2,1,1)
-	# plt.plot(fx, Pxx)
-	# plt.subplot(2,1,2)
-	# plt.semilogy(fx, Pxx)
-	# plt.show(block=False)
+	plt.figure()
+	plt.subplot(2,1,1)
+	plt.plot(fx, Pxx)
+	plt.subplot(2,1,2)
+	plt.semilogy(fx, Pxx)
+	plt.show(block=False)
 
 	f_med = median_frequency(fx, Pxx, f_upper)
 
@@ -124,13 +122,13 @@ def analyze_AMPA_spectrum(export_locals=True):
 	# plt.show(block=False)
 
 	# # Plot spectrum
-	# fig, ax = plt.subplots(3,1)
-	# ax[0].plot(sig_tapered)
-	# ax[1].plot(ft_freqs, ft_amps)
-	# ax[1].set_xlim([0, 250])
-	# ax[2].semilogy(ft_freqs, ft_amps)
-	# ax[2].set_xlim([0,250])
-	# plt.show(block=False)
+	fig, ax = plt.subplots(3,1)
+	ax[0].plot(sig_tapered)
+	ax[1].plot(ft_freqs, ft_amps)
+	ax[1].set_xlim([0, 250])
+	ax[2].semilogy(ft_freqs, ft_amps)
+	ax[2].set_xlim([0, 250])
+	plt.show(block=False)
 
 	if export_locals:
 		globals().update(locals())
@@ -144,49 +142,49 @@ def analyze_PSP_spectrum(export_locals=True):
 	AMPA:
 
 		median frequency of EPSP triggered by burst of 10 spikes at 100 Hz
-			- FFT method:		27.68 Hz
-			- Welch method:		88.97 Hz
+			- FFT method:		16.95 Hz
+			- Welch method:		40.97 Hz
 
 		median frequency of EPSP triggered by single spike:
-			- FFT method:		27.30 Hz
-			- Welch method:		83.24 Hz
+			- FFT method:		16.87 Hz
+			- Welch method:		38.32 Hz
 
 	
 	NMDA:
 
 		median frequency of EPSP triggered by burst of 10 spikes at 100 Hz
-			- FFT method:		2.3 Hz
-			- Welch method:		2.3 Hz
+			- FFT method:		2.14 Hz
+			- Welch method:		2.85 Hz
 
 		median frequency of EPSP triggered by single spike:
-			- FFT method:		0.42 Hz
-			- Welch method:		0.37 Hz
+			- FFT method:		0.58 Hz
+			- Welch method:		0.74 Hz
 
 	GABA-A:
 
 		median frequency of EPSP triggered by burst of 5 spikes at 100 Hz
-			- FFT method:		1.24 Hz
-			- Welch method:		17.68 Hz
+			- FFT method:		0.05 Hz
+			- Welch method:		21.53 Hz
 
 		median frequency of EPSP triggered by single spike:
-			- FFT method:		0.07 Hz
-			- Welch method:		1.10 Hz
+			- FFT method:		0.19 Hz
+			- Welch method:		4.99 Hz
 
 	GABA-B:
 
 		median frequency of EPSP triggered by burst of 5 spikes at 100 Hz
-			- FFT method:		2.05 Hz
-			- Welch method:		4.08 Hz
+			- FFT method:		8.72 Hz
+			- Welch method:		8.55 Hz
 
 		median frequency of EPSP triggered by single spike:
-			- FFT method:		1.66 Hz
-			- Welch method:		2.57 Hz
+			- FFT method:		4.22 Hz
+			- Welch method:		4.00 Hz
 	"""
 
 	# Run stimulation protocol to trigger an EPSP
 	model = StnModel.Gillies2005
-	protocol = StimProtocol.SINGLE_SYN_GLU # AMPA & NMDA
-	# protocol = StimProtocol.SINGLE_SYN_GABA # GABA-A & GABA-B
+	# protocol = StimProtocol.SINGLE_SYN_GLU # AMPA & NMDA
+	protocol = StimProtocol.SINGLE_SYN_GABA # GABA-A & GABA-B
 
 	evaluator = run_protocol(protocol, model)
 	rec_data = evaluator.model_data[model]['rec_data'][protocol]
@@ -208,7 +206,10 @@ def analyze_PSP_spectrum(export_locals=True):
 	psp_interval = [t_AP-250, t_AP+650]
 	sig = Vpost[int(psp_interval[0]/dt):int(psp_interval[1]/dt)]
 	N = len(sig)
-	sig -= np.mean(sig)
+
+	# subtract baseline
+	baseline = (sig[0] + sig[-1])/2.0
+	sig -= baseline
 
 	################################################
 	# FFT method

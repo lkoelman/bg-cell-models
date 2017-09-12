@@ -46,7 +46,6 @@ def init_sim(self, protocol):
 
 			# Disable ion channels
 			if disable_channels == 'spiking':
-				setattr(seg, 'gna_NaL', 0.0)
 				setattr(seg, 'gna_Na', 0.0)
 
 			elif disable_channels == 'active':
@@ -93,7 +92,7 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 			'U1': 0.7,
 			'tau_rec': 200., # 1./20. / 2. * 1e3, # 95% recovery of RRP under 20Hz stim (Gradinaru 2009)
 			'tau_facil': 1., # no facilitation
-			'gmax_NMDA': 0.0, # SETPARAM: enable only the GLU conductance you want to test
+			# 'gmax_AMPA': 0.0, # SETPARAM: enable only the GLU conductance you want to test
 		}
 
 		# Make synapse and NetCon
@@ -170,7 +169,7 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 		syn_params = {
 			'use_stdp_A': 1,
 			'use_stdp_B': 1,
-			# 'gmax_GABAA': 0.0, # SETPARAM: enable only the GABA conductance you want to test
+			'gmax_GABAB': 0.0, # SETPARAM: enable only the GABA conductance you want to test
 		}
 
 		# Make synapse and NetCon

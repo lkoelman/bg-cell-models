@@ -131,7 +131,7 @@ class FoldReduction(object):
 		self._fold_root_refs = [getsecref(sec, allsecrefs) for sec in fold_root_secs]
 
 		# Set NetCon to be mapped
-		self._map_netcons = []
+		self._syns_tomap = []
 		self._map_syn_info = []
 
 	@property
@@ -154,25 +154,17 @@ class FoldReduction(object):
 		"""
 		return self._dend_refs
 
-
-	@property
-	def map_netcons(self):
+	def set_syns_tomap(self, syns):
 		"""
-		Get NetCon objects to be mapped from original to reduced cell
+		Set synapses to map.
 		"""
-		return self._map_netcons
-	
-
-	@map_netcons.setter
-	def map_netcons(self, value):
-		"""
-		Set NetCon objects to be mapped from original to reduced cell
-		"""
-		self._map_netcons = value
-
+		self._syns_tomap = syns
 
 	@property
 	def map_syn_info(self):
+		"""
+		Information about mapped synapses.
+		"""
 		return self._map_syn_info
 	
 
@@ -274,7 +266,7 @@ class FoldReduction(object):
 		self._exec_reduction_step('preprocess', method, step_args=[self])
 
 		# Compute synapse mapping info
-		if any(self.map_netcons):
+		if any(self._syns_tomap):
 
 			# Existing synapse attributes to save (SectionRef attributes)
 			save_ref_attrs = ['table_index', 'tree_index', 'gid']
@@ -286,7 +278,7 @@ class FoldReduction(object):
 			
 			# Compute mapping data
 			syn_info = mapsyn.get_syn_info(self.soma_refs[0].sec, self.all_sec_refs, 
-								nc_tomap=self.map_netcons, Z_freq=Z_freq, 
+								syn_tomap=self._syns_tomap, Z_freq=Z_freq, 
 								init_cell=init_func, linearize_gating=linearize_gating,
 								save_ref_attrs=save_ref_attrs)
 
