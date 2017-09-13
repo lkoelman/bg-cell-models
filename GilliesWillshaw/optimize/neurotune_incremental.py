@@ -400,7 +400,7 @@ class STNCellController(object):
 		"""
 		# Initialize the model
 		n_passes_target = cand_params['n_reduction_passes']
-		if not any self.allsecrefs:
+		if not any(self.allsecrefs):
 			self.initialize_model()
 			self.reduce_model(n_passes_target)
 			self.save_model_state()

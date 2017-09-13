@@ -23,11 +23,10 @@ NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
 
 import numpy as np
+
 import pyelectro, neurotune
 from pyelectro import analysis
-from neurotune import optimizers
-from neurotune import evaluators
-from neurotune import controllers
+from neurotune import optimizers, evaluators
 
 from common import analysis as recording
 import reduce_bush_sejnowski as bush
@@ -44,15 +43,11 @@ h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 # Gillies & Willshaw model mechanisms
-gillies_mechs_chans = {'STh': ['gpas'], # passive/leak channel
-				'Na': ['gna'], 'NaL': ['gna'], # Na channels
-				'KDR': ['gk'], 'Kv31': ['gk'], 'sKCa':['gk'], # K channels
-				'Ih': ['gk'], # nonspecific channels
-				'CaT': ['gcaT'], 'HVA': ['gcaL', 'gcaN'], # Ca channels
-				'Cacum': []} # No channels
-mechs_chans = gillies_mechs_chans
+from gillies_model import gillies_gdict, gillies_mechs, gillies_glist, set_aCSF
+
+mechs_chans = gillies_gdict
+glist = gillies_glist
 gleak_name = 'gpas_STh'
-glist = [gname+'_'+mech for mech,chans in mechs_chans.iteritems() for gname in chans]
 
 class Protocol:
 	""" Experimental protocols """
@@ -83,47 +78,6 @@ class Simulation(object):
 		self.sec = rec_section
 		self.dt = dt
 
-	def set_aCSF(self, req):
-		""" Set global initial ion concentrations (artificial CSF properties) """
-		if req == 3: # Beurrier et al (1999)
-			h.nai0_na_ion = 15
-			h.nao0_na_ion = 150
-
-			h.ki0_k_ion = 140
-			h.ko0_k_ion = 3.6
-
-			h.cai0_ca_ion = 1e-04
-			h.cao0_ca_ion = 2.4
-
-			h('cli0_cl_ion = 4') # self-declared Hoc var
-			h('clo0_cl_ion = 135') # self-declared Hoc var
-
-		if req == 4: # Bevan & Wilson (1999)
-			h.nai0_na_ion = 15
-			h.nao0_na_ion = 128.5
-
-			h.ki0_k_ion = 140
-			h.ko0_k_ion = 2.5
-
-			h.cai0_ca_ion = 1e-04
-			h.cao0_ca_ion = 2.0
-
-			h('cli0_cl_ion = 4')
-			h('clo0_cl_ion = 132.5')
-
-		if req == 0: # NEURON's defaults
-			h.nai0_na_ion = 10
-			h.nao0_na_ion = 140
-
-			h.ki0_k_ion = 54
-			h.ko0_k_ion = 2.5
-
-			h.cai0_ca_ion = 5e-05
-			h.cao0_ca_ion = 2
-
-			h('cli0_cl_ion = 0')
-			h('clo0_cl_ion = 0')
-
 	def set_recording(self, recordStep=0.025):
 		"""
 		Set up recording Vectors to record from relevant pointers
@@ -140,9 +94,10 @@ class Simulation(object):
 		self.rec_dt = recordStep
 		self.recData = recording.recordTraces(secs, traceSpecs, self.rec_dt)
 
+
 	def show(self, candidate):
 		"""
-		Plot the result of the simulation once it's been intialized
+		Plot the result of the simulation once it's been initialized
 		"""
 		from matplotlib import pyplot as plt
 
@@ -157,15 +112,18 @@ class Simulation(object):
 
 		plt.show(block=True)
 
+
 	def simulate_protocol(self, protocol):
-		""" Simulate the given experimental protocol """
+		"""
+		Simulate the given experimental protocol
+		"""
 
 		if protocol == Protocol.SPONTANEOUS:
 			# Spontaneous firing, no stimulation
 			h.dt = self.dt
 			h.celsius = 37 # different temp from paper (fig 3B: 25degC, fig. 3C: 35degC)
 			h.v_init = -60 # paper simulations use default v_init
-			self.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+			set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 		elif protocol == Protocol.PLATEAU:
 			raise NotImplementedError("Implement PLATEAU protocol")
@@ -175,7 +133,7 @@ class Simulation(object):
 			h.dt = self.dt
 			h.celsius = 35 # different temp from paper
 			h.v_init = -60 # paper simulations sue default v_init
-			self.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
+			set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 			# Stimulation: hyperpolarize to -75, wait for steady state, then release
 			clamp = h.SEClamp(self.sec(0.5)) # NOTE: use SEClamp instead of IClamp to hyperpolarize to same level independent of passive parameters
@@ -343,6 +301,7 @@ class STNCellController(object):
 
 		return soma_sec, dend_secs
 
+
 class CustomIClampEvaluator(evaluators.__Evaluator):
 	"""
 	Evaluate the fitness value of candidates by calculating and comparing
@@ -394,12 +353,14 @@ class CustomIClampEvaluator(evaluators.__Evaluator):
 
 			print('Obtained targets are:')
 			print(self.targets)
-		
+
+
 	def evaluate(self,candidates,args):
 		
 		print("\n>>>>>  Evaluating: ")
 		for cand in candidates: print(">>>>>       %s"%cand)
 		
+		# Run each candidate (simulate)
 		simulations_data = self.controller.run(candidates,
 											   self.parameters)
 
@@ -491,6 +452,7 @@ class CustomIClampEvaluator(evaluators.__Evaluator):
 					print('Target %s (weight %s): target val: %s, actual: %s, fitness increment: %s'%(target, target_weight, target_value, value, inc))
 
 			return fitness
+
 
 def optimization_routine():
 	""" Main method for the optimization routine

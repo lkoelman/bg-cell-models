@@ -805,12 +805,13 @@ def join_unbranched_sections(nodesec, max_joins=1e9):
 	"""
 	pass
 
+
 def get_sec_properties(src_sec, mechs_pars):
 	"""
 	Get RANGE properties for each segment in Section.
 
-	@return		a list props[nseg] of dictionaries mapping property
-				names to values for each segment in the source Section
+	@return		list(dict()) of length nseg containing property names and 
+				values for each segment in Section
 	"""
 	props = []
 	for seg in src_sec:
@@ -823,6 +824,33 @@ def get_sec_properties(src_sec, mechs_pars):
 				pseg[prop] = getattr(seg, prop)
 		props.append(pseg)
 	return props
+
+
+def get_range_props(secref, prop_names):
+	"""
+	Get Section's requested RANGE properties for each segment.
+	"""
+
+	seg_prop_dicts = [dict() for i in xrange(secref.sec.nseg)]
+
+	for j_seg, seg in enumerate(secref.sec):
+		for prop in prop_names:
+			seg_prop_dicts[j_seg][prop] = getattr(seg, prop)
+
+	return seg_prop_dicts
+
+
+def set_range_props(secref, seg_prop_dicts):
+	"""
+	Set Section's RANGE properties stored in given dictionaries.
+	"""
+	if secref.sec.nseg != len(seg_prop_dicts):
+		raise ValueError("Must provide one dictionary for each segment.")
+	
+	for j_seg, seg in enumerate(secref.sec):
+		propdict = seg_prop_dicts[j_seg]
+		for pname, pval in propdict.iteritems():
+			setattr(seg, pname, pval)
 
 
 def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
@@ -905,36 +933,11 @@ def store_seg_props(secref, mechs_pars, attr_name='or_seg_props', assigned_props
 			secref.__getattribute__(attr_name)[j_seg][prop] = getattr(secref, prop)[j_seg]
 
 
-def get_range_props(secref, prop_names):
-	"""
-	Get Section's requested RANGE properties for each segment.
-	"""
-
-	seg_prop_dicts = [dict() for i in xrange(secref.sec.nseg)]
-
-	for j_seg, seg in enumerate(secref.sec):
-		for prop in prop_names:
-			seg_prop_dicts[j_seg][prop] = getattr(seg, prop)
-
-	return seg_prop_dicts
-
-
-def set_range_props(secref, seg_prop_dicts):
-	"""
-	Set Section's RANGE properties stored in given dictionaries.
-	"""
-	if secref.sec.nseg != len(seg_prop_dicts):
-		raise ValueError("Must provide one dictionary for each segment.")
-	
-	for j_seg, seg in enumerate(secref.sec):
-		propdict = seg_prop_dicts[j_seg]
-		for pname, pval in propdict.iteritems():
-			setattr(seg, pname, pval)
 
 
 def copy_sec_properties(src_sec, tar_sec, mechs_pars):
 	"""
-	Copy section properties
+	Copy section properties from source to target Section
 	"""
 	# Number of segments and mechanisms
 	tar_sec.nseg = src_sec.nseg
