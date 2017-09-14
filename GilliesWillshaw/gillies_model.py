@@ -543,9 +543,8 @@ def runtest_singlethreaded(testfun, use_tables=True):
 	print("Elapsed time: {} ms".format(t1-t0))
 
 if __name__ == '__main__':
-	# Run a test protocol
-	# stn_cell_gillies()
+	stn_cell_gillies()
 	# runtest_reboundburst()
 
-	runtest_singlethreaded(runtest_reboundburst)
+	# runtest_singlethreaded(runtest_reboundburst)
 	# runtest_multithreaded(runtest_reboundburst, 6)

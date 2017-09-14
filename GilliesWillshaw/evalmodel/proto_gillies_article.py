@@ -63,6 +63,7 @@ def make_inputs(self, connector=None):
 		stim1, stim2, stim3 = [h.IClamp(soma_sec(0.5)) for i in range(3)]
 
 	# Set stimulation protocol (pulse amplitudes & durations)
+	# Original code: stim2.amp = -0.25 (hyperpolarize to -75 mV steady state)
 	stim1.delay = 0
 	stim1.dur = 500
 	stim1.amp = 0.0
@@ -136,15 +137,12 @@ def plot_traces(self, model, protocol):
 # Protocol CLAMP_PLATEAU
 ################################################################################
 
-impl_proto = StimProtocol.CLAMP_PLATEAU
 
-
-@register_step(EvaluationStep.INIT_SIMULATION, impl_proto)
+@register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.CLAMP_PLATEAU)
 def init_sim(self, protocol):
 	"""
 	Initialize simulator to simulate background protocol
 	"""
-	model = self.target_model
 
 	# Custom  version of _init_sim()
 	dur = 2000
@@ -167,7 +165,7 @@ def init_sim(self, protocol):
 	h.init() # calls finitialize()
 
 
-@register_step(EvaluationStep.MAKE_INPUTS, impl_proto)
+@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.CLAMP_PLATEAU)
 def make_inputs(self, connector=None):
 	"""
 	Make inputs for this protocol
@@ -209,7 +207,7 @@ def make_inputs(self, connector=None):
 	self.add_inputs('electrodes', model, **new_inputs)
 
 
-@register_step(EvaluationStep.RECORD_TRACES, impl_proto)
+@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.CLAMP_PLATEAU)
 def rec_traces(self, protocol, traceSpecs):
 	"""
 	Record all traces for this protocol.
@@ -234,7 +232,7 @@ def rec_traces(self, protocol, traceSpecs):
 	traceSpecs['I_CaT_d'] = {'sec':'dist_dend','loc':dendloc,'mech':'CaT','var':'iCaT'}
 
 
-@register_step(EvaluationStep.PLOT_TRACES, impl_proto)
+@register_step(EvaluationStep.PLOT_TRACES, StimProtocol.CLAMP_PLATEAU)
 def plot_traces(self, model, protocol):
 	"""
 	Plot all traces for this protocol
