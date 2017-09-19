@@ -214,7 +214,12 @@ def rec_traces(self, protocol, traceSpecs):
 	"""
 	# Get data
 	model = self.target_model
+	
 	rec_segs = self.model_data[model]['rec_segs'][protocol]
+	# rec_segs = {
+	# 	'soma': h.SThcell[0].soma, # middle of soma
+	# 	'dist_dend': h.SThcell[0].dend1[7] # approximate location along dendrite in fig. 5C
+	# }
 
 	# Trace specs for membrane voltages
 	for seclabel, seg in rec_segs.iteritems():

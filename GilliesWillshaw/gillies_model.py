@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from common.treeutils import ExtSecRef, getsecref
+from reducemodel import redutils
 
 # Load NEURON mechanisms
 import os.path
@@ -114,6 +115,31 @@ def get_all_dend_refs(all_refs):
 	return dend0 + dend1
 
 
+def make_passive(sec_refs, save_gbar=True):
+	"""
+	Make given sections passive by setting active conductances to zero.
+
+	@param	sec_refs	list(SectionRef) of sections to make passive
+
+	@param	save_gbar	if True, current conductance values will be savec on the
+						SectionRef object in a dict named 'initial_params'
+	"""
+	for ref in sec_refs:
+
+		# Store original conductances
+		redutils.store_seg_props(ref, gillies_gdict, attr_name='initial_params')
+
+		# Set active conductances to zero
+		for seg in ref.sec:
+			for gbar in active_gbar_names:
+				setattr(seg, gbar, 0.0)
+
+	# NOTE: reset as follows:
+	# for ref in sec_refs:
+	#     # Restore parameter dict stored on SectionRef
+	#     redutils.set_range_props(ref, ref.initial_params)
+
+
 def reset_channel_gbar():
 	"""
 	Reset all channel conductances to initial state.
@@ -133,6 +159,7 @@ def reset_channel_gbar():
 	h.cset(0,"gcaN_HVA","")
 	h.cset(0,"gcaL_HVA","")
 
+
 def setionstyles_gillies(sec):
 	"""
 	Set ion styles to work correctly with membrane mechanisms
@@ -142,6 +169,7 @@ def setionstyles_gillies(sec):
 	h.ion_style("k_ion",1,2,1,0,1)
 	h.ion_style("ca_ion",3,2,1,1,1)
 	h.pop_section()
+
 
 def set_aCSF(req):
 	"""
@@ -189,6 +217,7 @@ def set_aCSF(req):
 		h('cli0_cl_ion = 0')
 		h('clo0_cl_ion = 0')
 
+
 def applyApamin(soma, dends):
 	"""
 	Apply apamin (reduce sKCa conductance)
@@ -206,6 +235,16 @@ def applyApamin(soma, dends):
 		for iseg in range(1, sec.nseg+1):
 			xnode = (2.*iseg-1.)/(2.*sec.nseg) # arclength of current node (segment midpoint)
 			sec(xnode).__setattr__('gk_sKCa', 0.0)
+
+
+def stn_init_physiology():
+	"""
+	Initialize STN cell in biologically plausible physiological state.
+	"""
+	h.celsius = 35
+	h.v_init = -68.0
+	h.set_aCSF(4)
+	h.init()
 
 
 ################################################################################
@@ -269,8 +308,12 @@ def runsim_paper(plotting='NEURON'):
 		# 	mpld3.show()
 		plt.show()
 
+
 def runtest_actionpotential():
-	""" Run AP experiment from original Hoc file """
+	"""
+	Run AP experiment from original Hoc file
+	"""
+
 	print("*** Action potential form\n")\
 
 	# Set up recording
@@ -292,8 +335,12 @@ def runtest_actionpotential():
 	plt.xlabel("Action Potential (30 degC)")
 	plt.show(block=False)
 
+
 def runtest_restfiring():
-	""" Run rest firing experiment from original Hoc file """
+	"""
+	Run rest firing experiment from original Hoc file
+	"""
+
 	print("*** Resting firing rate (at 25 & 37 degC) \n")\
 
 	# Set up recording
@@ -332,8 +379,11 @@ def runtest_restfiring():
 	plt.xlabel("Rest firing at 37 degC")
 	plt.show(block=False)
 
+
 def runtest_reboundburst():
-	""" Run rebound burst experiment from original Hoc file """
+	"""
+	Run rebound burst experiment from original Hoc file
+	"""
 
 	print("*** Rebound burst (at 35 degC) \n")
 
@@ -386,7 +436,9 @@ def runtest_reboundburst():
 
 
 def runtest_slowbursting():
-	""" Run slow rhytmic bursting experiment from original Hoc file """
+	"""
+	Run slow rhytmic bursting experiment from original Hoc file
+	"""
 
 	print("*** Slow rhythmic bursting (at 37 degC) \n")
 
@@ -424,8 +476,11 @@ def runtest_slowbursting():
 	plt.xlabel("Slow rhythmic bursting (Apamin, 37 degC)")
 	plt.show(block=False)
 
+
 def runtest_fastbursting():
-	""" Run fast rhythmic bursting experiment from original Hoc file """
+	"""
+	Run fast rhythmic bursting experiment from original Hoc file
+	"""
 
 	print("*** Fast rhythmic bursting (at 37 degC) \n")
 
@@ -456,8 +511,11 @@ def runtest_fastbursting():
 	plt.xlabel("Fast rhythmic bursting (Apamin, 37 degC, CaL-10%)")
 	plt.show(block=False)
 
+
 def runtest_mixedbursting():
-	""" Run mixed bursting experiment from original Hoc file """
+	"""
+	Run mixed bursting experiment from original Hoc file
+	"""
 
 	print("*** Mixed rhythmic bursting (at 37 degC) \n")
 
@@ -490,7 +548,9 @@ def runtest_mixedbursting():
 
 
 def runalltests():
-	""" Run all experiments from Hoc file """
+	"""
+	Run all experiments from Hoc file
+	"""
 	stn_cell_gillies()
 	runtest_actionpotential()
 	runtest_restfiring()

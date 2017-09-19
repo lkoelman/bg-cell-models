@@ -28,7 +28,6 @@ import gillies_model as gillies
 from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
 
 # Load NEURON
-import neuron
 from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library

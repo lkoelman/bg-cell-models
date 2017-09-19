@@ -84,10 +84,14 @@ ARCHITECTURE
 import bluepyopt as bpop
 import bluepyopt.ephys as ephys
 
-from bpop_ext_gillies import StnFullModel, StnReducedModel, NrnScaleRangeParameter
+from bpop_ext_gillies import StnFullModel, StnReducedModel
+from bpop_ext_opt import NrnScaleRangeParameter, NrnOffsetRangeParameter
 
 # Gillies & Willshaw model mechanisms
-from gillies_model import gleak_name
+import gillies_model
+gleak_name = gillies_model.gleak_name
+
+from neuron import h
 
 ################################################################################
 # MODEL REGIONS
@@ -151,6 +155,7 @@ dend_ra_param = ephys.parameters.NrnSectionParameter(
 # for set of most important active conductance: scale factor
 scaled_gbar = ['gna_NaL', 'gk_Ih', 'gk_sKCa', 'gcaT_CaT', 'gcaL_HVA', 'gcaN_HVA']
 
+# Make parameters to scale channel conductances
 dend_gbar_params = []
 for gbar_name in scaled_gbar:
 
@@ -164,10 +169,16 @@ for gbar_name in scaled_gbar:
 	dend_gbar_params.append(gbar_scale_param)
 
 
-all_params = [soma_gl_param, soma_cm_param, dend_gl_factor, dend_cm_factor, 
-				dend_ra_param] + dend_gbar_params
+# Groups of parameters to be used in optimizations
+passive_params = [soma_gl_param, soma_cm_param, dend_gl_factor, dend_cm_factor, 
+				dend_ra_param]
 
-# Set default values
+active_params = dend_gbar_params
+
+all_params = passive_params + active_params
+
+
+# Default values for parameters
 default_params = {
 	'gleak_soma':		7.84112e-05,
 	'cm_soma':			1.0,
@@ -256,18 +267,61 @@ def make_opt_features():
 	proto_feat_dict = {}
 
 	############################################################################
-	# Plateau protocol features
+	# Candidate features for PLATEAU protocol
+	
 	proto = plateau_protocol
-	proto_feat_dict[proto] = {} # new map feature_name -> (feature, weight)
 
+	## They need to be specified individually because each feature has specific (required_features, required_trace_data, required_parameters), as seen in feature documentation (see PDF file http://bluebrain.github.io/eFEL/efeature-documentation.pdf).
+
+	# Characterizing features and parameters for protocol
 	plateau_characterizing_feats = {
 		# Timing
+		'Spikecount': {},		# (int) The number of peaks during stimulus
+		# 'mean_frequency',		# (float) the mean frequency of the firing rate
+		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
+		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
+			'double':	{'spike_skipf': 0.0},
+			'int':		{'max_spike_skip': 0},
+		},
+		'ISI_CV': {},			# (float) coefficient of variation of ISI durations
+		# 'ISI_log',			# no documentation
+		'AP_duration_change': {},			# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
+		'AP_duration_half_width_change': {},# (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
+		'AP_rise_time': {},		# (array) Time from action potential onset to the maximum
+		'AP_rise_rate':	{},		# (array) Voltage change rate during the rising phase of the action potential
+		'AP_height': {},		# (array) The voltages at the maxima of the peak
+		'AP_amplitude': {},		# (array) The relative height of the action potential
+		'spike_half_width':	{},	# (array) The FWHM of each peak
+		'AHP_time_from_peak': {},# (array) Time between AP peaks and AHP depths
+		'AHP_depth': {},		# (array) relative voltage values at the AHP
+		'min_AHP_values': {},	# (array) Voltage values at the AHP
+		
+	}
+
+	# Make the features
+	candidate_feats = {}
+	for feat_name, feat_params in plateau_characterizing_feats.iteritems():
+
+		feature = ephys.efeatures.eFELFeature(
+						name				='{}.{}'.format(proto.name, feat_name),
+						efel_feature_name	= feat_name,
+						recording_names		= {'': plat_rec1.name},
+						stim_start			= plat_start,
+						stim_end			= plat_stop,
+						double_settings		= feat_params.get('double', None),
+						int_settings		= feat_params.get('int', None),
+						)
+
+		candidate_feats[feat_name] = feature
+
+
+	############################################################################
+	# Chosen features for PLATEAU protocol
+
+	plateau_feat_weights = {
 		'Spikecount':			1.0,	# (int) The number of peaks during stimulus
-		# 'mean_frequency',		0.0,	# (float) the mean frequency of the firing rate
-		# 'burst_mean_freq',		# (array) The mean frequency during a burst for each burst
 		'adaptation_index':		1.0,	# (float) Normalized average difference of two consecutive ISIs
 		'ISI_CV':				1.0,	# (float) coefficient of variation of ISI durations
-		# 'ISI_log',					# no documentation
 		'AP_duration_change':	1.0,	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
 		'AP_duration_half_width_change': 1.0,# (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
 		'AP_rise_time':			1.0,	# (array) Time from action potential onset to the maximum
@@ -281,29 +335,19 @@ def make_opt_features():
 		
 	}
 
+
 	# Make the eFEL features
-	for feat_name, feat_weight in plateau_characterizing_feats.iteritems():
+	proto_feat_dict[proto] = {} # feature_name -> (feature, weight)
+	for feat_name, feat_weight in plateau_feat_weights.iteritems():
 
-		# TODO: this needs to be done on per-feature basis because each feature has (required_features, required_trace_data, required_parameters), as seen in the PDF file describing features. That's whhy currently some features return None.
-		feature = ephys.efeatures.eFELFeature(
-					name				='{}.{}'.format(proto.name, feat_name),
-					efel_feature_name	= feat_name,
-					recording_names		= {'': plat_rec1.name},
-					stim_start			= plat_start,
-					stim_end			= plat_stop,
-					exp_mean			= None,	# measure in full model
-					exp_std				= None,	# only have one target model: small std
-					)
-
-		proto_feat_dict[proto][feat_name] = (feature, feat_weight)
-
-
-	# TODO: use calculate_feature() on full model, and set exp_mean / exp_std from this in reduced model
+		# Only add features with non-zero weight
+		if feat_weight > 0.0:
+			proto_feat_dict[proto][feat_name] = (candidate_feats[feat_name], feat_weight)
 
 	return proto_feat_dict
 
 
-def calc_feature_targets():
+def get_features_targets():
 	"""
 	Calculate target values for features used in optimization (using full model).
 	"""
@@ -318,13 +362,16 @@ def calc_feature_targets():
 	# Run each protocol and get its responses
 	for proto, feats in proto_feats.iteritems():
 
+		# Run protocol with full cell model
 		responses = proto.run(
 						cell_model=full_model, 
 						param_values={},
 						sim=nrnsim,
 						isolate=False)
 
+		# Use response to calculate target value for each features
 		for feat_name, feat_data in feats.iteritems():
+
 			# Calculate feature value from full model response
 			efel_feature, weight = feat_data
 			target_value = efel_feature.calculate_feature(responses)
@@ -337,19 +384,47 @@ def calc_feature_targets():
 	return proto_feats
 
 
-def optimize_main():
+def test_full_model(proto):
 	"""
-	Optimize a reduced model.
+	Test stimulation protocol applied to full cell model.
 	"""
 
+	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+
+	# Create Gillies & Willshaw (2005) STN model
+	full_model = StnFullModel(name='StnGillies')
+
+	# Apply protocol and simulate
+	responses = proto.run(
+					cell_model=full_model, 
+					param_values={},
+					sim=nrnsim,
+					isolate=False)
+
+	## Plot protocol responses
+	from matplotlib import pyplot as plt
+	for resp_name, traces in responses.iteritems():
+		plt.figure()
+		plt.plot(traces['time'], traces['voltage'])
+		plt.suptitle(resp_name)
+	plt.show(block=False)
+
+
+def test_reduced_model():
+	"""
+	Test stimulation protocol applied to reduced cell model.
+	"""
+
+	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+
+	# Create reduced model
 	red_model = StnReducedModel(
 					name		= 'StnFolded',
 					fold_method	= 'marasco',
 					num_passes	= 7,
 					params		= all_params)
 
-	## Test protocol
-	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+	# Test protocol
 	responses = plateau_protocol.run(
 					cell_model=red_model, 
 					param_values=default_params,
@@ -364,21 +439,93 @@ def optimize_main():
 		plt.suptitle(resp_name)
 	plt.show(block=False)
 
-	
 
-	# Make the final objective function based on selected set of good features
+def optimize_active():
+	"""
+	Optimization routine for reduced cell model.
+	"""
+	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+
+	# Get dictionary with Feature objects for each protocol
+	protos_feats = get_features_targets()
+
+	# Make final objective function based on selected set of features
+	
+	## Collect characteristic features for all protocols used in evaluation
 	all_opt_features = []
 	all_opt_weights = []
+	for proto, char_feats in protos_feats.iteritems():
+		feats, weights = zip(*char_feats.items()) # get list(keys), list(values)
+		all_opt_features.extend(feats)
+		all_opt_weights.extend(weights)
 
+	## Make objectives function
 	total_objective = ephys.objectives.WeightedSumObjective(
 				name = 'optimize_all',
 				features = all_opt_features,
 				weights = all_opt_weights)
 
+	# Make parameters
+	gleak_orig = 7.84112e-05
+	gleak_fit = 12.43169e-5 # fit to match Zin_DC (see praxis_passive.py)
+	dend_gl_param = ephys.parameters.NrnSectionParameter(
+						name		= 'gleak_dend_param',
+						param_name	= gleak_name,
+						locations	= [dendritic_region],
+						bounds		= [gleak_fit*1e-1, gleak_fit*1e1],
+						value		= gleak_fit,
+						frozen		= True)
+
+	cm_orig = 1.0
+	cm_fit = cm_orig * (gleak_fit / gleak_orig) # preserve membrane time constant
+	dend_cm_param = ephys.parameters.NrnSectionParameter(
+						name		= 'cm_dend_param',
+						param_name	= 'cm',
+						locations	= [dendritic_region],
+						bounds		= [1.0, 1.0],
+						value		= cm_fit,
+						frozen		= True)
+
+	# Frozen parameters are passive parameters fit previously in passive model
+	dend_passive_params = [dend_gl_param, dend_cm_param]
+
+	# Free parameters are active conductances with large impact on response
+	dend_active_params = dend_gbar_params # Free parameters
+	dend_all_params = dend_passive_params + dend_active_params
+
+	# Create reduced model
+	## TODO: test run model with these parameters
+	## TODO: active gbar scalers: set to additive?
+	red_model = StnReducedModel(
+					name		= 'StnFolded',
+					fold_method	= 'marasco',
+					num_passes	= 7,
+					params		= dend_all_params)
+
+
 
 	# Make evaluator to evaluate model using objective calculator
+	score_calc = ephys.objectivescalculators.ObjectivesCalculator([total_objective])
+
+	eval_protos = {proto.name: proto for proto in protos_feats.keys()}
+	cell_evaluator = ephys.evaluators.CellEvaluator(
+						cell_model			= red_model,
+						param_names			= ['gnabar_hh', 'gkbar_hh'],
+						fitness_protocols	= eval_protos,
+						fitness_calculator	= score_calc,
+						sim					= nrnsim)
 
 	# Make optimization using the model evaluator
+	optimisation = bpop.optimisations.DEAPOptimisation(
+						evaluator		= cell_evaluator,
+						offspring_size	= 10)
+
+
+
+	final_pop, hall_of_fame, logs, hist = optimisation.run(max_ngen=5)
+
+
+
 
 if __name__ == '__main__':
-	proto_feats = calc_feature_targets()
+	proto_feats = get_features_targets()
