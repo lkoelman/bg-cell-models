@@ -227,7 +227,8 @@ class StnFullModel(StnBaseModel):
         self.icell.gid = self.gid
         
         # Make sure original STN cell is built
-        if not hasattr(sim.neuron.h, 'SThcell'):
+        h = sim.neuron.h
+        if not hasattr(h, 'SThcell'):
             
             # Create Gillies & Willshaw STN model
             soma, dendL, dendR = gillies_model.get_stn_refs()
@@ -236,15 +237,28 @@ class StnFullModel(StnBaseModel):
             self.icell._dend_refs = dendL + dendR
             self.icell._all_refs = self.icell._soma_refs + self.icell._dend_refs
 
+            # save SectionRef across model instantiation (icell will be destroyed)
+            self._persistent_refs = self.icell._all_refs
+
             # Save initial cell parameters
             for ref in self.icell._all_refs:
                 redutils.store_seg_props(ref, gillies_model.gillies_gdict, attr_name='initial_params')
 
         else:
+            # Restore persistent SectionRef
+            self.icell._all_refs = self._persistent_refs
+            self.icell._soma_refs = gillies_model.get_soma_refs(self._persistent_refs)
+            self.icell._dend_refs = [ref for ref in self._persistent_refs if ref not in self.icell._soma_refs]
+
             # Reset cell parameters
             for ref in self.icell._all_refs:
                 # Restore parameter dict stored on SectionRef
                 redutils.set_range_props(ref, ref.initial_params)
+
+        # Set physiological conditions
+        h.celsius = 30 # will be overriden by possible global parameter in super.instantiate
+        h.v_init = -60
+        h.set_aCSF(4)
 
         # Call base class method
         return super(StnFullModel, self).instantiate(sim)
@@ -302,14 +316,28 @@ class StnReducedModel(StnBaseModel):
             self.icell._dend_refs = reduction._dend_refs
             self.icell._all_refs = self.icell._soma_refs + self.icell._dend_refs
 
+            # save SectionRef across model instantiation (icell will be destroyed)
+            self._persistent_refs = self.icell._all_refs
+
             # Save initial cell parameters
             for ref in self.icell._all_refs:
                 redutils.store_seg_props(ref, gillies_model.gillies_gdict, attr_name='initial_params')
 
         else:
+            # Restore persistent SectionRef
+            self.icell._all_refs = self._persistent_refs
+            self.icell._soma_refs = gillies_model.get_soma_refs(self._persistent_refs)
+            self.icell._dend_refs = [ref for ref in self._persistent_refs if ref not in self.icell._soma_refs]
+
             # Reset cell parameters to initial values after reduction
             for ref in self.icell._all_refs:
                 redutils.set_range_props(ref, ref.initial_params)
+
+        # Set physiological conditions
+        h = sim.neuron.h
+        h.celsius = 30 # will be overriden by possible global parameter in super.instantiate
+        h.v_init = -60
+        h.set_aCSF(4)
 
         # Call base class method
         return super(StnReducedModel, self).instantiate(sim)

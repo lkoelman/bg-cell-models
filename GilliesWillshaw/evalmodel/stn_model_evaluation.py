@@ -136,10 +136,11 @@ class StnModelEvaluator(object):
 
 		# Initialize containers for model data
 		for model in list(StnModel):
-			self.model_data[model]['rec_data'] = dict(((proto, {}) for proto in StimProtocol))
-			self.model_data[model]['rec_segs'] = dict(((proto, {}) for proto in StimProtocol))
+			self.model_data[model]['rec_data'] = {proto: {} for proto in StimProtocol}
+			self.model_data[model]['rec_segs'] = {proto: {} for proto in StimProtocol}
 			self.model_data[model]['inputs'] = {} # key for each pre-synaptic population
 			self.model_data[model]['user_params'] = {} # parameters for model building
+			self.model_data[model]['proto_vars'] = {proto: {} for proto in StimProtocol}
 
 		self.sim_dur = 1000.
 		self.sim_dt = 0.025
@@ -280,7 +281,7 @@ class StnModelEvaluator(object):
 		full_model = StnModel.Gillies2005
 
 		# Make sure gillies model is built
-		if not self.model_data[full_model]['built']:
+		if not self.model_data[full_model].get('built', False):
 			logger.info("Building Gillies original model first...")
 			self.build_cell(full_model)
 		else:

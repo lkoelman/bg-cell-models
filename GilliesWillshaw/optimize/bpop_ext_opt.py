@@ -173,3 +173,143 @@ class NrnOffsetRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.Di
                                     for location in self.locations],
                                    self.param_name,
                                    self.value if self.frozen else self.bounds)
+
+
+class NrnSpaceClamp(ephys.stimuli.Stimulus):
+
+    """Square pulse current clamp injection"""
+
+    def __init__(self,
+                 step_amplitudes=None,
+                 step_durations=None,
+                 total_duration=None,
+                 location=None):
+        """
+        Constructor
+        
+        Args:
+            step_amplitudes (float):    amplitude (nA)
+            step_durations (float):     duration (ms)
+            total_duration (float):     total duration of stimulus and its effects (ms)
+            location (Location):        stimulus Location
+        """
+
+        super(NrnSpaceClamp, self).__init__()
+        self.step_amplitudes = step_amplitudes
+        self.step_durations = step_durations
+        self.location = location
+        self.total_duration = total_duration
+        self.seclamp = None
+
+
+    def instantiate(self, sim=None, icell=None):
+        """Run stimulus"""
+
+        icomp = self.location.instantiate(sim=sim, icell=icell)
+        logger.debug(
+            'Adding space clamp to {} with '
+            'durations {}, and amplitudes {}'.format(
+            str(self.location),
+            self.step_durations,
+            self.step_amplitudes))
+
+        # Make SEClamp (NEURON space clamp)
+        self.seclamp = sim.neuron.h.SEClamp(icomp.x, sec=icomp.sec)
+        for i in range(3):
+            setattr(self.seclamp, 'amp%d' % (i+1), self.step_amplitudes[i])
+            setattr(self.seclamp, 'dur%d' % (i+1), self.step_durations[i])
+
+
+    def destroy(self, sim=None):
+        """Destroy stimulus"""
+
+        self.seclamp = None
+
+
+    def __str__(self):
+        """String representation"""
+
+        return "Square pulse amps {} durations {} totdur {} at {}".format(
+            self.step_amplitudes,
+            self.step_durations,
+            self.total_duration,
+            self.location)
+
+
+class PhysioProtocol(ephys.protocols.SweepProtocol):
+    """
+    Protocol consisting of current clamps, voltage clamps,
+    and changes to physiological conditions.
+    """
+
+    def __init__(
+            self,
+            name=None,
+            stimuli=None,
+            recordings=None,
+            cvode_active=None,
+            init_func=None):
+        """
+        Constructor
+        
+        Args:
+            init_func:  function(sim, model) that takes Simulator and CellModel
+                        instance as arguments in that order
+        """
+
+        self._init_func = init_func
+
+        super(PhysioProtocol, self).__init__(
+            name,
+            stimuli=stimuli,
+            recordings=recordings,
+            cvode_active=cvode_active)
+
+
+    # def _run_func(self, cell_model, param_values, sim=None):
+    #     """
+    #     Run protocols
+    #     """
+    #     # First apply physiological conditions
+    #     self._init_func(sim, cell_model)
+    #
+    #     # Then run protocol as usual
+    #     # NOTE: model.instantiate() might overwrite changes to physiological parameters
+    #     super(PhysioProtocol, self)._run_func(
+    #         cell_model,
+    #         param_values,
+    #         sim=sim)
+
+
+    def instantiate(self, sim=None, icell=None):
+        """
+        Instantiate
+
+        NOTE: called in self._run_func() after model.instantiate()
+        """
+        # First apply physiological conditions
+        self._init_func(sim, icell)
+
+        # Then instantiate stimuli and recordings
+        super(PhysioProtocol, self).instantiate(
+            sim=sim,
+            icell=icell)
+
+    def destroy(self, sim=None):
+        """
+        Destroy protocol
+        """
+
+        # Make sure stimuli are not active in next protocol if cell model reused
+        # NOTE: should better be done in Stimulus objects themselves for encapsulation, but BluePyOpt built-in Stimuli don't do this
+        for stim in self.stimuli:
+            if hasattr(stim, 'iclamp'):
+                stim.iclamp.amp = 0
+                stim.iclamp.dur = 0
+            elif hasattr(stim, 'seclamp'):
+                for i in range(3):
+                    setattr(stim.seclamp, 'amp%d' % (i+1), 0)
+                    setattr(stim.seclamp, 'dur%d' % (i+1), 0)
+
+        # Calls destroy() on each stimulus
+        super(PhysioProtocol, self).destroy(sim=sim)

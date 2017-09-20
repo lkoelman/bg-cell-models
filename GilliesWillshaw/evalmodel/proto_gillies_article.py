@@ -4,6 +4,8 @@ taken from original code released with article.
 
 """
 
+import collections
+
 import neuron
 h = neuron.h
 
@@ -11,7 +13,7 @@ from common import analysis
 
 import gillies_model as gillies
 from cellpopdata import StnModel
-from proto_common import *
+from proto_common import StimProtocol, EvaluationStep, register_step
 
 ################################################################################
 # Protocol CLAMP_REBOUND
@@ -144,6 +146,17 @@ def init_sim(self, protocol):
 	Initialize simulator to simulate background protocol
 	"""
 
+	# Test model changes
+	# gleak_orig = 7.84112e-05
+	# gleak_fit = 12.43169e-5 # fit to match Zin_DC (see praxis_passive.py)
+	# cm_orig = 1.0
+	# cm_fit = cm_orig * (gleak_fit / gleak_orig)
+	# for sec in h.allsec():
+	# 	if not ('soma' in sec.name()):
+	# 		for seg in sec:
+	# 			setattr(seg, gillies.gleak_name, gleak_fit)
+	# 			setattr(seg, 'cm', cm_fit)
+
 	# Custom  version of _init_sim()
 	dur = 2000
 	dt = 0.025
@@ -171,7 +184,10 @@ def make_inputs(self, connector=None):
 	Make inputs for this protocol
 	"""
 
+	# Get data
 	model = self.target_model
+	proto = StimProtocol.CLAMP_PLATEAU
+
 	if model == StnModel.Gillies2005:
 		stim1, stim2, stim3 = h.stim1, h.stim2, h.stim3
 	else:
@@ -179,14 +195,15 @@ def make_inputs(self, connector=None):
 		soma_sec = soma_refs[0].sec
 		stim1, stim2, stim3 = [h.IClamp(soma_sec(0.5)) for i in range(3)]
 
+	dur = self.sim_dur
+
 	# Set up stimulation (5 mA/cm2 for 80 ms)
 	I_hyper = -0.17 # hyperpolarize to -70 mV (see fig. 10C)
 	I_depol = I_hyper + 0.2 # see fig. 10D: 0.2 nA (=stim.amp) over hyperpolarizing current
 	dur_depol = 50 # see fig. 10D, top right
 	del_depol = 1000
 	burst_time = [del_depol-50, del_depol+200] # empirical
-
-	stim1, stim2 = h.stim1, h.stim2
+	self.model_data[model]['proto_vars'][proto]['burst_time'] = burst_time
 
 	stim1.delay = 0
 	stim1.dur = del_depol
@@ -243,10 +260,12 @@ def plot_traces(self, model, protocol):
 	Plot all traces for this protocol
 	"""
 	# Get data
+	proto = StimProtocol.CLAMP_PLATEAU
 	model = self.target_model
 	recData = self.model_data[model]['rec_data'][protocol]['trace_data']
 	recordStep = self.model_data[model]['rec_data'][protocol]['rec_dt']
 
+	# Plot membrane voltages
 	self._plot_all_Vm(model, protocol)
 
 	# Plot ionic currents, (in)activation variables
@@ -254,4 +273,15 @@ def plot_traces(self, model, protocol):
 
 	# Dendrite currents during burst
 	recDend = collections.OrderedDict([(k,v) for k,v in recData.iteritems() if k.endswith('_d')])
+
+	burst_time = self.model_data[model]['proto_vars'][proto]['burst_time']
 	analysis.cumulPlotTraces(recDend, recordStep, timeRange=burst_time)
+
+
+if __name__ == '__main__':
+	print("""Run this protocol using stn_model_evaluation.py:
+
+		cd bgcellmodels/GilliesWillshaw
+		from evalmodel.stn_model_evaluation import *
+		run_protocol(StimProtocol.CLAMP_PLATEAU, StnModel.Gillies2005)
+	""")

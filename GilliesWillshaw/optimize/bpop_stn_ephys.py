@@ -85,13 +85,14 @@ import bluepyopt as bpop
 import bluepyopt.ephys as ephys
 
 from bpop_ext_gillies import StnFullModel, StnReducedModel
-from bpop_ext_opt import NrnScaleRangeParameter, NrnOffsetRangeParameter
+from bpop_ext_opt import (
+	NrnScaleRangeParameter, NrnOffsetRangeParameter, 
+	PhysioProtocol, NrnSpaceClamp
+	)
 
 # Gillies & Willshaw model mechanisms
 import gillies_model
 gleak_name = gillies_model.gleak_name
-
-from neuron import h
 
 ################################################################################
 # MODEL REGIONS
@@ -193,20 +194,25 @@ for param in dend_gbar_params:
 # PROTOCOLS
 ################################################################################
 
-# PLATEAU protocol (as in article: sequence of three square current pulses)
-
+# Location for current clamp
 soma_stim_loc = ephys.locations.NrnSeclistCompLocation(
 				name			='soma_stim_loc',
 				seclist_name	='somatic',
-				sec_index		=0,
-				comp_x			=0.5)
+				sec_index		=0,		# index in SectionList
+				comp_x			=0.5)	# x-location in Section
 
+# ==============================================================================
+# PLATEAU protocol
+
+# stimulus parameters
 I_hyper = -0.17			# hyperpolarize to -70 mV (see fig. 10C)
 I_depol = I_hyper + 0.2	# see fig. 10D: 0.2 nA (=stim.amp) over hyperpolarizing current
 
 del_depol = 1000
 dur_depol = 50			# see fig. 10D, top right
 dur_total = 2000
+
+# stimulus interval for eFEL features
 plat_start = del_depol - 50
 plat_stop = del_depol + 200
 
@@ -236,15 +242,191 @@ plat_rec1 = ephys.recordings.CompRecording(
 				location		= soma_stim_loc,
 				variable		= 'v')
 
-plateau_protocol = ephys.protocols.SweepProtocol('plateau', 
-					[stim1_hyp, stim2_dep, stim3_hyp], [plat_rec1])
+def init_plateau(sim, model):
+	""" Initialize simulator to run plateau protocol """
+	h = sim.neuron.h
+	h.celsius = 30
+	h.v_init = -60
+	h.set_aCSF(4) # gillies_model.set_aCSF(4) # if called before model.instantiate()
+
+plateau_protocol = PhysioProtocol(
+					name		= 'plateau', 
+					stimuli		= [stim1_hyp, stim2_dep, stim3_hyp],
+					recordings	= [plat_rec1],
+					init_func	= init_plateau)
+
+# Characterizing features and parameters for protocol
+plateau_characterizing_feats = {
+	'Spikecount': {			# (int) The number of peaks during stimulus
+		'weight':	1.0,
+	},
+	# 'mean_frequency',		# (float) the mean frequency of the firing rate
+	# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
+	'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
+		'weight':	1.0,
+		'double':	{'spike_skipf': 0.0},
+		'int':		{'max_spike_skip': 0},
+	},
+	'ISI_CV': {				# (float) coefficient of variation of ISI durations
+		'weight':	1.0,
+	},
+	# 'ISI_log',			# no documentation
+	'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
+		'weight':	1.0,
+	},
+	'AP_duration_half_width_change': { # (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
+		'weight':	1.0,
+	},
+	'AP_rise_time': {		# (array) Time from action potential onset to the maximum
+		'weight':	1.0,
+	},
+	'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
+		'weight':	1.0,
+	},
+	'AP_height': {			# (array) The voltages at the maxima of the peak
+		'weight':	1.0,
+	},
+	'AP_amplitude': {		# (array) The relative height of the action potential
+		'weight':	1.0,
+	},
+	'spike_half_width':	{	# (array) The FWHM of each peak
+		'weight':	1.0,
+	},
+	'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
+		'weight':	1.0,
+	},
+	'AHP_depth': {			# (array) relative voltage values at the AHP
+		'weight':	1.0,
+	},
+	'min_AHP_values': {		# (array) Voltage values at the AHP
+		'weight':	1.0,
+	},
+}
+
+# ==============================================================================
+# REBOUND protocol
+
+dur_hyper = 500
+
+reb_clmp1 = NrnSpaceClamp(
+				step_amplitudes	= [0, 0, -75],
+				step_durations	= [0, 0, dur_hyper],
+				total_duration	= 2000,
+				location		= soma_stim_loc)
 
 
-# SYNAPTIC protocol
+reb_rec1 = ephys.recordings.CompRecording(
+				name			= 'rebound.soma.v',
+				location		= soma_stim_loc,
+				variable		= 'v')
+
+def init_rebound(sim, model):
+	""" Initialize simulator to run rebound protocol """
+	h = sim.neuron.h
+	h.celsius = 35
+	h.v_init = -60
+	h.set_aCSF(4) # gillies_model.set_aCSF(4) # if called before model.instantiate()
+
+
+# stimulus interval for eFEL features
+reb_start = dur_hyper - 50
+reb_stop = dur_hyper + 1000
+
+rebound_protocol = PhysioProtocol(
+					name		= 'rebound', 
+					stimuli		= [reb_clmp1],
+					recordings	= [reb_rec1],
+					init_func	= init_rebound)
+
+# Characterizing features and parameters for protocol
+rebound_characterizing_feats = {
+	'Spikecount': {			# (int) The number of peaks during stimulus
+		'weight':	1.0,
+	},
+	# 'mean_frequency',		# (float) the mean frequency of the firing rate
+	# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
+	'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
+		'weight':	1.0,
+		'double':	{'spike_skipf': 0.0},
+		'int':		{'max_spike_skip': 0},
+	},
+	'ISI_CV': {				# (float) coefficient of variation of ISI durations
+		'weight':	1.0,
+	},
+	# 'ISI_log',			# no documentation
+	'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
+		'weight':	1.0,
+	},
+	'AP_duration_half_width_change': { # (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
+		'weight':	1.0,
+	},
+	'AP_rise_time': {		# (array) Time from action potential onset to the maximum
+		'weight':	1.0,
+	},
+	'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
+		'weight':	1.0,
+	},
+	'AP_height': {			# (array) The voltages at the maxima of the peak
+		'weight':	1.0,
+	},
+	'AP_amplitude': {		# (array) The relative height of the action potential
+		'weight':	1.0,
+	},
+	'spike_half_width':	{	# (array) The FWHM of each peak
+		'weight':	1.0,
+	},
+	'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
+		'weight':	1.0,
+	},
+	'AHP_depth': {			# (array) relative voltage values at the AHP
+		'weight':	1.0,
+	},
+	'min_AHP_values': {		# (array) Voltage values at the AHP
+		'weight':	1.0,
+	},
+}
+
+# ==============================================================================
+# TODO: SYNAPTIC protocol
+
+proto_characteristics_feats = {
+	plateau_protocol : plateau_characterizing_feats,
+	rebound_protocol : rebound_characterizing_feats,
+}
+
+proto_response_intervals = {
+	plateau_protocol: (plat_start, plat_stop),
+	rebound_protocol: (reb_start, reb_stop)
+}
 
 ################################################################################
 # OPTIMIZATION EXPERIMENTS
 ################################################################################
+
+def make_features(protocol, feats_weights_params, stim_interval):
+	"""
+	Make eFEL features.
+
+	@return		a dictionary {feature_names: feature_objects}
+	"""
+	candidate_feats = {}
+	default_trace = {'': protocol.recordings[0].name}
+
+	for feat_name, feat_params in feats_weights_params.iteritems():
+
+		feature = ephys.efeatures.eFELFeature(
+						name				='{}.{}'.format(protocol.name, feat_name),
+						efel_feature_name	= feat_name,
+						recording_names		= feat_params.get('traces', default_trace),
+						stim_start			= stim_interval[0],
+						stim_end			= stim_interval[1],
+						double_settings		= feat_params.get('double', None),
+						int_settings		= feat_params.get('int', None),
+						)
+
+		candidate_feats[feat_name] = feature
+
+	return candidate_feats
 
 
 def make_opt_features():
@@ -261,88 +443,32 @@ def make_opt_features():
 				- import efel; efel.getFeatureNames()
 				- see http://efel.readthedocs.io/en/latest/eFeatures.html
 				- see pdf linked there (ctrl+f: feature name with underscores as spaces)
+				- each feature has specific (required_features, required_trace_data, required_parameters)
 
 	"""
 
+	opt_used_protocols = [plateau_protocol, rebound_protocol] # SETPARAM: protocols used for optimization
+
 	proto_feat_dict = {}
 
-	############################################################################
-	# Candidate features for PLATEAU protocol
-	
-	proto = plateau_protocol
+	# For each protocol used in optimization: make the Feature objects
+	for proto in opt_used_protocols:
+		proto_feat_dict[proto] = {} # feature_name -> (feature, weight)
 
-	## They need to be specified individually because each feature has specific (required_features, required_trace_data, required_parameters), as seen in feature documentation (see PDF file http://bluebrain.github.io/eFEL/efeature-documentation.pdf).
+		# Make eFEL features
+		candidate_feats = make_features(
+							proto,
+							proto_characteristics_feats[proto],
+							proto_response_intervals[proto])
 
-	# Characterizing features and parameters for protocol
-	plateau_characterizing_feats = {
-		# Timing
-		'Spikecount': {},		# (int) The number of peaks during stimulus
-		# 'mean_frequency',		# (float) the mean frequency of the firing rate
-		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
-		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
-			'double':	{'spike_skipf': 0.0},
-			'int':		{'max_spike_skip': 0},
-		},
-		'ISI_CV': {},			# (float) coefficient of variation of ISI durations
-		# 'ISI_log',			# no documentation
-		'AP_duration_change': {},			# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
-		'AP_duration_half_width_change': {},# (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
-		'AP_rise_time': {},		# (array) Time from action potential onset to the maximum
-		'AP_rise_rate':	{},		# (array) Voltage change rate during the rising phase of the action potential
-		'AP_height': {},		# (array) The voltages at the maxima of the peak
-		'AP_amplitude': {},		# (array) The relative height of the action potential
-		'spike_half_width':	{},	# (array) The FWHM of each peak
-		'AHP_time_from_peak': {},# (array) Time between AP peaks and AHP depths
-		'AHP_depth': {},		# (array) relative voltage values at the AHP
-		'min_AHP_values': {},	# (array) Voltage values at the AHP
-		
-	}
-
-	# Make the features
-	candidate_feats = {}
-	for feat_name, feat_params in plateau_characterizing_feats.iteritems():
-
-		feature = ephys.efeatures.eFELFeature(
-						name				='{}.{}'.format(proto.name, feat_name),
-						efel_feature_name	= feat_name,
-						recording_names		= {'': plat_rec1.name},
-						stim_start			= plat_start,
-						stim_end			= plat_stop,
-						double_settings		= feat_params.get('double', None),
-						int_settings		= feat_params.get('int', None),
-						)
-
-		candidate_feats[feat_name] = feature
-
-
-	############################################################################
-	# Chosen features for PLATEAU protocol
-
-	plateau_feat_weights = {
-		'Spikecount':			1.0,	# (int) The number of peaks during stimulus
-		'adaptation_index':		1.0,	# (float) Normalized average difference of two consecutive ISIs
-		'ISI_CV':				1.0,	# (float) coefficient of variation of ISI durations
-		'AP_duration_change':	1.0,	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
-		'AP_duration_half_width_change': 1.0,# (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
-		'AP_rise_time':			1.0,	# (array) Time from action potential onset to the maximum
-		'AP_rise_rate':			1.0,	# (array) Voltage change rate during the rising phase of the action potential
-		'AP_height':			1.0,	# (array) The voltages at the maxima of the peak
-		'AP_amplitude':			1.0,	# (array) The relative height of the action potential
-		'spike_half_width':		1.0,	# (array) The FWHM of each peak
-		'AHP_time_from_peak':	1.0,	# (array) Time between AP peaks and AHP depths
-		'AHP_depth':			1.0,	# (array) relative voltage values at the AHP
-		'min_AHP_values':		1.0,	# (array) Voltage values at the AHP
-		
-	}
-
-
-	# Make the eFEL features
-	proto_feat_dict[proto] = {} # feature_name -> (feature, weight)
-	for feat_name, feat_weight in plateau_feat_weights.iteritems():
-
-		# Only add features with non-zero weight
-		if feat_weight > 0.0:
-			proto_feat_dict[proto][feat_name] = (candidate_feats[feat_name], feat_weight)
+		# Add them to dict
+		for feat_name in candidate_feats.keys():
+			feat_weight = proto_characteristics_feats[proto][feat_name]['weight']
+			
+			# Add to feature dict if nonzero weight
+			if feat_weight > 0.0:
+				feat_obj = candidate_feats[feat_name]
+				proto_feat_dict[proto][feat_name] = feat_obj, feat_weight
 
 	return proto_feat_dict
 
@@ -446,24 +572,8 @@ def optimize_active():
 	"""
 	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
-	# Get dictionary with Feature objects for each protocol
-	protos_feats = get_features_targets()
-
-	# Make final objective function based on selected set of features
-	
-	## Collect characteristic features for all protocols used in evaluation
-	all_opt_features = []
-	all_opt_weights = []
-	for proto, char_feats in protos_feats.iteritems():
-		feats, weights = zip(*char_feats.items()) # get list(keys), list(values)
-		all_opt_features.extend(feats)
-		all_opt_weights.extend(weights)
-
-	## Make objectives function
-	total_objective = ephys.objectives.WeightedSumObjective(
-				name = 'optimize_all',
-				features = all_opt_features,
-				weights = all_opt_weights)
+	############################################################################
+	# Parameters & Cell Model
 
 	# Make parameters
 	gleak_orig = 7.84112e-05
@@ -494,7 +604,6 @@ def optimize_active():
 	dend_all_params = dend_passive_params + dend_active_params
 
 	# Create reduced model
-	## TODO: test run model with these parameters
 	## TODO: active gbar scalers: set to additive?
 	red_model = StnReducedModel(
 					name		= 'StnFolded',
@@ -502,7 +611,28 @@ def optimize_active():
 					num_passes	= 7,
 					params		= dend_all_params)
 
+	############################################################################
+	# Features & Objectives
 
+	# Get dictionary with Feature objects for each protocol
+	protos_feats = get_features_targets()
+
+	# Collect characteristic features for all protocols used in evaluation
+	all_opt_features = []
+	all_opt_weights = []
+	for proto, char_feats in protos_feats.iteritems():
+		feats, weights = zip(*char_feats.items()) # get list(keys), list(values)
+		all_opt_features.extend(feats)
+		all_opt_weights.extend(weights)
+
+	# Make final objective function based on selected set of features
+	total_objective = ephys.objectives.WeightedSumObjective(
+				name = 'optimize_all',
+				features = all_opt_features,
+				weights = all_opt_weights)
+
+	############################################################################
+	# Evaluators & Optimization
 
 	# Make evaluator to evaluate model using objective calculator
 	score_calc = ephys.objectivescalculators.ObjectivesCalculator([total_objective])
