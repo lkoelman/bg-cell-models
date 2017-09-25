@@ -84,8 +84,8 @@ ARCHITECTURE
 import bluepyopt as bpop
 import bluepyopt.ephys as ephys
 
-from bpop_ext_gillies import StnFullModel, StnReducedModel
-from bpop_ext_opt import (
+from bpop_cellmodels import StnFullModel, StnReducedModel
+from bpop_extensions import (
 	NrnScaleRangeParameter, NrnOffsetRangeParameter, 
 	PhysioProtocol, NrnSpaceClamp
 	)

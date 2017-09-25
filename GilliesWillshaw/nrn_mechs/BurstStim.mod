@@ -78,6 +78,10 @@ INITIAL {
 }	
 
 FUNCTION interval(mean (ms)) (ms) {
+	: sample an ISI from distribution with given mean
+	:
+	: @return	float : sample from distribution with given mean
+	
 	if (mean <= 0.) {
 		mean = .01 (ms) : I would worry if it were 0.
 		: since mean is a local variable, if the number it is set
@@ -91,6 +95,16 @@ FUNCTION interval(mean (ms)) (ms) {
 }
 
 PROCEDURE event_time() {
+	: Update state variables
+	:
+	: @post		'burst' state var is updated
+	:
+	: @post		'event' state var is updated
+	:
+	: @post		'burst_on' state var is updated
+	:
+	: @post		'burst_off' state var is updated
+
 	if (slow_invl == 0 || (burst != 0. && burst_len > 1)) {
 		event = event + interval(fast_invl)
 		if (event > burst_on + burst_off) {

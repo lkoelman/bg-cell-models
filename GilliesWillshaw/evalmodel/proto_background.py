@@ -361,7 +361,7 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 			ctlrand = h.Random()
 			low_index, high_index = gid+100+self.base_seed, int(i_syn*num_indep_repicks + 100)
 			ctlrand.MCellRan4(high_index, low_index) # high_index can also be set using .seq()
-			ctlrand.negexp(1)
+			ctlrand.negexp(1) # num arrivals is poisson distributed, ISIs are negexp-distributed
 
 			# control spike generator spiking pattern
 			stimctl = h.NetStim()
