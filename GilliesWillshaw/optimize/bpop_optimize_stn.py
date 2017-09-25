@@ -6,80 +6,13 @@ Optimization of reduced neuron model using BluePyOpt.
 @date	12/09/2017
 
 
+NOTES
 
-ARCHITECTURE
-
-- How to make it incremental
-	
-	- old strategy: strategy in optimize_incremental.py is to make number of reduction passes a parameter of the optimization
-		
-		- if this is higher than current number of passes: re-initialize cell model and reduce again
-		
-		- the run() method calls build_candidate(genes) and then runs the protocol
-	
-
-	- new strategy A: one Optimization for one cell model created using EPhys module 
-
-		- start from single collapse, save parameters, and write methods to transfer the 'DNA'/parameters to another cell model (re-use DNA from previous optimization)
-
-		- will need to implement own parameters (that the DNA codes for)
-			+ control everything via custom MetaParameters
-			+ these can be transferred across cell models
-
-		- CONS:
-			* have to fit everything into straightjacket of BluePyOpt classes, will will require writing lots of new code, and hinder re-use of existing code
-
-		- PROS:
-			* can re-use Bpop examples and code structure for optimization
-
-
-
-- Overview of optimization using bluepyopt.EPhys classes:
-
-	- see examples:
-		- 'simplecell.ipynb' at https://github.com/BlueBrain/BluePyOpt
-		- 'L5PC.ipynb' at https://github.com/BlueBrain/BluePyOpt/blob/master/examples/l5pc/L5PC.ipynb
-		- MOOC Week 5 Graded exercise (simdata folder)
-
-	- create cell model
-
-	- define parameters
-
-		+ control everything via custom MetaParameters
-
-	- for each StimulationProtocol: create one ephys.protocols.SweepProtocol
-		
-		+ allows to add generic stimuli
-			- see http://bluepyopt.readthedocs.io/en/latest/ephys/bluepyopt.ephys.protocols.html
-		
-		+ can have multiple Stimuli objects + recording objects
-			- http://bluepyopt.readthedocs.io/en/latest/ephys/bluepyopt.ephys.stimuli.html
-			- http://bluepyopt.readthedocs.io/en/latest/ephys/bluepyopt.ephys.recordings.html
-
-
-	- Define objectives (feature + target value/range)
-
-		+ for each (feature, target_value) combination : create ephys.efeature.eFELFeature 
-			- see http://bluepyopt.readthedocs.io/en/latest/ephys/bluepyopt.ephys.efeatures.html
-
-		+ create a WeightedSumObjective to calculate fitness
-			- http://bluepyopt.readthedocs.io/en/latest/ephys/bluepyopt.ephys.objectives.html
-
-
-	- create Evaluator: ephys.evaluators.CellEvaluator
-		+ http://bluepyopt.readthedocs.io/en/latest/ephys/bluepyopt.ephys.evaluators.html
-
-
-	- create Optimization: bpop.deapext.optimisations.DEAPOptimisation
-
-		+ see http://bluepyopt.readthedocs.io/en/latest/deapext/bluepyopt.deapext.optimisations.html#module-bluepyopt.deapext.optimisations
-
-		+ IBEADEAPOptimisation is same as DEAPOptimisation (subclass without extras)
-
+- see SETPARAM comment for parameters that should be set by user
 
 """
 
-
+import pickle
 
 import bluepyopt as bpop
 import bluepyopt.ephys as ephys
@@ -93,6 +26,14 @@ from bpop_extensions import (
 # Gillies & Willshaw model mechanisms
 import gillies_model
 gleak_name = gillies_model.gleak_name
+
+# Adjust verbosity of loggers
+import logging
+silent_loggers = ['marasco']
+verbose_loggers = []
+for logname in silent_loggers:
+	logger = logging.getLogger('marasco')
+	if logger: logger.setLevel(logging.WARNING)
 
 ################################################################################
 # MODEL REGIONS
@@ -131,7 +72,7 @@ soma_cm_param = ephys.parameters.NrnSectionParameter(
 # We want to keep their spatial profile/distribution, i.e. just scale these.
 # Hence: need to define our own parameter that scales these distributions.
 
-# TODO: choose right parameter type (look at instantiate() method)
+
 dend_gl_factor = NrnScaleRangeParameter(
 					name='gleak_dend_scale',
 					param_name=gleak_name,
@@ -389,15 +330,20 @@ rebound_characterizing_feats = {
 # ==============================================================================
 # TODO: SYNAPTIC protocol
 
+# SETPARAM: characteristic response features and their weights for each protocol
 proto_characteristics_feats = {
 	plateau_protocol : plateau_characterizing_feats,
 	rebound_protocol : rebound_characterizing_feats,
 }
 
+# SETPARAM: stimulus [start, stop] times for feature calculation
 proto_response_intervals = {
 	plateau_protocol: (plat_start, plat_stop),
 	rebound_protocol: (reb_start, reb_stop)
 }
+
+# SETPARAM: filepath of saved responses
+PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/fullmodel/STN_Gillies2005_proto_responses.pkl"
 
 ################################################################################
 # OPTIMIZATION EXPERIMENTS
@@ -473,14 +419,62 @@ def make_opt_features():
 	return proto_feat_dict
 
 
-def get_features_targets():
+def save_proto_responses(protocols, cellmodel, filepath):
 	"""
-	Calculate target values for features used in optimization (using full model).
+	Run protocols using given cell model and save responses to file.
 	"""
-
 	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
-	full_model = StnFullModel(name='StnGillies')
+	# Run each protocol and get its responses
+	responses = {}
+	for proto in protocols:
+
+		# Run protocol with full cell model
+		responses[proto.name] = proto.run(
+						cell_model=cellmodel, 
+						param_values={},
+						sim=nrnsim,
+						isolate=False)
+
+	# Save to file
+	with open(filepath, 'w') as recfile:
+		pickle.dump(responses, recfile)
+
+	print("Saved responses to file {}".format(filepath))
+
+
+def load_proto_responses(filepath):
+	"""
+	Load protocol responses from pickle file.
+
+	@return		dictionary {protocol: responses}
+	"""
+	with open(filepath, 'r') as recfile:
+		responses = pickle.load(recfile)
+		return responses
+
+
+def get_features_targets(saved_responses=None):
+	"""
+	Calculate target values for features used in optimization (using full model).
+
+	@param saved_responses		file path to pickled responses dictionary
+
+	@effect		get features used in optimization, then calculates their target
+				values using the full STN model.
+
+	@return		dictionary {protocol : {feature_name : (feature, weight) } }
+
+					I.e. a dictionary that maps ephys.protocol objects to another
+					dictionary, that maps feature names to a feature object and
+					its weight for the optimization.
+	"""
+
+	if saved_responses is not None:
+		proto_responses = load_proto_responses(saved_responses)
+	else:
+		nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+		full_model = StnFullModel(name='StnGillies')
 
 	# Get features used in optimization
 	proto_feats = make_opt_features()
@@ -488,12 +482,16 @@ def get_features_targets():
 	# Run each protocol and get its responses
 	for proto, feats in proto_feats.iteritems():
 
-		# Run protocol with full cell model
-		responses = proto.run(
-						cell_model=full_model, 
-						param_values={},
-						sim=nrnsim,
-						isolate=False)
+		# Get response traces
+		if saved_responses is not None:
+			responses = proto_responses[proto.name]
+		else:
+			# Run protocol with full cell model
+			responses = proto.run(
+							cell_model=full_model, 
+							param_values={},
+							sim=nrnsim,
+							isolate=False)
 
 		# Use response to calculate target value for each features
 		for feat_name, feat_data in feats.iteritems():
@@ -596,32 +594,24 @@ def optimize_active():
 						value		= cm_fit,
 						frozen		= True)
 
-	# Frozen parameters are passive parameters fit previously in passive model
+	# FROZEN PARAMETERS are passive parameters fit previously in passive model
 	dend_passive_params = [dend_gl_param, dend_cm_param]
 
-	# Free parameters are active conductances with large impact on response
+	# FREE PARAMETERS are active conductances with large impact on response
 	dend_active_params = dend_gbar_params # Free parameters
 	dend_all_params = dend_passive_params + dend_active_params
-
-	# Create reduced model
-	## TODO: active gbar scalers: set to additive?
-	red_model = StnReducedModel(
-					name		= 'StnFolded',
-					fold_method	= 'marasco',
-					num_passes	= 7,
-					params		= dend_all_params)
 
 	############################################################################
 	# Features & Objectives
 
 	# Get dictionary with Feature objects for each protocol
-	protos_feats = get_features_targets()
+	protos_feats = get_features_targets(saved_responses=PROTO_RESPONSES_FILE)
 
 	# Collect characteristic features for all protocols used in evaluation
 	all_opt_features = []
 	all_opt_weights = []
-	for proto, char_feats in protos_feats.iteritems():
-		feats, weights = zip(*char_feats.items()) # get list(keys), list(values)
+	for proto, featdict in protos_feats.iteritems():
+		feats, weights = zip(*featdict.values()) # values ist list of (feature, weight)
 		all_opt_features.extend(feats)
 		all_opt_weights.extend(weights)
 
@@ -634,16 +624,28 @@ def optimize_active():
 	############################################################################
 	# Evaluators & Optimization
 
+	# Create reduced model
+	## TODO: experiment with gbar param type: scale/offset
+	red_model = StnReducedModel(
+					name		= 'StnFolded',
+					fold_method	= 'marasco',
+					num_passes	= 7,
+					params		= dend_all_params)
+
 	# Make evaluator to evaluate model using objective calculator
 	score_calc = ephys.objectivescalculators.ObjectivesCalculator([total_objective])
 
 	eval_protos = {proto.name: proto for proto in protos_feats.keys()}
+	eval_params = [param.name for param in dend_active_params]
+	
+	# 
 	cell_evaluator = ephys.evaluators.CellEvaluator(
 						cell_model			= red_model,
-						param_names			= ['gnabar_hh', 'gkbar_hh'],
+						param_names			= eval_params, # fitted parameters
 						fitness_protocols	= eval_protos,
 						fitness_calculator	= score_calc,
-						sim					= nrnsim)
+						sim					= nrnsim,
+						isolate_protocols	= True)
 
 	# Make optimization using the model evaluator
 	optimisation = bpop.optimisations.DEAPOptimisation(
@@ -658,4 +660,11 @@ def optimize_active():
 
 
 if __name__ == '__main__':
-	proto_feats = get_features_targets()
+	# Calculate features for each optimization protocol
+	# proto_feats = get_features_targets()
+
+	# Save full model responses
+	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+	full_model = StnFullModel(name='StnGillies')
+	protocols = proto_characteristics_feats.keys()
+	save_proto_responses(protocols, full_model, PROTO_RESPONSES_FILE)

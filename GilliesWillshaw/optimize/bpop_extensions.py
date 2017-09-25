@@ -110,25 +110,29 @@ class NrnOffsetRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.Di
             frozen=False,
             bounds=None,
             param_name=None,
-            locations=None):
+            locations=None,
+            threshold=None):
         """
         Contructor
 
         Args:
-            name (str): name of the Parameter
+            name (str):         name of the Parameter
             
-            value (float): Value for the parameter, required if Frozen=True
+            value (float):      Value for the parameter, required if Frozen=True
             
-            frozen (bool): Whether the parameter can be varied, or its values
+            frozen (bool):      Whether the parameter can be varied, or its values
             is permently set
             
             bounds (indexable): two elements; the lower and upper bounds
-                (Optional)
+                                (Optional)
             
-            param_name (str): name used within NEURON
+            param_name (str):   name used within NEURON
             
-            locations (list of ephys.locations.Location): locations on which
-                to instantiate the parameter
+            locations (list of ephys.locations.Location):
+                                locations on which to instantiate the parameter
+
+            threshold:          threshold on parameter value: only offset if parameter
+                                is larger than this value.
         """
 
         super(NrnOffsetRangeParameter, self).__init__(
@@ -139,6 +143,7 @@ class NrnOffsetRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.Di
 
         self.locations = locations
         self.param_name = param_name
+        self.threshold = threshold
 
 
     def instantiate(self, sim=None, icell=None):
@@ -156,8 +161,9 @@ class NrnOffsetRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.Di
                 for seg in isection:
                     # Scale the parameter
                     old_val = getattr(seg, '%s' % self.param_name)
-                    new_val = old_val + self.value
-                    setattr(seg, '%s' % self.param_name, new_val)
+                    if old_val > self.threshold:
+                        new_val = old_val + self.value
+                        setattr(seg, '%s' % self.param_name, new_val)
         
         logger.debug(
             'Offset %s in %s by value %s', self.param_name,
