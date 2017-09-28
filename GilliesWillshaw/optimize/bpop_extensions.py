@@ -259,8 +259,8 @@ class PhysioProtocol(ephys.protocols.SweepProtocol):
         Constructor
         
         Args:
-            init_func:  function(sim, model) that takes Simulator and CellModel
-                        instance as arguments in that order
+            init_func:  function(sim, model) that takes Simulator and instantiated 
+                        CellModel (icell) as arguments in that order
         """
 
         self._init_func = init_func

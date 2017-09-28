@@ -30,7 +30,7 @@ from proto_common import (
 @register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.SINGLE_SYN_GABA)
 def init_sim(self, protocol):
 	"""
-	Initialize simulator to simulate background protocol
+	Initialize simulator and cell for stimulation protocol
 	"""
 
 	# Change simulation duration
@@ -51,6 +51,120 @@ def init_sim(self, protocol):
 			elif disable_channels == 'active':
 				for gbar in gbar_active:
 					setattr(seg, gbar, 0.0)
+
+@register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.MIN_SYN_BURST)
+def init_sim_BURST(self, protocol):
+	"""
+	Initialize simulator and cell for stimulation protocol
+	"""
+
+	# Change simulation duration
+	self._init_sim(dur=2000)
+
+	# lower sKCa conductance to promote bursting
+	for sec in h.allsec():
+		for seg in sec:
+			seg.gk_sKCa = 0.6 * seg.gk_sKCa
+
+
+@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.SINGLE_SYN_GLU)
+def make_inputs_GLU(self, connector=None):
+	"""
+	Make single synaptic input
+	"""
+	make_GLU_inputs(self, 1, connector=connector)
+
+
+@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.SINGLE_SYN_GABA)
+def make_inputs_GABA(self, connector=None):
+	"""
+	Make single synaptic input
+	"""
+	make_GABA_inputs(self, 1, connector=connector)
+
+
+@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.MIN_SYN_BURST)
+def make_inputs_BURST(self, connector=None):
+	"""
+	Make minimal number of synapses that elicit burst
+	"""
+	# Minimal number of GABA + GLU synapses to trigger burst
+	make_GABA_inputs(self, 1)
+	make_GLU_inputs(self, 4)
+
+
+@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.SINGLE_SYN_GLU)
+def rec_traces_GLU(self, protocol, traceSpecs):
+	"""
+	Record all traces for this protocol.
+	"""
+	# Record synaptic variables
+	self.rec_GLU_traces(protocol, traceSpecs)
+
+	# Record membrane voltages
+	self.rec_Vm(protocol, traceSpecs)
+
+
+@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.SINGLE_SYN_GABA)
+def rec_traces_GABA(self, protocol, traceSpecs):
+	"""
+	Record all traces for this protocol.
+	"""
+	# Record synaptic variables
+	self.rec_GABA_traces(protocol, traceSpecs)
+
+	# Record membrane voltages
+	self.rec_Vm(protocol, traceSpecs)
+
+
+@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.MIN_SYN_BURST)
+def rec_traces_BURST(self, protocol, traceSpecs):
+	"""
+	Record all traces for this protocol.
+	"""
+	# Record both GABA and GLU synapses
+	self.rec_GABA_traces(protocol, traceSpecs)
+	self.rec_GLU_traces(protocol, traceSpecs)
+
+	# Record membrane voltages
+	self.rec_Vm(protocol, traceSpecs)
+
+
+@register_step(EvaluationStep.PLOT_TRACES, StimProtocol.SINGLE_SYN_GLU)
+def plot_traces_GLU(self, model, protocol):
+	"""
+	Plot relevant traces for this protocol.
+	"""
+	# Plot membrane voltages (one figure)
+	self._plot_all_Vm(model, protocol, fig_per='cell')
+
+	# Plot synaptic variables
+	self._plot_GLU_traces(model, protocol)
+
+
+@register_step(EvaluationStep.PLOT_TRACES, StimProtocol.SINGLE_SYN_GABA)
+def plot_traces_GABA(self, model, protocol):
+	"""
+	Plot relevant traces for this protocol.
+	"""
+	# Plot membrane voltages (one figure)
+	self._plot_all_Vm(model, protocol, fig_per='cell')
+
+	# Plot synaptic variables
+	self._plot_GABA_traces(model, protocol)
+
+
+@register_step(EvaluationStep.PLOT_TRACES, StimProtocol.MIN_SYN_BURST)
+def plot_traces_BURST(self, model, protocol):
+	"""
+	Plot relevant traces for this protocol.
+	"""
+	# Plot membrane voltages (one figure)
+	self._plot_all_Vm(model, protocol, fig_per='cell')
+
+	# Plot synaptic variables
+	self._plot_GLU_traces(model, protocol)
+	self._plot_GABA_traces(model, protocol)
 
 
 ################################################################################
@@ -103,10 +217,6 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 		print("Made {} synapse with following parameters:".format(syn_mech))
 		for pname in cc.getSynMechParamNames(syn_mech):
 			print("{} : {}".format(pname, str(getattr(syn, pname))))
-
-		# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
-		syn.gmax_AMPA = syn.gmax_AMPA / syn.U1
-		syn.gmax_NMDA = syn.gmax_NMDA / syn.U1
 
 		# Control netstim
 		tstart = 850
@@ -169,7 +279,7 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 		syn_params = {
 			'use_stdp_A': 1,
 			'use_stdp_B': 1,
-			'gmax_GABAB': 0.0, # SETPARAM: enable only the GABA conductance you want to test
+			# 'gmax_GABAB': 0.0, # SETPARAM: enable only the GABA conductance you want to test
 		}
 
 		# Make synapse and NetCon
@@ -181,10 +291,6 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 		print("Made {} synapse with following parameters:".format(syn_mech))
 		for pname in cc.getSynMechParamNames(syn_mech):
 			print("{} : {}".format(pname, str(getattr(syn, pname))))
-
-		# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
-		syn.gmax_GABAA = syn.gmax_GABAA / syn.U1
-		syn.gmax_GABAB = syn.gmax_GABAB / 0.21
 
 		# Control netstim
 		tstart = 700

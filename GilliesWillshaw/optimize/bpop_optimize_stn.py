@@ -18,14 +18,17 @@ import bluepyopt as bpop
 import bluepyopt.ephys as ephys
 
 from bpop_cellmodels import StnFullModel, StnReducedModel
-from bpop_extensions import (
-	NrnScaleRangeParameter, NrnOffsetRangeParameter, 
-	PhysioProtocol, NrnSpaceClamp
+from bpop_extensions import NrnScaleRangeParameter, NrnOffsetRangeParameter
+from bpop_protocols_stn import (
+	plateau_protocol, rebound_protocol, synburst_protocol,
+	proto_characteristics_feats, proto_response_intervals, proto_vars
 	)
 
 # Gillies & Willshaw model mechanisms
 import gillies_model
 gleak_name = gillies_model.gleak_name
+
+from evalmodel.cellpopdata import StnModel
 
 # Adjust verbosity of loggers
 import logging
@@ -135,212 +138,6 @@ for param in dend_gbar_params:
 # PROTOCOLS
 ################################################################################
 
-# Location for current clamp
-soma_stim_loc = ephys.locations.NrnSeclistCompLocation(
-				name			='soma_stim_loc',
-				seclist_name	='somatic',
-				sec_index		=0,		# index in SectionList
-				comp_x			=0.5)	# x-location in Section
-
-# ==============================================================================
-# PLATEAU protocol
-
-# stimulus parameters
-I_hyper = -0.17			# hyperpolarize to -70 mV (see fig. 10C)
-I_depol = I_hyper + 0.2	# see fig. 10D: 0.2 nA (=stim.amp) over hyperpolarizing current
-
-del_depol = 1000
-dur_depol = 50			# see fig. 10D, top right
-dur_total = 2000
-
-# stimulus interval for eFEL features
-plat_start = del_depol - 50
-plat_stop = del_depol + 200
-
-stim1_hyp = ephys.stimuli.NrnSquarePulse(
-				step_amplitude	= I_hyper,
-				step_delay		= 0,
-				step_duration	= del_depol,
-				location		= soma_stim_loc,
-				total_duration	= del_depol)
-
-stim2_dep = ephys.stimuli.NrnSquarePulse(
-				step_amplitude	= I_depol,
-				step_delay		= del_depol,
-				step_duration	= dur_depol,
-				location		= soma_stim_loc,
-				total_duration	= del_depol + dur_depol)
-
-stim3_hyp = ephys.stimuli.NrnSquarePulse(
-				step_amplitude	= I_hyper,
-				step_delay		= del_depol + dur_depol,
-				step_duration	= del_depol,
-				location		= soma_stim_loc,
-				total_duration	= dur_total)
-
-plat_rec1 = ephys.recordings.CompRecording(
-				name			= 'plateau.soma.v',
-				location		= soma_stim_loc,
-				variable		= 'v')
-
-def init_plateau(sim, model):
-	""" Initialize simulator to run plateau protocol """
-	h = sim.neuron.h
-	h.celsius = 30
-	h.v_init = -60
-	h.set_aCSF(4) # gillies_model.set_aCSF(4) # if called before model.instantiate()
-
-plateau_protocol = PhysioProtocol(
-					name		= 'plateau', 
-					stimuli		= [stim1_hyp, stim2_dep, stim3_hyp],
-					recordings	= [plat_rec1],
-					init_func	= init_plateau)
-
-# Characterizing features and parameters for protocol
-plateau_characterizing_feats = {
-	'Spikecount': {			# (int) The number of peaks during stimulus
-		'weight':	1.0,
-	},
-	# 'mean_frequency',		# (float) the mean frequency of the firing rate
-	# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
-	'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
-		'weight':	1.0,
-		'double':	{'spike_skipf': 0.0},
-		'int':		{'max_spike_skip': 0},
-	},
-	'ISI_CV': {				# (float) coefficient of variation of ISI durations
-		'weight':	1.0,
-	},
-	# 'ISI_log',			# no documentation
-	'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
-		'weight':	1.0,
-	},
-	'AP_duration_half_width_change': { # (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
-		'weight':	1.0,
-	},
-	'AP_rise_time': {		# (array) Time from action potential onset to the maximum
-		'weight':	1.0,
-	},
-	'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
-		'weight':	1.0,
-	},
-	'AP_height': {			# (array) The voltages at the maxima of the peak
-		'weight':	1.0,
-	},
-	'AP_amplitude': {		# (array) The relative height of the action potential
-		'weight':	1.0,
-	},
-	'spike_half_width':	{	# (array) The FWHM of each peak
-		'weight':	1.0,
-	},
-	'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
-		'weight':	1.0,
-	},
-	'AHP_depth': {			# (array) relative voltage values at the AHP
-		'weight':	1.0,
-	},
-	'min_AHP_values': {		# (array) Voltage values at the AHP
-		'weight':	1.0,
-	},
-}
-
-# ==============================================================================
-# REBOUND protocol
-
-dur_hyper = 500
-
-reb_clmp1 = NrnSpaceClamp(
-				step_amplitudes	= [0, 0, -75],
-				step_durations	= [0, 0, dur_hyper],
-				total_duration	= 2000,
-				location		= soma_stim_loc)
-
-
-reb_rec1 = ephys.recordings.CompRecording(
-				name			= 'rebound.soma.v',
-				location		= soma_stim_loc,
-				variable		= 'v')
-
-def init_rebound(sim, model):
-	""" Initialize simulator to run rebound protocol """
-	h = sim.neuron.h
-	h.celsius = 35
-	h.v_init = -60
-	h.set_aCSF(4) # gillies_model.set_aCSF(4) # if called before model.instantiate()
-
-
-# stimulus interval for eFEL features
-reb_start = dur_hyper - 50
-reb_stop = dur_hyper + 1000
-
-rebound_protocol = PhysioProtocol(
-					name		= 'rebound', 
-					stimuli		= [reb_clmp1],
-					recordings	= [reb_rec1],
-					init_func	= init_rebound)
-
-# Characterizing features and parameters for protocol
-rebound_characterizing_feats = {
-	'Spikecount': {			# (int) The number of peaks during stimulus
-		'weight':	1.0,
-	},
-	# 'mean_frequency',		# (float) the mean frequency of the firing rate
-	# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
-	'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
-		'weight':	1.0,
-		'double':	{'spike_skipf': 0.0},
-		'int':		{'max_spike_skip': 0},
-	},
-	'ISI_CV': {				# (float) coefficient of variation of ISI durations
-		'weight':	1.0,
-	},
-	# 'ISI_log',			# no documentation
-	'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
-		'weight':	1.0,
-	},
-	'AP_duration_half_width_change': { # (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
-		'weight':	1.0,
-	},
-	'AP_rise_time': {		# (array) Time from action potential onset to the maximum
-		'weight':	1.0,
-	},
-	'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
-		'weight':	1.0,
-	},
-	'AP_height': {			# (array) The voltages at the maxima of the peak
-		'weight':	1.0,
-	},
-	'AP_amplitude': {		# (array) The relative height of the action potential
-		'weight':	1.0,
-	},
-	'spike_half_width':	{	# (array) The FWHM of each peak
-		'weight':	1.0,
-	},
-	'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
-		'weight':	1.0,
-	},
-	'AHP_depth': {			# (array) relative voltage values at the AHP
-		'weight':	1.0,
-	},
-	'min_AHP_values': {		# (array) Voltage values at the AHP
-		'weight':	1.0,
-	},
-}
-
-# ==============================================================================
-# TODO: SYNAPTIC protocol
-
-# SETPARAM: characteristic response features and their weights for each protocol
-proto_characteristics_feats = {
-	plateau_protocol : plateau_characterizing_feats,
-	rebound_protocol : rebound_characterizing_feats,
-}
-
-# SETPARAM: stimulus [start, stop] times for feature calculation
-proto_response_intervals = {
-	plateau_protocol: (plat_start, plat_stop),
-	rebound_protocol: (reb_start, reb_stop)
-}
 
 # SETPARAM: filepath of saved responses
 PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/fullmodel/STN_Gillies2005_proto_responses.pkl"
@@ -393,7 +190,7 @@ def make_opt_features():
 
 	"""
 
-	opt_used_protocols = [plateau_protocol, rebound_protocol] # SETPARAM: protocols used for optimization
+	opt_used_protocols = [plateau_protocol, rebound_protocol, synburst_protocol] # SETPARAM: protocols used for optimization
 
 	proto_feat_dict = {}
 
@@ -508,52 +305,45 @@ def get_features_targets(saved_responses=None):
 	return proto_feats
 
 
-def test_full_model(proto):
+def test_protocol(proto, cellmodel):
 	"""
 	Test stimulation protocol applied to full cell model.
+
+	@param	cellmodel		either a CellModel object, StnModel enum instance,
+							or string "full" / "reduced"
+
+	EXAMPLE USAGE:
+
+	proto = synburst_protocol
+	test_protocol(proto, 'full')
+	
 	"""
+	# Get protocol mechanisms that need to be isntantiated
+	proto_mechs = proto_vars[proto].get('pp_mechs', []) + \
+	              proto_vars[proto].get('range_mechs', [])
+
+	proto_params = proto_vars[proto].get('pp_mech_params', [])
+
+	# Make the model
+	if cellmodel in ('full', StnModel.Gillies2005):
+		cellmodel = StnFullModel(name='StnGillies')
+	
+	elif cellmodel in ('reduced', StnModel.Gillies_FoldMarasco):
+		cellmodel = StnReducedModel(
+						name		= 'StnFolded',
+						fold_method	= 'marasco',
+						num_passes	= 7,
+						mechs		= proto_mechs,
+						params		= proto_params)
 
 	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
-
-	# Create Gillies & Willshaw (2005) STN model
-	full_model = StnFullModel(name='StnGillies')
 
 	# Apply protocol and simulate
 	responses = proto.run(
-					cell_model=full_model, 
-					param_values={},
-					sim=nrnsim,
-					isolate=False)
-
-	## Plot protocol responses
-	from matplotlib import pyplot as plt
-	for resp_name, traces in responses.iteritems():
-		plt.figure()
-		plt.plot(traces['time'], traces['voltage'])
-		plt.suptitle(resp_name)
-	plt.show(block=False)
-
-
-def test_reduced_model():
-	"""
-	Test stimulation protocol applied to reduced cell model.
-	"""
-
-	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
-
-	# Create reduced model
-	red_model = StnReducedModel(
-					name		= 'StnFolded',
-					fold_method	= 'marasco',
-					num_passes	= 7,
-					params		= all_params)
-
-	# Test protocol
-	responses = plateau_protocol.run(
-					cell_model=red_model, 
-					param_values=default_params,
-					sim=nrnsim, 
-					isolate=True) # SETPARAM: set to True for multiprocessing
+					cell_model		= cellmodel, 
+					param_values	= {},
+					sim				= nrnsim,
+					isolate			= False)
 
 	## Plot protocol responses
 	from matplotlib import pyplot as plt

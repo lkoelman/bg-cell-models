@@ -208,7 +208,7 @@ def make_inputs(self, connector=None):
 
 	# Get connection & firing parameters
 	nsyn_per_ax = MSR_NUM_SYN[Pop.CTX] # if MSR_METHOD==MSRC.SCALE_GSYN_MSR else 0
-	con_par = cc.getConParams(Pop.CTX, Pop.STN, refs_con, 
+	con_par = cc.getPhysioConParams(Pop.CTX, Pop.STN, refs_con, 
 					adjust_gsyn_msr=nsyn_per_ax)
 
 	fire_par = cc.getFireParams(Pop.CTX, self.physio_state, refs_fire, 
@@ -230,7 +230,7 @@ def make_inputs(self, connector=None):
 
 	# Get connection & firing parameters
 	nsyn_per_ax = MSR_NUM_SYN[Pop.GPE] # if MSR_METHOD==MSRC.SCALE_GSYN_MSR else 0
-	con_par = cc.getConParams(Pop.GPE, Pop.STN, refs_con,
+	con_par = cc.getPhysioConParams(Pop.GPE, Pop.STN, refs_con,
 					adjust_gsyn_msr=nsyn_per_ax)
 
 	fire_par = cc.getFireParams(Pop.GPE, self.physio_state, refs_fire)

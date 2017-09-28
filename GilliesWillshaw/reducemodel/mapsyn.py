@@ -68,8 +68,8 @@ class SynInfo(object):
 	def __init__(self, **kwds):
 		self.__dict__.update(kwds)
 
-	def __repr__(self):
-		return "{} at {}({})".format(self.mod_name, self.sec_hname, self.sec_loc)
+	# def __repr__(self):
+	# 	return "{} at {}({})".format(self.mod_name, self.sec_hname, self.sec_loc)
 
 
 def subtree_has_node(crit_func, noderef, allsecrefs):

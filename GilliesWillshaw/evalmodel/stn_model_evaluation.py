@@ -5,7 +5,6 @@ Evaluation of STN cell models under different physiological and stimulus conditi
 # Standard library modules
 import collections
 import re
-from enum import Enum
 import pickle
 from copy import deepcopy
 
@@ -27,11 +26,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 import gillies_model as gillies
 
 # Cell reduction
-from reducemodel import (
-	marasco_foldbased as marasco,
-	reduce_cell,
-	mapsyn,
-)
+from reducemodel import reduce_cell, mapsyn
 
 # Plotting & recording
 from common import analysis
@@ -361,6 +356,31 @@ class StnModelEvaluator(object):
 		self.model_data[self.target_model]['inputs'][pre_pop]['HocInitHandlers'] = hoc_handlers
 
 
+	def print_synapse_info(self, model):
+		"""
+		Print all synapse and NetCon parameter values
+		"""
+
+		mech_param_names = {}
+		
+		for pre_pop, input_dict in self.model_data[model]['inputs'].iteritems():
+			
+			for nc in input_dict['syn_NetCons']:
+				
+				syn = nc.syn()
+				mech_name = cpd.get_mod_name(syn)
+
+				# Load parameter names (once per mechanism)
+				if mech_name not in mech_param_names:
+					mech_param_names[mech_name] = cpd.getSynMechParamNames(mech_name)
+
+				print '\nInfo for synapse {} @ {}'.format(syn, syn.get_segment())
+				print 'NetCon.weight[0] : {}'.format(nc.weight[0])
+
+				for param_name in mech_param_names[mech_name]:
+					print '{} : {}'.format(param_name, getattr(syn, param_name, 'not found'))
+
+
 	def get_synapse_data(self, model, pre_pops=None):
 		"""
 		Get list of SynInfo properties containing a reference
@@ -391,7 +411,7 @@ class StnModelEvaluator(object):
 				pre = Populations.from_descr(pop)
 			else:
 				pre = pop
-			con_par = cc.getConParams(pre, Pop.STN, [Cit.Default]) 
+			con_par = cc.getPhysioConParams(pre, Pop.STN, [Cit.Default]) 
 
 			# Save properties
 			for syn in syns:
@@ -531,19 +551,6 @@ class StnModelEvaluator(object):
 		if stim_protocol == StimProtocol.SPONTANEOUS:
 			# Spontaneous firing has no inputs
 			pass
-
-		elif stim_protocol == StimProtocol.SINGLE_SYN_GABA:
-			# Make single GABA synapse
-			proto_simple.make_GABA_inputs(self, 1, connector=cc)
-
-		elif stim_protocol == StimProtocol.SINGLE_SYN_GLU:
-			# Make single GLU synapse
-			proto_simple.make_GLU_inputs(self, 1, connector=cc)
-
-		elif stim_protocol == StimProtocol.MIN_SYN_BURST:
-			# Minimal number of GABA + GLU synapses to trigger burst
-			proto_simple.make_GABA_inputs(self, 1)
-			proto_simple.make_GLU_inputs(self, 4)
 
 		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED:
 			
@@ -816,30 +823,6 @@ class StnModelEvaluator(object):
 			analysis.rec_currents_activations(traceSpecs, 'soma', 0.5)
 			
 
-		elif stim_protocol == StimProtocol.SINGLE_SYN_GABA:
-			
-			# Record synaptic variables
-			self.rec_GABA_traces(stim_protocol, traceSpecs)
-
-			# Record membrane voltages
-			self.rec_Vm(stim_protocol, traceSpecs)
-
-		elif stim_protocol == StimProtocol.SINGLE_SYN_GLU:
-			
-			# Record synaptic variables
-			self.rec_GLU_traces(stim_protocol, traceSpecs)
-
-			# Record membrane voltages
-			self.rec_Vm(stim_protocol, traceSpecs)
-
-		elif stim_protocol == StimProtocol.MIN_SYN_BURST:
-			# Record both GABA and GLU synapses
-			self.rec_GABA_traces(stim_protocol, traceSpecs)
-			self.rec_GLU_traces(stim_protocol, traceSpecs)
-
-			# Record membrane voltages
-			self.rec_Vm(stim_protocol, traceSpecs)
-
 		elif stim_protocol == StimProtocol.SYN_PARK_PATTERNED: # pathological input, strong patterned cortical input with strong GPi input in antiphase
 			####################################################################
 			# Record SYN_PARK_PATTERNED
@@ -1051,33 +1034,6 @@ class StnModelEvaluator(object):
 			# Plot ionic currents, (in)activation variables
 			figs, cursors = analysis.plot_currents_activations(self.recData, recordStep)
 
-
-		elif protocol == StimProtocol.SINGLE_SYN_GABA:
-			
-			# Plot membrane voltages (one figure)
-			self._plot_all_Vm(model, protocol, fig_per='cell')
-
-			# Plot synaptic variables
-			self._plot_GABA_traces(model, protocol)
-
-		elif protocol == StimProtocol.SINGLE_SYN_GLU:
-
-			# Plot membrane voltages (one figure)
-			self._plot_all_Vm(model, protocol, fig_per='cell')
-
-			# Plot synaptic variables
-			self._plot_GLU_traces(model, protocol)
-
-		elif protocol == StimProtocol.MIN_SYN_BURST:
-
-			# Plot membrane voltages (one figure)
-			self._plot_all_Vm(model, protocol, fig_per='cell')
-
-			# Plot synaptic variables
-			self._plot_GLU_traces(model, protocol)
-			self._plot_GABA_traces(model, protocol)
-
-
 		elif protocol == StimProtocol.SYN_PARK_PATTERNED:
 
 			V_prox = analysis.match_traces(recData, lambda t: t.startswith('V_prox'))
@@ -1228,20 +1184,10 @@ class StnModelEvaluator(object):
 			h.init()
 			self.run_sim()
 
-		elif protocol == StimProtocol.MIN_SYN_BURST:
-
-			# Change SKCa conductance
-			for sec in h.allsec():
-				for seg in sec:
-					seg.gk_sKCa = 0.6 * seg.gk_sKCa
-
-			self._setup_proto(protocol)
-			self._run_proto(protocol)
-
 		else:
 			# Standard simulation function
-			self._setup_proto(protocol)
-			self._run_proto(protocol)
+			self._setup_proto(protocol) # MAKE_INPUTS + RECORD_TRACES
+			self._run_proto(protocol) # INIT_SIMULATION + RUN_SIMULATION
 
 
 ################################################################################

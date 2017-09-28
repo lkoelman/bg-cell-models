@@ -144,6 +144,125 @@ Pop = Populations
 Rec = NTReceptors
 Src = ParameterSource
 
+
+def correct_GABAsyn(syn):
+	"""
+	Correct parameters of GABAsyn so peak synaptic conductance
+	is equal to value of 'gmax_' parameters
+	"""
+
+	# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
+	if isinstance(syn, dict):
+		syn['pointprocess']['gmax_GABAA'] /= syn['pointprocess']['U1']
+		syn['pointprocess']['gmax_GABAB'] /= 0.21
+	else:
+		syn.gmax_GABAA = syn.gmax_GABAA / syn.U1
+		syn.gmax_GABAB = syn.gmax_GABAB / 0.21
+
+
+def correct_GLUsyn(syn):
+	"""
+	Correct parameters of GLUsyn so peak synaptic conductance
+	is equal to value of 'gmax_' parameters
+	"""
+
+	# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
+	if isinstance(syn, dict):
+		syn['pointprocess']['gmax_AMPA'] /= syn['pointprocess']['U1']
+		syn['pointprocess']['gmax_NMDA'] /= syn['pointprocess']['U1']
+	else:
+		syn.gmax_AMPA = syn.gmax_AMPA / syn.U1
+		syn.gmax_NMDA = syn.gmax_NMDA / syn.U1
+
+# Parameter correction functions for synaptic mechanisms
+syn_mech_correctors = {
+	'GABAsyn' : correct_GABAsyn,
+	'GLUsyn' : correct_GLUsyn,
+}
+
+#######################################################################
+# Parameter mapping for synaptic mechanisms
+#######################################################################
+
+# mapping synapse type -> parameter names
+syn_par_maps = {
+	'GABAsyn' : {}, # see below
+	'GLUsyn' : {}, # see below
+	'Exp2Syn' : {}, # see below
+}
+
+# GABAsyn.mod cam be used for GABA-A and GABA-B receptor
+syn_par_maps['GABAsyn'] = {
+	Rec.GABAA : {
+		'Erev': 'syn:Erev_GABAA',
+		'tau_rise_g': 'syn:tau_r_GABAA',
+		'tau_decay_g': 'syn:tau_d_GABAA',
+		'gbar': 'syn:gmax_GABAA',
+		'delay': 'netcon:delay',
+		'Vpre_threshold': 'netcon:threshold',
+		'tau_rec_STD': 'syn:tau_rec', # NOTE: GABAA & GABAB use shared vars for depression/facilitation
+		'tau_rec_STP': 'syn:tau_facil',
+		'P_release_base': 'syn:U1', # initial release probability (fraction of vesicles in RRP released initially)
+	},
+	Rec.GABAB : {
+		'Erev': 'syn:Erev_GABAB',
+		'tau_rise_NT': 'syn:tau_r_GABAB', # in GABAsyn.mod, tau_r represents rise time of NT concentration that kicks off signaling cascade
+		'tau_decay_NT': 'syn:tau_d_GABAB', # in GABAsyn.mod, tau_d represents decay time of NT concentration that kicks off signaling cascade
+		'gbar': 'syn:gmax_GABAB',
+		'delay': 'netcon:delay',
+		'Vpre_threshold': 'netcon:threshold',
+	},
+}
+
+# GABAsyn.mod cam be used for GABA-A and GABA-B receptor
+syn_par_maps['GLUsyn'] = {
+	Rec.AMPA : {
+		'Erev': 'syn:e',
+		'tau_rise_g': 'syn:tau_r_AMPA',
+		'tau_decay_g': 'syn:tau_d_AMPA',
+		'gbar': 'syn:gmax_AMPA',
+		'delay': 'netcon:delay',
+		'Vpre_threshold': 'netcon:threshold',
+		'tau_rec_STD': 'syn:tau_rec', # NOTE: AMPA & NMDA use shared vars for depression/facilitation
+		'tau_rec_STP': 'syn:tau_facil',
+		'P_release_base': 'syn:U1',
+	},
+	Rec.NMDA : {
+		'Erev': 'syn:e', # AMPA,NMDA have same reversal potential
+		'tau_rise_g': 'syn:tau_r_NMDA',
+		'tau_decay_g': 'syn:tau_d_NMDA',
+		'gbar': 'syn:gmax_NMDA',
+		'delay': 'netcon:delay',
+		'Vpre_threshold': 'netcon:threshold',
+	},
+}
+
+# Exp2Syn.mod can be used for any receptor
+exp2syn_parmap = {
+	'Erev': 'syn:e',
+	'tau_rise_g': 'syn:tau1',
+	'tau_decay_g': 'syn:tau2',
+	'gbar': 'netcon:weight[0]',
+	'delay': 'netcon:delay',
+	'Vpre_threshold': 'netcon:threshold',
+	
+}
+for rec in list(NTReceptors):
+	syn_par_maps['Exp2Syn'][rec] = dict(exp2syn_parmap)
+
+
+def getNrnConParamMap(mech_name):
+	"""
+	For given synaptic mechanism (POINT_PROCESS defined in .mod file),
+	get mapping from parameter name in dict getPhysioConParams()
+	to parameters of the synaptic mechanism and NetCon.
+
+	In other words: how each key in the parameter dictionary
+	should be interpreted.
+	"""
+	return dict(syn_par_maps[mech_name]) # return a copy
+
+
 def get_mod_name(syn):
 	"""
 	Get NEURON mechanism name of given synapse object
@@ -155,26 +274,95 @@ def get_mod_name(syn):
 	return modname
 
 
-def correct_GABAsyn(syn):
+def getSynMechReceptors(mech_name):
 	"""
-	Correct parameters of GABAsyn so peak synaptic conductance
-	is equal to value of 'gmax_' parameters
+	Get receptor types implemented by the given synaptic mechanism.
+
+	@param	mech_name	str: name of the NEURON mechanism
+
+	@return				list(NTReceptors)
 	"""
-
-	# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
-	syn.gmax_GABAA = syn.gmax_GABAA / syn.U1
-	syn.gmax_GABAB = syn.gmax_GABAB / 0.21
+	return syn_par_maps[mech_name].keys()
 
 
-def correct_GLUsyn(syn):
+def getSynMechParamNames(mech_name):
 	"""
-	Correct parameters of GLUsyn so peak synaptic conductance
-	is equal to value of 'gmax_' parameters
-	"""
+	Get parameter names for synaptic mechanism.
 
-	# Compensate for effect max value Hill factor and U1 on gmax_GABAA and gmax_GABAB
-	syn.gmax_AMPA = syn.gmax_AMPA / syn.U1
-	syn.gmax_NMDA = syn.gmax_NMDA / syn.U1
+	I.e. the parameter names defined in the .mod file that can be changed.
+
+	@return		list(str): list of parameter names declared in mod file
+	"""
+	ntr_params_names = syn_par_maps[mech_name]
+	mech_parnames = []
+
+	# Get all parameter names prefixed by 'syn:'
+	for ntr, params_names in ntr_params_names.iteritems():
+		for pname in params_names.values():
+			matches = re.search(r'^(?P<mech>\w+):(?P<parname>\w+)(\[(?P<idx>\d+)\])?', pname)
+			mechtype = matches.group('mech')
+			if mechtype == 'syn':
+				parname = matches.group('parname')
+				mech_parnames.append(parname)
+
+	return mech_parnames
+
+def interpretParamSpec(spec):
+	"""
+	Extract <mechanism_type>, <parameter_name>, <index> from parameter specification in format 'mechanism:parameter[index]'
+
+	@return		tuple (mechanism_type, parameter_name, index)
+	"""
+	# Regular expression with ?P<groupname> to mark named groups
+	matches = re.search(r'^(?P<mech>\w+):(?P<parname>\w+)(\[(?P<idx>\d+)\])?', spec)
+	
+	mech_type = matches.group('mech')
+	mech_param = matches.group('parname')
+	param_index = matches.group('idx')
+	
+	return mech_type, mech_param, param_index
+
+
+def evalValueSpec(value_spec, rng=None):
+	"""
+	Evaluate specification of a parameter value in a range of formats.
+
+	@param value_spec	numeric value, function, or dict with parameters of distribution
+
+	@param rng			numpy random object
+	
+	@return				float
+	"""
+	if rng is None:
+		rng = np.random
+
+	if isinstance(value_spec, (float, int)):
+		# parameter is numerical value
+		value = value_spec
+
+	elif isinstance(value_spec, types.FunctionType):
+		# parameter is a function
+		value = value_spec()
+
+	elif isinstance(value_spec, dict):
+		# parameter is described by other parameters (e.g. distribution)
+
+		if ('min' in value_spec and 'max' in value_spec):
+			lower = value_spec['min']
+			upper = value_spec['max']
+			value = lower + rng.rand()*(upper-lower)
+
+		elif ('mean' in value_spec and 'deviation' in value_spec):
+			lower = value_spec['mean'] - value_spec['deviation']
+			upper = value_spec['mean'] + value_spec['deviation']
+			value = lower + rng.rand()*(upper-lower)
+
+		elif ('mean' in value_spec and 'stddev' in value_spec):
+			value = rng.normal(value_spec['mean'], value_spec['stddev'])
+
+		else:
+			raise ValueError('Could not infer distribution from parameters in {}'.format(value_spec))
+	return value
 
 
 class CellConnector(object):
@@ -186,6 +374,10 @@ class CellConnector(object):
 		self._physio_state = physio_state
 		self._rng = rng
 
+		# make some functions available as instance methods (lazy refactoring)
+		self.getSynMechReceptors = getSynMechReceptors
+		self.getSynMechParamNames = getSynMechParamNames
+		self.getNrnConParamMap = getNrnConParamMap
 
 	def getFireParams(self, pre_pop, phys_state, use_sources, custom_params=None):
 		"""
@@ -272,7 +464,7 @@ class CellConnector(object):
 
 		return fp_final
 
-	def getConParams(self, pre_pop, post_pop, use_sources, custom_params=None,
+	def getPhysioConParams(self, pre_pop, post_pop, use_sources, custom_params=None,
 					adjust_gsyn_msr=None):
 		"""
 		Get parameters for afferent connections onto given population,
@@ -386,6 +578,16 @@ class CellConnector(object):
 				})
 
 			# ---------------------------------------------------------------------
+			# Parameters Gradinaru (2009)
+
+			cp[Pop.CTX][Rec.AMPA][Src.Gradinaru2009] = {
+				'tau_rec_STD': 200.,
+				'tau_rec_STP': 1., # no facilitation
+				'P_release_base': 0.7,
+			}
+
+
+			# ---------------------------------------------------------------------
 			# Default parameters
 
 			# Set params Chu (2015) as default parameters
@@ -397,15 +599,7 @@ class CellConnector(object):
 			cp[Pop.CTX][Rec.NMDA][Src.Default]['gbar'] = 0.7 * cp[Pop.CTX][Rec.AMPA][Src.Default]['gbar']
 			
 			
-			# ---------------------------------------------------------------------
-			# Parameters Gradinaru (2009)
-
-			cp[Pop.CTX][Rec.AMPA][Src.Gradinaru2009] = {
-				'tau_rec_STD': 200.,
-				'tau_rec_STP': 1., # no facilitation
-				'P_release_base': 0.7,
-			}
-
+			
 			#######################################################################
 			# GPe -> STN parameters
 			#######################################################################
@@ -523,136 +717,89 @@ class CellConnector(object):
 
 		return cp_final
 
-	#######################################################################
-	# Parameter mapping for synaptic mechanisms
-	#######################################################################
 
-	# mapping synapse type -> parameter names
-	syn_par_maps = {
-		'GABAsyn' : {}, # see below
-		'GLUsyn' : {}, # see below
-		'Exp2Syn' : {}, # see below
-	}
+	def getNrnObjParams(self, nrn_mech_name, physio_params):
+		"""
+		Get parameters to assign to NEURON objects.
 
-	# GABAsyn.mod cam be used for GABA-A and GABA-B receptor
-	syn_par_maps['GABAsyn'] = {
-		Rec.GABAA : {
-			'Erev': 'syn:Erev_GABAA',
-			'tau_rise_g': 'syn:tau_r_GABAA',
-			'tau_decay_g': 'syn:tau_d_GABAA',
-			'gbar': 'syn:gmax_GABAA',
-			'delay': 'netcon:delay',
-			'Vpre_threshold': 'netcon:threshold',
-			'tau_rec_STD': 'syn:tau_rec', # NOTE: GABAA & GABAB use shared vars for depression/facilitation
-			'tau_rec_STP': 'syn:tau_facil',
-			'P_release_base': 'syn:U1', # initial release probability (fraction of vesicles in RRP released initially)
-		},
-		Rec.GABAB : {
-			'Erev': 'syn:Erev_GABAB',
-			'tau_rise_NT': 'syn:tau_r_GABAB', # in GABAsyn.mod, tau_r represents rise time of NT concentration that kicks off signaling cascade
-			'tau_decay_NT': 'syn:tau_d_GABAB', # in GABAsyn.mod, tau_d represents decay time of NT concentration that kicks off signaling cascade
-			'gbar': 'syn:gmax_GABAB',
-			'delay': 'netcon:delay',
-			'Vpre_threshold': 'netcon:threshold',
-		},
-	}
+		@return		dictionary {nrn_obj_type: {attr_name: value} }
+					
+					where nrn_obj_type is one of:
 
-	# GABAsyn.mod cam be used for GABA-A and GABA-B receptor
-	syn_par_maps['GLUsyn'] = {
-		Rec.AMPA : {
-			'Erev': 'syn:e',
-			'tau_rise_g': 'syn:tau_r_AMPA',
-			'tau_decay_g': 'syn:tau_d_AMPA',
-			'gbar': 'syn:gmax_AMPA',
-			'delay': 'netcon:delay',
-			'Vpre_threshold': 'netcon:threshold',
-			'tau_rec_STD': 'syn:tau_rec', # NOTE: AMPA & NMDA use shared vars for depression/facilitation
-			'tau_rec_STP': 'syn:tau_facil',
-			'P_release_base': 'syn:U1',
-		},
-		Rec.NMDA : {
-			'Erev': 'syn:e', # AMPA,NMDA have same reversal potential
-			'tau_rise_g': 'syn:tau_r_NMDA',
-			'tau_decay_g': 'syn:tau_d_NMDA',
-			'gbar': 'syn:gmax_NMDA',
-			'delay': 'netcon:delay',
-			'Vpre_threshold': 'netcon:threshold',
-		},
-	}
+						- 'pointprocess',
+						- 'netcon'
+						- 'netstim'
 
-	# Exp2Syn.mod can be used for any receptor
-	exp2syn_parmap = {
-		'Erev': 'syn:e',
-		'tau_rise_g': 'syn:tau1',
-		'tau_decay_g': 'syn:tau2',
-		'gbar': 'netcon:weight[0]',
-		'delay': 'netcon:delay',
-		'Vpre_threshold': 'netcon:threshold',
+					and the inner dictionary are parameter names and values for 
+					these object types.
+
+		USAGE:
+
+			physio_params = cc.getPhysioConParams(pre_pop, post_pop, use_sources)
+			mech = 'Exp2Syn'
+			nrn_params = cc.getNrnObjParams(mech, physio_params)
 		
-	}
-	for rec in list(NTReceptors):
-		syn_par_maps['Exp2Syn'][rec] = dict(exp2syn_parmap)
-
-
-	# Parameter correction functions for synaptic mechanisms
-	syn_mech_correctors = {
-		'GABAsyn' : correct_GABAsyn,
-		'GLUsyn' : correct_GLUsyn,
-	}
-
-
-	def getSynParamMap(self, syn_type):
 		"""
-		For given synaptic mechanism (POINT_PROCESS defined in .mod file),
-		get mapping from parameter name in dict getConParams()
-		to parameters of the synaptic mechanism and NetCon.
+		# Get NT Receptors used in connection
+		receptors = physio_params.keys()
 
-		In other words: how each key in the parameter dictionary
-		should be interpreted.
-		"""
-		return dict(self.syn_par_maps[syn_type]) # return a copy
+		# Get mapping from physiological to NEURON mechanism parameters
+		nrn_param_map = getNrnConParamMap(nrn_mech_name)
 
+		# keep track of parameters that are assigned
+		nrn_param_values = {
+			'pointprocess':	{},
+			'netcon':		{},
+			'netstim':		{},
+		}
 
-	def getSynMechReceptors(self, syn_type):
-		"""
-		Get receptor types implemented by the given synaptic mechanism.
+		# For each NT receptor, look up the physiological connection parameters,
+		# and translate them to a parameter of the synaptic mechanism or NetCon
+		for rec in receptors:
 
-		@param	syn_type	str: name of the NEURON mechanism
+			physio_to_nrn = nrn_param_map[rec] 
+			physio_to_values = physio_params[rec]
 
-		@return				list(NTReceptors)
-		"""
-		return self.syn_par_maps[syn_type].keys()
+			# Translate each physiological parameter to NEURON parameter
+			for physio_name, nrn_param_spec in physio_to_nrn.iteritems():
 
+				# Check if parameters is available from given sources
+				if not physio_name in physio_to_values:
+					logger.anal("Parameter {dictpar} not found for connection. "
+								"This means that parameter {mechpar} will not be set\n".format(
+								dictpar=physio_name, mechpar=nrn_param_spec))
+					continue
 
-	def getSynMechParamNames(self, syn_type):
-		"""
-		Get parameter names for synaptic mechanism.
+				mech_type, param_name, param_index = interpretParamSpec(nrn_param_spec)
 
-		I.e. the parameter names defined in the .mod file that can be changed.
+				# Get the actual parameter value
+				value_spec = physio_to_values[physio_name]
+				value = evalValueSpec(value_spec, self._rng)
 
-		@return		list(str): list of parameter names declared in mod file
-		"""
-		ntr_params_names = self.syn_par_maps[syn_type]
-		mech_parnames = []
+				# Determine target (synapse or NetCon)
+				if mech_type == 'syn':
+					nrn_dict = nrn_param_values['pointprocess']
+				else:
+					nrn_dict = nrn_param_values[mech_type]
 
-		# Get all parameter names prefixed by 'syn:'
-		for ntr, params_names in ntr_params_names.iteritems():
-			for pname in params_names.values():
-				matches = re.search(r'^(?P<mech>\w+):(?P<parname>\w+)(\[(?P<idx>\d+)\])?', pname)
-				mechtype = matches.group('mech')
-				if mechtype == 'syn':
-					parname = matches.group('parname')
-					mech_parnames.append(parname)
+				# Set attribute
+				if param_index is None:
+					nrn_dict[param_name] = value
+				else:
+					values = nrn_dict.get(param_name, None)
+					if values is None:
+						values = [0.0] * (param_index+1)
+						nrn_dict[param_name] = values
+					elif len(values) <= param_index:
+						values.extend([0.0] * (param_index+1-len(values)))
+					values[param_index] = value
 
-		return mech_parnames
+		# Apply possible corrections to synaptic parameters
+		correct_syn = syn_mech_correctors.get(nrn_mech_name, None)
+		if correct_syn is not None:
+			correct_syn(nrn_param_values)
 
-
-	def getSynCorrector(self, syn_type):
-		"""
-		Get parameter correction functions for given synapse type.
-		"""
-		
-		return self.syn_mech_correctors.get(syn_type, None)
+		return nrn_param_values
 
 
 	def make_synapse(self, pre_post_pop, pre_post_obj, syn_type, receptors, 
@@ -693,7 +840,6 @@ class CellConnector(object):
 								weight equal to maximum synaptic conductance
 		"""
 
-		rng = self._rng
 		pre_pop, post_pop = pre_post_pop
 		pre_obj, post_obj = pre_post_obj
 
@@ -707,16 +853,18 @@ class CellConnector(object):
 		# Make NetCon connection
 		if isinstance(pre_obj, nrn.Section):
 			# Biophysical cells need threshold detection to generate events
-			nc = h.NetCon(pre_obj(0.5)._ref_v, receiver, sec=pre_obj)
+			nc = h.NetCon(pre_obj(0.5)._ref_v, syn, sec=pre_obj)
 
 		else:
 			# Source object is POINT_PROCESS or other event-generating objcet
 			nc = h.NetCon(pre_obj, syn)
 
-		# Get connnection parameters and how to use them
+		# Get physiological parameter descriptions
 		if con_par_data is None:
-			con_par_data = self.getConParams(pre_pop, post_pop, use_sources, custom_conpar)
-		syn_par_map = self.getSynParamMap(syn_type) # how they map to mechanism parameters
+			con_par_data = self.getPhysioConParams(pre_pop, post_pop, use_sources, custom_conpar)
+		
+		# Get mapping from physiological to NEURON mechanism parameters
+		syn_par_map = getNrnConParamMap(syn_type)
 
 		# keep track of parameters that are assigned
 		syn_assigned_pars = []
@@ -739,42 +887,12 @@ class CellConnector(object):
 								rec=rec, mechpar=mech_parspec))
 					continue
 
-				matches = re.search(r'^(?P<mech>\w+):(?P<parname>\w+)(\[(?P<idx>\d+)\])?', mech_parspec)
-				mech_parname = matches.group('parname')
-				paridx = matches.group('idx')
-				mechtype = matches.group('mech')
+				# Interpret parameter specification (what is the parameter?)
+				mechtype, mech_parname, paridx = interpretParamSpec(mech_parspec)
 
 				# Get the actual parameter value
-				par_data = phys_params[phys_parname]
-				par_val = None
-
-				# Make sure it is a numerical value
-				if isinstance(par_data, (float, int)):
-					# parameter is numerical value
-					par_val = par_data
-
-				elif isinstance(par_data, types.FunctionType):
-					# parameter is a function
-					par_val = par_data()
-
-				elif isinstance(par_data, dict):
-					# parameter is described by other parameters (e.g. distribution)
-
-					if ('min' in par_data and 'max' in par_data):
-						lower = par_data['min']
-						upper = par_data['max']
-						par_val = lower + rng.rand()*(upper-lower)
-
-					elif ('mean' in par_data and 'deviation' in par_data):
-						lower = par_data['mean'] - par_data['deviation']
-						upper = par_data['mean'] + par_data['deviation']
-						par_val = lower + rng.rand()*(upper-lower)
-
-					elif ('mean' in par_data and 'stddev' in par_data):
-						par_val = rng.normal(par_data['mean'], par_data['stddev'])
-
-					else:
-						raise ValueError('Could not infer distribution from parameters in {}'.format(par_data))
+				value_spec = phys_params[phys_parname]
+				par_val = evalValueSpec(value_spec, self._rng)
 
 				# Determine target (synapse or NetCon)
 				if mechtype == 'syn':
@@ -799,7 +917,7 @@ class CellConnector(object):
 				setattr(syn, pname, pval)
 
 		# Apply possible corrections to synaptic parameters
-		correct_syn = self.getSynCorrector(syn_type)
+		correct_syn = syn_mech_correctors.get(syn_type, None)
 		if correct_syn is not None:
 			correct_syn(syn)
 
