@@ -214,10 +214,6 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 							syn_mech, (NTR.AMPA, NTR.NMDA), use_sources=(Cit.Custom, Cit.Default),
 							custom_synpar=syn_params)
 
-		print("Made {} synapse with following parameters:".format(syn_mech))
-		for pname in cc.getSynMechParamNames(syn_mech):
-			print("{} : {}".format(pname, str(getattr(syn, pname))))
-
 		# Control netstim
 		tstart = 850
 		tstop = tstart + 10*stim_T # SETPARAM: number of spikes in burst
@@ -287,10 +283,6 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 							syn_mech, (NTR.GABAA, NTR.GABAB), 
 							use_sources=(Cit.Custom, Cit.Chu2015, Cit.Fan2012, Cit.Atherton2013),
 							custom_synpar=syn_params)
-
-		print("Made {} synapse with following parameters:".format(syn_mech))
-		for pname in cc.getSynMechParamNames(syn_mech):
-			print("{} : {}".format(pname, str(getattr(syn, pname))))
 
 		# Control netstim
 		tstart = 700

@@ -319,3 +319,54 @@ class PhysioProtocol(ephys.protocols.SweepProtocol):
 
         # Calls destroy() on each stimulus
         super(PhysioProtocol, self).destroy(sim=sim)
+
+
+class NrnNamedSecLocation(ephys.locations.Location, ephys.serializer.DictMixin):
+    """
+    Location in a specific section, identified by name.
+    """
+
+    SERIALIZED_FIELDS = (
+        'name',
+        'comment',
+        'seclist_name',
+        'sec_index',
+        'comp_x',
+    )
+
+    def __init__(
+            self,
+            name,
+            sec_name=None,
+            comp_x=None,
+            comment=''):
+        """
+        Constructor
+        
+        Args:
+            name (str): name of the object
+            seclist_name (str): name of Neuron section list (ex: 'somatic')
+            sec_index (int): index of the section in the section list
+            comp_x (float): segx (0..1) of segment inside section
+        """
+
+        super(NrnNamedSecLocation, self).__init__(name, comment)
+        self.sec_name = sec_name
+        self.comp_x = comp_x
+
+    def instantiate(self, sim=None, icell=None):  # pylint: disable=W0613
+        """
+        Find the instantiate compartment
+        """
+        iseclist = icell.all
+        
+        try:
+            isection = next((sec for sec in iseclist if sec.name()==self.sec_name))
+        except StopIteration:
+            raise ValueError("Section with name {} not found on this cell".format(self.sec_name))
+        icomp = isection(self.comp_x)
+        return icomp
+
+    def __str__(self):
+        """String representation"""
+        return '%s(%s)' % (self.sec_name, self.comp_x)

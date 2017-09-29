@@ -15,12 +15,15 @@ NOTES
 import numpy as np
 
 import bluepyopt.ephys as ephys
-from bpop_extensions import PhysioProtocol, NrnSpaceClamp
+from bpop_extensions import PhysioProtocol, NrnSpaceClamp, NrnNamedSecLocation
 
 from evalmodel import cellpopdata as cpd
 Pop = cpd.Populations
 NTR = cpd.NTReceptors
 Ref = cpd.ParameterSource
+
+import logging
+logger = logging.getLogger(__name__) # create logger for this module
 
 
 ################################################################################
@@ -252,25 +255,32 @@ cc = cpd.CellConnector(cpd.PhysioState.NORMAL, rng)
 
 # SETPARAM: synapse locations (name of icell SectionList & index)
 sec_index_x = {
-	'GLUsyn':	[('dendritic', 5, 0.9375), 
-				('dendritic', 10, 1), 
-				('dendritic', 10, 1), 
-				('dendritic', 4, 1)],
+	'GLUsyn':	[('zipF_zipE_zipD_SThcell0dend01', 0.9375), 
+				('zipG_zipF_zipE_zipD_SThcell0dend02', 1), 
+				('zipG_zipF_zipE_zipD_SThcell0dend02', 1), 
+				('zipG_zipF_zipE_zipD_SThcell0dend01', 1)],
 	
-	'GABAsyn':	[('dendritic', 7, 0.75)], # SETPARAM: GABA synapse locations
+	'GABAsyn':	[('SThcell[0].dend0[2]', 0.75)], # SETPARAM: GABA synapse locations
 }
+# sec_index_x = {
+# 	'GLUsyn':	[('dendritic', 5, 0.9375), 
+# 				('dendritic', 10, 1), 
+# 				('dendritic', 10, 1), 
+# 				('dendritic', 4, 1)],
+	
+# 	'GABAsyn':	[('dendritic', 7, 0.75)], # SETPARAM: GABA synapse locations
+# }
 
 burst_syn_locs = {ppmech: [] for ppmech in sec_index_x.keys()}
 
 # Make NrnSeclistCompLocation for each synapse
 for ppmech, loc_data in sec_index_x.iteritems():
-	for i_loc, (sec_list, sec_index, sec_x) in enumerate(loc_data):
+	for i_loc, (sec_name, sec_x) in enumerate(loc_data):
 
-		loc = ephys.locations.NrnSeclistCompLocation(
-						name			= '{}_loc_{}'.format(ppmech, i_loc),
-						seclist_name	= sec_list,
-						sec_index		= sec_index,
-						comp_x			= sec_x)
+		loc = NrnNamedSecLocation(
+				name			= '{}_loc_{}'.format(ppmech, i_loc),
+				sec_name		= sec_name,
+				comp_x			= sec_x)
 
 		burst_syn_locs[ppmech].append(loc)
 
@@ -294,6 +304,7 @@ def get_syn_mechs_params(mech_name, stim_pp, nrn_params, proto_vars):
 	proto_vars['pp_comp_locs'].extend(comp_locs)
 
 	# Make synapse at locations
+	# NOTE: logger is wrong
 	syn_pp = ephys.mechanisms.NrnMODPointProcessMechanism(
 					name		= '{}_synapses'.format(mech_name),
 					suffix		= mech_name,
@@ -346,6 +357,9 @@ def make_synburst_proto_vars():
 		'range_mechs':		[], # not used in this case
 	}
 
+	############################################################################
+	# Recordings
+
 	# Recording for EFeatures
 	proto_rec = ephys.recordings.CompRecording(
 					name			= 'synburst.soma.v',
@@ -374,7 +388,7 @@ def make_synburst_proto_vars():
 	# Spike generator for GLU synapses
 	stim_glu = ephys.stimuli.NrnNetStimStimulus(
 					locations		= [],		# assigned later
-					total_duration	= 1250,		# total duration of stim protocol
+					total_duration	= 1500,		# total duration of stim protocol
 					interval		= 100.0**-1 * 1e3, # 100 Hz to ms
 					number			= 5,
 					start			= 850,
@@ -406,9 +420,9 @@ def make_synburst_proto_vars():
 	# Spike generator for GABA synapses
 	stim_gaba = ephys.stimuli.NrnNetStimStimulus(
 					locations		= [],		# assigned later
-					total_duration	= 1250,		# total duration of stim protocol
+					total_duration	= 1500,		# total duration of stim protocol
 					interval		= 100.0**-1 * 1e3, # 100 Hz to ms
-					number			= 8,
+					number			= 5,
 					start			= 700,
 					noise			= 0,
 					weight			= None)		# assigned later
@@ -430,7 +444,7 @@ def init_burstsyn(sim, icell):
 	h.set_aCSF(4) # gillies_model.set_aCSF(4) # if called before model.instantiate()
 
 	# lower sKCa conductance to promote bursting
-	for sec in icell.all:
+	for sec in h.allsec():# icell.all:
 		for seg in sec:
 			seg.gk_sKCa = 0.6 * seg.gk_sKCa
 

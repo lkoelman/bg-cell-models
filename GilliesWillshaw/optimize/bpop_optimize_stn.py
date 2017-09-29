@@ -305,7 +305,7 @@ def get_features_targets(saved_responses=None):
 	return proto_feats
 
 
-def test_protocol(proto, cellmodel):
+def test_protocol(proto, cellmodel, export_locals=True):
 	"""
 	Test stimulation protocol applied to full cell model.
 
@@ -343,7 +343,7 @@ def test_protocol(proto, cellmodel):
 					cell_model		= cellmodel, 
 					param_values	= {},
 					sim				= nrnsim,
-					isolate			= False)
+					isolate			= False) # allows us to query cell with h.allsec()
 
 	## Plot protocol responses
 	from matplotlib import pyplot as plt
@@ -352,6 +352,52 @@ def test_protocol(proto, cellmodel):
 		plt.plot(traces['time'], traces['voltage'])
 		plt.suptitle(resp_name)
 	plt.show(block=False)
+
+	if export_locals:
+		globals().update(locals())
+
+
+def inspect_protocol(proto, cellmodel, export_locals=True):
+	"""
+	Test stimulation protocol applied to full cell model.
+
+	@param	cellmodel		either a CellModel object, StnModel enum instance,
+							or string "full" / "reduced"
+
+	EXAMPLE USAGE:
+
+	proto = synburst_protocol
+	test_protocol(proto, 'full')
+	
+	"""
+	# Get protocol mechanisms that need to be isntantiated
+	proto_mechs = proto_vars[proto].get('pp_mechs', []) + \
+	              proto_vars[proto].get('range_mechs', [])
+
+	proto_params = proto_vars[proto].get('pp_mech_params', [])
+
+	# Make the model
+	if cellmodel in ('full', StnModel.Gillies2005):
+		cellmodel = StnFullModel(name='StnGillies')
+	
+	elif cellmodel in ('reduced', StnModel.Gillies_FoldMarasco):
+		cellmodel = StnReducedModel(
+						name		= 'StnFolded',
+						fold_method	= 'marasco',
+						num_passes	= 7,
+						mechs		= proto_mechs,
+						params		= proto_params)
+
+	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+
+	# protocol.run() cleans up after running: therefore instantiate everything ourselves
+	cellmodel.freeze({}) # TODO: do you need to freeze model params to some value here?
+	cellmodel.instantiate(sim=nrnsim)
+	proto.instantiate(sim=nrnsim, icell=cellmodel.icell)
+
+
+	if export_locals:
+		globals().update(locals())
 
 
 def optimize_active():

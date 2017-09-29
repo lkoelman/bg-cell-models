@@ -256,9 +256,9 @@ class StnFullModel(StnBaseModel):
                 redutils.set_range_props(ref, ref.initial_params)
 
         # Set physiological conditions
-        h.celsius = 30 # will be overriden by possible global parameter in super.instantiate
-        h.v_init = -60
-        h.set_aCSF(4)
+        # h.celsius = 30 # will be overriden by possible global parameter in super.instantiate
+        # h.v_init = -60
+        # h.set_aCSF(4)
 
         # Call base class method
         return super(StnFullModel, self).instantiate(sim)
@@ -334,10 +334,10 @@ class StnReducedModel(StnBaseModel):
                 redutils.set_range_props(ref, ref.initial_params)
 
         # Set physiological conditions
-        h = sim.neuron.h
-        h.celsius = 30 # will be overriden by possible global parameter in super.instantiate
-        h.v_init = -60
-        h.set_aCSF(4)
+        # h = sim.neuron.h
+        # h.celsius = 30 # will be overriden by possible global parameter in super.instantiate
+        # h.v_init = -60
+        # h.set_aCSF(4)
 
         # Call base class method
         return super(StnReducedModel, self).instantiate(sim)
