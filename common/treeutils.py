@@ -4,6 +4,8 @@ Utilities for dealing with NEURON cell models
 @author Lucas Koelman
 """
 
+import re
+
 import neuron
 from neuron import h
 
@@ -166,17 +168,23 @@ def subtreeroot(secref):
 	Find the root section of the tree that given sections belongs to.
 	I.e. the first section after the root of the entire cell.
 	"""
+	# Get root section of tree
 	orig = secref.root # changes the cas
 	h.pop_section()
+
 	for root in orig.children():
 		# Get subtree of the current root
 		roottree = h.SectionList()
+		
+		# Fill SectionList with subtree of CAS
 		root.push()
 		roottree.subtree()
 		h.pop_section()
+
 		# Check if given section in in subtree
 		if secref.sec in roottree:
 			return root
+	
 	return orig
 
 
@@ -190,3 +198,61 @@ def subtree_secs(rootsec):
 	h.pop_section()
 
 	return [sec for sec in tree_secs if not rootsec.same(sec)]
+
+
+def wholetree_secs(sec):
+	"""
+	Get all Sections in the same cell (i.e. that have a path to the given section)
+	"""
+	tree_secs = h.SectionList()
+
+	sec.push()
+	tree_secs.wholetree()
+	h.pop_section()
+
+	return list(tree_secs)
+
+
+def get_mod_name(hobj):
+	"""
+	Get NEURON mechanism name of given synapse object
+
+	@param	hobj		HocObject: synapse POINT_PROCESS
+	"""
+	match_mod = re.search(r'^[a-zA-Z0-9]+', hobj.hname())
+	modname = match_mod.group()
+	return modname
+
+
+seg_builtin_attrs = ['area', 'cm', 'diam', 'hh', 'na_ion', 'k_ion', 'ca_ion', 'next', 'node_index', 'point_processes', 'ri', 'sec', 'v', 'x']
+
+pp_builtin_attrs = ['allsec', 'baseattr', 'cas', 'get_loc', 'has_loc', 'loc', 'hname', 'hocobjptr', 'next', 'ref', 'same', 'setpointer', 'Section']
+
+
+def print_pp_info(cell_sec=None, mechs_params=None):
+	"""
+	Print information about all POINT_PROCESS mechanisms.
+
+	WARNING: this doesn't seem to work in Python ?!
+	"""
+	if cell_sec:
+		all_cell_secs = wholetree_secs(cell_sec)
+	else:
+		all_cell_secs = [sec for sec in h.allsec()]
+	
+	for sec in all_cell_secs:
+		for seg in sec:
+			for pp in seg.point_processes():
+
+				print '\nInfo for point process {} @ {}'.format(pp, seg)
+				
+				mech_name = get_mod_name(pp)
+				if mechs_params and mech_name in mechs_params:
+					param_names = mechs_params[mech_name]
+				else:
+					param_names = [attr for attr in dir(pp) if (not attr.startswith('__') and (attr not in pp_builtin_attrs))]
+
+				for param_name in param_names:
+					print '{} : {}'.format(param_name, getattr(pp, param_name, 'not found'))
+
+

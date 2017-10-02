@@ -255,34 +255,14 @@ cc = cpd.CellConnector(cpd.PhysioState.NORMAL, rng)
 
 # SETPARAM: synapse locations (name of icell SectionList & index)
 sec_index_x = {
-	'GLUsyn':	[('zipF_zipE_zipD_SThcell0dend01', 0.9375), 
-				('zipG_zipF_zipE_zipD_SThcell0dend02', 1), 
-				('zipG_zipF_zipE_zipD_SThcell0dend02', 1), 
-				('zipG_zipF_zipE_zipD_SThcell0dend01', 1)],
+	'GLUsyn':	[('zipF_zipE_zipD_SThcell0dend01', 0.9375, 0.996135509079), 
+				('zipG_zipF_zipE_zipD_SThcell0dend02', 1, 0.93307003268), 
+				('zipG_zipF_zipE_zipD_SThcell0dend02', 1, 0.840762949423), 
+				('zipG_zipF_zipE_zipD_SThcell0dend01', 1, 0.956082747602)],
 	
-	'GABAsyn':	[('SThcell[0].dend0[2]', 0.75)], # SETPARAM: GABA synapse locations
+	'GABAsyn':	[('SThcell[0].dend0[2]', 0.75, 0.985420572679)],
+				# ('SThcell[0].dend0[2]', 0.75)],
 }
-# sec_index_x = {
-# 	'GLUsyn':	[('dendritic', 5, 0.9375), 
-# 				('dendritic', 10, 1), 
-# 				('dendritic', 10, 1), 
-# 				('dendritic', 4, 1)],
-	
-# 	'GABAsyn':	[('dendritic', 7, 0.75)], # SETPARAM: GABA synapse locations
-# }
-
-burst_syn_locs = {ppmech: [] for ppmech in sec_index_x.keys()}
-
-# Make NrnSeclistCompLocation for each synapse
-for ppmech, loc_data in sec_index_x.iteritems():
-	for i_loc, (sec_name, sec_x) in enumerate(loc_data):
-
-		loc = NrnNamedSecLocation(
-				name			= '{}_loc_{}'.format(ppmech, i_loc),
-				sec_name		= sec_name,
-				comp_x			= sec_x)
-
-		burst_syn_locs[ppmech].append(loc)
 
 
 def get_syn_mechs_params(mech_name, stim_pp, nrn_params, proto_vars):
@@ -300,7 +280,18 @@ def get_syn_mechs_params(mech_name, stim_pp, nrn_params, proto_vars):
 	"""
 
 	# Get compartmental locations for GLU synapses
-	comp_locs = burst_syn_locs[mech_name]
+	# TODO: make locations here and copy weights from evalmodel implementation
+	loc_data = sec_index_x[mech_name]
+	comp_locs = []
+	for i_loc, (sec_name, sec_x, nc_weight) in enumerate(loc_data):
+
+		loc = NrnNamedSecLocation(
+				name			= '{}_loc_{}'.format(mech_name, i_loc),
+				sec_name		= sec_name,
+				comp_x			= sec_x)
+
+		comp_locs.append(loc)
+
 	proto_vars['pp_comp_locs'].extend(comp_locs)
 
 	# Make synapse at locations
@@ -439,14 +430,20 @@ def init_burstsyn(sim, icell):
 	Initialize simulator to run synaptic burst protocol
 	"""
 	h = sim.neuron.h
+
 	h.celsius = 35
 	h.v_init = -60
 	h.set_aCSF(4) # gillies_model.set_aCSF(4) # if called before model.instantiate()
+	
+	logger.debug("Set aCSF concentrations.")
 
 	# lower sKCa conductance to promote bursting
 	for sec in h.allsec():# icell.all:
 		for seg in sec:
 			seg.gk_sKCa = 0.6 * seg.gk_sKCa
+
+	# BluePyOpt never calls h.init()/stdinit()/finitialize()
+	h.init()
 
 
 # Make elements of the protocol
