@@ -215,6 +215,7 @@ class StnFullModel(StnBaseModel):
         """
 
         super(StnFullModel, self).__init__(name, mechs, params, gid)
+        self._persistent_refs = None
 
 
     def instantiate(self, sim=None):
@@ -228,10 +229,15 @@ class StnFullModel(StnBaseModel):
         
         # Make sure original STN cell is built
         h = sim.neuron.h
-        if not hasattr(h, 'SThcell'):
+        stn_exists = hasattr(h, 'SThcell')
+        if (not stn_exists) or (self._persistent_refs is None):
             
-            # Create Gillies & Willshaw STN model
+            # Create Gillies & Willshaw STN model or get refs to existing
             soma, dendL, dendR = gillies_model.get_stn_refs()
+
+            # If existed: reset variables
+            if stn_exists:
+                h.set_gbar_stn() # see createcell.hoc
 
             self.icell._soma_refs = [soma]
             self.icell._dend_refs = dendL + dendR
@@ -280,6 +286,7 @@ class StnReducedModel(StnBaseModel):
         """
 
         super(StnReducedModel, self).__init__(name, mechs, params, gid)
+        self._persistent_refs = None
 
         # Reduction variables
         self._fold_method = fold_method

@@ -13,7 +13,6 @@ h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 from common.treeutils import ExtSecRef, getsecref
 from reducemodel import redutils
@@ -176,6 +175,18 @@ def set_aCSF(req):
 	Set global initial ion concentrations (artificial CSF properties)
 
 	This is a Python version of the Hoc function set_aCSF()
+
+	@param req		int: identifier
+
+					0 = NEURON defaults
+
+					3 = Beurrier et al (1999)
+
+					4 = Bevan & Wilson (1999)
+
+					5 = equilibrium concentrations at 35 degrees celsius
+
+	NOTE: only cai is actually changed during the simulation
 	"""
 
 	if req == 3: # Beurrier et al (1999)
@@ -191,7 +202,7 @@ def set_aCSF(req):
 		h('cli0_cl_ion = 4') # self-declared Hoc var
 		h('clo0_cl_ion = 135') # self-declared Hoc var
 
-	if req == 4: # Bevan & Wilson (1999)
+	elif req == 4: # Bevan & Wilson (1999)
 		h.nai0_na_ion = 15
 		h.nao0_na_ion = 128.5
 
@@ -204,7 +215,7 @@ def set_aCSF(req):
 		h('cli0_cl_ion = 4')
 		h('clo0_cl_ion = 132.5')
 
-	if req == 0: # NEURON's defaults
+	elif req == 0: # NEURON's defaults
 		h.nai0_na_ion = 10
 		h.nao0_na_ion = 140
 
@@ -216,6 +227,20 @@ def set_aCSF(req):
 
 		h('cli0_cl_ion = 0')
 		h('clo0_cl_ion = 0')
+
+	elif req == 5: # equilibrium concentrations (average) at 35 degree celsius
+
+		h.nai0_na_ion = 15
+		h.nao0_na_ion = 128.5
+
+		h.ki0_k_ion = 140
+		h.ko0_k_ion = 2.5
+
+		h.cai0_ca_ion = 0.04534908688919702 # min:0.019593383952621085 / max: 0.072908152365581
+		h.cao0_ca_ion = 2.0
+
+		h('cli0_cl_ion = 4')
+		h('clo0_cl_ion = 132.5')
 
 
 def applyApamin(soma, dends):

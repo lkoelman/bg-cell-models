@@ -1,0 +1,130 @@
+"""
+Creation of EFEL features for STN model optimization.
+
+@author	Lucas Koelman
+
+@date	3/10/2017
+
+"""
+
+import bluepyopt.ephys as ephys
+
+
+def make_features(proto_wrapper):
+	"""
+	Make eFEL features based on a protocol definition and its characterizing 
+	features.
+
+	@return		a dictionary {feature_names: feature_objects}
+	"""
+	protocol = proto_wrapper.ephys_protocol
+
+	candidate_feats = {}
+	default_trace = {'': protocol.recordings[0].name}
+
+	for feat_name, feat_params in proto_wrapper.characterizing_feats.iteritems():
+
+		feature = ephys.efeatures.eFELFeature(
+						name				='{}.{}'.format(protocol.name, feat_name),
+						efel_feature_name	= feat_name,
+						recording_names		= feat_params.get('traces', default_trace),
+						stim_start			= proto_wrapper.response_interval[0],
+						stim_end			= proto_wrapper.response_interval[1],
+						double_settings		= feat_params.get('double', None),
+						int_settings		= feat_params.get('int', None),
+						)
+
+		candidate_feats[feat_name] = feature
+
+	return candidate_feats
+
+
+def make_opt_features(proto_wrappers):
+	"""
+	Make features that associate each protocol with some relevant metrics.
+
+	@return		dict(StimProtocol : dict(feature_name : tuple(feature, weight)))
+
+					I.e. a dictionary that maps ephys.protocol objects to another
+					dictionary, that maps feature names to a feature object and
+					its weight for the optimization.
+
+	@note	available features:
+				- import efel; efel.getFeatureNames()
+				- see http://efel.readthedocs.io/en/latest/eFeatures.html
+				- see pdf linked there (ctrl+f: feature name with underscores as spaces)
+				- each feature has specific (required_features, required_trace_data, required_parameters)
+
+	"""
+
+	proto_feat_dict = {}
+
+	# For each protocol used in optimization: make the Feature objects
+	for proto in proto_wrappers:
+
+		proto_feat_dict[proto.IMPL_PROTO] = {} # feature_name -> (feature, weight)
+
+		# Make eFEL features
+		candidate_feats = make_features(proto)
+
+		# Add them to dict
+		for feat_name in candidate_feats.keys():
+			feat_weight = proto.characterizing_feats[feat_name]['weight']
+			
+			# Add to feature dict if nonzero weight
+			if feat_weight > 0.0:
+				feat_obj = candidate_feats[feat_name]
+				proto_feat_dict[proto.IMPL_PROTO][feat_name] = feat_obj, feat_weight
+
+	return proto_feat_dict
+
+
+def calc_feature_targets(protos_feats, protos_responses):
+	"""
+	Calculate target values for features used in optimization (using full model).
+
+
+	@param		protocols			BpopProtocolFactory objects
+
+
+	@param		saved_responses		file path to pickled responses dictionary
+
+	@post		for each EFelFeature in given dictionary, the feature.exp_mean
+				and feature.exp_std will be set
+	"""
+
+	# Run each protocol and get its responses
+	for stim_proto, feats in protos_feats.iteritems():
+
+		# Get response traces
+		responses = protos_responses[stim_proto.name]
+
+		# Use response to calculate target value for each features
+		for feat_name, feat_data in feats.iteritems():
+
+			# Calculate feature value from full model response
+			efel_feature, weight = feat_data
+			target_value = efel_feature.calculate_feature(responses)
+
+			# Now we can set the target value
+			efel_feature.exp_mean = target_value
+			efel_feature.exp_std = 0.0
+
+
+def all_features_weights(feature_dicts):
+	"""
+	Concatenate all EFelFeature objects and all their corresponding weights
+	for the objective calculation into two lists.
+
+	@param	feature_dicts		an iterable of dictionaries with feature names as
+								keys and tuples (EFelFeature, weight) as values.
+	"""
+	all_features = []
+	all_weights = []
+	for featdict in feature_dicts:
+		# Add features and weights for this protocol
+		feats, weights = zip(*featdict.values()) # values ist list of (feature, weight)
+		all_features.extend(feats)
+		all_weights.extend(weights)
+
+	return all_features, all_weights
