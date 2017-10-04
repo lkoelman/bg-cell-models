@@ -27,6 +27,7 @@ def make_features(proto_wrapper):
 
 	for feat_name, feat_params in proto_wrapper.characterizing_feats.iteritems():
 
+		# TODO: check feature name: make with library that provides this feature
 		feature = ephys.efeatures.eFELFeature(
 						name				='{}.{}'.format(protocol.name, feat_name),
 						efel_feature_name	= feat_name,
