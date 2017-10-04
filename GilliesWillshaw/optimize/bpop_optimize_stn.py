@@ -38,10 +38,10 @@ MIN_SYN_BURST = StimProtocol.MIN_SYN_BURST
 
 # Adjust verbosity of loggers
 import logging
-silent_loggers = ['marasco']
+silent_loggers = ['marasco', 'redops', 'folding', 'bluepyopt.ephys.parameters']
 verbose_loggers = []
 for logname in silent_loggers:
-	logger = logging.getLogger('marasco')
+	logger = logging.getLogger(logname)
 	if logger: logger.setLevel(logging.WARNING)
 
 
@@ -233,7 +233,7 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
 	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
 	# protocol.run() cleans up after running: therefore instantiate everything ourselves
-	cellmodel.freeze({}) # TODO: do you need to freeze model params to some value here?
+	cellmodel.freeze({})
 	cellmodel.instantiate(sim=nrnsim)
 	proto.instantiate(sim=nrnsim, icell=cellmodel.icell)
 
@@ -242,7 +242,7 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
 		globals().update(locals())
 
 
-def optimize_active():
+def optimize_active(export_locals=True):
 	"""
 	Optimization routine for reduced cell model.
 	"""
@@ -273,11 +273,10 @@ def optimize_active():
 						frozen		= True)
 
 	# FROZEN PARAMETERS are passive parameters fit previously in passive model
-	dend_passive_params = [dend_gl_param, dend_cm_param]
+	frozen_params = [] # SETPARAM: frozen params from previous optimizations
 
 	# FREE PARAMETERS are active conductances with large impact on response
-	dend_active_params = StnParameters.dend_gbar_params # Free parameters
-	dend_all_params = dend_passive_params + dend_active_params
+	free_params = StnParameters.dend_active_params # SETPARAM: parameters that are optimized (must be not frozen)
 
 	# NOTE: we don't need to define NrnModMechanism for these parameters, since they are not inserted by BluePyOpt but by our custom model setup code
 
@@ -295,16 +294,23 @@ def optimize_active():
 	# Collect al frozen mechanisms and parameters required for protocols to work
 	proto_mechs, proto_params = BpopProtocolWrapper.all_mechs_params(red_protos.values())
 
+	# Distinguish between sets of parameters (used, frozen, free/optimized)
+	frozen_params += proto_params
+	used_params = frozen_params + free_params
+	for param in frozen_params: assert param.frozen
+	for param in free_params: assert (not param.frozen)
+
 	# Create reduced model
 	red_model = StnReducedModel(
 					name		= 'StnFolded',
 					fold_method	= 'marasco',
 					num_passes	= 7,
 					mechs		= proto_mechs,
-					params		= proto_params + dend_all_params)
+					params		= used_params)
+
 
 	############################################################################
-	# Features & Objectives
+	# Features
 
 	# Get protocol responses for full model
 	if PROTO_RESPONSES_FILE is not None:
@@ -313,9 +319,9 @@ def optimize_active():
 		full_protos = [BpopProtocolWrapper.make(stim_proto, stn_model_type) for stim_proto in opt_stim_protocols]
 		full_mechs, full_params = BpopProtocolWrapper.all_mechs_params(full_protos)
 		full_model = StnFullModel(
-					name		= 'StnGillies',
-					mechs		= full_mechs,
-					params		= full_params)
+						name		= 'StnGillies',
+						mechs		= full_mechs,
+						params		= full_params)
 		full_responses = run_proto_responses(full_model, full_protos)
 
 	# Make EFEL feature objects
@@ -324,43 +330,85 @@ def optimize_active():
 	# Calculate target values from full model responses
 	StnFeatures.calc_feature_targets(stimprotos_feats, full_responses)
 
+	############################################################################
+	# TEST
+
+	# default_params = {k : v*1.1 for k,v in StnParameters.default_params.items() if k in [p.name for p in used_params]}
+
+	# stim_proto = MIN_SYN_BURST
+	# e_proto = red_protos[stim_proto]
+
+	# # Compute protocol responses
+	# responses = e_proto.ephys_protocol.run(
+	# 				cell_model		= red_model, 
+	# 				param_values	= default_params,
+	# 				sim				= nrnsim,
+	# 				isolate			= False) # allows us to query cell with h.allsec()
+
+	# # Plot responses
+	# from matplotlib import pyplot as plt
+	# for resp_name, traces in responses.iteritems():
+	# 	plt.figure()
+	# 	plt.plot(traces['time'], traces['voltage'])
+	# 	plt.suptitle(resp_name)
+	# plt.show(block=False)
+
+	# # Calculate response scores
+	# featdict = stimprotos_feats[stim_proto]
+	# feats, weights = zip(*featdict.values())
+	# for feat in feats:
+	# 	score = feat.calculate_score(responses)
+	# 	logger.debug('Score = <{}> for feature {}.{}'.format(score, stim_proto.name, feat.name))
+
+	# import ipdb; ipdb.set_trace()
+
+	############################################################################
+	# Objective / Fitness calculation
+
 	# Collect characteristic features for all protocols used in evaluation
 	all_opt_features, all_opt_weights = StnFeatures.all_features_weights(stimprotos_feats.values())
 
 	# Make final objective function based on selected set of features
 	total_objective = ephys.objectives.WeightedSumObjective(
-				name = 'optimize_all',
-				features = all_opt_features,
-				weights = all_opt_weights)
+								name	= 'optimize_all',
+								features= all_opt_features,
+								weights	= all_opt_weights)
 
 	# Calculator maps model responses to scores
-	score_calc = ephys.objectivescalculators.ObjectivesCalculator([total_objective])
+	fitcalc = ephys.objectivescalculators.ObjectivesCalculator([total_objective])
+
+	# ALTERNATIVE: no weights
+	# all_objectives = [ephys.objectives.SingletonObjective(f.name, f) for f in all_opt_features]
+	# fitcalc = ephys.objectivescalculators.ObjectivesCalculator(all_objectives)
 
 	############################################################################
 	# Evaluators & Optimization
 
 	# Make evaluator to evaluate model using objective calculator
 	opt_ephys_protos = {k.name: v.ephys_protocol for k,v in red_protos.iteritems()}
-	opt_params_names = [param.name for param in dend_active_params]
+	opt_params_names = [param.name for param in free_params]
 	
 	# TODO: check that: synapse parameters must be on model but unactive during clamp protocols
 	cell_evaluator = ephys.evaluators.CellEvaluator(
 						cell_model			= red_model,
 						param_names			= opt_params_names, # fitted parameters
 						fitness_protocols	= opt_ephys_protos,
-						fitness_calculator	= score_calc,
+						fitness_calculator	= fitcalc,
 						sim					= nrnsim,
-						isolate_protocols	= True)
+						isolate_protocols	= True) # SETPARAM: enable multiprocessing
 
 	# Make optimization using the model evaluator
 	optimisation = bpop.optimisations.DEAPOptimisation(
 						evaluator		= cell_evaluator,
 						offspring_size	= 10)
 
-
-
+	# Run optimisation for fixed number of generations
 	final_pop, hall_of_fame, logs, hist = optimisation.run(max_ngen=5)
 
+	if export_locals:
+		globals().update(locals())
+
+	return final_pop, hall_of_fame, logs, hist
 
 
 if __name__ == '__main__':

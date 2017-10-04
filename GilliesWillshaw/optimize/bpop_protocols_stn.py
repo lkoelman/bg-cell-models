@@ -28,7 +28,7 @@ StnModel = cpd.StnModel
 from gillies_model import set_aCSF
 
 import logging
-logger = logging.getLogger(__name__) # create logger for this module
+logger = logging.getLogger('bpop_ext')
 
 
 ################################################################################
@@ -53,6 +53,9 @@ class BpopProtocolWrapper(object):
 		
 		response_interval:	expected time interval of response
 	"""
+
+	# SETPARAM: spike threshold for cell or specific protocol
+	spike_threshold = -10.0
 	
 	@classmethod
 	def make(cls, stim_proto, model_type):

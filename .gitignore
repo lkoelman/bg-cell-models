@@ -6,6 +6,8 @@
 *.csv
 *.pptx
 *.ppt
+# *.ipynb
+.ipynb_checkpoints/
 
 # Mac OS
 *.DS_Store

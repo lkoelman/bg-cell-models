@@ -29,19 +29,23 @@ dendritic_region = ephys.locations.NrnSeclistLocation('somatic', seclist_name='d
 # MODEL PARAMETERS
 ################################################################################
 
+# NOTE: use parameter.value attribute for default value
+
 # SOMATIC PARAMETERS
 
 soma_gl_param = ephys.parameters.NrnSectionParameter(                                    
 						name='gleak_soma',		# assigned name
 						param_name=gleak_name,	# NEURON name
 						locations=[somatic_region],
-						bounds=[7.84112e-7, 7.84112e-3],	# default: 7.84112e-05
+						value = 7.84112e-05, # default value
+						bounds=[7.84112e-7, 7.84112e-3],
 						frozen=False)
 
 soma_cm_param = ephys.parameters.NrnSectionParameter(
 						name='cm_soma',
 						param_name='cm',
-						bounds=[0.05, 10.0],	# default: 1.0
+						value = 1.0,
+						bounds=[0.05, 10.0],
 						locations=[somatic_region],
 						frozen=False)
 
@@ -56,13 +60,15 @@ soma_cm_param = ephys.parameters.NrnSectionParameter(
 dend_gl_factor = NrnScaleRangeParameter(
 					name='gleak_dend_scale',
 					param_name=gleak_name,
+					value = 1.0,
 					bounds=[0.05, 10.0],
 					locations=[dendritic_region],
 					frozen=False)
 
 dend_cm_factor = NrnScaleRangeParameter(
 					name='cm_dend_scale',
-					param_name=gleak_name,
+					param_name='cm',
+					value = 1.0,
 					bounds=[0.05, 10.0],
 					locations=[dendritic_region],
 					frozen=False)
@@ -70,7 +76,8 @@ dend_cm_factor = NrnScaleRangeParameter(
 dend_ra_param = ephys.parameters.NrnSectionParameter(
 					name='Ra_dend',
 					param_name='Ra',
-					bounds=[50, 500.0],			# default: 150.224
+					value = 150.224, # default in Gillies model
+					bounds=[50, 500.0],
 					locations=[dendritic_region],
 					frozen=False)
 
@@ -78,13 +85,16 @@ dend_ra_param = ephys.parameters.NrnSectionParameter(
 scaled_gbar = ['gna_NaL', 'gk_Ih', 'gk_sKCa', 'gcaT_CaT', 'gcaL_HVA', 'gcaN_HVA']
 
 # Make parameters to scale channel conductances
+MIN_SCALE_GBAR = 0.1
+MAX_SCALE_GBAR = 10.0
 dend_gbar_params = []
 for gbar_name in scaled_gbar:
 
 	gbar_scale_param = NrnScaleRangeParameter(
 						name		= gbar_name + '_dend_scale',
 						param_name	= gbar_name,
-						bounds		= [0.05, 10.0],
+						value		= 1.0,
+						bounds		= [MIN_SCALE_GBAR, MAX_SCALE_GBAR],
 						locations	= [dendritic_region],
 						frozen		= False)
 
@@ -92,21 +102,16 @@ for gbar_name in scaled_gbar:
 
 
 # Groups of parameters to be used in optimizations
-passive_params = [soma_gl_param, soma_cm_param, dend_gl_factor, dend_cm_factor, 
-				dend_ra_param]
+soma_passive_params = [soma_gl_param, soma_cm_param]
+dend_passive_params = [dend_gl_factor, dend_cm_factor, dend_ra_param]
 
-active_params = dend_gbar_params
+soma_active_params = []
+dend_active_params = dend_gbar_params
 
-all_params = passive_params + active_params
+all_passive_params = soma_passive_params + dend_passive_params
+all_active_params = soma_active_params + dend_active_params
+all_params = all_passive_params + all_active_params
 
 
 # Default values for parameters
-default_params = {
-	'gleak_soma':		7.84112e-05,
-	'cm_soma':			1.0,
-	'Ra_dend':			150.224,
-	'cm_dend_scale':	1.0,
-	'gleak_dend_scale':	1.0,
-}
-for param in dend_gbar_params:
-	default_params[param.name] = 1.0
+default_params = {p.name: p.value for p in all_params}

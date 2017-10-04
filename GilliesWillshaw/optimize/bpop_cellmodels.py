@@ -35,7 +35,7 @@ from reducemodel import redutils, reduce_cell
 
 
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('bpop_ext')
 
 
 class Cell(object):

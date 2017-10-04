@@ -7,22 +7,20 @@ Manual reduction of Gillies & Willshaw (2006) STN neuron model
 """
 
 # Math modules
-import math
 import numpy as np
 
 # Enable logging
 import logging
 logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logger = logging.getLogger(__name__) # create logger for this module
+logger = logging.getLogger('redops') # create logger for this module
 
 # Load NEURON
 import neuron
 h = neuron.h
 
 # Our own modules
-import redutils as redtools
 from redutils import ExtSecRef, getsecref # for convenience
-from gillies_model import gillies_gdict, gillies_mechs, gillies_glist
+from gillies_model import gillies_gdict, gillies_glist
 
 mechs_chans = gillies_gdict
 glist = gillies_glist

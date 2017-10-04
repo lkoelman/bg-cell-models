@@ -6,9 +6,12 @@ Creation of EFEL features for STN model optimization.
 @date	3/10/2017
 
 """
+import math
 
 import bluepyopt.ephys as ephys
 
+import logging
+logger = logging.getLogger('bpop_ext')
 
 def make_features(proto_wrapper):
 	"""
@@ -32,6 +35,7 @@ def make_features(proto_wrapper):
 						stim_end			= proto_wrapper.response_interval[1],
 						double_settings		= feat_params.get('double', None),
 						int_settings		= feat_params.get('int', None),
+						threshold			= proto_wrapper.spike_threshold,
 						)
 
 		candidate_feats[feat_name] = feature
@@ -79,7 +83,7 @@ def make_opt_features(proto_wrappers):
 	return proto_feat_dict
 
 
-def calc_feature_targets(protos_feats, protos_responses):
+def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True):
 	"""
 	Calculate target values for features used in optimization (using full model).
 
@@ -94,21 +98,37 @@ def calc_feature_targets(protos_feats, protos_responses):
 	"""
 
 	# Run each protocol and get its responses
-	for stim_proto, feats in protos_feats.iteritems():
+	for stim_proto, feat_dict in protos_feats.iteritems():
 
 		# Get response traces
 		responses = protos_responses[stim_proto.name]
 
+		# Mark features that were not calculated correctly
+		problem_feat_names = []
+
 		# Use response to calculate target value for each features
-		for feat_name, feat_data in feats.iteritems():
+		for feat_name, feat_data in feat_dict.iteritems():
 
 			# Calculate feature value from full model response
 			efel_feature, weight = feat_data
-			target_value = efel_feature.calculate_feature(responses)
+			target_value = efel_feature.calculate_feature(responses, raise_warnings=True)
+
+			# Check if value is sane
+			if (target_value is None) or math.isinf(target_value) or math.isnan(target_value):
+				logger.warning('Feature {} value {} not sane for protocol {}'.format(
+							feat_name, target_value, stim_proto.name))
+				problem_feat_names.append(feat_name)
 
 			# Now we can set the target value
+			# NOTE: distance is sum_i^N(feat[i] - exp_mean) / N / exp_std
 			efel_feature.exp_mean = target_value
-			efel_feature.exp_std = 0.0
+			efel_feature.exp_std = 1.0
+
+		# Remove problematic features
+		if remove_problematic:
+			for feat_name in problem_feat_names:
+				feat_dict.pop(feat_name)
+				logger.debug('Removed feature {}:{}'.format(stim_proto.name, feat_name))
 
 
 def all_features_weights(feature_dicts):

@@ -12,7 +12,7 @@ Extensions to BluePyOpt optimization-related classes
 import bluepyopt.ephys as ephys
 
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('bpop_ext')
 
 
 class NrnScaleRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.DictMixin):
