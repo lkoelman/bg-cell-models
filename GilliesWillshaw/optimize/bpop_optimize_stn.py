@@ -242,7 +242,7 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
 		globals().update(locals())
 
 
-def optimize_active(export_locals=True):
+def optimize_active(parallel=False, export_locals=True):
 	"""
 	Optimization routine for reduced cell model.
 	"""
@@ -400,7 +400,8 @@ def optimize_active(export_locals=True):
 	# Make optimization using the model evaluator
 	optimisation = bpop.optimisations.DEAPOptimisation(
 						evaluator		= cell_evaluator,
-						offspring_size	= 10)
+						offspring_size	= 10,
+						map_function = get_map_function(parallel))
 
 	# Run optimisation for fixed number of generations
 	final_pop, hall_of_fame, logs, hist = optimisation.run(max_ngen=5)
@@ -409,6 +410,47 @@ def optimize_active(export_locals=True):
 		globals().update(locals())
 
 	return final_pop, hall_of_fame, logs, hist
+
+
+def get_map_function(parallel):
+	"""
+	Return a map() function for evaluating individuals in the population.
+
+	@param	parallel	bool: whether you want parallel execution of individuals.
+
+	@see	taken from example in https://github.com/BlueBrain/BluePyOpt/blob/master/examples/l5pc/opt_l5pc.py
+
+	NOTES
+
+	To use ipyparallel you must start a controller and a number of 
+	engine instances before starting ipython (see 
+	http://ipyparallel.readthedocs.io/en/latest/intro.html), e.g:
+
+	  	`ipcluster start -n 6`
+	
+	Make sure that Hoc can find the .hoc model files by either executing above
+	command in the directory containing those files, or adding the relevant directories
+	to the environment variable `$HOC_LIBRARY_PATH` (this could also be done in 
+	your protocol or cellmodel script using os.environ["HOC_LIBRARY_PATH"])
+	"""
+	if not parallel:
+		return None # DEAPOptimisation will use its default map function
+
+	from datetime import datetime
+	from ipyparallel import Client
+	rc = Client() # if profile specified: searches JSON file in ~/.ipython/profile_name
+
+	logger.debug('Using ipyparallel with %d engines', len(rc))
+
+	lview = rc.load_balanced_view()
+
+	def mapper(func, it):
+		start_time = datetime.now()
+		ret = lview.map_sync(func, it)
+		logger.debug('Generation took %s', datetime.now() - start_time)
+		return ret
+
+	return mapper
 
 
 if __name__ == '__main__':
