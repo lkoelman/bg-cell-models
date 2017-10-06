@@ -234,9 +234,9 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 		# 'AHP_depth': {			# (array) relative voltage values at the AHP
 		# 	'weight':	1.0,
 		# },
-		# 'min_AHP_values': {		# (array) Voltage values at the AHP
-		# 	'weight':	1.0,
-		# },
+		'min_AHP_values': {		# (array) Voltage values at the AHP
+			'weight':	2.0,	# this feature recognizes that there is an elevated plateau
+		},
 	}
 
 ################################################################################
@@ -352,9 +352,9 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 		# 'AHP_depth': {			# (array) relative voltage values at the AHP
 		# 	'weight':	1.0,
 		# },
-		# 'min_AHP_values': {		# (array) Voltage values at the AHP
-		# 	'weight':	1.0,
-		# },
+		'min_AHP_values': {		# (array) Voltage values at the AHP
+			'weight':	2.0,	# this feature recognizes that there is an elevated plateau
+		},
 	}
 
 ################################################################################
@@ -641,9 +641,9 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		# 'AHP_depth': {			# (array) relative voltage values at the AHP
 		# 	'weight':	1.0,
 		# },
-		# 'min_AHP_values': {		# (array) Voltage values at the AHP
-		# 	'weight':	1.0,
-		# },
+		'min_AHP_values': {		# (array) Voltage values at the AHP
+			'weight':	2.0,	# this feature recognizes that there is an elevated plateau
+		},
 	}
 
 # ==============================================================================

@@ -12,8 +12,6 @@ NOTES
 
 """
 
-import pickle
-
 # BluePyOpt modules
 import bluepyopt as bpop
 import bluepyopt.ephys as ephys
@@ -24,6 +22,7 @@ import bpop_protocols_stn as StnProtocols
 from bpop_protocols_stn import BpopProtocolWrapper
 import bpop_features_stn as StnFeatures
 import bpop_parameters_stn as StnParameters
+from bpop_analysis_stn import run_proto_responses, plot_proto_responses, save_proto_responses, load_proto_responses
 
 # Gillies & Willshaw model mechanisms
 import gillies_model
@@ -53,73 +52,6 @@ PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/fullmodel/STN_Gillies200
 ################################################################################
 # OPTIMIZATION EXPERIMENTS
 ################################################################################
-
-
-def plot_proto_responses(proto_responses):
-	"""
-	Plot responses stored in a dictionary.
-	"""
-	from matplotlib import pyplot as plt
-	for proto_name, responses in proto_responses.iteritems():
-		
-		fig, axes = plt.subplots(len(responses))
-		try:
-			iter(axes)
-		except TypeError:
-			axes = [axes]
-
-		for index, (resp_name, response) in enumerate(sorted(responses.items())):
-			axes[index].plot(response['time'], response['voltage'], label=resp_name)
-			axes[index].set_title(resp_name)
-		
-		fig.tight_layout()
-	
-	plt.show(block=False)
-
-
-def save_proto_responses(responses, filepath):
-	"""
-	Save protocol responses to file.
-	"""
-
-	# Save to file
-	with open(filepath, 'w') as recfile:
-		pickle.dump(responses, recfile)
-
-	print("Saved responses to file {}".format(filepath))
-
-
-def load_proto_responses(filepath):
-	"""
-	Load protocol responses from pickle file.
-
-	@return		dictionary {protocol: responses}
-	"""
-	with open(filepath, 'r') as recfile:
-		responses = pickle.load(recfile)
-		return responses
-
-
-def run_proto_responses(cell_model, ephys_protocols):
-	"""
-	Run protocols using given cell model and return responses,
-	indexed by protocol.name.
-	"""
-	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
-
-	# Run each protocol and get its responses
-	all_responses = {}
-	for e_proto in ephys_protocols:
-
-		response = e_proto.run(
-						cell_model		= cell_model, 
-						param_values	= {},
-						sim				= nrnsim,
-						isolate			= False)
-
-		all_responses[e_proto.name] = response
-
-	return all_responses
 
 
 def test_protocol(stim_proto, model_type, export_locals=True):
@@ -242,7 +174,7 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
 		globals().update(locals())
 
 
-def optimize_active(parallel=False, export_locals=True):
+def make_optimisation(red_model=None, parallel=False, export_locals=False):
 	"""
 	Optimization routine for reduced cell model.
 	"""
@@ -273,19 +205,19 @@ def optimize_active(parallel=False, export_locals=True):
 						frozen		= True)
 
 	# FROZEN PARAMETERS are passive parameters fit previously in passive model
-	frozen_params = [] # SETPARAM: frozen params from previous optimizations
+	frozen_params = [] # SETPARAM: frozen params from previous optimisations
 
 	# FREE PARAMETERS are active conductances with large impact on response
-	free_params = StnParameters.dend_active_params # SETPARAM: parameters that are optimized (must be not frozen)
+	free_params = StnParameters.dend_active_params # SETPARAM: parameters that are optimised (must be not frozen)
 
 	# NOTE: we don't need to define NrnModMechanism for these parameters, since they are not inserted by BluePyOpt but by our custom model setup code
 
 	############################################################################
-	# Protocols for optimization
+	# Protocols for optimisation
 
-	stn_model_type = StnModel.Gillies_FoldMarasco # SETPARAM: model type to optimize
+	stn_model_type = StnModel.Gillies_FoldMarasco # SETPARAM: model type to optimise
 
-	# Protocols to use for optimization
+	# Protocols to use for optimisation
 	opt_stim_protocols = [CLAMP_REBOUND, MIN_SYN_BURST]
 
 	# Make all protocol data
@@ -294,19 +226,23 @@ def optimize_active(parallel=False, export_locals=True):
 	# Collect al frozen mechanisms and parameters required for protocols to work
 	proto_mechs, proto_params = BpopProtocolWrapper.all_mechs_params(red_protos.values())
 
-	# Distinguish between sets of parameters (used, frozen, free/optimized)
+	# Distinguish between sets of parameters (used, frozen, free/optimised)
 	frozen_params += proto_params
 	used_params = frozen_params + free_params
 	for param in frozen_params: assert param.frozen
 	for param in free_params: assert (not param.frozen)
 
 	# Create reduced model
-	red_model = StnReducedModel(
-					name		= 'StnFolded',
-					fold_method	= 'marasco',
-					num_passes	= 7,
-					mechs		= proto_mechs,
-					params		= used_params)
+	if red_model is None:
+		red_model = StnReducedModel(
+						name		= 'StnFolded',
+						fold_method	= 'marasco',
+						num_passes	= 7,
+						mechs		= proto_mechs,
+						params		= used_params)
+	else:
+		red_model.set_mechs(proto_mechs)
+		red_model.set_params(used_params)
 
 
 	############################################################################
@@ -370,7 +306,7 @@ def optimize_active(parallel=False, export_locals=True):
 
 	# Make final objective function based on selected set of features
 	total_objective = ephys.objectives.WeightedSumObjective(
-								name	= 'optimize_all',
+								name	= 'optimise_all',
 								features= all_opt_features,
 								weights	= all_opt_weights)
 
@@ -397,17 +333,43 @@ def optimize_active(parallel=False, export_locals=True):
 						sim					= nrnsim,
 						isolate_protocols	= True) # SETPARAM: enable multiprocessing
 
-	# Make optimization using the model evaluator
+	# Make optimisation using the model evaluator
 	optimisation = bpop.optimisations.DEAPOptimisation(
 						evaluator		= cell_evaluator,
 						offspring_size	= 10,
 						map_function = get_map_function(parallel))
 
-	# Run optimisation for fixed number of generations
-	final_pop, hall_of_fame, logs, hist = optimisation.run(max_ngen=5)
+	# Save optimisation data
+	opt_data = {
+		'stim_protocols_features': stimprotos_feats,
+		'ephys_protocols':		opt_ephys_protos,
+		'frozen_params':		frozen_params,
+		'free_params':			free_params,
+		'objective':			total_objective,
+		'fitness_calculator':			fitcalc,
+		'evaluator':			cell_evaluator,
+		'optimisation':			optimisation,
+	}
+	# opt_data = {k:v for k,v in locals().iteritems() if k in save_vars}
 
 	if export_locals:
 		globals().update(locals())
+
+	return optimisation, opt_data
+
+
+def optimise_active(**kwargs):
+	"""
+	Make optimisation and run it.
+
+	@see	optimise_active
+	"""
+	# Make deapext.optimisation object
+	optimisation, opt_data = make_optimisation(**kwargs)
+
+	# Run optimisation for fixed number of generations
+	num_generations = kwargs.get('max_ngen', 5)
+	final_pop, hall_of_fame, logs, hist = optimisation.run(max_ngen=num_generations)
 
 	return final_pop, hall_of_fame, logs, hist
 
@@ -426,7 +388,7 @@ def get_map_function(parallel):
 	engine instances before starting ipython (see 
 	http://ipyparallel.readthedocs.io/en/latest/intro.html), e.g:
 
-	  	`ipcluster start -n 6`
+		`ipcluster start -n 6`
 	
 	Make sure that Hoc can find the .hoc model files by either executing above
 	command in the directory containing those files, or adding the relevant directories
@@ -438,11 +400,18 @@ def get_map_function(parallel):
 
 	from datetime import datetime
 	from ipyparallel import Client
+	import socket
+	
+	# Create a connection to the server
 	rc = Client() # if profile specified: searches JSON file in ~/.ipython/profile_name
-
 	logger.debug('Using ipyparallel with %d engines', len(rc))
 
+	# Create a view of all the workers (ipengines)
 	lview = rc.load_balanced_view()
+	host_names = lview.apply_sync(socket.gethostname) # run gethostname on all ipengines
+	if isinstance(host_names, str):
+		host_names = [host_names]
+	print('Ready for parallel execution on folowing hosts: {}'.format(', '.join(host_names)))
 
 	def mapper(func, it):
 		start_time = datetime.now()
@@ -454,7 +423,7 @@ def get_map_function(parallel):
 
 
 if __name__ == '__main__':
-	# Calculate features for each optimization protocol
+	# Calculate features for each optimisation protocol
 	# proto_feats = get_features_targets()
 
 	# Save full model responses

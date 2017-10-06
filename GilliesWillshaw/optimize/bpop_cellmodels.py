@@ -105,6 +105,22 @@ class StnBaseModel(ephys.models.Model):
 
         self.icell = None
 
+    def set_params(self, params):
+        """
+        Convenience function to be able to set parameters after making the model
+        """
+        self.params = collections.OrderedDict()
+        if params is not None:
+            for param in params:
+                self.params[param.name] = param
+
+
+    def set_mechs(self, mechs):
+        """
+        Convenience function to be able to set mechanisms after making the model
+        """
+        self.mechanisms = mechs 
+
 
     def params_by_names(self, param_names):
         """
