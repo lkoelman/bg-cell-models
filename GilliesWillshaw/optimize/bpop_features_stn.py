@@ -9,6 +9,8 @@ Creation of EFEL features for STN model optimization.
 import math
 
 import bluepyopt.ephys as ephys
+import bpop_efeatures as espk
+import efel
 
 import logging
 logger = logging.getLogger('bpop_ext')
@@ -25,10 +27,14 @@ def make_features(proto_wrapper):
 	candidate_feats = {}
 	default_trace = {'': protocol.recordings[0].name}
 
+	eFEL_available_features = efel.getFeatureNames()
+	custom_spiketrain_features = espk.getFeatureNames()
+
 	for feat_name, feat_params in proto_wrapper.characterizing_feats.iteritems():
 
 		# TODO: check feature name: make with library that provides this feature
-		feature = ephys.efeatures.eFELFeature(
+		if feat_name in eFEL_available_features:
+			feature = ephys.efeatures.eFELFeature(
 						name				='{}.{}'.format(protocol.name, feat_name),
 						efel_feature_name	= feat_name,
 						recording_names		= feat_params.get('traces', default_trace),
@@ -38,6 +44,24 @@ def make_features(proto_wrapper):
 						int_settings		= feat_params.get('int', None),
 						threshold			= proto_wrapper.spike_threshold,
 						)
+
+		elif feat_name in custom_spiketrain_features:
+
+			feat_settings = {}
+			for paramdict in feat_params: feat_settings.update(paramdict)
+
+			feature = espk.SpikeTrainFeature(
+						name				='{}.{}'.format(protocol.name, feat_name),
+						metric_name			= feat_name,
+						recording_names		= feat_params.get('traces', default_trace),
+						stim_start			= proto_wrapper.response_interval[0],
+						stim_end			= proto_wrapper.response_interval[1],
+						metric_settings		= feat_settings,
+						threshold			= proto_wrapper.spike_threshold,
+						)
+
+		else:
+			raise ValueError('Unknown feature: <{}>'.format(feat_name))
 
 		candidate_feats[feat_name] = feature
 
@@ -98,6 +122,9 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 				and feature.exp_std will be set
 	"""
 
+	eFEL_available_features = efel.getFeatureNames()
+	custom_spiketrain_features = espk.getFeatureNames()
+
 	# Run each protocol and get its responses
 	for stim_proto, feat_dict in protos_feats.iteritems():
 
@@ -111,19 +138,26 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 		for feat_name, feat_data in feat_dict.iteritems():
 
 			# Calculate feature value from full model response
-			efel_feature, weight = feat_data
-			target_value = efel_feature.calculate_feature(responses, raise_warnings=True)
+			e_feature, weight = feat_data
+			target_value = e_feature.calculate_feature(responses, raise_warnings=True)
 
-			# Check if value is sane
-			if (target_value is None) or math.isinf(target_value) or math.isnan(target_value):
-				logger.warning('Feature {} value {} not sane for protocol {}'.format(
-							feat_name, target_value, stim_proto.name))
-				problem_feat_names.append(feat_name)
+			if e_feature in eFEL_available_features:
 
-			# Now we can set the target value
-			# NOTE: distance is sum_i^N(feat[i] - exp_mean) / N / exp_std
-			efel_feature.exp_mean = target_value
-			efel_feature.exp_std = 1.0
+				# Check if value is sane
+				if (target_value is None) or math.isinf(target_value) or math.isnan(target_value):
+					logger.warning('Feature {} value {} not sane for protocol {}'.format(
+								feat_name, target_value, stim_proto.name))
+					problem_feat_names.append(feat_name)
+
+				# Now we can set the target value
+				# NOTE: distance is sum_i^N(feat[i] - exp_mean) / N / exp_std
+				e_feature.exp_mean = target_value
+				e_feature.exp_std = 1.0
+
+			elif e_feature in custom_spiketrain_features:
+
+				# Set target spike train
+				e_feature.target_spike_times = target_value
 
 		# Remove problematic features
 		if remove_problematic:

@@ -24,21 +24,36 @@ ARCHITECTURE:
 
 import bluepyopt.ephys as ephys
 
+# Elephant library
+import elephant.spike_train_dissimilarity as stds
+import quantities as pq
+import neo
+
 import logging
 logger = logging.getLogger('bpop_ext')
+
+
+def getFeatureNames():
+    """
+    Return list with names of available features.
+    """
+    return list(SpikeTrainFeature.DISTANCE_METRICS)
 
 
 class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
 
     """
-    eFEL feature
-
-    TODO: remove all occurences of eFelFeature attributes that are unused
+    Feature representing spike times in a particular interval. The distance is
+    computed usinng a given similarity metric.
     """
 
+    # TODO: for serialization, check that only raw spike times/start/end are serialized, and spike train is rebuit after serialization.
     SERIALIZED_FIELDS = ('name', 'metric_name', 'recording_names',
-                         'stim_start', 'stim_end', 'target_spike_train',
+                         'stim_start', 'stim_end', 'target_spike_times',
                          'threshold', 'comment')
+
+    # List of available distance metrics
+    DISTANCE_METRICS = ('victor_purpura_distance',)
 
     def __init__(
             self,
@@ -47,9 +62,11 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             recording_names=None,
             stim_start=None,
             stim_end=None,
-            target_spike_train=None,
+            target_spike_times=None,
             threshold=None,
+            interp_step=None,
             comment='',
+            metric_settings=None,
             force_max_score=False,
             max_score=250
     ):
@@ -75,19 +92,63 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             
             interp_step(float):     interpolation step (ms)
             
-            target_spike_train:     list(float) with spike times, numpy.array with
-                                    spike times, or neo spike train object.
+            target_spike_train:     list(float) or numpy.array with spike times.
         """
 
         super(SpikeTrainFeature, self).__init__(name, comment)
 
+        if metric_name.lower() not in self.DISTANCE_METRICS:
+            raise NotImplementedError("Metric {} not implemented".format(metric_name))
+
         self.recording_names = recording_names
         self.metric_name = metric_name
+
         self.stim_start = stim_start
         self.stim_end = stim_end
+        
         self.threshold = threshold
+        self.interp_step = interp_step
+        self.metric_settings = metric_settings
+        
         self.force_max_score = force_max_score
         self.max_score = max_score
+        self.target_spike_times = target_spike_times # also builds spike train
+
+
+    def _construct_neo_spiketrain(self, spike_times):
+        """
+        Construct Neo spike train for use with Elephant library.
+        """
+        if spike_times[0] < self.stim_start or spike_times[-1] > self.stim_end:
+            spike_times = [t for t in spike_times if 
+                                        (t >= self.stim_start and t <= self.stim_end)]
+        
+        spike_train = neo.SpikeTrain(
+                            spike_times * pq.ms, 
+                            units ='ms',
+                            t_start = self.stim_start * pq.ms,
+                            t_stop = self.stim_end * pq.ms)
+
+        return spike_train
+
+
+    def get_target_spike_times(self):
+        """
+        Return target spike times as list.
+        """
+        return self._target_spike_times
+
+
+    def set_target_spike_times(self, value):
+        """
+        Set target spike times.
+        """
+        self._target_spike_times = value
+        self.target_spike_train = self._construct_neo_spiketrain(value)
+
+    # Make property explicitly
+    target_spike_times = property(get_target_spike_times, set_target_spike_times)
+
 
     def _construct_efel_trace(self, responses):
         """
@@ -134,25 +195,14 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         if self.threshold is not None:
             efel.setThreshold(self.threshold)
 
-        if self.stimulus_current is not None:
-            efel.setDoubleSetting('stimulus_current', self.stimulus_current)
-
         if self.interp_step is not None:
             efel.setDoubleSetting('interp_step', self.interp_step)
 
-        if self.double_settings is not None:
-            for setting_name, setting_value in self.double_settings.items():
-                efel.setDoubleSetting(setting_name, setting_value)
 
-        if self.int_settings is not None:
-            for setting_name, setting_value in self.int_settings.items():
-                efel.setIntSetting(setting_name, setting_value)
-
-    def calculate_feature(self, responses, raise_warnings=False):
+    def calculate_feature(self, responses, raise_warnings=True):
         """
         Calculate feature value
 
-        TODO: calculate spike train object using ephys.getFeatureValues('peak_times'), then convert to list/array/neo spike train
         """
 
         efel_trace = self._construct_efel_trace(responses)
@@ -160,14 +210,17 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         if efel_trace is None:
             feature_value = None
         else:
-            self._setup_efel()
 
+            self._setup_efel()
             import efel
-            values = efel.getMeanFeatureValues(
+
+            # Calculate spike times from response
+            values = efel.getFeatureValues(
                 [efel_trace],
-                [self.efel_feature_name],
-                raise_warnings=raise_warnings)
-            feature_value = values[0][self.efel_feature_name]
+                ['peak_times'],
+                raise_warnings=raise_warnings
+            )
+            feature_value = values[0]['peak_times']
 
             efel.reset()
 
@@ -178,11 +231,10 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
 
         return feature_value
 
+
     def calculate_score(self, responses, trace_check=False):
         """
         Calculate the score
-
-        TODO: call external library for distance metric to target spike train
         """
 
         efel_trace = self._construct_efel_trace(responses)
@@ -190,35 +242,50 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         if efel_trace is None:
             score = self.max_score
         else:
+            
             self._setup_efel()
-
             import efel
-            score = efel.getDistance(
-                efel_trace,
-                self.efel_feature_name,
-                self.exp_mean,
-                self.exp_std,
-                trace_check=trace_check,
-                error_dist=self.max_score
+
+            # Calculate spike times from response
+            feat_vals = efel.getFeatureValues(
+                [efel_trace],
+                ['peak_times'],
+                raise_warnings = True
             )
+            resp_spike_times = feat_vals[0]['peak_times']
+            resp_spike_train = self._construct_neo_spiketrain(resp_spike_times)
+
+
+            # Compute spike train dissimilarity
+            # TODO: read up and decide on q factor
+            if self.metric_name.lower() == 'victor_purpura_distance':
+                
+                dist_mat = stds.victor_purpura_dist(
+                                [self.target_spike_train, resp_spike_train], 
+                                q = 1.0*pq.Hz, 
+                                algorithm = 'fast')
+
+                score = dist_mat[0, 1]
+            else:
+                raise NotImplementedError("Metric {} not implemented".format(self.metric_name))
+
             if self.force_max_score:
                 score = max(score, self.max_score)
-
-            efel.reset()
 
         logger.debug('Calculated score for %s: %f', self.name, score)
 
         return score
 
     def __str__(self):
-        """String representation"""
+        """
+        String representation
+        """
 
         return "%s for %s with stim start %s and end %s, " \
-            "exp mean %s and std %s and AP threshold override %s" % \
-            (self.efel_feature_name,
+            "target_spike_times and AP threshold override %s" % \
+            (self.metric_name,
              self.recording_names,
              self.stim_start,
              self.stim_end,
-             self.exp_mean,
-             self.exp_std,
+             self.target_spike_train,
              self.threshold)
