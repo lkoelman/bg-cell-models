@@ -93,6 +93,7 @@ class StnBaseModel(ephys.models.Model):
         # BluePyOpt variables
         self.mechanisms = [] if (mechs is None) else mechs
         self.params = collections.OrderedDict()
+        
         if params is not None:
             for param in params:
                 self.params[param.name] = param
@@ -164,6 +165,20 @@ class StnBaseModel(ephys.models.Model):
     def instantiate(self, sim=None):
         """
         Instantiate cell in simulator
+
+        @note   this method should only be called after the subclass instantiate function
+
+        @post   all mechanisms and parameters are instantiated
+
+        @post   stored all all Sections referred to by icell's SectionRef objects
+                in following attributes:
+
+                    soma        list(Section)
+                    dendrite    list(Section)
+
+                    somatic     Hoc.SectionList()
+                    dendritic   Hoc.SectionList()
+                    all         Hoc.SectionList()
         """
 
         # instantiation across optimization procedure:
