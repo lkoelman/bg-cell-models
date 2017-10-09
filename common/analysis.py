@@ -5,12 +5,16 @@ Common plotting/recording functions for cell experiments.
 @date 26/10/2016
 """
 
-from neuron import h
+import neuron
+h = neuron.h
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import collections
 import re
+
+import logging
+logger = logging.getLogger('analysis')
 
 ################################################################################
 # Recording & Analysis functions
@@ -172,9 +176,14 @@ def plot_currents_activations(recData, recordStep, timeRange=None, sec_tag=None)
 
 	return figs, cursors
 
-def recordTraces(secs, traceSpecs, recordStep, duration=None):
+def recordTraces(secs, traceSpecs, recordStep=0.05, duration=None, recData=None):
 	"""
 	Record the given traces from section
+
+	@param   recData	see return value
+
+	@returns recData	Collections.OrderedDict(str -> Hoc.Vector) : dictionary
+						containing recorded trace data after running simulation
 
 	EXAMPLE USE:
 
@@ -196,15 +205,31 @@ def recordTraces(secs, traceSpecs, recordStep, duration=None):
 	         associated with it to identify the tread. Hence, a PointProcessMark
 	         (see ppmark.mod) will be inserted if no PP present.
 	"""
-	recData = collections.OrderedDict() # empty dict for storing recording vectors
+	if recData is None:
+		recData = collections.OrderedDict() # empty dict for storing recording vectors
 	pp_markers = []
 
 	for trace, spec in traceSpecs.iteritems():
+		if trace in recData:
+			logger.warning("Trace named {} already exists in data dictionary. Overwriting.".format(trace))
+
 		ptr = None
 		pp = None
-		if 'loc' in spec:
-			sec = secs[spec['sec']]
-			seg = sec(spec['loc'])
+		if 'loc' in spec or 'seg' in spec:
+
+			if 'seg' in spec:
+				rec_hobj = secs[spec['seg']]
+			else:
+				rec_hobj = secs[spec['sec']]
+
+			if isinstance(rec_hobj, neuron.nrn.Segment):
+				seg = rec_hobj
+				sec = seg.sec
+				if 'loc' in spec:
+					seg = sec(spec['loc'])
+			else:
+				sec = rec_hobj
+				seg = sec(spec['loc'])
 			
 			# Get pointer/reference to variable to record
 			if 'mech' in spec:  # eg. soma(0.5).hh._ref_gna

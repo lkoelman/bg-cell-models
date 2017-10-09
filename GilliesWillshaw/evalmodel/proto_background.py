@@ -127,7 +127,11 @@ from cellpopdata import (
 )
 
 # Stimulation protocols
-from proto_common import *
+from proto_common import (
+	StimProtocol, EvaluationStep, 
+	register_step, pick_random_segments, extend_dictitem,
+	logger
+)
 
 # Global parameters
 
@@ -158,7 +162,7 @@ MSR_METHOD = MSRC.SCALE_NUMSYN_MSR # How to take into account multi-synapse rule
 # Interface functions
 ################################################################################
 
-# @register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.SYN_BACKGROUND_HIGH)
+@register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.SYN_BACKGROUND_HIGH)
 def init_sim(self, protocol):
 	"""
 	Initialize simulator to simulate background protocol
@@ -184,6 +188,7 @@ def init_sim(self, protocol):
 			logger.anal("Changing RNG seq from {} to {}".format(old_seq, start_seq))
 
 
+@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.SYN_BACKGROUND_HIGH)
 def make_inputs(self, connector=None):
 	"""
 	Make a realistic number of CTX and GPe synapses that fire
@@ -239,6 +244,7 @@ def make_inputs(self, connector=None):
 	make_background_inputs(self, Pop.GPE, is_gpe_target, syn_mech_NTRs, fire_par, con_par, cc)
 
 
+@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.SYN_BACKGROUND_HIGH)
 def rec_traces(self, protocol, traceSpecs):
 	"""
 	Record all traces for this protocol.
@@ -254,6 +260,7 @@ def rec_traces(self, protocol, traceSpecs):
 	rec_spikes(self, protocol, traceSpecs)
 
 
+@register_step(EvaluationStep.PLOT_TRACES, StimProtocol.SYN_BACKGROUND_HIGH)
 def plot_traces(self, model, protocol):
 	"""
 	Plot all traces for this protocol

@@ -2,9 +2,9 @@
 Extension of BluePyOpt protocol that allow instantiating stimuli, synapses, etc.
 without specifying them in the form of ephys mechanisms & parameters (using bpop.ephys module).
 
-@author	Lucas Koelman
+@author Lucas Koelman
 
-@date	7/10/2017
+@date   7/10/2017
 
 """
 
@@ -13,87 +13,134 @@ import bluepyopt.ephys as ephys
 import logging
 logger = logging.getLogger('bpop_ext')
 
-
-class NrnExtProtocol(ephys.protocols.SweepProtocol):
-    """
-    Protocol consisting of current clamps, voltage clamps,
-    and changes to physiological conditions.
-
-    NOTE: call graph for SweepProtocol is as follows:
-
-        protocol.run(cell_model, param_values, sim) -> _run_func(...) :
-            model.instantiate()
-            protocol.instantiate() :
-                stimulus.instantiate() :
-                    location.instantiate()
-                recording.instantiate()
-            sim.run()
-    """
-
-    def __init__(
-            self,
-            name=None,
-            stimuli=None,
-            recordings=None,
-            cvode_active=None,
-            init_func=None):
-        """
-        Constructor
-        
-        Args:
-            init_func:  function(sim, model) that takes Simulator and instantiated 
-                        CellModel (icell) as arguments in that order
-        """
-
-        self._init_func = init_func
-
-        super(NrnExtProtocol, self).__init__(
-            name,
-            stimuli=stimuli,
-            recordings=recordings,
-            cvode_active=cvode_active)
+import collections
+from common import analysis
 
 
-    def instantiate(self, sim=None, icell=None):
-        """
-        Instantiate
+class ContainedProtocol(ephys.protocols.SweepProtocol):
+	"""
+	Extension of BluePyOpt protocol that allow instantiating stimuli, synapses, etc. 
+	without specifying them in the form of ephys mechanisms & parameters.
+	"""
 
-        NOTE: operations in StnModelEvaluator:
+	def __init__(
+			self,
+			name=None,
+			stimuli=None,
+			recordings=None,
+			cvode_active=None,
+			init_physio_funcs=None,
+			make_stims_funcs=None,
+			rec_traces_funcs=None,
+			plot_traces_funcs=None):
+		"""
+		Constructor
+		
+		Args:
+			init_func:  function(sim, model) that takes Simulator and instantiated 
+						CellModel (icell) as arguments in that order
+		"""
 
-	        self.make_inputs(stim_proto)
-			self.rec_traces(stim_proto, recordStep=0.05)
-			self.init_sim(stim_proto)
-			self.run_sim(stim_proto)
+		# init_physio(sim, icell)
+		self._funcs_init_physio = [] if init_physio_funcs is None else list(init_physio_funcs)
+		# make_stims(sim, icell, stim_data_dict)
+		self._funcs_make_stims = [] if make_stims_funcs is None else list(make_stims_funcs)
+		# rec_traces(icell, stim_data_dict, trace_spec_data, recorded_hoc_objects)
+		self._funcs_rec_traces = [] if rec_traces_funcs is None else list(rec_traces_funcs)
+		# plot_traces(trace_rec_data)
+		self._funcs_plot_traces = [] if plot_traces_funcs is None else list(plot_traces_funcs)
 
-        """
-        # TODO: make inputs and store
-
-        # TODO: make custom recordings and store
-
-        # Apply physiological conditions
-        self._init_func(sim, icell)
-
-        # Finally instantiate ephys.stimuli and ephys.recordings
-        super(NrnExtProtocol, self).instantiate(
-            sim=sim,
-            icell=icell)
+		self.stim_data = {}
+		self.trace_spec_data = collections.OrderedDict()
+		self.trace_rec_data = {}
+		self.recorded_hoc_objects = {}
+		self.recorded_pp_markers = []
+		self.record_contained_traces = False
 
 
-    def destroy(self, sim=None):
-        """
-        Destroy protocol
-        """
+		super(ContainedProtocol, self).__init__(
+			name,
+			stimuli=stimuli,
+			recordings=recordings,
+			cvode_active=cvode_active)
 
-        # Make sure stimuli are not active in next protocol if cell model reused
-        # NOTE: should better be done in Stimulus objects themselves for encapsulation, but BluePyOpt built-in Stimuli don't do this
-        for stim in self.stimuli:
-            if hasattr(stim, 'iclamp'):
-                stim.iclamp.amp = 0
-                stim.iclamp.dur = 0
-            elif hasattr(stim, 'seclamp'):
-                for i in range(3):
-                    setattr(stim.seclamp, 'amp%d' % (i+1), 0)
-                    setattr(stim.seclamp, 'dur%d' % (i+1), 0)
 
-        # Calls destroy() on each stimulus
-        super(NrnExtProtocol, self).destroy(sim=sim)
+	def instantiate(self, sim=None, icell=None):
+		"""
+		Instantiate
+
+		NOTE: call graph for SweepProtocol is as follows:
+
+			protocol.run(cell_model, param_values, sim) -> _run_func(...) :
+				
+				model.instantiate()
+				
+				protocol.instantiate() : <=== THIS FUNCTION
+					stimulus.instantiate() :
+						location.instantiate()
+					recording.instantiate()
+				
+				sim.run()
+
+		NOTE: operations in this function:
+
+			make_stims(sim, icell, stim_data_dict)
+			rec_traces(icell, stim_data_dict, trace_spec_data, recorded_hoc_objects)
+			init_physio(sim, icell)
+		
+		TODO: make StnModelEvaluator-specific functionwrap a general function that conforms to the same protocol as here (i.e. pass it a dictionary). Start only with the protocols you need, e.g. proto_bacgkround.
+		"""
+		# Make inputs and store
+		for func in self._funcs_make_stims:
+			func(sim, icell, self.stim_data)
+
+		# Make custom recordings and store
+		if self.record_contained_traces:
+			for func in self._funcs_rec_traces:
+				func(icell, self.stim_data, self.trace_spec_data, self.recorded_hoc_objects)
+
+			# Create recording vectors
+			_, markers = analysis.recordTraces(
+									self.recorded_hoc_objects, 
+									self.trace_spec_data,
+									recordStep=0.05,
+									recData=self.trace_rec_data)
+			self.recorded_pp_markers.extend(markers)
+
+		# Initialize physiological conditions
+		for func in self._funcs_init_physio:
+			func(sim, icell)
+
+		# Finally instantiate ephys.stimuli and ephys.recordings
+		super(ContainedProtocol, self).instantiate(
+			sim=sim,
+			icell=icell)
+
+
+	def plot_contained_traces(self):
+		"""
+		Plot traces recorded as self-contained traces, i.e. traces not passed as
+		ephys.recordings objects in constructor.
+		"""
+		for func in self._funcs_plot_traces:
+			func(self.trace_rec_data)
+
+
+	def destroy(self, sim=None):
+		"""
+		Destroy protocol
+		"""
+
+		# Make sure stimuli are not active in next protocol if cell model reused
+		# NOTE: should better be done in Stimulus objects themselves for encapsulation, but BluePyOpt built-in Stimuli don't do this
+		for stim in self.stimuli:
+			if hasattr(stim, 'iclamp'):
+				stim.iclamp.amp = 0
+				stim.iclamp.dur = 0
+			elif hasattr(stim, 'seclamp'):
+				for i in range(3):
+					setattr(stim.seclamp, 'amp%d' % (i+1), 0)
+					setattr(stim.seclamp, 'dur%d' % (i+1), 0)
+
+		# Calls destroy() on each stimulus
+		super(ContainedProtocol, self).destroy(sim=sim)

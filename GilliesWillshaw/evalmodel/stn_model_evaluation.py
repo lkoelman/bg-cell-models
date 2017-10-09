@@ -66,7 +66,7 @@ logging.getLogger('marasco').setLevel(logging.WARNING)
 # cpd.logger.setLevel(logging.WARNING)
 
 
-class StnModelEvaluator(object):
+class StnModelEvaluator(object, proto_common.VExperiment):
 	"""
 	Evaluate STN models
 
@@ -80,24 +80,16 @@ class StnModelEvaluator(object):
 	"""
 
 	# SIGNATURE: make_inputs(evaluator, connector)
-	_MAKE_INPUT_FUNCS = {
-		StimProtocol.SYN_BACKGROUND_HIGH : proto_background.make_inputs,
-	}
+	_MAKE_INPUT_FUNCS = {}
 
 	# SIGNATURE: rec_traces(evaluator, protocol, traceSpecs)
-	_REC_TRACE_FUNCS = {
-		StimProtocol.SYN_BACKGROUND_HIGH : proto_background.rec_traces,
-	}
+	_REC_TRACE_FUNCS = {}
 
 	# SIGNATURE: plot_traces(evaluator, model, protocol)
-	_PLOT_TRACE_FUNCS = {
-		StimProtocol.SYN_BACKGROUND_HIGH : proto_background.plot_traces,
-	}
+	_PLOT_TRACE_FUNCS = {}
 
 	# SIGNATURE: init_sim(evaluator, protocol)
-	_INIT_SIM_FUNCS = {
-		StimProtocol.SYN_BACKGROUND_HIGH : proto_background.init_sim,
-	}
+	_INIT_SIM_FUNCS = {}
 
 	# Make accessible by step
 	_EVALUATION_STEP_FUNCS = {
@@ -491,6 +483,8 @@ class StnModelEvaluator(object):
 	def get_pre_pop(self, syn, model):
 		"""
 		Get pre-synaptic population for given synapse.
+
+		@return		str: abbreviation for pre-synaptic population
 		"""
 		inputs = self.model_data[model]['inputs']
 
@@ -531,6 +525,10 @@ class StnModelEvaluator(object):
 		
 		rec_objs[tag] = obj
 
+
+	############################################################################
+	# SETUP functions
+	############################################################################
 
 	def make_inputs(self, stim_protocol):
 		"""
@@ -694,7 +692,6 @@ class StnModelEvaluator(object):
 				raise NotImplementedError("Make inputs function for protocol {} not implemented".format(stim_protocol))
 
 			make_inputs_func(self, connector=cc)
-
 
 
 	def map_inputs(self, cand_model):
@@ -902,6 +899,9 @@ class StnModelEvaluator(object):
 			'rec_markers': markers,
 		})
 
+	############################################################################
+	# PLOT functions
+	############################################################################
 
 	def save_proto_traces(self, model, protocol, filename):
 		"""
@@ -1010,6 +1010,9 @@ class StnModelEvaluator(object):
 		syn_traces = analysis.match_traces(recData, lambda t: re.search(r'GLUsyn', t))
 		analysis.plotTraces(syn_traces, recordStep, traceSharex=True, title='Synaptic variables')
 
+	############################################################################
+	# SIMULATION functions
+	############################################################################
 
 	def plot_traces(self, protocol, model=None):
 		"""
