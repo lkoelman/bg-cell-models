@@ -120,6 +120,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         self.force_max_score = force_max_score
         self.max_score = max_score
         self._target_spike_times = target_spike_times # also builds spike train
+        self.exp_std = 1.0
 
 
     def _construct_neo_spiketrain(self, spike_times):
@@ -280,6 +281,9 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             else:
                 raise NotImplementedError("Metric {} not implemented".format(self.metric_name))
 
+            # Need to take into account std (can be used as weight too)
+            score /= self.exp_std
+            
             if self.force_max_score:
                 score = max(score, self.max_score)
 

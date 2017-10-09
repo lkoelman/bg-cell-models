@@ -194,7 +194,6 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 		### SPIKE TIMING RELATED ###
 		'Spikecount': {			# (int) The number of peaks during stimulus
 			'weight':	2.0,
-			'exp_std':	10.0,	# SETPARAM: std needs to be set in function of firing rate and duration to limit influence of this factor in objective function
 		},
 		# 'mean_frequency',		# (float) the mean frequency of the firing rate
 		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
@@ -317,7 +316,6 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 		### SPIKE TIMING RELATED ###
 		'Spikecount': {			# (int) The number of peaks during stimulus
 			'weight':	2.0,
-			'exp_std':	10.0,	# SETPARAM: std needs to be set in function of firing rate and duration to limit influence of this factor in objective function
 		},
 		# 'mean_frequency',		# (float) the mean frequency of the firing rate
 		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
@@ -619,7 +617,6 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		### SPIKE TIMING RELATED ###
 		'Spikecount': {			# (int) The number of peaks during stimulus
 			'weight':	2.0,
-			'exp_std':	10.0,	# SETPARAM: std needs to be set in function of firing rate and duration to limit influence of this factor in objective function
 		},
 		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
 			'weight':	1.0,

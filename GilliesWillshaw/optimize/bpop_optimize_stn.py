@@ -37,11 +37,13 @@ MIN_SYN_BURST = StimProtocol.MIN_SYN_BURST
 
 # Adjust verbosity of loggers
 import logging
+logger = logging.getLogger('bpop_ext')
+
 silent_loggers = ['marasco', 'redops', 'folding', 'bluepyopt.ephys.parameters']
 verbose_loggers = []
 for logname in silent_loggers:
-	logger = logging.getLogger(logname)
-	if logger: logger.setLevel(logging.WARNING)
+	slogger = logging.getLogger(logname)
+	if slogger: slogger.setLevel(logging.WARNING)
 
 
 
@@ -221,7 +223,8 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 	opt_stim_protocols = [CLAMP_REBOUND, MIN_SYN_BURST]
 
 	# Make all protocol data
-	red_protos = {stim_proto: BpopProtocolWrapper.make(stim_proto, stn_model_type) for stim_proto in opt_stim_protocols}
+	red_protos = {stim_proto: BpopProtocolWrapper.make(stim_proto, stn_model_type) 
+					for stim_proto in opt_stim_protocols}
 
 	# Collect al frozen mechanisms and parameters required for protocols to work
 	proto_mechs, proto_params = BpopProtocolWrapper.all_mechs_params(red_protos.values())
