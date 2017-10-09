@@ -34,6 +34,7 @@ def make_features(proto_wrapper):
 
 		# TODO: check feature name: make with library that provides this feature
 		if feat_name in eFEL_available_features:
+
 			feature = ephys.efeatures.eFELFeature(
 						name				='{}.{}'.format(protocol.name, feat_name),
 						efel_feature_name	= feat_name,
@@ -45,10 +46,7 @@ def make_features(proto_wrapper):
 						threshold			= proto_wrapper.spike_threshold,
 						)
 
-		elif feat_name in custom_spiketrain_features:
-
-			feat_settings = {}
-			for paramdict in feat_params: feat_settings.update(paramdict)
+		elif feat_name.lower() in custom_spiketrain_features:
 
 			feature = espk.SpikeTrainFeature(
 						name				='{}.{}'.format(protocol.name, feat_name),
@@ -56,7 +54,8 @@ def make_features(proto_wrapper):
 						recording_names		= feat_params.get('traces', default_trace),
 						stim_start			= proto_wrapper.response_interval[0],
 						stim_end			= proto_wrapper.response_interval[1],
-						metric_settings		= feat_settings,
+						double_settings		= feat_params.get('double', None),
+						int_settings		= feat_params.get('int', None),
 						threshold			= proto_wrapper.spike_threshold,
 						)
 
@@ -99,10 +98,12 @@ def make_opt_features(proto_wrappers):
 		# Add them to dict
 		for feat_name in candidate_feats.keys():
 			feat_weight = proto.characterizing_feats[feat_name]['weight']
+			feat_std = proto.characterizing_feats[feat_name].get('exp_std', 1.0)
 			
 			# Add to feature dict if nonzero weight
 			if feat_weight > 0.0:
 				feat_obj = candidate_feats[feat_name]
+				feat_obj.exp_std = feat_std
 				proto_feat_dict[proto.IMPL_PROTO][feat_name] = feat_obj, feat_weight
 
 	return proto_feat_dict
@@ -141,7 +142,7 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 			e_feature, weight = feat_data
 			target_value = e_feature.calculate_feature(responses, raise_warnings=True)
 
-			if e_feature in eFEL_available_features:
+			if feat_name in eFEL_available_features:
 
 				# Check if value is sane
 				if (target_value is None) or math.isinf(target_value) or math.isnan(target_value):
@@ -151,13 +152,16 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 
 				# Now we can set the target value
 				# NOTE: distance is sum_i^N(feat[i] - exp_mean) / N / exp_std
+				# NOTE: exp_std will have as much influence as weight! This needs to eb set in protocols file
 				e_feature.exp_mean = target_value
-				e_feature.exp_std = 1.0
 
-			elif e_feature in custom_spiketrain_features:
+			elif feat_name.lower() in custom_spiketrain_features:
 
 				# Set target spike train
 				e_feature.target_spike_times = target_value
+
+			else:
+				raise ValueError('Unknown feature: <{}>'.format(feat_name))
 
 		# Remove problematic features
 		if remove_problematic:

@@ -25,7 +25,7 @@ ARCHITECTURE:
 import bluepyopt.ephys as ephys
 
 # Elephant library
-import elephant.spike_train_dissimilarity as stds
+from elephant import spike_train_dissimilarity as stds
 import quantities as pq
 import neo
 
@@ -66,7 +66,8 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             threshold=None,
             interp_step=None,
             comment='',
-            metric_settings=None,
+            double_settings=None,
+            int_settings=None,
             force_max_score=False,
             max_score=250
     ):
@@ -100,6 +101,11 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         if metric_name.lower() not in self.DISTANCE_METRICS:
             raise NotImplementedError("Metric {} not implemented".format(metric_name))
 
+        if double_settings is None:
+            double_settings = {}
+        if int_settings is None:
+            int_settings = {}
+
         self.recording_names = recording_names
         self.metric_name = metric_name
 
@@ -108,26 +114,27 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         
         self.threshold = threshold
         self.interp_step = interp_step
-        self.metric_settings = metric_settings
+        self.double_settings = double_settings
+        self.int_settings = int_settings
         
         self.force_max_score = force_max_score
         self.max_score = max_score
-        self.target_spike_times = target_spike_times # also builds spike train
+        self._target_spike_times = target_spike_times # also builds spike train
 
 
     def _construct_neo_spiketrain(self, spike_times):
         """
         Construct Neo spike train for use with Elephant library.
         """
-        if spike_times[0] < self.stim_start or spike_times[-1] > self.stim_end:
+        if len(spike_times)>0 and (spike_times[0] < self.stim_start or spike_times[-1] > self.stim_end):
             spike_times = [t for t in spike_times if 
                                         (t >= self.stim_start and t <= self.stim_end)]
         
         spike_train = neo.SpikeTrain(
-                            spike_times * pq.ms, 
+                            spike_times,
                             units ='ms',
-                            t_start = self.stim_start * pq.ms,
-                            t_stop = self.stim_end * pq.ms)
+                            t_start = self.stim_start,
+                            t_stop = self.stim_end)
 
         return spike_train
 
@@ -201,7 +208,8 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
 
     def calculate_feature(self, responses, raise_warnings=True):
         """
-        Calculate feature value
+        Calculate feature value: for this EFeature it is just the spike train
+        as a sequence of spike times.
 
         """
 
@@ -217,10 +225,10 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             # Calculate spike times from response
             values = efel.getFeatureValues(
                 [efel_trace],
-                ['peak_times'],
+                ['peak_time'],
                 raise_warnings=raise_warnings
             )
-            feature_value = values[0]['peak_times']
+            feature_value = values[0]['peak_time']
 
             efel.reset()
 
@@ -234,7 +242,8 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
 
     def calculate_score(self, responses, trace_check=False):
         """
-        Calculate the score
+        Calculate score: spike train distance between given response and target
+        spike train.
         """
 
         efel_trace = self._construct_efel_trace(responses)
@@ -249,20 +258,22 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             # Calculate spike times from response
             feat_vals = efel.getFeatureValues(
                 [efel_trace],
-                ['peak_times'],
+                ['peak_time'],
                 raise_warnings = True
             )
-            resp_spike_times = feat_vals[0]['peak_times']
+            resp_spike_times = feat_vals[0]['peak_time']
             resp_spike_train = self._construct_neo_spiketrain(resp_spike_times)
 
 
             # Compute spike train dissimilarity
             # TODO: read up and decide on q factor
             if self.metric_name.lower() == 'victor_purpura_distance':
+
+                spike_shift_cost = self.double_settings.get('spike_shift_cost', 1.0)
                 
                 dist_mat = stds.victor_purpura_dist(
                                 [self.target_spike_train, resp_spike_train], 
-                                q = 1.0*pq.Hz, 
+                                q = spike_shift_cost * pq.Hz, 
                                 algorithm = 'fast')
 
                 score = dist_mat[0, 1]
@@ -275,6 +286,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         logger.debug('Calculated score for %s: %f', self.name, score)
 
         return score
+
 
     def __str__(self):
         """

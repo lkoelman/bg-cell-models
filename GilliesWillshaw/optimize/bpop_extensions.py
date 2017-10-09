@@ -272,21 +272,6 @@ class PhysioProtocol(ephys.protocols.SweepProtocol):
             cvode_active=cvode_active)
 
 
-    # def _run_func(self, cell_model, param_values, sim=None):
-    #     """
-    #     Run protocols
-    #     """
-    #     # First apply physiological conditions
-    #     self._init_func(sim, cell_model)
-    #
-    #     # Then run protocol as usual
-    #     # NOTE: model.instantiate() might overwrite changes to physiological parameters
-    #     super(PhysioProtocol, self)._run_func(
-    #         cell_model,
-    #         param_values,
-    #         sim=sim)
-
-
     def instantiate(self, sim=None, icell=None):
         """
         Instantiate

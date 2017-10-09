@@ -194,18 +194,23 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 		### SPIKE TIMING RELATED ###
 		'Spikecount': {			# (int) The number of peaks during stimulus
 			'weight':	2.0,
+			'exp_std':	10.0,	# SETPARAM: std needs to be set in function of firing rate and duration to limit influence of this factor in objective function
 		},
 		# 'mean_frequency',		# (float) the mean frequency of the firing rate
 		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
-		'adaptation_index2': {	# (float) Normalized average difference of two consecutive ISIs
+		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
 			'weight':	1.0,
-			# 'double':	{'spike_skipf': 0.0},
-			# 'int':		{'max_spike_skip': 0},
+			'double':	{'spike_skipf': 0.0},
+			'int':		{'max_spike_skip': 0},
 		},
 		'ISI_CV': {				# (float) coefficient of variation of ISI durations
 			'weight':	1.0,
 		},
 		# 'ISI_log',			# no documentation
+		'Victor_Purpura_distance': {
+			'weight':	2.0,
+			'double': { 'spike_shift_cost' : 1.0 },
+		},
 		### SPIKE SHAPE RELATED ###
 		# 'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
 		# 	'weight':	1.0,
@@ -312,18 +317,23 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 		### SPIKE TIMING RELATED ###
 		'Spikecount': {			# (int) The number of peaks during stimulus
 			'weight':	2.0,
+			'exp_std':	10.0,	# SETPARAM: std needs to be set in function of firing rate and duration to limit influence of this factor in objective function
 		},
 		# 'mean_frequency',		# (float) the mean frequency of the firing rate
 		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
-		'adaptation_index2': {	# (float) Normalized average difference of two consecutive ISIs
+		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
 			'weight':	1.0,
-			# 'double':	{'spike_skipf': 0.0},
-			# 'int':		{'max_spike_skip': 0},
+			'double':	{'spike_skipf': 0.0},
+			'int':		{'max_spike_skip': 0},
 		},
 		'ISI_CV': {				# (float) coefficient of variation of ISI durations
 			'weight':	1.0,
 		},
 		# 'ISI_log',			# no documentation
+		'Victor_Purpura_distance': {
+			'weight':	2.0,
+			'double': { 'spike_shift_cost' : 1.0 },
+		},
 		### SPIKE SHAPE RELATED ###
 		# 'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
 		# 	'weight':	1.0,
@@ -478,7 +488,6 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		proto_vars['pp_comp_locs'].extend(comp_locs)
 
 		# Make synapse at locations
-		# NOTE: logger is wrong
 		syn_pp = ephys.mechanisms.NrnMODPointProcessMechanism(
 						name		= '{}_synapses'.format(mech_name),
 						suffix		= mech_name,
@@ -610,14 +619,19 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		### SPIKE TIMING RELATED ###
 		'Spikecount': {			# (int) The number of peaks during stimulus
 			'weight':	2.0,
+			'exp_std':	10.0,	# SETPARAM: std needs to be set in function of firing rate and duration to limit influence of this factor in objective function
 		},
-		'adaptation_index2': {	# (float) Normalized average difference of two consecutive ISIs
+		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
 			'weight':	1.0,
-			# 'double':	{'spike_skipf': 0.0},
-			# 'int':		{'max_spike_skip': 0},
+			'double':	{'spike_skipf': 0.0},
+			'int':		{'max_spike_skip': 0},
 		},
 		'ISI_CV': {				# (float) coefficient of variation of ISI durations
 			'weight':	1.0,
+		},
+		'Victor_Purpura_distance': {
+			'weight':	2.0,
+			'double': { 'spike_shift_cost' : 1.0 },
 		},
 		### SPIKE SHAPE RELATED ###
 		# 'AP_duration_half_width_change': { # (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
