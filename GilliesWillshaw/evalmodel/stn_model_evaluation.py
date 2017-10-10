@@ -10,7 +10,7 @@ from copy import deepcopy
 
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logger = logging.getLogger(__name__) # create logger for this module
+logger = logging.getLogger('stn_protos') # create logger for this module
 
 # Third party modules
 import numpy as np
@@ -133,6 +133,10 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		self.sim_dt = 0.025
 		self.base_seed = 25031989 # used: 25031989
 		self.rng = np.random.RandomState(self.base_seed)
+		self.rng_info = {
+			'base_seed': base_seed,
+			'stream_indices': {},
+		}
 
 
 	@property
@@ -262,7 +266,8 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 
 	def _reduce_map_gillies(self, model):
 		"""
-		Reduce Gillies model and map synapses.
+		Reduce Gillies model and map existing synapses to reduced model (this
+		entails weight scaling + repositioning)
 		"""
 
 		full_model = StnModel.Gillies2005
@@ -462,6 +467,17 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		return self.model_data[model]['inputs'].get(pre_pop, None)
 
 
+	def save_input_data():
+		pass
+
+
+	def load_input_data():
+		"""
+		Restore all NetStim, NetCon, Synapse, Random objects from pickle file.
+		"""
+		pass
+
+
 	def _init_con_dict(self, model, pre_pops):
 		"""
 		Initialize dict with connection data for given model
@@ -472,7 +488,7 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 				'stimweightvec': [],
 				'synapses': [],
 				'syn_NetCons': [], # NetCons targetting synapses
-				'com_NetCons': [], # NetCons for command & control
+				'com_NetCons': [], # NetCons for control events
 				'NetStims': [],
 				'HocInitHandlers': [],
 				'PyInitHandlers': [],

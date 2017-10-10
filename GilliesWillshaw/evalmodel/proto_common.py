@@ -3,9 +3,11 @@ Functions for setting up STN experimental protocols.
 """
 
 from enum import Enum, unique
+
 import numpy as np
 
-logger = None
+import logging
+logger = logging.getLogger('stn_protos')
 
 @unique
 class StimProtocol(Enum):
@@ -41,7 +43,7 @@ class EvaluationStep(Enum):
 	RECORD_TRACES = 2
 	PLOT_TRACES = 3
 
-
+# Protocol-specific functions registered for each evaluation step
 EVALUATION_FUNCS = dict(((proto, {}) for proto in list(StimProtocol)))
 
 
@@ -63,16 +65,22 @@ def register_step(step, protocol):
 	return decorate_step
 
 
-def pick_random_segments(secrefs, n_segs, elig_func, rng=None):
+def pick_random_segments(sections, n_segs, elig_func, rng=None, refs=True):
 	"""
 	Pick random segments with spatially uniform distribution.
+
+	@param	refs	True if sections argument are SectionRef instead of Section
 	"""
 	# Get random number generator
 	if rng is None:
 		rng = np.random
 
 	# Gather segments that are eligible.
-	elig_segs = [seg for ref in secrefs for seg in ref.sec if elig_func(seg)]
+	if refs:
+		elig_segs = [seg for ref in sections for seg in ref.sec if elig_func(seg)]
+	else:
+		elig_segs = [seg for sec in sections for seg in sec if elig_func(seg)]
+	
 	logger.debug("Found {} eligible target segments".format(len(elig_segs)))
 
 	# Sample segments

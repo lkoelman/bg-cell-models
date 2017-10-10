@@ -111,6 +111,10 @@ Nambu2014Frontiers8
 
 # Python stdlib
 import re
+from collections import namedtuple
+
+# SciPy
+import numpy as np
 
 # NEURON
 import neuron
@@ -130,10 +134,11 @@ from cellpopdata import (
 from proto_common import (
 	StimProtocol, EvaluationStep, 
 	register_step, pick_random_segments, extend_dictitem,
-	logger
 )
 
-# Global parameters
+import logging
+logger = logging.getLogger('stn_protos')
+
 
 # PROBLEM:
 #	- we have estimates for the total number of synapses
@@ -141,6 +146,7 @@ from proto_common import (
 #	- However, this response is most likely due to multiple synapses (MULTI SYNAPSE RULE: axons make multi-synaptic contacts)
 #	- so when we calibrate a synapse mechanism to match this response, our synapse mechanism emulates the effect of multiple real synapses
 
+# Global parameters
 n_syn_stn_tot = 300		# [SETPARAM] 300 total synapses on STN
 frac_ctx_syn = 3.0/4.0	# [SETPARAM] fraction of CTX/GPE of STN afferent synapses
 
@@ -189,14 +195,91 @@ def init_sim(self, protocol):
 
 
 @register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.SYN_BACKGROUND_HIGH)
-def make_inputs(self, connector=None):
+def make_inputs_wrapper(self, connector=None):
 	"""
 	Make a realistic number of CTX and GPe synapses that fire
 	a background firing pattern onto STN.
 	"""
+	model = self.target_model
 
+	# Prepare inputs
+	ICell = namedtuple("ICell", ['dendritic'])
+	icell = ICell(dendritic=[sec for sec in self.model_data[model]['dend_refs']])
+
+	common_args = {
+		'nrnsim':		neuron.h,
+		'connector':	connector,
+		'evaluator':	self,
+		'gid':			self.model_data[model]['gid'],
+		'icell':		icell,
+		'rng_info':		self.rng_info,
+	}
+
+	# Make CTX inputs
+	ctx_stim_data = {}
+	make_inputs_ctx_impl(
+			stim_data = ctx_stim_data,
+			**common_args)
+
+	self.add_inputs(Pop.CTX.name.lower(), model, **ctx_stim_data)
+
+	# Make GPE inputs
+	gpe_stim_data = {}
+	make_inputs_gpe_impl(
+			stim_data = gpe_stim_data,
+			**common_args)
+	
+	self.add_inputs(Pop.GPE.name.lower(), model, **gpe_stim_data)
+
+
+def make_inputs_ctx_impl(**kwargs):
+	"""
+	Make inputs (implementation adhering to interface in proto common).
+
+	Interface keyword arguments:
+
+		@param	nrnsim		NEURON top-level Hoc interpreter
+
+		@param	icell		instantianed cell object with attributes:
+								seclist_names:	names of available SectionList attributes
+								seclist_x:		one SectionList attribute for each
+												name in seclist_names
+
+		@param	stim_data	a dictionary where synapces, NetCons, stimulators etc. can be stored
+
+		@param	rng_info	dictionary with info about random streams, with at least
+							the following entries:
+
+								stream_indices: dict(int -> int)
+
+
+	Additional required keyword arguments:
+
+		@param	gid			int: global cell identifier
+
+		@param	base_seed	base seed for the RNGs
+
+
+	Additonal optional keyword arguments:
+
+		@param	evaluator	StnModelEvaluator object
+
+		@param	connector	CellConnector object
+	"""
+	# Optional arguments
+	evaluator = kwargs.get('evaluator', None)
+	if evaluator is None:
+		physio_state = PhysioState.NORMAL
+		rng = np.random
+		base_seed = kwargs['base_seed']
+	else:
+		physio_state = evaluator.physio_state
+		rng = evaluator.rng
+		base_seed = evaluator.base_seed
+
+	connector = kwargs.get('connector', None)
 	if connector is None:
-		cc = cpd.CellConnector(self.physio_state, self.rng)
+		cc = cpd.CellConnector(physio_state, rng)
 	else:
 		cc = connector
 
@@ -212,15 +295,55 @@ def make_inputs(self, connector=None):
 	refs_fire = [Cit.Custom, Cit.Bergman2015RetiCh3]
 
 	# Get connection & firing parameters
-	nsyn_per_ax = MSR_NUM_SYN[Pop.CTX] # if MSR_METHOD==MSRC.SCALE_GSYN_MSR else 0
-	con_par = cc.getPhysioConParams(Pop.CTX, Pop.STN, refs_con, 
+	POP_PRE = Pop.CTX
+	nsyn_per_ax = MSR_NUM_SYN[POP_PRE] # if MSR_METHOD==MSRC.SCALE_GSYN_MSR else 0
+	con_par = cc.getPhysioConParams(POP_PRE, Pop.STN, refs_con, 
 					adjust_gsyn_msr=nsyn_per_ax)
 
-	fire_par = cc.getFireParams(Pop.CTX, self.physio_state, refs_fire, 
+	fire_par = cc.getFireParams(POP_PRE, physio_state, refs_fire, 
 					custom_params={'rate_mean': 20.0})
 
+	passed_args = ['stim_data', 'icell', 'gid', 'rng_info']
+	passed_kwargs = {k:v for k,v in kwargs.items() if (k in passed_args)}
+
 	# Make CTX GLUtamergic inputs
-	make_background_inputs(self, Pop.CTX, is_ctx_target, syn_mech_NTRs, fire_par, con_par, cc)
+	make_background_inputs(
+					pre_pop			=POP_PRE,
+					syn_seg_filter	=is_ctx_target, 
+					syn_mechs_NTRs	=syn_mech_NTRs,
+					stim_params		=fire_par,
+					con_params		=con_par,
+					connector		=cc,
+					rng				=rng,
+					base_seed		=base_seed,
+					**passed_kwargs)
+
+
+def make_inputs_gpe_impl(**kwargs):
+	"""
+	Make inputs (implementation adhering to interface in proto common).
+
+	Expected keyword arguments: see make_inputs_ctx_impl
+
+	@see	make_inputs_ctx_impl
+	"""
+
+	# Optional arguments
+	evaluator = kwargs.get('evaluator', None)
+	if evaluator is None:
+		physio_state = PhysioState.NORMAL
+		rng = np.random
+		base_seed = kwargs['base_seed']
+	else:
+		physio_state = evaluator.physio_state
+		rng = evaluator.rng
+		base_seed = evaluator.base_seed
+
+	connector = kwargs.get('connector', None)
+	if connector is None:
+		cc = cpd.CellConnector(physio_state, rng)
+	else:
+		cc = connector
 
 	###########################################################################
 	# GPe inputs
@@ -238,10 +361,23 @@ def make_inputs(self, connector=None):
 	con_par = cc.getPhysioConParams(Pop.GPE, Pop.STN, refs_con,
 					adjust_gsyn_msr=nsyn_per_ax)
 
-	fire_par = cc.getFireParams(Pop.GPE, self.physio_state, refs_fire)
+	fire_par = cc.getFireParams(Pop.GPE, physio_state, refs_fire)
 
 	# Make GPe GABAergic inputs
-	make_background_inputs(self, Pop.GPE, is_gpe_target, syn_mech_NTRs, fire_par, con_par, cc)
+	passed_args = ['stim_data', 'icell','gid', 'rng_info']
+	passed_kwargs = {k:v for k,v in kwargs.items() if (k in passed_args)}
+
+	make_background_inputs(
+					pre_pop			=Pop.GPE,
+					syn_seg_filter	=is_gpe_target, 
+					syn_mechs_NTRs	=syn_mech_NTRs,
+					stim_params		=fire_par,
+					con_params		=con_par,
+					connector		=cc,
+					rng				=rng,
+					base_seed		=base_seed,
+					**passed_kwargs)
+
 
 
 @register_step(EvaluationStep.RECORD_TRACES, StimProtocol.SYN_BACKGROUND_HIGH)
@@ -282,7 +418,7 @@ def plot_traces(self, model, protocol):
 ################################################################################
 
 
-def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par, con_par, connector):
+def make_background_inputs(**kwargs):
 	"""
 	Make synapses with background spiking from given population.
 
@@ -291,8 +427,21 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 	@param refs_con			References for connectivity parameters
 	"""
 
-	model = self.target_model
-	cc = connector
+	POP_PRE			= kwargs['pre_pop']
+	cc				= kwargs['connector']
+	con_par			= kwargs['con_params']
+	fire_par		= kwargs['stim_params']
+	syn_mech_NTRs	= kwargs['syn_mechs_NTRs']
+	rng 			= kwargs['rng']
+	icell			= kwargs['icell']
+	stim_data		= kwargs['stim_data']
+	gid				= kwargs['gid']
+	base_seed		= kwargs['base_seed']
+	rng_info		= kwargs['rng_info']
+	is_target_seg	= kwargs['syn_seg_filter']
+
+	# RNG info
+	highest_indices = rng_info['stream_indices']
 
 	# Get max synaptic conductance
 	syn_mech, syn_NTRs = syn_mech_NTRs
@@ -317,13 +466,10 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 	logger.debug("Number of {}->STN MSR synapses = {}".format(POP_PRE.name, n_syn))
 
 	# Get target segments: distribute synapses over dendritic trees
-	dend_secrefs = self.model_data[model]['dend_refs'] 
-	target_segs = pick_random_segments(dend_secrefs, n_syn, is_target_seg, rng=self.rng)
+	dendritic_secs = icell.dendritic
+	target_segs = pick_random_segments(dendritic_secs, n_syn, is_target_seg, refs=False, rng=rng)
 
 	# Data for configuring inputs
-	gid = self.model_data[model]['gid']
-	n_syn_existing = self.get_num_syns(model)
-
 	tstart = 300
 	stim_rate = fire_par['rate_mean']
 	pause_rate = fire_par.get('pause_rate_mean', 0)
@@ -332,26 +478,26 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 	# TODO: set intra-burst rate (higher than mean rate), set burst dur, calculate 'number' from these two, then set controlling stim rate to pause rate
 
 	# Make synapses
-	new_inputs = {}
 	for i_seg, target_seg in enumerate(target_segs):
 
-		# Index of the new synapse
-		i_syn = n_syn_existing + i_seg
+		# MCellRan4: each stream should be statistically independent as long as the highindex values differ by more than the eventual length of the stream. See http://www.neuron.yale.edu/neuron/static/py_doc/programming/math/random.html?highlight=MCellRan4
+
+		dur_max_ms, dt_ms = 10000.0, 0.025
+		stim_interval = stim_rate**-1*1e3 
+		num_indep_repicks = dur_max_ms / stim_interval + 1000
+		low_index = gid+250+base_seed
+		highest_index = highest_indices.get(low_index, 0)
+		high_index = int(highest_index + num_indep_repicks)
+		highest_indices[low_index] = high_index # update highest index
 
 		# Make RNG for spikes
 		stimrand = h.Random() # see CNS2014 Dura-Bernal example or EPFL cell synapses.hoc file
-		
-		# MCellRan4: each stream should be statistically independent as long as the highindex values differ by more than the eventual length of the stream. See http://www.neuron.yale.edu/neuron/static/py_doc/programming/math/random.html?highlight=MCellRan4
-		dur_max_ms, dt_ms = 10000.0, 0.025
-		num_indep_repicks = dur_max_ms / dt_ms
-		low_index, high_index = gid+250+self.base_seed, int(i_syn*num_indep_repicks + 100)
-
 		stimrand.MCellRan4(high_index, low_index) # high_index can also be set using .seq()
 		stimrand.negexp(1) # if num arrivals is poisson distributed, ISIs are negexp-distributed
 		
 		# make NetStim spike generator
 		stimsource = h.NetStim()
-		stimsource.interval = stim_rate**-1*1e3 # Interval between spikes
+		stimsource.interval = stim_interval # Interval between spikes
 		stimsource.number = 1e9 # inexhaustible for our simulation
 		stimsource.noise = 1.0
 		stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
@@ -364,16 +510,22 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 			# Make spike generator exhaustible
 			stimsource.number = discharge_dur*stim_rate # expected number of spikes in discharge duration
 
+			pause_interval = pause_dur*1e3
+			num_indep_repicks = dur_max_ms / pause_interval + 1000
+			low_index = gid+100+base_seed
+			highest_index = highest_indices.get(low_index, 0)
+			high_index = int(highest_index + num_indep_repicks)
+			highest_indices[low_index] = high_index # update highest index
+
 			# Make RNG for spike control
 			ctlrand = h.Random()
-			low_index, high_index = gid+100+self.base_seed, int(i_syn*num_indep_repicks + 100)
 			ctlrand.MCellRan4(high_index, low_index) # high_index can also be set using .seq()
 			ctlrand.negexp(1) # num arrivals is poisson distributed, ISIs are negexp-distributed
 
 			# control spike generator spiking pattern
 			stimctl = h.NetStim()
 			# stimctl.interval = pause_rate**-1*1e3
-			stimctl.interval = pause_dur*1e3 # replenish only works when spikes exhaused
+			stimctl.interval = pause_interval # replenish only works when spikes exhaused
 			stimctl.number = 1e9
 			stimctl.noise = 1.0
 			stimctl.noiseFromRandom(ctlrand)
@@ -388,10 +540,10 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 			ctl_nc.weight[0] = 1 # turn on spikegen (resets available spikes)
 			# ctl_nc.delay = pause_dur*1e3
 
-			extend_dictitem(new_inputs, 'com_NetCons', ctl_nc)
 			# extend_dictitem(new_inputs, 'com_NetCons', off_nc)
-			extend_dictitem(new_inputs, 'NetStims', stimctl)
-			extend_dictitem(new_inputs, 'RNG_data', {
+			stim_data.setdefault('com_NetCons', []).append(ctl_nc)
+			stim_data.setdefault('NetStims', []).append(stimctl)
+			stim_data.setdefault('RNG_data', []).append({
 				'HocRandomObj': ctlrand, 
 				'seq': ctlrand.seq(),
 			})
@@ -401,16 +553,15 @@ def make_background_inputs(self, POP_PRE, is_target_seg, syn_mech_NTRs, fire_par
 							syn_mech, syn_NTRs, con_par_data=con_par)
 
 		# Save inputs
-		extend_dictitem(new_inputs, 'syn_NetCons', nc)
-		extend_dictitem(new_inputs, 'synapses', syn)
-		extend_dictitem(new_inputs, 'NetStims', stimsource)
-		extend_dictitem(new_inputs, 'stimweightvec', wvecs)
-		extend_dictitem(new_inputs, 'RNG_data', {
+		stim_data.setdefault('syn_NetCons', []).append(nc)
+		stim_data.setdefault('syn_NetCons', []).append(nc)
+		stim_data.setdefault('synapses', []).append(syn)
+		stim_data.setdefault('NetStims', []).append(stimsource)
+		stim_data.setdefault('stimweightvec', []).append(wvecs)
+		stim_data.setdefault('RNG_data', []).append({
 				'HocRandomObj': stimrand, 
 				'seq': stimrand.seq(),
 		})
-
-	self.add_inputs(POP_PRE.name.lower(), model, **new_inputs)
 
 
 def rec_GABA_traces(self, protocol, traceSpecs):

@@ -16,8 +16,12 @@ import numpy as np
 
 import bluepyopt.ephys as ephys
 from bpop_extensions import PhysioProtocol, NrnSpaceClamp, NrnNamedSecLocation
+from bpop_protocol_ext import SelfContainedProtocol
 
-from evalmodel import cellpopdata as cpd
+from evalmodel import (
+	cellpopdata as cpd,
+	proto_background
+)
 from evalmodel.proto_common import StimProtocol
 
 Pop = cpd.Populations
@@ -64,7 +68,8 @@ class BpopProtocolWrapper(object):
 		"""
 		wrapper_class = PROTOCOL_WRAPPERS[stim_proto]
 		return wrapper_class(model_type)
-	
+
+
 	def get_mechs_params(self):
 		"""
 		Get all ephys.mechanisms and ephys.parameters used by the protocols.
@@ -657,6 +662,76 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		},
 	}
 
+################################################################################
+# REBOUND protocol
+
+
+class BpopBackgroundProtocol(BpopProtocolWrapper):
+	"""
+	Functions for setting up rebound protocol.
+	"""
+
+	IMPL_PROTO = StimProtocol.SYN_BACKGROUND_HIGH
+
+	def __init__(self, stn_model_type):
+		"""
+		Initialize all protocol variables for given model type
+
+		@param stn_model_type		cellpopdata.StnModel enum instance
+
+		@post						following attributes will be available on this object:
+									- ephys_protocol: PhysioProtocol instance
+									- proto_vars: dict with protocol variables
+									- response_interval: expected time interval of response
+		"""
+		pass # protol specification independent of model type
+
+
+	# TODO: find out how to make it run long enough if no ephys Stimuli present (set in ExtProtocol?)
+	sim_end = 2000.0
+	response_interval = (300.0, sim_end)
+
+	bg_recV = ephys.recordings.CompRecording(
+					name			= '{}.soma.v'.format(IMPL_PROTO.name),
+					location		= soma_center_loc,
+					variable		= 'v')
+
+	make_stim_funcs = [
+		proto_background.make_inputs_ctx_impl, 
+		proto_background.make_inputs_gpe_impl
+	]
+
+	make_stim_kwargs = {
+		'base_seed':	25031989,
+		'gid':			1,
+	}
+
+	ephys_protocol = SelfContainedProtocol(
+						name				= IMPL_PROTO.name, 
+						recordings			= [bg_recV],
+						total_duration		= sim_end,
+						init_physio_funcs	= [init_rebound],
+						make_stim_funcs		= make_stim_funcs,
+						stimfuncs_kwargs	= make_stim_kwargs)
+
+	proto_vars = {
+		'pp_mechs':			[],
+		'pp_comp_locs':		[],
+		'pp_target_locs':	[],
+		'pp_mech_params':	[],
+		'stims':			[],
+		'recordings':		[bg_recV],
+		'range_mechs':		[],
+	}
+
+	# Characterizing features and parameters for protocol
+	characterizing_feats = {
+		'Victor_Purpura_distance': {
+			'weight':	2.0,
+			'double': { 'spike_shift_cost' : 1.0 },
+		},
+	}
+
 # ==============================================================================
 # EXPORTED variables
 
@@ -664,4 +739,5 @@ PROTOCOL_WRAPPERS = {
 	StimProtocol.CLAMP_PLATEAU: BpopPlateauProtocol,
 	StimProtocol.CLAMP_REBOUND: BpopReboundProtocol,
 	StimProtocol.MIN_SYN_BURST: BpopSynBurstProtocol,
+	StimProtocol.SYN_BACKGROUND_HIGH: BpopBackgroundProtocol,
 }

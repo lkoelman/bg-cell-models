@@ -342,14 +342,16 @@ class StnReducedModel(StnBaseModel):
             # Do initial model reduction
             if self._fold_method == 'marasco':
                 reduction = reduce_cell.gillies_marasco_reduction()
-                reduction.reduce_model(num_passes=self._num_passes)
-
             elif self._fold_method == 'stratford':
                 reduction = reduce_cell.gillies_stratford_reduction()
-                reduction.reduce_model(num_passes=self._num_passes)
 
+            # TODO: apply protocol setup funcs and get synapses (see StnModelEvaluator._reduce_map_gillies())
+            
+            # Perform reduction
+            reduction.reduce_model(num_passes=self._num_passes)
             self._reduction = reduction
 
+            # Copy SectionRef to icell object
             self.icell._soma_refs = reduction._soma_refs
             self.icell._dend_refs = reduction._dend_refs
             self.icell._all_refs = self.icell._soma_refs + self.icell._dend_refs
