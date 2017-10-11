@@ -12,6 +12,8 @@ NOTES
 
 """
 
+import collections
+
 import numpy as np
 
 import bluepyopt.ephys as ephys
@@ -665,6 +667,24 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 ################################################################################
 # REBOUND protocol
 
+def rng_getter(setup_kwargs):
+	"""
+	Function to get Numpy.Random object for stimulation protocol setup functions.
+	"""
+	import numpy as np
+	base_seed = setup_kwargs['base_seed']
+	return np.random.RandomState(base_seed)
+
+
+def connector_getter(setup_kwargs):
+	"""
+	Function to get CellConnector for stimulation protocol setup functions.
+	"""
+	from evalmodel import cellpopdata as cpd
+	physio_state = setup_kwargs['physio_state']
+	rng = setup_kwargs['rng']
+	return cpd.CellConnector(physio_state, rng)
+
 
 class BpopBackgroundProtocol(BpopProtocolWrapper):
 	"""
@@ -696,23 +716,31 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 					location		= soma_center_loc,
 					variable		= 'v')
 
-	make_stim_funcs = [
+	proto_setup_funcs = [
 		proto_background.make_inputs_ctx_impl, 
 		proto_background.make_inputs_gpe_impl
 	]
 
-	make_stim_kwargs = {
-		'base_seed':	25031989,
-		'gid':			1,
+	proto_setup_kwargs_const = {
+		'base_seed': 25031989,
+		'gid': 1,
+		'do_map_synapses': True,
+		'physio_state': cpd.PhysioState.NORMAL.name,
 	}
+
+	proto_setup_kwargs_getters = collections.OrderedDict([
+		('rng', rng_getter),
+		('connector', connector_getter),
+	])
 
 	ephys_protocol = SelfContainedProtocol(
 						name				= IMPL_PROTO.name, 
 						recordings			= [bg_recV],
 						total_duration		= sim_end,
 						init_physio_funcs	= [init_rebound],
-						make_stim_funcs		= make_stim_funcs,
-						stimfuncs_kwargs	= make_stim_kwargs)
+						proto_setup_funcs_pre		= proto_setup_funcs,
+						proto_setup_kwargs_const	= proto_setup_kwargs_const,
+						proto_setup_kwargs_getters	= proto_setup_kwargs_getters,)
 
 	proto_vars = {
 		'pp_mechs':			[],

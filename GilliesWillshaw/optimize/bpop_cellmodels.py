@@ -32,6 +32,7 @@ import bluepyopt.ephys as ephys
 
 import gillies_model
 from reducemodel import redutils, reduce_cell
+from evalmodel import cellpopdata as cpd
 
 
 import logging
@@ -106,6 +107,11 @@ class StnBaseModel(ephys.models.Model):
 
         self.icell = None
 
+        # SelfContainedProtocol interaction
+        self.proto_setup_funcs = []
+        self.proto_setup_kwargs = {}
+
+
     def set_params(self, params):
         """
         Convenience function to be able to set parameters after making the model
@@ -160,6 +166,17 @@ class StnBaseModel(ephys.models.Model):
                     'CellModel: Nonfrozen param %s needs to be '
                     'set before simulation' %
                     param_name)
+
+
+    def exec_proto_setup_funcs(self, icell=None):
+        """
+        Execute protocol setup functions passed by SelfContainedProtocol.
+        """
+        setup_kwargs = { 'icell': icell }
+        setup_kwargs.update(self.proto_setup_kwargs)
+
+        for setup_func in self.proto_setup_funcs:
+            setup_func(**setup_kwargs)
 
 
     def instantiate(self, sim=None):
@@ -292,13 +309,13 @@ class StnFullModel(StnBaseModel):
                 # Restore parameter dict stored on SectionRef
                 redutils.set_range_props(ref, ref.initial_params)
 
-        # Set physiological conditions
-        # h.celsius = 30 # will be overriden by possible global parameter in super.instantiate
-        # h.v_init = -60
-        # h.set_aCSF(4)
-
         # Call base class method
-        return super(StnFullModel, self).instantiate(sim)
+        icell = super(StnFullModel, self).instantiate(sim)
+
+        # Call protocol setup functions if any
+        self.exec_proto_setup_funcs(icell=icell)
+
+        return icell
 
 
 class StnReducedModel(StnBaseModel):
@@ -326,6 +343,61 @@ class StnReducedModel(StnBaseModel):
         self._reduction = None
 
 
+    def first_instantiate(self, sim=None):
+        """
+        First instantiation of the cell model.
+        """
+
+        # Create Reduction object (creates full model)
+        if self._fold_method == 'marasco':
+            reduction = reduce_cell.gillies_marasco_reduction()
+        elif self._fold_method == 'stratford':
+            reduction = reduce_cell.gillies_stratford_reduction()
+        
+        self._reduction = reduction
+
+        # Apply pre-reduction protocol setup functions
+        full_cell = Cell()
+        full_cell.dendritic = [ref.sec for ref in reduction.dend_refs]
+
+        self.exec_proto_setup_funcs(icell=full_cell)
+
+        # Prepare synapse mapping
+        if 'do_map_synapses' in self.proto_setup_kwargs:
+            # Get synapses on full model
+            syns_tomap = cpd.get_synapse_data(
+                                self.proto_setup_kwargs['connector'],
+                                self.proto_setup_kwargs['stim_data']['synapses'],
+                                self.proto_setup_kwargs['stim_data']['syn_NetCons'])
+            reduction.set_syns_tomap(syns_tomap)
+        
+        # Do reduction
+        reduction.reduce_model(num_passes=self._num_passes, map_synapses=False)
+        
+        # Set all Sections on instantiated cell
+        self.icell._soma_refs = reduction._soma_refs
+        self.icell._dend_refs = reduction._dend_refs
+        self.icell._all_refs = self.icell._soma_refs + self.icell._dend_refs
+        self._persistent_refs = self.icell._all_refs # save SectionRef across model instantiation (icell will be destroyed)
+
+        # Apply parameters _before mapping_ (mapping measures electrotonic properties)
+        super(StnReducedModel, self).instantiate(sim)
+
+        # Do synapse mapping
+        if 'do_map_synapses' in self.proto_setup_kwargs:
+
+            reduction.map_synapses()
+
+            # Update stim data
+            updated_syn_info = reduction.map_syn_info
+            self.proto_setup_kwargs['stim_data']['synapses'] = [s.mapped_syn for s in updated_syn_info]
+            self.proto_setup_kwargs['stim_data']['syn_NetCons'] = sum((s.afferent_netcons for s in updated_syn_info), [])
+
+        # Save initial cell parameters
+        for ref in self.icell._all_refs:
+            redutils.store_seg_props(ref, gillies_model.gillies_gdict, attr_name='initial_params')
+
+
     def instantiate(self, sim=None):
         """
         Instantiate cell in simulator
@@ -338,30 +410,7 @@ class StnReducedModel(StnBaseModel):
 
         # Make sure original STN cell is built
         if self._reduction is None:
-            
-            # Do initial model reduction
-            if self._fold_method == 'marasco':
-                reduction = reduce_cell.gillies_marasco_reduction()
-            elif self._fold_method == 'stratford':
-                reduction = reduce_cell.gillies_stratford_reduction()
-
-            # TODO: apply protocol setup funcs and get synapses (see StnModelEvaluator._reduce_map_gillies())
-            
-            # Perform reduction
-            reduction.reduce_model(num_passes=self._num_passes)
-            self._reduction = reduction
-
-            # Copy SectionRef to icell object
-            self.icell._soma_refs = reduction._soma_refs
-            self.icell._dend_refs = reduction._dend_refs
-            self.icell._all_refs = self.icell._soma_refs + self.icell._dend_refs
-
-            # save SectionRef across model instantiation (icell will be destroyed)
-            self._persistent_refs = self.icell._all_refs
-
-            # Save initial cell parameters
-            for ref in self.icell._all_refs:
-                redutils.store_seg_props(ref, gillies_model.gillies_gdict, attr_name='initial_params')
+            self.first_instantiate(sim=sim)
 
         else:
             # Restore persistent SectionRef
@@ -373,14 +422,8 @@ class StnReducedModel(StnBaseModel):
             for ref in self.icell._all_refs:
                 redutils.set_range_props(ref, ref.initial_params)
 
-        # Set physiological conditions
-        # h = sim.neuron.h
-        # h.celsius = 30 # will be overriden by possible global parameter in super.instantiate
-        # h.v_init = -60
-        # h.set_aCSF(4)
-
-        # Call base class method
-        return super(StnReducedModel, self).instantiate(sim)
+            # Call base class method
+            return super(StnReducedModel, self).instantiate(sim)
 
 
 

@@ -136,13 +136,16 @@ class FoldReduction(object):
 
 	@property
 	def all_sec_refs(self):
+		"""
+		Get list of SectionRef to all sections.
+		"""
 		return list(self._soma_refs) + list(self._dend_refs)
 
 
 	@property
 	def soma_refs(self):
 		"""
-		Get references to somatic sections.
+		Get list of SectionRef to somatic sections.
 		"""
 		return self._soma_refs
 	
@@ -150,7 +153,7 @@ class FoldReduction(object):
 	@property
 	def dend_refs(self):
 		"""
-		Get references to dendritic sections.
+		Get list of SectionRef to dendritic sections.
 		"""
 		return self._dend_refs
 
@@ -306,15 +309,27 @@ class FoldReduction(object):
 		self._exec_reduction_step('make_fold', method, step_args=[self])
 
 
-	def postprocess_cell(self, method):
+	def postprocess_cell(self, method=None):
 		"""
 		Post-process cell: perform any additional modifications for reduction
 		algorithm.
 		"""
+		if method is None:
+			method = self.active_method
+
 		# Execute custom postprocess function
 		self._exec_reduction_step('postprocess', method, step_args=[self])
+		
 
-		# Map synapses
+	def map_synapses(self, method=None):
+		"""
+		Map any synapses if present
+
+		@see	set_syns_tomap() for setting synapses.
+		"""
+		if method is None:
+			method = self.active_method
+
 		# Map synapses to reduced cell
 		if any(self._map_syn_info):
 			logger.debug("Mapping synapses...")
@@ -332,7 +347,7 @@ class FoldReduction(object):
 
 
 
-	def reduce_model(self, num_passes, method=None):
+	def reduce_model(self, num_passes, method=None, map_synapses=True):
 		"""
 		Do a fold-based reduction of the compartmental cell model.
 
@@ -354,6 +369,10 @@ class FoldReduction(object):
 
 		# Finalize reduction process
 		self.postprocess_cell(method)
+
+		# Map synapses
+		if map_synapses:
+			self.map_synapses(method=method)
 
 
 ################################################################################

@@ -134,7 +134,7 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		self.base_seed = 25031989 # used: 25031989
 		self.rng = np.random.RandomState(self.base_seed)
 		self.rng_info = {
-			'base_seed': base_seed,
+			'base_seed': self.base_seed,
 			'stream_indices': {},
 		}
 
@@ -383,10 +383,10 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		Get list of SynInfo properties containing a reference
 		to each synapse, its NetCon and pre-synaptic population.
 
-		@param	pre_pops		pre-synaptic populations for synapses. If none
-								are given, return synapses for all populations.
+		@param	pre_pops	pre-synaptic populations for synapses. If none
+							are given, return synapses for all populations.
 
-		@return		list(SynInfo)
+		@return				list(SynInfo)
 		"""
 
 		inputs = self.model_data[model]['inputs']

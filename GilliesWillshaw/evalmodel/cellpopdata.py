@@ -14,9 +14,12 @@ Based on structure of:
 """
 
 from enum import Enum, IntEnum, unique
+import collections
 import types
 import re
 from textwrap import dedent
+
+
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
@@ -63,6 +66,10 @@ class PhysioState(IntEnum):
 		"""
 		return (self.value & int_item) == self.value
 
+	@classmethod
+	def from_descr(cls, descr):
+		return cls._member_map_[descr.upper()]
+
 
 @unique
 class Populations(Enum):
@@ -83,7 +90,6 @@ class Populations(Enum):
 		return cls._member_map_[descr.upper()]
 
 
-
 @unique
 class NTReceptors(Enum):
 	"""
@@ -93,6 +99,10 @@ class NTReceptors(Enum):
 	NMDA = 1
 	GABAA = 2
 	GABAB = 3
+
+	@classmethod
+	def from_descr(cls, descr):
+		return cls._member_map_[descr.upper()]
 
 
 @unique
@@ -180,6 +190,59 @@ syn_mech_correctors = {
 	'GLUsyn' : correct_GLUsyn,
 }
 
+class SynInfo(object):
+	""" Synapse info bunch/struct """
+	def __init__(self, **kwargs):
+		self.__dict__.update(kwargs)
+
+
+def get_synapse_data(connector, synapses, netcons):
+	"""
+	Get list of SynInfo properties containing a reference
+	to each synapse, its NetCon and pre-synaptic population.
+
+	@param	synapses	list(Synapse) where Synapse is a wrapped HocObject with
+						attributes 'pre_pop' and 'post_pop'
+
+	@return				list(namedtuple)
+	"""
+	
+	syn_list = []
+
+	# Save properties
+	for syn in synapses:
+
+		# Get connection parameters
+		pre = syn.pre_pop
+		post = syn.post_pop
+		if not isinstance(pre, Populations):
+			pre = Populations.from_descr(pre)
+		if not isinstance(post, Populations):
+			post = Populations.from_descr(post)
+
+		con_par = connector.getPhysioConParams(pre, post, [Src.Default]) 
+		syn_info = SynInfo()
+
+		# HocObjects
+		syn_info.orig_syn = syn
+		syn_info.afferent_netcons = [nc for nc in netcons if nc.syn().same(syn)]
+		
+		# meta-information
+		syn_info.pre_pop = pre
+
+		# For PSP frequency: need to find the receptor types that this synaptic mechanism implements
+		modname = get_mod_name(syn)
+		syn_info.mod_name = modname
+
+		syn_receptors = connector.getSynMechReceptors(modname)
+		freqs = [con_par[receptor]['f_med_PSP_burst'] for receptor in syn_receptors]
+		syn_info.PSP_median_frequency = max(freqs)
+
+		syn_list.append(syn_info)
+
+	return syn_list
+
+
 #######################################################################
 # Parameter mapping for synaptic mechanisms
 #######################################################################
@@ -190,6 +253,26 @@ syn_par_maps = {
 	'GLUsyn' : {}, # see below
 	'Exp2Syn' : {}, # see below
 }
+
+# Wrapper clases allow setting arbitrary attributes
+class Exp2SynWrapper(neuron.hclass(h.Exp2Syn)):
+	pass
+class GABAsynWrapper(neuron.hclass(h.GABAsyn)):
+	pass
+class GLUsynWrapper(neuron.hclass(h.GLUsyn)):
+	pass
+
+syn_wrapper_classes = {
+	'GABAsyn' : GABAsynWrapper,
+	'GLUsyn' : GLUsynWrapper,
+	'Exp2Syn' : Exp2SynWrapper,
+}
+# Dynamic creation:
+# syn_wrapper_classes = {
+# 	modname: type(modname+'Wrapper',(neuron.hclass(getattr(h, modname)),), {})
+# 		for modname in syn_par_maps.keys()
+# }
+
 
 # GABAsyn.mod cam be used for GABA-A and GABA-B receptor
 syn_par_maps['GABAsyn'] = {
@@ -269,7 +352,11 @@ def get_mod_name(syn):
 
 	@param	syn		HocObject: synapse POINT_PROCESS
 	"""
-	match_mod = re.search(r'^[a-zA-Z0-9]+', syn.hname())
+	if hasattr(syn, 'htype'):
+		hoc_name = syn.htype.hname() # for wrapped HocObject, mechanism name is in htype attribute
+	else:
+		hoc_name = syn.hname()
+	match_mod = re.search(r'^[a-zA-Z0-9]+', hoc_name)
 	modname = match_mod.group()
 	return modname
 
@@ -371,6 +458,8 @@ class CellConnector(object):
 	"""
 
 	def __init__(self, physio_state, rng):
+		if isinstance(physio_state, str):
+			physio_state = PhysioState.from_descr(physio_state)
 		self._physio_state = physio_state
 		self._rng = rng
 
@@ -846,9 +935,14 @@ class CellConnector(object):
 		if not isinstance(post_obj, nrn.Segment):
 			raise ValueError("Post-synaptic object {} is not of type nrn.Segment".format(repr(post_obj)))
 
-		# Make synapse
-		syn_ctor = getattr(h, syn_type) # constructor for synapse type
+		# Get synapse type constructor and make it
+		syn_ctor = syn_wrapper_classes.get(syn_type, getattr(h, syn_type))
 		syn = syn_ctor(post_obj)
+
+		# Store some data on the synapse
+		if hasattr(syn, 'htype'): # check if wrapper class (see nrn/lib/python/hclass.py)
+			syn.pre_pop = pre_pop.name
+			syn.post_pop = post_pop.name
 
 		# Make NetCon connection
 		if isinstance(pre_obj, nrn.Section):
