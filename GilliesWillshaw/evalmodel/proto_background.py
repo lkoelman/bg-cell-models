@@ -169,7 +169,7 @@ MSR_METHOD = MSRC.SCALE_NUMSYN_MSR # How to take into account multi-synapse rule
 ################################################################################
 
 @register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.SYN_BACKGROUND_HIGH)
-def init_sim(self, protocol):
+def init_sim_wrapper(self, protocol):
 	"""
 	Initialize simulator to simulate background protocol
 	"""
@@ -192,6 +192,32 @@ def init_sim(self, protocol):
 			old_seq = random.seq()
 			random.seq(start_seq)
 			logger.anal("Changing RNG seq from {} to {}".format(old_seq, start_seq))
+
+
+def init_sim_impl(**kwargs):
+	"""
+	Initialize simulator (implementation adhering to interface in proto common).
+	"""
+	stim_data	= kwargs['stim_data']
+	h			= kwargs['nrnsim']
+
+	# Initialize phsyiology
+	h.celsius = 35
+	h.v_init = -60
+	h.set_aCSF(4)
+	h.init()
+
+	# Reset each instance of Hoc.Random
+	for RNG_data in stim_data['RNG_data']:
+
+		# Get RNG and sequence number (highindex)
+		random = RNG_data['HocRandomObj']
+		start_seq = RNG_data['seq']
+
+		# Reset counter
+		old_seq = random.seq()
+		random.seq(start_seq)
+		logger.anal("Changing RNG seq from {} to {}".format(old_seq, start_seq))
 
 
 @register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.SYN_BACKGROUND_HIGH)
@@ -268,20 +294,16 @@ def make_inputs_ctx_impl(**kwargs):
 	"""
 	# Optional arguments
 	evaluator = kwargs.get('evaluator', None)
+	connector = kwargs.get('connector', None)
+
 	if evaluator is None:
-		physio_state = PhysioState.NORMAL
-		rng = np.random
-		base_seed = kwargs['base_seed']
+		physio_state	= PhysioState.from_descr(kwargs['physio_state'])
+		rng 			= kwargs['rng']
+		base_seed 		= kwargs['base_seed']
 	else:
 		physio_state = evaluator.physio_state
 		rng = evaluator.rng
 		base_seed = evaluator.base_seed
-
-	connector = kwargs.get('connector', None)
-	if connector is None:
-		cc = cpd.CellConnector(physio_state, rng)
-	else:
-		cc = connector
 
 	###########################################################################
 	# CTX inputs
@@ -297,11 +319,11 @@ def make_inputs_ctx_impl(**kwargs):
 	# Get connection & firing parameters
 	POP_PRE = Pop.CTX
 	nsyn_per_ax = MSR_NUM_SYN[POP_PRE] # if MSR_METHOD==MSRC.SCALE_GSYN_MSR else 0
-	con_par = cc.getPhysioConParams(POP_PRE, Pop.STN, refs_con, 
-					adjust_gsyn_msr=nsyn_per_ax)
+	con_par = connector.getPhysioConParams(POP_PRE, Pop.STN, refs_con, 
+							adjust_gsyn_msr=nsyn_per_ax)
 
-	fire_par = cc.getFireParams(POP_PRE, physio_state, refs_fire, 
-					custom_params={'rate_mean': 20.0})
+	fire_par = connector.getFireParams(POP_PRE, physio_state, refs_fire, 
+							custom_params={'rate_mean': 20.0})
 
 	passed_args = ['stim_data', 'icell', 'gid', 'rng_info']
 	passed_kwargs = {k:v for k,v in kwargs.items() if (k in passed_args)}
@@ -313,7 +335,7 @@ def make_inputs_ctx_impl(**kwargs):
 					syn_mechs_NTRs	=syn_mech_NTRs,
 					stim_params		=fire_par,
 					con_params		=con_par,
-					connector		=cc,
+					connector		=connector,
 					rng				=rng,
 					base_seed		=base_seed,
 					**passed_kwargs)
@@ -330,20 +352,16 @@ def make_inputs_gpe_impl(**kwargs):
 
 	# Optional arguments
 	evaluator = kwargs.get('evaluator', None)
+	connector = kwargs.get('connector', None)
+
 	if evaluator is None:
-		physio_state = PhysioState.NORMAL
-		rng = np.random
-		base_seed = kwargs['base_seed']
+		physio_state	= PhysioState.from_descr(kwargs['physio_state'])
+		rng 			= kwargs['rng']
+		base_seed 		= kwargs['base_seed']
 	else:
 		physio_state = evaluator.physio_state
 		rng = evaluator.rng
 		base_seed = evaluator.base_seed
-
-	connector = kwargs.get('connector', None)
-	if connector is None:
-		cc = cpd.CellConnector(physio_state, rng)
-	else:
-		cc = connector
 
 	###########################################################################
 	# GPe inputs
@@ -358,10 +376,10 @@ def make_inputs_gpe_impl(**kwargs):
 
 	# Get connection & firing parameters
 	nsyn_per_ax = MSR_NUM_SYN[Pop.GPE] # if MSR_METHOD==MSRC.SCALE_GSYN_MSR else 0
-	con_par = cc.getPhysioConParams(Pop.GPE, Pop.STN, refs_con,
-					adjust_gsyn_msr=nsyn_per_ax)
+	con_par = connector.getPhysioConParams(Pop.GPE, Pop.STN, refs_con,
+						adjust_gsyn_msr=nsyn_per_ax)
 
-	fire_par = cc.getFireParams(Pop.GPE, physio_state, refs_fire)
+	fire_par = connector.getFireParams(Pop.GPE, physio_state, refs_fire)
 
 	# Make GPe GABAergic inputs
 	passed_args = ['stim_data', 'icell','gid', 'rng_info']
@@ -373,7 +391,7 @@ def make_inputs_gpe_impl(**kwargs):
 					syn_mechs_NTRs	=syn_mech_NTRs,
 					stim_params		=fire_par,
 					con_params		=con_par,
-					connector		=cc,
+					connector		=connector,
 					rng				=rng,
 					base_seed		=base_seed,
 					**passed_kwargs)

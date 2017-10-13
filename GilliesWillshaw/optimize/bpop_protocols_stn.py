@@ -64,7 +64,7 @@ class BpopProtocolWrapper(object):
 	spike_threshold = -10.0
 	
 	@classmethod
-	def make(cls, stim_proto, model_type):
+	def make(cls, stim_proto, model_type=None):
 		"""
 		Instantiate protocol one of the protocol objects defined in this model.
 		"""
@@ -128,7 +128,7 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 
 	IMPL_PROTO = StimProtocol.CLAMP_PLATEAU
 
-	def __init__(self, stn_model_type):
+	def __init__(self, stn_model_type=None):
 		"""
 		Initialize all protocol variables for given model type
 
@@ -273,7 +273,7 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 
 	IMPL_PROTO = StimProtocol.CLAMP_REBOUND
 
-	def __init__(self, stn_model_type):
+	def __init__(self, stn_model_type=None):
 		"""
 		Initialize all protocol variables for given model type
 
@@ -416,7 +416,7 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 	synburst_stop = synburst_start + 350
 	response_interval = (synburst_start, synburst_stop) # interval to analyze eFEL features
 
-	def __init__(self, stn_model_type):
+	def __init__(self, stn_model_type=None):
 		"""
 		Initialize all protocol variables for given model type
 
@@ -693,7 +693,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 	IMPL_PROTO = StimProtocol.SYN_BACKGROUND_HIGH
 
-	def __init__(self, stn_model_type):
+	def __init__(self, stn_model_type=None):
 		"""
 		Initialize all protocol variables for given model type
 
@@ -721,6 +721,10 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 		proto_background.make_inputs_gpe_impl
 	]
 
+	proto_init_funcs = [
+		proto_background.init_sim_impl
+	]
+
 	proto_setup_kwargs_const = {
 		'base_seed': 25031989,
 		'gid': 1,
@@ -737,7 +741,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 						name				= IMPL_PROTO.name, 
 						recordings			= [bg_recV],
 						total_duration		= sim_end,
-						init_physio_funcs	= [init_rebound],
+						proto_init_funcs			= proto_init_funcs,
 						proto_setup_funcs_pre		= proto_setup_funcs,
 						proto_setup_kwargs_const	= proto_setup_kwargs_const,
 						proto_setup_kwargs_getters	= proto_setup_kwargs_getters,)

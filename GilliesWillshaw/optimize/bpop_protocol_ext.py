@@ -30,7 +30,7 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 			recordings=None,
 			cvode_active=None,
 			total_duration=None,
-			init_physio_funcs=None,
+			proto_init_funcs=None,
 			proto_setup_funcs_pre=None,
 			proto_setup_funcs_post=None,
 			proto_setup_kwargs_const=None,
@@ -58,7 +58,7 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 		"""
 
 		# init_physio(sim, icell)
-		self._funcs_init_physio = [] if init_physio_funcs is None else list(init_physio_funcs)
+		self._proto_init_funcs = [] if proto_init_funcs is None else list(proto_init_funcs)
 		# rec_traces(icell, stim_data_dict, trace_spec_data, recorded_hoc_objects)
 		self._funcs_rec_traces = [] if rec_traces_funcs is None else list(rec_traces_funcs)
 		# plot_traces(trace_rec_data)
@@ -122,47 +122,47 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 				sim.run()
 		"""
 
-		# try:
-
-		# Fixes each param.value to individual's 'genes'
-		cell_model.freeze(param_values)
-
-		# Pass functions and parameters to cell_model before instantiation
-		self.pre_model_instantiate(cell_model=cell_model, sim=sim)
-		# Make final cell model
-		cell_model.instantiate(sim=sim)
-		# Instatiate things that need final cell model
-		self.post_model_instantiate(cell_model=cell_model, sim=sim)
-
 		try:
-			sim.run(self.total_duration, cvode_active=self.cvode_active)
-		
-		except (RuntimeError, ephys.simulators.NrnSimulatorException):
+
+			# Fixes each param.value to individual's 'genes'
+			cell_model.freeze(param_values)
+
+			# Pass functions and parameters to cell_model before instantiation
+			self.pre_model_instantiate(cell_model=cell_model, sim=sim)
+			# Make final cell model
+			cell_model.instantiate(sim=sim)
+			# Instatiate things that need final cell model
+			self.post_model_instantiate(cell_model=cell_model, sim=sim)
+
+			try:
+				sim.run(self.total_duration, cvode_active=self.cvode_active)
 			
-			logger.debug(
-				'SweepProtocol: Running of parameter set {%s} generated '
-				'an exception, returning None in responses',
-				str(param_values))
-			
-			responses = {recording.name: None 
-							for recording in self.recordings}
-		else:
-			responses = {recording.name: recording.response
-							for recording in self.recordings}
+			except (RuntimeError, ephys.simulators.NrnSimulatorException):
+				
+				logger.debug(
+					'SweepProtocol: Running of parameter set {%s} generated '
+					'an exception, returning None in responses',
+					str(param_values))
+				
+				responses = {recording.name: None 
+								for recording in self.recordings}
+			else:
+				responses = {recording.name: recording.response
+								for recording in self.recordings}
 
-		self.destroy(sim=sim)
+			self.destroy(sim=sim)
 
-		cell_model.destroy(sim=sim)
+			cell_model.destroy(sim=sim)
 
-		cell_model.unfreeze(param_values.keys())
+			cell_model.unfreeze(param_values.keys())
 
-		return responses
+			return responses
 
-		# except:
-		# 	import sys
-		# 	import traceback
-		# 	raise Exception(
-		# 		"".join(traceback.format_exception(*sys.exc_info())))
+		except:
+			import sys
+			import traceback
+			raise Exception(
+				"".join(traceback.format_exception(*sys.exc_info())))
 
 
 	def pre_model_instantiate(self, cell_model=None, sim=None):
@@ -219,8 +219,8 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 			self.recorded_pp_markers.extend(markers)
 
 		# Initialize physiological conditions
-		for init_func in self._funcs_init_physio:
-			init_func(sim, icell)
+		for init_func in self._proto_init_funcs:
+			init_func(**self._this_proto_setup_kwargs)
 
 		# Finally instantiate ephys.stimuli and ephys.recordings
 		super(SelfContainedProtocol, self).instantiate(

@@ -90,6 +90,8 @@ def run_proto_responses(cell_model, ephys_protocols):
 	"""
 	Run protocols using given cell model and return responses,
 	indexed by protocol.name.
+
+	@return		dict<str, TimeVoltageResponse> {proto_name: proto_response}
 	"""
 	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
@@ -106,6 +108,7 @@ def run_proto_responses(cell_model, ephys_protocols):
 		all_responses[e_proto.name] = response
 
 	return all_responses
+
 
 def plot_log(log):
 	"""

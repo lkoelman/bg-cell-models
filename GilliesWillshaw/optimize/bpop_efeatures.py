@@ -121,6 +121,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         self.max_score = max_score
         self._target_spike_times = target_spike_times # also builds spike train
         self.exp_std = 1.0
+        self.exp_mean = None
 
 
     def _construct_neo_spiketrain(self, spike_times):

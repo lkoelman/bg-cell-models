@@ -7,7 +7,7 @@ import re
 from textwrap import dedent
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
-logger = logging.getLogger(__name__) # create logger for this module
+logger = logging.getLogger('redops') # create logger for this module
 
 from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
