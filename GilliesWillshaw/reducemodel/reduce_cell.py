@@ -160,13 +160,15 @@ class FoldReduction(object):
 	def set_syns_tomap(self, syns):
 		"""
 		Set synapses to map.
+
+		@param syns		list(SynInfo)
 		"""
 		self._syns_tomap = syns
 
 	@property
 	def map_syn_info(self):
 		"""
-		Information about mapped synapses.
+		Synapse properties before and after mapping (electrotonic properties etc.)
 		"""
 		return self._map_syn_info
 	
@@ -225,6 +227,23 @@ class FoldReduction(object):
 		Get reduction parameter for given method.
 		"""
 		return self._REDUCTION_PARAMS[method][param]
+
+
+	def destroy(self):
+		"""
+		Release references to all stored data
+		"""
+		# Parameters for reduction method (set by user)
+		self._REDUCTION_PARAMS = None
+		self._mechs_gbars_dict = None
+
+		self._soma_refs = None
+		self._dend_refs = None
+		self._root_ref = None
+		self._fold_root_refs = None
+
+		self._syns_tomap = None
+		self._map_syn_info = None
 
 
 	def _exec_reduction_step(self, step, method, step_args=None):
@@ -326,6 +345,10 @@ class FoldReduction(object):
 		Map any synapses if present
 
 		@see	set_syns_tomap() for setting synapses.
+
+		@pre	Any synapses provided through syns_tomap must be preprocessed
+				for mapping (electronic properties computed), with results 
+				stored in map_syn_info attribute.
 		"""
 		if method is None:
 			method = self.active_method
@@ -344,6 +367,8 @@ class FoldReduction(object):
 			mapsyn.map_synapses(self.soma_refs[0], self.all_sec_refs, self._map_syn_info, 
 								init_func, Z_freq, linearize_gating=linearize,
 								method=map_method)
+		else:
+			logger.debug("No synapse data available for mapping.")
 
 
 

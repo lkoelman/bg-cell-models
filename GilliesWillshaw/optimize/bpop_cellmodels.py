@@ -240,6 +240,10 @@ class StnBaseModel(ephys.models.Model):
     def destroy(self, sim=None):
         """Destroy cell from simulator"""
 
+        # FIXME: uncommenting below causes crash/hang
+        # self.proto_setup_kwargs = None
+        # self.proto_setup_funcs = None
+
         self.icell = None
 
         for mechanism in self.mechanisms:
@@ -334,13 +338,12 @@ class StnReducedModel(StnBaseModel):
         """
 
         super(StnReducedModel, self).__init__(name, mechs, params, gid)
-        self._persistent_refs = None
 
         # Reduction variables
         self._fold_method = fold_method
         self._num_passes = num_passes
 
-        self._reduction = None
+        self._persistent_refs = None
 
 
     def first_instantiate(self, sim=None):
@@ -353,8 +356,6 @@ class StnReducedModel(StnBaseModel):
             reduction = reduce_cell.gillies_marasco_reduction()
         elif self._fold_method == 'stratford':
             reduction = reduce_cell.gillies_stratford_reduction()
-        
-        self._reduction = reduction
 
         # Apply pre-reduction protocol setup functions
         full_cell = Cell()
@@ -370,6 +371,7 @@ class StnReducedModel(StnBaseModel):
                                 self.proto_setup_kwargs['stim_data']['synapses'],
                                 self.proto_setup_kwargs['stim_data']['syn_NetCons'])
             reduction.set_syns_tomap(syns_tomap)
+
         
         # Do reduction
         reduction.reduce_model(num_passes=self._num_passes, map_synapses=False)
@@ -378,7 +380,8 @@ class StnReducedModel(StnBaseModel):
         self.icell._soma_refs = reduction._soma_refs
         self.icell._dend_refs = reduction._dend_refs
         self.icell._all_refs = self.icell._soma_refs + self.icell._dend_refs
-        self._persistent_refs = self.icell._all_refs # save SectionRef across model instantiation (icell will be destroyed)
+        # save SectionRef across model instantiation (icell will be destroyed)
+        self._persistent_refs = self.icell._all_refs
 
         # Apply parameters _before mapping_ (mapping measures electrotonic properties)
         super(StnReducedModel, self).instantiate(sim)
@@ -389,9 +392,8 @@ class StnReducedModel(StnBaseModel):
             reduction.map_synapses()
 
             # Update stim data
-            updated_syn_info = reduction.map_syn_info
-            self.proto_setup_kwargs['stim_data']['synapses'] = [s.mapped_syn for s in updated_syn_info]
-            self.proto_setup_kwargs['stim_data']['syn_NetCons'] = sum((s.afferent_netcons for s in updated_syn_info), [])
+            self.proto_setup_kwargs['stim_data']['synapses'] = [s.mapped_syn for s in reduction.map_syn_info]
+            self.proto_setup_kwargs['stim_data']['syn_NetCons'] = sum((s.afferent_netcons for s in reduction.map_syn_info), [])
 
         # Save initial cell parameters
         for ref in self.icell._all_refs:
@@ -409,7 +411,7 @@ class StnReducedModel(StnBaseModel):
         
 
         # Make sure original STN cell is built
-        if self._reduction is None:
+        if self._persistent_refs is None:
             self.first_instantiate(sim=sim)
 
         else:
@@ -426,83 +428,91 @@ class StnReducedModel(StnBaseModel):
             return super(StnReducedModel, self).instantiate(sim)
 
 
-
-class StnProtoModel(ephys.models.HocCellModel):
-    '''
-    Wraps the Gillies & Willshaw Hoc Template so it can be used by BluePyOpt
-
-    TODO: use HocCellModel
-        - this requires changes to the Gillies cell template to conform to BluePyOpt/HBP standards.
-        - use predefined morphology file (export Gillies model as SWC)
-        - see https://github.com/BlueBrain/BluePyOpt/blob/master/bluepyopt/ephys/models.py
-        - see complex cell model example
-
-    '''
-
-    def __init__(self, name, hoc_path=None, hoc_string=None):
-        """
-        Constructor
-
-        Args: see HocCellModel documentation
-        """
-        super(StnProtoModel, self).__init__(name,
-                                           morph=None,
-                                           mechs=[],
-                                           params=[])
-
-        if hoc_path is not None and hoc_string is not None:
-            raise TypeError('HocCellModel: cant specify both hoc_string '
-                            'and hoc_path argument')
-        if hoc_path is not None:
-            with open(hoc_path) as hoc_file:
-                self.hoc_string = hoc_file.read()
-        else:
-            self.hoc_string = hoc_string
-
-        # TODO: hardcoded morphology path (need to add 3d info that is compatible with layout)
-        raise NotImplementedError("STN template-based model not yet implemented")
-        morphology_path = '...'
-
-        self.morphology = ephys.models.HocMorphology(morphology_path)
-        self.cell = None
-        self.icell = None
-
-
-    def instantiate(self, sim=None):
-        sim.neuron.h.load_file('stdrun.hoc')
-        template_name = self.load_hoc_template(sim, self.hoc_string)
-
-        morph_path = self.morphology.morphology_path
-        assert os.path.exists(morph_path), \
-            'Morphology path does not exist: %s' % morph_path
-        
-        if os.path.isdir(morph_path):
-            # will use the built in morphology name, if the init() only
-            # gets one parameter
-            self.cell = getattr(sim.neuron.h, template_name)(morph_path)
-        
-        else:
-            morph_dir = os.path.dirname(morph_path)
-            morph_name = os.path.basename(morph_path)
-            self.cell = getattr(sim.neuron.h, template_name)(morph_dir,
-                                                             morph_name)
-        self.icell = self.cell.CellRef
-
-
     def destroy(self, sim=None):
-        self.cell = None
-        self.icell = None
+        """
+        Destroy cell from simulator
+        """
+        logger.debug("Destroying Reduced cell model")
+        self._persistent_refs = None
+        return super(StnReducedModel, self).destroy(sim=sim)
 
 
-    def check_nonfrozen_params(self, param_names):
-        pass
+# class StnProtoModel(ephys.models.HocCellModel):
+#     '''
+#     Wraps the Gillies & Willshaw Hoc Template so it can be used by BluePyOpt
+
+#     TODO: use HocCellModel
+#         - this requires changes to the Gillies cell template to conform to BluePyOpt/HBP standards.
+#         - use predefined morphology file (export Gillies model as SWC)
+#         - see https://github.com/BlueBrain/BluePyOpt/blob/master/bluepyopt/ephys/models.py
+#         - see complex cell model example
+
+#     '''
+
+#     def __init__(self, name, hoc_path=None, hoc_string=None):
+#         """
+#         Constructor
+
+#         Args: see HocCellModel documentation
+#         """
+#         super(StnProtoModel, self).__init__(name,
+#                                            morph=None,
+#                                            mechs=[],
+#                                            params=[])
+
+#         if hoc_path is not None and hoc_string is not None:
+#             raise TypeError('HocCellModel: cant specify both hoc_string '
+#                             'and hoc_path argument')
+#         if hoc_path is not None:
+#             with open(hoc_path) as hoc_file:
+#                 self.hoc_string = hoc_file.read()
+#         else:
+#             self.hoc_string = hoc_string
+
+#         # TODO: hardcoded morphology path (need to add 3d info that is compatible with layout)
+#         raise NotImplementedError("STN template-based model not yet implemented")
+#         morphology_path = '...'
+
+#         self.morphology = ephys.models.HocMorphology(morphology_path)
+#         self.cell = None
+#         self.icell = None
 
 
-    def __str__(self):
-        """Return string representation"""
-        return (
-            '%s: %s of %s(%s)' %
-            (self.__class__,
-             self.name,
-             self.get_template_name(self.hoc_string),
-             self.morphology.morphology_path,))
+#     def instantiate(self, sim=None):
+#         sim.neuron.h.load_file('stdrun.hoc')
+#         template_name = self.load_hoc_template(sim, self.hoc_string)
+
+#         morph_path = self.morphology.morphology_path
+#         assert os.path.exists(morph_path), \
+#             'Morphology path does not exist: %s' % morph_path
+        
+#         if os.path.isdir(morph_path):
+#             # will use the built in morphology name, if the init() only
+#             # gets one parameter
+#             self.cell = getattr(sim.neuron.h, template_name)(morph_path)
+        
+#         else:
+#             morph_dir = os.path.dirname(morph_path)
+#             morph_name = os.path.basename(morph_path)
+#             self.cell = getattr(sim.neuron.h, template_name)(morph_dir,
+#                                                              morph_name)
+#         self.icell = self.cell.CellRef
+
+
+#     def destroy(self, sim=None):
+#         self.cell = None
+#         self.icell = None
+
+
+#     def check_nonfrozen_params(self, param_names):
+#         pass
+
+
+#     def __str__(self):
+#         """Return string representation"""
+#         return (
+#             '%s: %s of %s(%s)' %
+#             (self.__class__,
+#              self.name,
+#              self.get_template_name(self.hoc_string),
+#              self.morphology.morphology_path,))

@@ -133,7 +133,7 @@ from cellpopdata import (
 # Stimulation protocols
 from proto_common import (
 	StimProtocol, EvaluationStep, 
-	register_step, pick_random_segments, extend_dictitem,
+	register_step, pick_random_segments,
 )
 
 import logging
@@ -457,6 +457,10 @@ def make_background_inputs(**kwargs):
 	base_seed		= kwargs['base_seed']
 	rng_info		= kwargs['rng_info']
 	is_target_seg	= kwargs['syn_seg_filter']
+
+	rng_state = rng.get_state()
+	rng_pos = rng_state[2]
+	logger.debug('Using NumPy Random object with position = {}'.format(rng_pos))
 
 	# RNG info
 	highest_indices = rng_info['stream_indices']

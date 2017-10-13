@@ -140,7 +140,7 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 			except (RuntimeError, ephys.simulators.NrnSimulatorException):
 				
 				logger.debug(
-					'SweepProtocol: Running of parameter set {%s} generated '
+					'SelfContainedProtocol: Running of parameter set {%s} generated '
 					'an exception, returning None in responses',
 					str(param_values))
 				
@@ -177,6 +177,8 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 			'rng_info': {'stream_indices': {}} # map from low index to current highest index
 		}
 
+		# NOTE: proto kwargs must only be instantiated once per model instantiation
+		logger.debug("Instantiating protocol setup kwargs...")
 		self._this_proto_setup_kwargs = kwargs_default
 		self._this_proto_setup_kwargs.update(self._proto_setup_kwargs_const)
 
@@ -201,11 +203,12 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 		Instantiate
 		"""
 		# Make stimuli (inputs)
-		for stim_func in self._proto_setup_funcs_post:
-			stim_func(**self._this_proto_setup_kwargs)
+		for proto_setup_post in self._proto_setup_funcs_post:
+			proto_setup_post(**self._this_proto_setup_kwargs)
 
 		# Make custom recordings and store
 		if self.record_contained_traces:
+			# Custom recording functions
 			for rec_func in self._funcs_rec_traces:
 				rec_func(icell, self.stim_data, self.trace_spec_data, self.recorded_hoc_objects)
 
@@ -236,15 +239,23 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 		for func in self._funcs_plot_traces:
 			func(self.trace_rec_data)
 
+	def get_contained_traces(self):
+		"""
+		Return contained traces recorded using recording functions.
+
+		@return		collections.OrderedDict<str,h.Vector> : traces dict
+		"""
+		return self.trace_rec_data
+
 
 	def destroy(self, sim=None):
 		"""
 		Destroy protocol
 		"""
-
+		logger.debug("Destroying SelfContainedProtocol")
 		# Destroy self-contained stim data
 		self.trace_spec_data = None
-		self.trace_rec_data = None
+		# self.trace_rec_data = None # Do not destroy: must be available after run()
 		self.recorded_hoc_objects = None
 		self.recorded_pp_markers = None
 
