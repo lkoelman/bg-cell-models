@@ -3,8 +3,13 @@ Functions for setting up STN experimental protocols.
 """
 
 from enum import Enum, unique
+import re
 
 import numpy as np
+import neuron
+h = neuron.h
+
+from common import analysis
 
 import logging
 logger = logging.getLogger('stn_protos')
@@ -114,3 +119,100 @@ def extend_dictitem(d, key, val, append=True):
 		item.append(val) # append to list
 	else:
 		item.extend(val) # if val is list, join lists
+
+
+def index_or_name(trace_data):
+	"""
+	Ordering function: gets trace name or index.
+	"""
+	name = trace_data[0]
+	m = re.search(r'\[([\d]+)\]', name) # get index [i]
+	key = int(m.groups()[0]) if m else name
+	return key
+
+
+def plot_all_spikes(trace_vectors, **kwargs):
+	"""
+	Plot all recorded spikes.
+
+	@pre		all traces containing spike times have been tagged
+				with prefix 'AP_'. If not, provide a custom filter
+				function in param 'trace_filter'
+
+	@param trace_filter		filter function for matching spike traces.
+
+	@param kwargs			can be used to pass any arguments of analysis.plotRaster()
+	"""
+
+	# Get duration
+	if 'timeRange' not in kwargs:
+		tvec = analysis.to_numpy(trace_vectors['t_global'])
+		trace_dur = tvec[tvec.size-1] # last time point
+		kwargs['timeRange'] = (0, trace_dur) # set interval if not given
+
+	# Get spikes
+	trace_filter = kwargs.pop('trace_filter', None)
+	if trace_filter is None:
+		trace_filter = lambda t: t.startswith('AP_')
+	orderfun = index_or_name
+	
+	spikeData = analysis.match_traces(trace_vectors, trace_filter, orderfun) # OrderedDict
+
+	
+	# Plot spikes in rastergram
+	fig, ax = analysis.plotRaster(spikeData, **kwargs)
+	return fig, ax
+
+
+def plot_all_Vm(trace_vectors, **kwargs):
+	"""
+	Plot all membrane voltages.
+	"""
+	fig_per = kwargs.get('fig_per', None)
+	recordStep = kwargs.get('recordStep', None)
+
+	# Plot data
+	filterfun = lambda t: t.startswith('V_')
+	orderfun = index_or_name
+	recV = analysis.match_traces(trace_vectors, filterfun, orderfun)
+
+	if fig_per == 'cell' and len(recV) > 5:
+		rot = 0
+	else:
+		rot = 90
+
+	figs = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
+								traceSharex=True, oneFigPer=fig_per, 
+								labelRotation=rot)
+	return figs
+
+
+def plot_GABA_traces(trace_vectors, **kwargs):
+	"""
+	Plot GABA synapse traces.
+	"""
+	recordStep = kwargs.get('recordStep', None)
+
+	# Plot data
+	syn_traces = analysis.match_traces(trace_vectors, lambda t: re.search(r'GABAsyn', t))
+	n, KD = h.n_GABAsyn, h.KD_GABAsyn # parameters of kinetic scheme
+	hillfac = lambda x: x**n/(x**n + KD)
+	analysis.plotTraces(syn_traces, recordStep, 
+				traceSharex	= True,
+				title		= 'Synaptic variables',
+				traceXforms	= {'Hill_syn': hillfac},
+				oneFigPer	= kwargs.get('fig_per', None))
+
+
+def plot_GLU_traces(trace_vectors, **kwargs):
+	"""
+	Plot GABA synapse traces.
+	"""
+	recordStep = kwargs.get('recordStep', None)
+
+	# Plot synaptic variables
+	syn_traces = analysis.match_traces(trace_vectors, lambda t: re.search(r'GLUsyn', t))
+	analysis.plotTraces(syn_traces, recordStep,
+				traceSharex	= True,
+				title		= 'Synaptic variables',
+				oneFigPer	= kwargs.get('fig_per', None))

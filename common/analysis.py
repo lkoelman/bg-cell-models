@@ -274,6 +274,18 @@ def recordTraces(secs, traceSpecs, recordStep=0.05, duration=None, recData=None)
 	return recData, pp_markers
 
 
+def to_numpy(vec):
+	"""
+	Convert vector/array from any type to numpy array.
+	"""
+	if isinstance(vec, neuron.hoc.HocObject):
+		return vec.as_numpy()
+	elif isinstance(vec, np.ndarray):
+		return vec
+	else:
+		return np.array(vec)
+
+
 def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell', 
 				includeTraces=None, excludeTraces=None, labelTime=False,
 				showFig=True, colorList=None, lineList=None, yRange=None,
@@ -324,9 +336,16 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 	if excludeTraces is not None:
 		tracesList = [trace for trace in tracesList if trace not in excludeTraces]
 
+	# Convert to numpy
+	for trace in traceData.keys():
+		traceData[trace] = to_numpy(traceData[trace])
+
 	# time range
+	first_trace = traceData[tracesList[0]]
+	if recordStep is None:
+		recordStep = first_trace[1] - first_trace[0]
 	if timeRange is None:
-		timeRange = [0, traceData[tracesList[0]].size()*recordStep]
+		timeRange = [0, first_trace.size*recordStep]
 
 	if colorList is None:
 		colorList = [[0.42,0.67,0.84], [0.90,0.76,0.00], [0.42,0.83,0.59], [0.90,0.32,0.00],
@@ -367,9 +386,9 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		# Get data to plot
 		if (traceXforms is not None) and (trace in traceXforms):
 			xform = traceXforms[trace]
-			tracevec = xform(traceData[trace].as_numpy())
+			tracevec = xform(traceData[trace])
 		else:
-			tracevec = traceData[trace].as_numpy()
+			tracevec = traceData[trace]
 		
 		data = tracevec[int(timeRange[0]/recordStep):int(timeRange[1]/recordStep)]
 		t = np.arange(timeRange[0], timeRange[1]+recordStep, recordStep)
@@ -403,6 +422,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 	
 	return figs
 
+# Define visually appealing colors
 allcolors = [
 	'#7742f4', # Dark purple
 	[0.90,0.76,0.00], # Ochre
@@ -434,8 +454,11 @@ blueish = [
 solid_styles = ['-']
 broken_styles = ['--', '-.', ':']
 
+
 def pick_line(trace_name, trace_index, solid_only=False):
-	""" Pick a line style and color based on the trace name """
+	"""
+	Pick a line style and color based on the trace name
+	"""
 	style_map = {
 		'I': (allcolors, solid_styles),
 		'V': (allcolors, solid_styles),
@@ -604,7 +627,7 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
 	traceNames = reversed(traceNames) # rasterplot top -> bottom
 
 	# create X and Y data for scatter plot
-	spike_vecs = [spikeData[trace].as_numpy() for trace in traceNames]
+	spike_vecs = [to_numpy(spikeData[trace]) for trace in traceNames]
 	x_data = np.concatenate(spike_vecs) # X data is concatenated spike times
 	y_data = np.concatenate([np.zeros_like(vec)+j for j, vec in enumerate(spike_vecs)]) # Y-data is trace IDs
 	

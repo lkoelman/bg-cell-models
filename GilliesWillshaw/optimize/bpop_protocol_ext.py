@@ -73,11 +73,8 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 		self._proto_setup_kwargs_getters = proto_setup_kwargs_getters if proto_setup_kwargs_getters is not None else []
 
 		# Data used by protocol setup functions
-		self.trace_spec_data = collections.OrderedDict()
-		self.trace_rec_data = {}
-		self.recorded_hoc_objects = {}
-		self.recorded_pp_markers = []
-		self.record_contained_traces = False
+		self.recorded_trace_vectors = {}
+		self.record_contained_traces = True
 
 		########################################################################
 		# SweepProtocol parameters
@@ -100,6 +97,53 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 		Total duration of protocol (hides SweepProtocol.total_duration)
 		"""
 		return self._total_duration
+
+
+	def run(self, cell_model, param_values, sim=None, isolate=None):
+		"""
+		Wrapper for _run_func() for execution over multiple threads.
+
+		@post	if there are self-contained traces, they will available on
+				attribute self.recorded_trace_vectors
+		"""
+
+		if isolate is None:
+			isolate = True
+
+		if isolate:
+			def _reduce_method(meth):
+				"""Overwrite reduce"""
+				return (getattr, (meth.__self__, meth.__func__.__name__))
+
+			import copyreg
+			import types
+			copyreg.pickle(types.MethodType, _reduce_method)
+
+			import multiprocessing
+
+			pool = multiprocessing.Pool(1, maxtasksperchild=1)
+
+			# NOTE: the only difference with SweepProtocol is the second return
+			# value, which is needed to marshal data between processes
+			responses, traces = pool.apply(
+				self._run_func,
+				kwds={
+					'cell_model': cell_model,
+					'param_values': param_values,
+					'sim': sim})
+
+			pool.terminate()
+			pool.join()
+			del pool
+		else:
+			responses, traces = self._run_func(
+				cell_model=cell_model,
+				param_values=param_values,
+				sim=sim)
+
+		# 'responses' are protocol responses used by BluePyOpt, 'traces' are self-contained traces not used in optimization process
+		self.recorded_trace_vectors = traces
+		return responses
 
 
 	def _run_func(self, cell_model, param_values, sim=None):
@@ -129,9 +173,11 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 
 			# Pass functions and parameters to cell_model before instantiation
 			self.pre_model_instantiate(cell_model=cell_model, sim=sim)
+			
 			# Make final cell model
 			cell_model.instantiate(sim=sim)
-			# Instatiate things that need final cell model
+			
+			# Instatiate things that need final cell model (original instantiate())
 			self.post_model_instantiate(cell_model=cell_model, sim=sim)
 
 			try:
@@ -150,13 +196,16 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 				responses = {recording.name: recording.response
 								for recording in self.recordings}
 
-			self.destroy(sim=sim)
+			# Cleanup functions before model & protocol destruction
+			self.post_run(cell_model=cell_model, sim=sim)
 
+			# NOTE: all protocol and model data is released here!
+			self.destroy(sim=sim)
 			cell_model.destroy(sim=sim)
 
 			cell_model.unfreeze(param_values.keys())
 
-			return responses
+			return responses, self.recorded_trace_vectors
 
 		except:
 			import sys
@@ -179,56 +228,77 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 
 		# NOTE: proto kwargs must only be instantiated once per model instantiation
 		logger.debug("Instantiating protocol setup kwargs...")
-		self._this_proto_setup_kwargs = kwargs_default
-		self._this_proto_setup_kwargs.update(self._proto_setup_kwargs_const)
+		self._iproto_data = kwargs_default
+		self._iproto_data.update(self._proto_setup_kwargs_const)
 
 		# kwargs getters add keyword arguments on-the-fly
 		for kwarg_name, kwarg_getter in self._proto_setup_kwargs_getters.iteritems():
-			self._this_proto_setup_kwargs[kwarg_name] = kwarg_getter(self._this_proto_setup_kwargs)
+			self._iproto_data[kwarg_name] = kwarg_getter(self._iproto_data)
 
 		cell_model.proto_setup_funcs = self._proto_setup_funcs_pre
-		cell_model.proto_setup_kwargs = self._this_proto_setup_kwargs
+		cell_model.proto_setup_kwargs = self._iproto_data
 
 
 	def post_model_instantiate(self, cell_model=None, sim=None):
 		"""
 		Function executed after cell model instantiation.
 		"""
-		# See function below
-		self.instantiate(sim=sim, icell=cell_model.icell)
-
-
-	def instantiate(self, sim=None, icell=None):
-		"""
-		Instantiate
-		"""
 		# Make stimuli (inputs)
 		for proto_setup_post in self._proto_setup_funcs_post:
-			proto_setup_post(**self._this_proto_setup_kwargs)
+			proto_setup_post(**self._iproto_data)
 
 		# Make custom recordings and store
 		if self.record_contained_traces:
-			# Custom recording functions
+			# Prepare recording data containers
+			iproto_rec_data = {
+				'icell': cell_model.icell,
+				'trace_specs': collections.OrderedDict(),
+				'trace_vectors': {},
+				'rec_hoc_objects': {},
+				'rec_hoc_markers': {},
+			}
+			self._iproto_data.update(iproto_rec_data)
+
+			# Custom recording functions (put trace specs in trace_spec_data)
 			for rec_func in self._funcs_rec_traces:
-				rec_func(icell, self.stim_data, self.trace_spec_data, self.recorded_hoc_objects)
+				rec_func(**self._iproto_data)
+				logger.debug("Executed recording function {}".format(rec_func))
 
 			# Create recording vectors
+			if not 't_global' in self._iproto_data['trace_specs']:
+				self._iproto_data['trace_specs']['t_global'] = {'var':'t'}
+			
 			recData, markers = analysis.recordTraces(
-									self.recorded_hoc_objects, 
-									self.trace_spec_data,
+									self._iproto_data['rec_hoc_objects'], 
+									self._iproto_data['trace_specs'],
 									recordStep=0.05)
 
-			self.trace_rec_data = recData
-			self.recorded_pp_markers.extend(markers)
+			self._iproto_data['trace_vectors'] = recData
+			self._iproto_data['rec_hoc_markers'] = markers
 
 		# Initialize physiological conditions
 		for init_func in self._proto_init_funcs:
-			init_func(**self._this_proto_setup_kwargs)
+			init_func(**self._iproto_data)
 
-		# Finally instantiate ephys.stimuli and ephys.recordings
-		super(SelfContainedProtocol, self).instantiate(
-			sim=sim,
-			icell=icell)
+		# Defined in superclass, instantiates ephys.stimuli and ephys.recordings
+		self.instantiate(sim=sim, icell=cell_model.icell)
+
+
+	def post_run(self, cell_model=None, sim=None):
+		"""
+		Function executed immediately after running simulation, when model and
+		protocol data have not been destroyed.
+
+		@effect		saves recorded Hoc.Vector objects in dictionary 
+					self.recorded_trace_vectors as numpy arrays, with the original
+					trace names used for recording as keys.
+		"""
+		if self.record_contained_traces:
+			specs = self._iproto_data['trace_specs']
+			vecs = self._iproto_data['trace_vectors']
+			self.recorded_trace_vectors = collections.OrderedDict((
+				(k, vecs[k].as_numpy()) for k in specs.keys() # preserve order
+			))
 
 
 	def plot_contained_traces(self):
@@ -237,15 +307,16 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 		ephys.recordings objects in constructor.
 		"""
 		for func in self._funcs_plot_traces:
-			func(self.trace_rec_data)
+			func(self.recorded_trace_vectors)
+
 
 	def get_contained_traces(self):
 		"""
 		Return contained traces recorded using recording functions.
 
-		@return		collections.OrderedDict<str,h.Vector> : traces dict
+		@return		collections.OrderedDict<str,numpy.array> : traces dict
 		"""
-		return self.trace_rec_data
+		return self.recorded_trace_vectors
 
 
 	def destroy(self, sim=None):
@@ -253,13 +324,9 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 		Destroy protocol
 		"""
 		logger.debug("Destroying SelfContainedProtocol")
-		# Destroy self-contained stim data
-		self.trace_spec_data = None
-		# self.trace_rec_data = None # Do not destroy: must be available after run()
-		self.recorded_hoc_objects = None
-		self.recorded_pp_markers = None
-
-		self._this_proto_setup_kwargs = None
+		
+		# Release data belonging to instantiated protocol
+		self._iproto_data = None
 
 		# Make sure stimuli are not active in next protocol if cell model reused
 		for stim in self.stimuli:

@@ -403,15 +403,24 @@ def rec_traces(self, protocol, traceSpecs):
 	"""
 	Record all traces for this protocol.
 	"""
+	model = self.target_model
+	# stim_data_gpe = self.model_data[model]['inputs']['gpe']
+	# stim_data_ctx = self.model_data[model]['inputs']['ctx']
+	rec_kwargs = {
+		'stim_data': self.merged_inputs(['gpe','ctx'], model),
+		'trace_specs': traceSpecs,
+		'rec_hoc_objects': self.model_data[model]['rec_segs'][protocol],
+	}
+
 	# record synaptic traces
-	rec_GABA_traces(self, protocol, traceSpecs)
-	rec_GLU_traces(self, protocol, traceSpecs)
+	rec_GABA_traces(**rec_kwargs)
+	rec_GLU_traces(**rec_kwargs)
 
 	# record membrane voltages
-	rec_Vm(self, protocol, traceSpecs)
+	rec_Vm(**rec_kwargs)
 
 	# Record input spikes
-	rec_spikes(self, protocol, traceSpecs)
+	rec_spikes(**rec_kwargs)
 
 
 @register_step(EvaluationStep.PLOT_TRACES, StimProtocol.SYN_BACKGROUND_HIGH)
@@ -576,7 +585,6 @@ def make_background_inputs(**kwargs):
 
 		# Save inputs
 		stim_data.setdefault('syn_NetCons', []).append(nc)
-		stim_data.setdefault('syn_NetCons', []).append(nc)
 		stim_data.setdefault('synapses', []).append(syn)
 		stim_data.setdefault('NetStims', []).append(stimsource)
 		stim_data.setdefault('stimweightvec', []).append(wvecs)
@@ -586,7 +594,7 @@ def make_background_inputs(**kwargs):
 		})
 
 
-def rec_GABA_traces(self, protocol, traceSpecs):
+def rec_GABA_traces(**kwargs):
 	"""
 	Record traces at GABA synapses
 
@@ -595,11 +603,14 @@ def rec_GABA_traces(self, protocol, traceSpecs):
 
 	n_syn = 3 # number of recorded synapses
 
-	rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
-	model = self.target_model
+	# Get data
+	rec_segs = kwargs['rec_hoc_objects']
+	traceSpecs = kwargs['trace_specs']
+	stim_data = kwargs['stim_data']
+	nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()=='gpe']
+
 	
 	# Add synapse and segment containing it
-	nc_list = self.model_data[model]['inputs']['gpe']['syn_NetCons']
 	for i_syn, nc in enumerate(nc_list):
 		if i_syn > n_syn-1:
 			break
@@ -616,18 +627,20 @@ def rec_GABA_traces(self, protocol, traceSpecs):
 		traceSpecs['gB_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAB'}
 
 
-def rec_GLU_traces(self, protocol, traceSpecs):
+def rec_GLU_traces(**kwargs):
 	"""
 	Record traces at GLU synapses
 	"""
 
 	n_syn = 3 # number of recorded synapses
 
-	rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
-	model = self.target_model
+	# Get data
+	rec_segs = kwargs['rec_hoc_objects']
+	traceSpecs = kwargs['trace_specs']
+	stim_data = kwargs['stim_data']
+	nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()=='ctx']
 	
 	# Add synapse and segment containing it
-	nc_list = self.model_data[model]['inputs']['ctx']['syn_NetCons']
 	for i_syn, nc in enumerate(nc_list):
 		if i_syn > n_syn-1:
 			break
@@ -644,34 +657,41 @@ def rec_GLU_traces(self, protocol, traceSpecs):
 		traceSpecs['gN_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_NMDA'}
 
 
-def rec_Vm(self, protocol, traceSpecs):
+def rec_Vm(**kwargs):
 	"""
 	Record membrane voltages in all recorded segments
 	"""
-	rec_segs = self.model_data[self.target_model]['rec_segs'][protocol]
+	# Get data
+	rec_segs = kwargs['rec_hoc_objects']
+	traceSpecs = kwargs['trace_specs']
 	
 	for seclabel, seg in rec_segs.iteritems():
 		if isinstance(seg, neuron.nrn.Segment):
 			traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
 
 
-def rec_spikes(self, protocol, traceSpecs):
+def rec_spikes(**kwargs):
 	"""
 	Record input spikes delivered to synapses.
 	"""
-	model = self.target_model
-	rec_pops = [Pop.GPE, Pop.CTX]
+	rec_pops = [Pop.GPE.name, Pop.CTX.name]
+
+	# Get data
+	traceSpecs = kwargs['trace_specs']
+	stim_data = kwargs['stim_data']
+	rec_hobjs = kwargs['rec_hoc_objects']
+	
 
 	for pre_pop in rec_pops:
-		nc_list = self.model_data[model]['inputs'][pre_pop.name.lower()]['syn_NetCons']
+		nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()==pre_pop.lower()]
 		for i_syn, nc in enumerate(nc_list):
 
 			# Add NetCon to list of recorded objects
 			# match = re.search(r'\[[\d]+\]', nc.hname())
 			# suffix = match.group() if match else ('syn' + str(i_syn))
 			suffix = 'syn' + str(i_syn)
-			syn_tag = pre_pop.name + suffix
-			self._add_recorded_obj(syn_tag, nc, protocol)
+			syn_tag = pre_pop + suffix
+			rec_hobjs[syn_tag] = nc
 
 			# Specify trace
 			traceSpecs['AP_'+syn_tag] = {'netcon':syn_tag}

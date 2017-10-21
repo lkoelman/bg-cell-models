@@ -467,6 +467,24 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		return self.model_data[model]['inputs'].get(pre_pop, None)
 
 
+	def merged_inputs(self, pops, model):
+		"""
+		Return input dict with all data from multiple pre-synaptic populations
+		merged into one dict.
+		"""
+		joined = {}
+		for pop in pops:
+			if not isinstance(pop, str):
+				pop = pop.name.lower()
+			if not pop in self.model_data[model]['inputs']:
+				continue
+			for dtype, dvec in self.model_data[model]['inputs'][pop]:
+				if dtype in joined:
+					joined[dtype].extend(dvec)
+				else:
+					joined[dtype] = list(dvec) # new list
+
+
 	def save_input_data():
 		pass
 
@@ -947,20 +965,9 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		rec_dict = self.model_data[model]['rec_data'][protocol]
 		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
 
-		# Plot data
-		filterfun = lambda t: t.startswith('V_')
-		orderfun = index_or_name
-		recV = analysis.match_traces(recData, filterfun, orderfun)
-
-		if fig_per == 'cell' and len(recV) > 5:
-			rot = 0
-		else:
-			rot = 90
-
-		figs = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
-									traceSharex=True, oneFigPer=fig_per, 
-									labelRotation=rot)
-		return figs
+		return proto_common.plot_all_Vm(recData, 
+								recordStep=recordStep,
+								fig_per=fig_per)
 	
 
 	def _plot_all_spikes(self, model, protocol, **kwargs):
@@ -979,23 +986,7 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		rec_dict = self.model_data[model]['rec_data'][protocol]
 		recData, rec_dt = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
 
-		# Get duration
-		tvec = recData['t_global']
-		trace_dur = tvec.x[int(tvec.size() - 1)] # last time point
-		kwargs.setdefault('timeRange', (0, trace_dur)) # set interval if not given
-
-		# Get spikes
-		trace_filter = kwargs.pop('trace_filter', None)
-		if trace_filter is None:
-			trace_filter = lambda t: t.startswith('AP_')
-		orderfun = index_or_name
-		
-		spikeData = analysis.match_traces(recData, trace_filter, orderfun) # OrderedDict
-
-		
-		# Plot spikes in rastergram
-		fig, ax = analysis.plotRaster(spikeData, **kwargs)
-		return fig, ax
+		return proto_common.plot_all_sikes(recData, **kwargs)
 
 
 	def _plot_GABA_traces(self, model, protocol, fig_per='trace'):
@@ -1006,12 +997,7 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		rec_dict = self.model_data[model]['rec_data'][protocol]
 		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
 
-		# Plot data
-		syn_traces = analysis.match_traces(recData, lambda t: re.search(r'GABAsyn', t))
-		n, KD = h.n_GABAsyn, h.KD_GABAsyn # parameters of kinetic scheme
-		hillfac = lambda x: x**n/(x**n + KD)
-		analysis.plotTraces(syn_traces, recordStep, traceSharex=True, title='Synaptic variables',
-							traceXforms={'Hill_syn': hillfac})
+		return proto_common.plot_GABA_traces(recData, fig_per=fig_per)
 
 
 	def _plot_GLU_traces(self, model, protocol, fig_per='trace'):
@@ -1022,9 +1008,8 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		rec_dict = self.model_data[model]['rec_data'][protocol]
 		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
 
-		# Plot synaptic variables
-		syn_traces = analysis.match_traces(recData, lambda t: re.search(r'GLUsyn', t))
-		analysis.plotTraces(syn_traces, recordStep, traceSharex=True, title='Synaptic variables')
+		return proto_common.plot_GABA_traces(recData, fig_per=fig_per)
+
 
 	############################################################################
 	# SIMULATION functions

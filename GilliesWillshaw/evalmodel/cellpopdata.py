@@ -261,6 +261,8 @@ class GABAsynWrapper(neuron.hclass(h.GABAsyn)):
 	pass
 class GLUsynWrapper(neuron.hclass(h.GLUsyn)):
 	pass
+class NetConWrapper(neuron.hclass(h.NetCon)):
+	pass
 
 syn_wrapper_classes = {
 	'GABAsyn' : GABAsynWrapper,
@@ -947,11 +949,12 @@ class CellConnector(object):
 		# Make NetCon connection
 		if isinstance(pre_obj, nrn.Section):
 			# Biophysical cells need threshold detection to generate events
-			nc = h.NetCon(pre_obj(0.5)._ref_v, syn, sec=pre_obj)
-
+			nc = NetConWrapper(pre_obj(0.5)._ref_v, syn, sec=pre_obj)
 		else:
 			# Source object is POINT_PROCESS or other event-generating objcet
-			nc = h.NetCon(pre_obj, syn)
+			nc = NetConWrapper(pre_obj, syn)
+		nc.pre_pop = pre_pop.name
+		nc.post_pop = post_pop.name
 
 		# Get physiological parameter descriptions
 		if con_par_data is None:

@@ -22,7 +22,7 @@ from bpop_protocol_ext import SelfContainedProtocol
 
 from evalmodel import (
 	cellpopdata as cpd,
-	proto_background
+	proto_common, proto_background
 )
 from evalmodel.proto_common import StimProtocol
 
@@ -716,6 +716,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 					location		= soma_center_loc,
 					variable		= 'v')
 
+	# Protocol setup
 	proto_setup_funcs = [
 		proto_background.make_inputs_ctx_impl, 
 		proto_background.make_inputs_gpe_impl
@@ -737,6 +738,15 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 		('connector', connector_getter),
 	])
 
+	# Recording and plotting traces
+	proto_rec_funcs = [
+		proto_background.rec_spikes,
+	]
+
+	proto_plot_funcs = [
+		proto_common.plot_all_spikes,
+	]
+
 	ephys_protocol = SelfContainedProtocol(
 						name				= IMPL_PROTO.name, 
 						recordings			= [bg_recV],
@@ -744,7 +754,9 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 						proto_init_funcs			= proto_init_funcs,
 						proto_setup_funcs_pre		= proto_setup_funcs,
 						proto_setup_kwargs_const	= proto_setup_kwargs_const,
-						proto_setup_kwargs_getters	= proto_setup_kwargs_getters,)
+						proto_setup_kwargs_getters	= proto_setup_kwargs_getters,
+						rec_traces_funcs	= proto_rec_funcs,
+						plot_traces_funcs	= proto_plot_funcs)
 
 	proto_vars = {
 		'pp_mechs':			[],
