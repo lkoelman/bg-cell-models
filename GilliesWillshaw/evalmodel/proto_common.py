@@ -3,16 +3,14 @@ Functions for setting up STN experimental protocols.
 """
 
 from enum import Enum, unique
-import re
+import re, sys
 
 import numpy as np
 import neuron
 h = neuron.h
 
-from common import analysis
-
-import logging
-logger = logging.getLogger('stn_protos')
+from common import analysis, logutils
+logger = logutils.getBasicLogger(name='stn_protos', stream=sys.stdout)
 
 @unique
 class StimProtocol(Enum):
@@ -86,7 +84,7 @@ def pick_random_segments(sections, n_segs, elig_func, rng=None, refs=True):
 	else:
 		elig_segs = [seg for sec in sections for seg in sec if elig_func(seg)]
 	
-	logger.debug("Found {} eligible target segments".format(len(elig_segs)))
+	logger.debug("Found {} eligible candidate segments".format(len(elig_segs)))
 
 	# Sample segments
 	#   Note that nseg/L is not necessarily uniform so that randomly picking
@@ -107,6 +105,8 @@ def pick_random_segments(sections, n_segs, elig_func, rng=None, refs=True):
 				x_on_sec = x0_seg + percent_seg*xwidth
 				target_segs.append(seg.sec(x_on_sec))
 			Ltraversed += Lseg
+
+	logger.debug("Picked {} target segments.".format(len(target_segs)))
 
 	return target_segs
 
@@ -162,6 +162,40 @@ def plot_all_spikes(trace_vectors, **kwargs):
 	# Plot spikes in rastergram
 	fig, ax = analysis.plotRaster(spikeData, **kwargs)
 	return fig, ax
+
+
+def report_spikes(trace_vectors, **kwargs):
+	"""
+	Plot all recorded spikes.
+
+	@pre		all traces containing spike times have been tagged
+				with prefix 'AP_'. If not, provide a custom filter
+				function in param 'trace_filter'
+
+	@param trace_filter		filter function for matching spike traces.
+
+	@param kwargs			can be used to pass any arguments of analysis.plotRaster()
+	"""
+
+	# Get spikes
+	trace_filter = kwargs.pop('trace_filter', None)
+	if trace_filter is None:
+		trace_filter = lambda t: t.startswith('AP_')
+	orderfun = index_or_name
+	
+	spikeData = analysis.match_traces(trace_vectors, trace_filter, orderfun) # OrderedDict
+
+	# Count spikes and sum times
+	spiketrain_lengths_timesums = [(len(train), sum(train)) for train in spikeData.values()]
+	train_lengths, train_sums = zip(*spiketrain_lengths_timesums)
+	
+	# Report them
+	length_report = "Recorded spike train lengths are: {}".format(train_lengths)
+	timesum_report = "Sum of spike times for each train is: {}".format(train_sums)
+	logger.debug(length_report)
+	logger.debug(timesum_report)
+
+	return None, None # same num out as plot functions
 
 
 def plot_all_Vm(trace_vectors, **kwargs):

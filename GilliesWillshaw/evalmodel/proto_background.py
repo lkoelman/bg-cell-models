@@ -3,118 +3,13 @@ Functions to set up STN experimental protocol with low and high
 background activity
 
 
-################################################################################
-CONNECTIVITY observations
-################################################################################
-
-
-Bevan2017HandbookBG
-
-	- The major GABAergic input to the STN arises from ipsilateral Nkx2-1- and LHx6-expressing GPe neurons,the majority of which also express parvalbumin.
-
-	- Approximately 70-80% of GPe neurons are estimated to innervate the STN  with each STN neuron receiving input from a small fraction of GPe-STN neurons (Baufreton et al., 2009). 
-	
-	- Each GPe-STN axon forms a sparse, spatially distributed ter-minal field that synapses on the proximal somatodendritic regions of a small number of widely dispersed STN neurons  
-	
-	- The axon initial segment of STN neurons is devoid of both GABAergic inputs and GABARs (Atherton et al., 2008).
-
-
-
-	- Unitary GABAAR-mediated GPe-STN conduc-tances are large (~5-15 nS) because each axon forms multiple synaptic inputs with an individual postsynap-tic neuron
-	
-	- However, sustained presynaptic GPe-STN activity is associated with profound short-term synaptic depression due to depletion of release-ready vesicles, which limits the reliability and ampli-tude of unitary synaptic transmission (Atherton et al.,2013). 
-	
-	- Given the high rates of activity of GPe-STN neurons in vivo (Abdi et al., 2015; Dodson et al., 2015), short-term synaptic depression is likely to greatly restrict the influence of individual GPe neurons on the STN. 
-	
-	- The anatomical organization and short-term plasticity properties of unitary GPe-STN inputs therefore greatly reduce the probably of detecting correlated GPe-STN activity.
-
-
-
-	- Cortical inputs terminate on small diameter dendrites and dendritic spines of STN neurons (Bevan et al., 1995) and act through postsynaptic AMPARs and NMDARs with classical drug sensitivities,kinetics, and voltage dependencies (Chu et al., 2015).
-
-
-
-	- The STN also receives a major serotonergic input from the dorsal raphe (Lavoie and Parent, 1990; Parent et al., 2010; Wallman et al., 2011). 
-	
-	- Serotonergic synapses are distributed uniformly throughout the STN and pre- dominantly form asymmetric synapses with the den- dritic shafts and spines of STN neurons (Parent et al., 2010; Wallman et al., 2011). 
-	
-	- Serotonin typically excites STN neurons through activation of Gq-coupled 5HT2CRs and Gs-coupled 5HT4Rs but also inhibits a subset of STN neurons through activation of Gi-cou- pled 5HT1ARs (Shen et al., 2007; Stanford et al., 2005; Xiang et al., 2005). 
-	
-	- Excitation is associated with a decrease in voltage-independent K+ conductance and an increase in nonselective cation conductance, whereas inhibition is mediated through an increase in K+ conductance (Shen et al., 2007; Stanford et al., 2005; Xiang et al., 2005). 
-	
-	- Serotonin also reduces the initial probability of both glutamatergic and GABAergic transmission through activation of presynaptic Gi-cou- pled 5HT1BRs (Shen and Johnson, 2008).
-
-
-
-	- The parafascicular thalamic nucleus  also projects ipsilaterally and topographically to the STN (Bevan et al., 1995; Groenewegen and Berendse, 1990; Lanciego et al., 2004; Sadikot et al.,1992). 
-
-	- In rodents, the medial, central, and lateral parts of the parafascicular thalamic nucleus project to corre-sponding zones of the STN. Parafascicular thalamicneurons that project to STN also send collaterals tothe striatum and layer VI of the cortex (Deschenes et al., 1996). 
-
-	- Thalamic inputs also terminate on the dendritic shafts and spines of STN neurons. However,thalamic inputs target larger diameter and thus moreproximal dendrites than cortical inputs (Bevan et al.,1995). 
-
-	- The available evidence suggests that para-fascicular inputs also excite STN neurons throughactivation of postsynaptic AMPARs and NMDARs (Mouroux and Feger, 1993).
-
-
-
-	- Both noncholinergic and cholinergic PPN neuronsproject bilaterally to the STN but with an ipsilateral preference (Bevan and Bolam, 1995; Kita and Kita,2011). 
-
-	- Because noncholinergic and cholinergic PPN axon terminals express high levels of glutamate theyare presumed to use it as a neurotransmitter (Bevanand Bolam, 1995; Clarke et al., 1997). 
-
-	- PPN inputs terminate on the dendritic shafts and spines of STN neurons (Bevan and Bolam, 1995).
-
-
-
-Galvan2004DifferentialDistributionGABAaGABAb
-
-	- we found that the GABAA receptors are distributed evenly along synaptic specializations in the STN. 
-
-	- Also, the density of GABAA alpha1 subunit labeling at symmetric synapses was similar on proximal and distal dendrites, as originally found in the cerebellum (Somogyi et al., 1996). 
-
-	- Since it has been proposed that GABAergic postsynaptic responses correlate directly with the number of GABA receptors (Nusser et al., 1997), our observations suggest that the strength of pallidal GABAergic synapses remains relatively constant along the dendritic tree of STN neurons.
-
-
-
-BaufretonBevan2008
-	
-	- It is estimated that STN neurons each receive approximately 300 synaptic inputs, each with a mean conductance of approximately 0.8 nS (this study).
-
-
-
-Baufreton 2009
-
-	- Light and electron microscopic analyses revealed that single GP axons give rise to sparsely distributed terminal clusters, many of which correspond to multiple synapses with individual STN neurons.
-	
-	- Application of the minimal stimulation technique in brain slices confirmed that STN neurons receive multisynaptic unitary inputs and that these inputs largely arise from different sets of GABAergic axons
-
-
-
-################################################################################
-ACTIVITY observations
-################################################################################
-
-Mallet2016Neuron89
-
-	- GPe Proto cells fired regularly at high rates (47.3 +/- 6.1 Hz) while GPe Arky cells (projecting to Str) were more irregularly active with lower awake firing rates (8.9 +/- 1.9 Hz)
-
-	- Both GPe Arky and Proto cells show similar population-level entrainment to LFP beta oscillations with few individual cells strongly entrained
-
-	- A subset of GPe Proto cells show clear pauses in activity from high baseline, consistent with high-frequency discharging
-
-
-
-Nambu2014Frontiers8
-
-	- Average firing rate of GPe neurons decreased significantly from 65.2+/-25.8 to 41.2+/-22.5 upon MPTP treatment
-
+Physiological & Anatomical parameters: see notes/BG_observations_experiments.md
 
 """
 
 # Python stdlib
-import re
+import re, sys
 from collections import namedtuple
-
-# SciPy
-import numpy as np
 
 # NEURON
 import neuron
@@ -136,9 +31,10 @@ from proto_common import (
 	register_step, pick_random_segments,
 )
 
-import logging
-logger = logging.getLogger('stn_protos')
-
+from common import logutils
+logger = logutils.getBasicLogger(name='stn_protos', stream=sys.stdout)
+# from IPython.config import Application
+# logger = Application.instance().log 
 
 # PROBLEM:
 #	- we have estimates for the total number of synapses
@@ -163,6 +59,7 @@ FRAC_SYN = {
 }
 
 MSR_METHOD = MSRC.SCALE_NUMSYN_MSR # How to take into account multi-synapse rule
+# NOTE: if method is SCALE_NUMSYN_MSR => n_syn = n_syn_stn_tot * FRAC_SYN / MSR_NUM_SYN
 
 ################################################################################
 # Interface functions
@@ -479,7 +376,7 @@ def make_background_inputs(**kwargs):
 	gsyn_multi = max((con_par[NTR].get('gbar', 0) for NTR in syn_NTRs))
 
 	# Calculate number of synapses
-	n_syn_single = int(FRAC_SYN[POP_PRE] * n_syn_stn_tot) # number of unitary synapses for this population
+	n_syn_single = int(FRAC_SYN[POP_PRE] * n_syn_stn_tot) # number of unitary synapses (actual synaptic contacts) for this population
 	
 	if MSR_METHOD == MSRC.SCALE_NUMSYN_GSYN:
 		gsyn_tot = n_syn_single * gsyn_single # total parallel condutance desired [uS]

@@ -663,7 +663,8 @@ class CellConnector(object):
 			# Changes in parkinsonian state
 			if physio_state == PhysioState.PARKINSONIAN:
 				Ermp = -80. # Fig. 2G
-				cp[Pop.CTX][Rec.AMPA][Src.Chu2015].update({
+				# NOTE: increase peak conductance by same factor as AMPA
+				cp[Pop.CTX][Rec.NMDA][Src.Chu2015].update({
 					'Ipeak': park_gain * cp[Pop.CTX][Rec.NMDA][Src.Chu2015]['Ipeak'],
 					'gbar':  park_gain * cp[Pop.CTX][Rec.NMDA][Src.Chu2015]['Ipeak'],	
 				})

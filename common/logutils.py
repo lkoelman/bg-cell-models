@@ -21,11 +21,71 @@ DEBUG_ANAL_LVL = 5 # see https://docs.python.org/2/library/logging.html#logging-
 logging.addLevelName(DEBUG_ANAL_LVL, "ANAL")
 
 def anal_logfun(self, message, *args, **kws):
-    if self.isEnabledFor(DEBUG_ANAL_LVL):
-    	# Yes, logger takes its '*args' as 'args'.
-        self._log(DEBUG_ANAL_LVL, message, args, **kws) 
+	if self.isEnabledFor(DEBUG_ANAL_LVL):
+		# Yes, logger takes its '*args' as 'args'.
+		self._log(DEBUG_ANAL_LVL, message, args, **kws) 
 
 logging.Logger.anal = anal_logfun
+
+
+def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handlers_from=None):
+	"""
+	Similar to logging.basicConfig() except this works on a new logger rather
+	than on the root logger (logging.root).
+
+	@param	copy_handlers_from		Logger or list(Logger) to copy handlers from
+
+	@note	see https://github.com/python/cpython/blob/master/Lib/logging/__init__.py
+	"""
+
+	if level is None:
+		level = logging.DEBUG
+	if format is None:
+		format = '%(levelname)s:%(message)s @%(filename)s:%(lineno)s'
+
+	# create logger
+	logger = logging.getLogger(name) # RootLogger if name is None
+	logger.setLevel(level)
+
+	# Get handlers
+	handlers = []
+
+	if copy_handlers_from:
+		if isinstance(copy_handlers_from, logging.Logger):
+			src_loggers = [copy_handlers_from]
+		else:
+			src_loggers = copy_handlers_from
+		
+		for src in src_loggers:
+			if src is logger:
+				continue
+			handlers.extend(src.handlers)
+
+	if len(handlers)==0 or stream is not None:
+		if stream is None:
+			stream = sys.stderr # same as default
+
+		# create stream handler and set level to debug
+		sh = logging.StreamHandler(stream=stream)
+		sh.setLevel(level)
+		handlers.append(sh)
+
+		# create formatter
+		fmt = logging.Formatter(format)
+	else:
+		fmt = None
+
+
+	for h in handlers:
+		if h.formatter is None and fmt is not None:
+			h.setFormatter(fmt)
+		if h in logger.handlers:
+			continue
+		if any((hdlr.stream is h.stream for hdlr in logger.handlers)):
+			continue
+		logger.addHandler(h)
+
+	return logger
 
 
 def setLogLevel(level, logger_names):
@@ -53,6 +113,9 @@ def install_mp_handler(logger=None):
 
 	:param logger: whose handlers to wrap. By default, the root logger.
 
+	@note	this does not seem to work with ipyparallel, since it does not
+			use the native multiprocessing module
+
 	USAGE
 
 		import logutils
@@ -68,6 +131,17 @@ def install_mp_handler(logger=None):
 
 		logger.removeHandler(orig_handler)
 		logger.addHandler(handler)
+
+
+class ZeroMQSocketHandler(object):
+	"""
+	TODO: implement ZMQ stream handler for loggers on ipyparallel engines
+
+	http://olympiad.cs.uct.ac.za/docs/python-docs-3.2/howto/logging-cookbook.html#subclassing-queuehandler-a-zeromq-example
+
+	http://ipyparallel.readthedocs.io/en/latest/development/connections.html#iopub
+	"""
+	pass
 
 
 class MultiProcessingHandler(logging.Handler):

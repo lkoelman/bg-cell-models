@@ -199,9 +199,9 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
 		### SPIKE TIMING RELATED ###
-		'Spikecount': {			# (int) The number of peaks during stimulus
-			'weight':	2.0,
-		},
+		# 'Spikecount': {			# (int) The number of peaks during stimulus
+		# 	'weight':	2.0,
+		# },
 		# 'mean_frequency',		# (float) the mean frequency of the firing rate
 		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
 		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
@@ -227,18 +227,18 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 		# 'AP_rise_time': {		# (array) Time from action potential onset to the maximum
 		# 	'weight':	1.0,
 		# },
-		# 'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
-		# 	'weight':	1.0,
-		# },
-		# 'AP_height': {			# (array) The voltages at the maxima of the peak
-		# 	'weight':	1.0,
-		# },
+		'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
+			'weight':	1.0,
+		},
+		'AP_height': {			# (array) The voltages at the maxima of the peak
+			'weight':	1.0,
+		},
 		# 'AP_amplitude': {		# (array) The relative height of the action potential
 		# 	'weight':	1.0,
 		# },
-		# 'spike_half_width':	{	# (array) The FWHM of each peak
-		# 	'weight':	1.0,
-		# },
+		'spike_half_width':	{	# (array) The FWHM of each peak
+			'weight':	1.0,
+		},
 		# 'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
 		# 	'weight':	1.0,
 		# },
@@ -321,9 +321,9 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
 		### SPIKE TIMING RELATED ###
-		'Spikecount': {			# (int) The number of peaks during stimulus
-			'weight':	2.0,
-		},
+		# 'Spikecount': {			# (int) The number of peaks during stimulus
+		# 	'weight':	2.0,
+		# },
 		# 'mean_frequency',		# (float) the mean frequency of the firing rate
 		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
 		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
@@ -349,18 +349,18 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 		# 'AP_rise_time': {		# (array) Time from action potential onset to the maximum
 		# 	'weight':	1.0,
 		# },
-		# 'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
-		# 	'weight':	1.0,
-		# },
-		# 'AP_height': {			# (array) The voltages at the maxima of the peak
-		# 	'weight':	1.0,
-		# },
+		'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
+			'weight':	1.0,
+		},
+		'AP_height': {			# (array) The voltages at the maxima of the peak
+			'weight':	1.0,
+		},
 		# 'AP_amplitude': {		# (array) The relative height of the action potential
 		# 	'weight':	1.0,
 		# },
-		# 'spike_half_width':	{	# (array) The FWHM of each peak
-		# 	'weight':	1.0,
-		# },
+		'spike_half_width':	{	# (array) The FWHM of each peak
+			'weight':	1.0,
+		},
 		# 'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
 		# 	'weight':	1.0,
 		# },
@@ -708,7 +708,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 
 	# TODO: find out how to make it run long enough if no ephys Stimuli present (set in ExtProtocol?)
-	sim_end = 2000.0
+	sim_end = 5000.0
 	response_interval = (300.0, sim_end)
 
 	bg_recV = ephys.recordings.CompRecording(
@@ -727,7 +727,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 	]
 
 	proto_setup_kwargs_const = {
-		'base_seed': 25031989,
+		'base_seed': 8, # 25031989,
 		'gid': 1,
 		'do_map_synapses': True,
 		'physio_state': cpd.PhysioState.NORMAL.name,
@@ -744,7 +744,8 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 	]
 
 	proto_plot_funcs = [
-		proto_common.plot_all_spikes,
+		# proto_common.plot_all_spikes,
+		proto_common.report_spikes,
 	]
 
 	ephys_protocol = SelfContainedProtocol(
@@ -757,6 +758,8 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 						proto_setup_kwargs_getters	= proto_setup_kwargs_getters,
 						rec_traces_funcs	= proto_rec_funcs,
 						plot_traces_funcs	= proto_plot_funcs)
+
+	ephys_protocol.autoplot_contained_traces = True
 
 	proto_vars = {
 		'pp_mechs':			[],
@@ -771,7 +774,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
 		'Victor_Purpura_distance': {
-			'weight':	2.0,
+			'weight':	8.0,
 			'double': { 'spike_shift_cost' : 1.0 },
 		},
 	}

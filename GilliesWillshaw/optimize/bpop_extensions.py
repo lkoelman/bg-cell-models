@@ -30,7 +30,8 @@ class NrnScaleRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.Dic
             frozen=False,
             bounds=None,
             param_name=None,
-            locations=None):
+            locations=None,
+            segment_filter=None):
         """
         Contructor
 
@@ -59,6 +60,7 @@ class NrnScaleRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.Dic
 
         self.locations = locations
         self.param_name = param_name
+        self.segment_filter = segment_filter
 
 
     def instantiate(self, sim=None, icell=None):
@@ -74,6 +76,9 @@ class NrnScaleRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.Dic
         for location in self.locations:
             for isection in location.instantiate(sim=sim, icell=icell):
                 for seg in isection:
+                    # Skip segment if doesn't match filter
+                    if (self.segment_filter is not None) and (not self.segment_filter(seg)):
+                        continue
                     # Scale the parameter
                     old_val = getattr(seg, '%s' % self.param_name)
                     new_val = old_val * self.value

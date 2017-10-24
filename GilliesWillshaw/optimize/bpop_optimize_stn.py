@@ -34,21 +34,17 @@ from evalmodel.proto_common import StimProtocol
 CLAMP_PLATEAU = StimProtocol.CLAMP_PLATEAU
 CLAMP_REBOUND = StimProtocol.CLAMP_REBOUND
 MIN_SYN_BURST = StimProtocol.MIN_SYN_BURST
+SYN_BACKGROUND_HIGH = StimProtocol.SYN_BACKGROUND_HIGH
 
 # Adjust verbosity of loggers
 import logging
 logger = logging.getLogger('bpop_ext')
-
-silent_loggers = ['marasco', 'redops', 'folding', 'bluepyopt.ephys.parameters']
-verbose_loggers = []
-for logname in silent_loggers:
-	slogger = logging.getLogger(logname)
-	if slogger: slogger.setLevel(logging.WARNING)
+# logutils.setLogLevel('quiet', ['marasco', 'folding', 'redops', 'bluepyopt.ephys.parameters'])
 
 
 
 # SETPARAM: filepath of saved responses
-PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/fullmodel/STN_Gillies2005_proto_responses.pkl" # backup is in filename.old.pkl
+PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/fullmodel/STN_Gillies2005_proto_responses_3.pkl" # backup is in filename.old.pkl
 
 
 ################################################################################
@@ -425,12 +421,14 @@ def get_map_function(parallel):
 	return mapper
 
 
-if __name__ == '__main__':
-	# Calculate features for each optimisation protocol
-	# proto_feats = get_features_targets()
+def save_fullmodel_responses(plot=True):
+	"""
+	Save responses to all stimulation protocols for full model to file.
 
+	@effect		responses are saved to pickle file specified in variable
+				PROTO_RESPONSES_FILE
+	"""
 	# Save full model responses
-	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 	model_type = StnModel.Gillies2005
 
 	# Make all available protocols
@@ -450,6 +448,14 @@ if __name__ == '__main__':
 	
 	save_proto_responses(full_responses, PROTO_RESPONSES_FILE)
 
+	if plot:
+		plot_proto_responses(full_responses)
+
+
+if __name__ == '__main__':
+	# Calculate features for each optimisation protocol
+	# proto_feats = get_features_targets()
+
 	# Load and plot
-	# responses = load_proto_responses(PROTO_RESPONSES_FILE)
-	# plot_proto_responses(responses)
+	responses = load_proto_responses(PROTO_RESPONSES_FILE)
+	plot_proto_responses(responses)

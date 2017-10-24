@@ -75,6 +75,7 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 		# Data used by protocol setup functions
 		self.recorded_trace_vectors = {}
 		self.record_contained_traces = True
+		self.autoplot_contained_traces = False
 
 		########################################################################
 		# SweepProtocol parameters
@@ -299,6 +300,9 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 			self.recorded_trace_vectors = collections.OrderedDict((
 				(k, vecs[k].as_numpy()) for k in specs.keys() # preserve order
 			))
+
+		if self.autoplot_contained_traces:
+			self.plot_contained_traces()
 
 
 	def plot_contained_traces(self):

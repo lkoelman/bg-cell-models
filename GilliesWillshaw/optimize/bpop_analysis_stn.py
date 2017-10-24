@@ -24,17 +24,21 @@ def plot_proto_responses(proto_responses):
 
 	@param	proto_responses		dict {protocol_name: responses_dict}
 	"""
-	for proto_name, responses in proto_responses.iteritems():
-		
-		fig, axes = plt.subplots(len(responses))
-		try:
-			iter(axes)
-		except TypeError:
-			axes = [axes]
 
-		for index, (resp_name, response) in enumerate(sorted(responses.items())):
+	n_total_resp = sum((len(responses) for responses in proto_responses.values()))	
+	
+	fig, axes = plt.subplots(n_total_resp)
+	try:
+		iter(axes)
+	except TypeError:
+		axes = [axes]
+	
+	index = 0
+	for proto_name, responses in proto_responses.iteritems():
+		for resp_name, response in sorted(responses.items()):
 			axes[index].plot(response['time'], response['voltage'], label=resp_name)
 			axes[index].set_title(resp_name)
+			index += 1
 		
 		fig.tight_layout()
 	
@@ -86,7 +90,7 @@ def load_proto_responses(filepath):
 		return responses
 
 
-def run_proto_responses(cell_model, ephys_protocols):
+def run_proto_responses(cell_model, ephys_protocols, param_values=None):
 	"""
 	Run protocols using given cell model and return responses,
 	indexed by protocol.name.
@@ -95,15 +99,18 @@ def run_proto_responses(cell_model, ephys_protocols):
 	"""
 	nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
+	if param_values is None:
+		param_values = {}
+
 	# Run each protocol and get its responses
 	all_responses = {}
 	for e_proto in ephys_protocols:
 
 		response = e_proto.run(
 						cell_model		= cell_model, 
-						param_values	= {},
+						param_values	= param_values,
 						sim				= nrnsim,
-						isolate			= False)
+						isolate			= True)
 
 		all_responses[e_proto.name] = response
 
