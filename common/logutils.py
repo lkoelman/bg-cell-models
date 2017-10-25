@@ -40,49 +40,54 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 
 	if level is None:
 		level = logging.DEBUG
-	if format is None:
-		format = '%(levelname)s:%(message)s @%(filename)s:%(lineno)s'
 
 	# create logger
-	logger = logging.getLogger(name) # RootLogger if name is None
+	logger = logging.getLogger(name) # creates logger if not present, RootLogger if name is None,
 	logger.setLevel(level)
 
 	# Get handlers
-	handlers = []
+	handlers = list(logger.handlers) # new list
 
-	if copy_handlers_from:
+	if copy_handlers_from is not None:
 		if isinstance(copy_handlers_from, logging.Logger):
 			src_loggers = [copy_handlers_from]
 		else:
 			src_loggers = copy_handlers_from
 		
 		for src in src_loggers:
-			if src is logger:
-				continue
-			handlers.extend(src.handlers)
+			if src is not logger:
+				handlers.extend(src.handlers)
 
-	if len(handlers)==0 or stream is not None:
+	# Create formatter
+	usr_format = format
+	if format is None:
+		format = '%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s'
+	fmt = logging.Formatter(format)
+
+	# Create new handler if none exists or stream explicitly specified
+	if (len(handlers)==0) or (stream is not None):
 		if stream is None:
 			stream = sys.stderr # same as default
 
 		# create stream handler and set level to debug
 		sh = logging.StreamHandler(stream=stream)
 		sh.setLevel(level)
-		handlers.append(sh)
+		sh.setFormatter(fmt)
 
-		# create formatter
-		fmt = logging.Formatter(format)
-	else:
-		fmt = None
+		handlers.append(sh)
 
 
 	for h in handlers:
-		if h.formatter is None and fmt is not None:
+		# Only set formatter if explicitly specified or none present
+		if (h.formatter is None) or (usr_format is not None):
 			h.setFormatter(fmt)
+		
+		# Add handler if handler with same stream not present
 		if h in logger.handlers:
 			continue
-		if any((hdlr.stream is h.stream for hdlr in logger.handlers)):
+		if any((h.stream==hdlr.stream for hdlr in logger.handlers)):
 			continue
+			
 		logger.addHandler(h)
 
 	return logger
@@ -103,8 +108,9 @@ def setLogLevel(level, logger_names):
 		level = DEBUG_ANAL_LVL
 
 	for logname in logger_names:
-		slogger = logging.getLogger(logname)
-		if slogger: slogger.setLevel(level)
+		if logname in logging.Logger.manager.loggerDict:
+			slogger = logging.getLogger(logname) # creates new if not in loggerDict
+			slogger.setLevel(level)
 
 
 def install_mp_handler(logger=None):
@@ -131,17 +137,6 @@ def install_mp_handler(logger=None):
 
 		logger.removeHandler(orig_handler)
 		logger.addHandler(handler)
-
-
-class ZeroMQSocketHandler(object):
-	"""
-	TODO: implement ZMQ stream handler for loggers on ipyparallel engines
-
-	http://olympiad.cs.uct.ac.za/docs/python-docs-3.2/howto/logging-cookbook.html#subclassing-queuehandler-a-zeromq-example
-
-	http://ipyparallel.readthedocs.io/en/latest/development/connections.html#iopub
-	"""
-	pass
 
 
 class MultiProcessingHandler(logging.Handler):
@@ -171,8 +166,8 @@ class MultiProcessingHandler(logging.Handler):
 	def receive(self):
 		while True:
 			try:
-				record = self.queue.get()
-				self.sub_handler.emit(record)
+				record = self.queue.get() # get messages put on queue from other threads
+				self.sub_handler.emit(record) # put them on the local thread stream handler
 			except (KeyboardInterrupt, SystemExit):
 				raise
 			except EOFError:
@@ -209,3 +204,19 @@ class MultiProcessingHandler(logging.Handler):
 	def close(self):
 		self.sub_handler.close()
 		logging.Handler.close(self)
+
+
+class ZeroMQSocketHandler(object):
+	"""
+	TODO: implement ZMQ stream handler for loggers on ipyparallel engines
+
+	http://olympiad.cs.uct.ac.za/docs/python-docs-3.2/howto/logging-cookbook.html#subclassing-queuehandler-a-zeromq-example
+
+	http://ipyparallel.readthedocs.io/en/latest/development/connections.html#iopub
+
+		Example of how to use this to subscribe to engines' stdout/stderr: https://github.com/ipython/ipyparallel/blob/master/examples/iopubwatcher.py
+
+		Strategy: look up code where stdout/stderr is published to ZMQ iopub socket, and
+		use a similar approach in this handler class to send/receive logging data.
+	"""
+	pass

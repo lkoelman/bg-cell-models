@@ -139,62 +139,60 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 									- proto_vars: dict with protocol variables
 									- response_interval: expected time interval of response
 		"""
-		pass # protol specification independent of model type
+		# stimulus parameters
+		I_hyper = -0.17			# hyperpolarize to -70 mV (see fig. 10C)
+		I_depol = I_hyper + 0.2	# see fig. 10D: 0.2 nA (=stim.amp) over hyperpolarizing current
 
-	# stimulus parameters
-	I_hyper = -0.17			# hyperpolarize to -70 mV (see fig. 10C)
-	I_depol = I_hyper + 0.2	# see fig. 10D: 0.2 nA (=stim.amp) over hyperpolarizing current
+		del_depol = 1000
+		dur_depol = 50			# see fig. 10D, top right
+		dur_total = 2000
 
-	del_depol = 1000
-	dur_depol = 50			# see fig. 10D, top right
-	dur_total = 2000
+		# stimulus interval for eFEL features
+		plat_start = del_depol - 50
+		plat_stop = del_depol + 200
+		self.response_interval = (plat_start, plat_stop)
 
-	# stimulus interval for eFEL features
-	plat_start = del_depol - 50
-	plat_stop = del_depol + 200
-	response_interval = (plat_start, plat_stop)
+		stim1_hyp = ephys.stimuli.NrnSquarePulse(
+						step_amplitude	= I_hyper,
+						step_delay		= 0,
+						step_duration	= del_depol,
+						location		= soma_center_loc,
+						total_duration	= del_depol)
 
-	stim1_hyp = ephys.stimuli.NrnSquarePulse(
-					step_amplitude	= I_hyper,
-					step_delay		= 0,
-					step_duration	= del_depol,
-					location		= soma_center_loc,
-					total_duration	= del_depol)
+		stim2_dep = ephys.stimuli.NrnSquarePulse(
+						step_amplitude	= I_depol,
+						step_delay		= del_depol,
+						step_duration	= dur_depol,
+						location		= soma_center_loc,
+						total_duration	= del_depol + dur_depol)
 
-	stim2_dep = ephys.stimuli.NrnSquarePulse(
-					step_amplitude	= I_depol,
-					step_delay		= del_depol,
-					step_duration	= dur_depol,
-					location		= soma_center_loc,
-					total_duration	= del_depol + dur_depol)
+		stim3_hyp = ephys.stimuli.NrnSquarePulse(
+						step_amplitude	= I_hyper,
+						step_delay		= del_depol + dur_depol,
+						step_duration	= del_depol,
+						location		= soma_center_loc,
+						total_duration	= dur_total)
 
-	stim3_hyp = ephys.stimuli.NrnSquarePulse(
-					step_amplitude	= I_hyper,
-					step_delay		= del_depol + dur_depol,
-					step_duration	= del_depol,
-					location		= soma_center_loc,
-					total_duration	= dur_total)
+		plat_rec1 = ephys.recordings.CompRecording(
+						name			= '{}.soma.v'.format(self.IMPL_PROTO.name),
+						location		= soma_center_loc,
+						variable		= 'v')
 
-	plat_rec1 = ephys.recordings.CompRecording(
-					name			= '{}.soma.v'.format(IMPL_PROTO.name),
-					location		= soma_center_loc,
-					variable		= 'v')
+		self.ephys_protocol = PhysioProtocol(
+						name		= self.IMPL_PROTO.name, 
+						stimuli		= [stim1_hyp, stim2_dep, stim3_hyp],
+						recordings	= [plat_rec1],
+						init_func	= init_plateau)
 
-	ephys_protocol = PhysioProtocol(
-					name		= IMPL_PROTO.name, 
-					stimuli		= [stim1_hyp, stim2_dep, stim3_hyp],
-					recordings	= [plat_rec1],
-					init_func	= init_plateau)
-
-	proto_vars = {
-		# 'pp_mechs':			[],
-		# 'pp_comp_locs':		[],
-		# 'pp_target_locs':	[],
-		# 'pp_mech_params':	[],
-		'stims':			[stim1_hyp, stim2_dep, stim3_hyp],
-		'recordings':		[plat_rec1],
-		# 'range_mechs':		[],
-	}
+		self.proto_vars = {
+			# 'pp_mechs':			[],
+			# 'pp_comp_locs':		[],
+			# 'pp_target_locs':	[],
+			# 'pp_mech_params':	[],
+			'stims':			[stim1_hyp, stim2_dep, stim3_hyp],
+			'recordings':		[plat_rec1],
+			# 'range_mechs':		[],
+		}
 
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
@@ -215,7 +213,7 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 		# 'ISI_log',			# no documentation
 		'Victor_Purpura_distance': {
 			'weight':	2.0,
-			'double': { 'spike_shift_cost' : 1.0 },
+			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 		},
 		### SPIKE SHAPE RELATED ###
 		# 'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
@@ -284,39 +282,38 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 									- proto_vars: dict with protocol variables
 									- response_interval: expected time interval of response
 		"""
-		pass # protol specification independent of model type
 
-	dur_hyper = 500
-	dur_burst = 150 # SETPARAM: approximate duration of burst
-	reb_start, reb_stop = dur_hyper-50, dur_hyper+dur_burst # SETPARAM: stimulus interval for eFEL features
-	response_interval = (reb_start, reb_stop)
+		dur_hyper = 500
+		dur_burst = 150 # SETPARAM: approximate duration of burst
+		reb_start, reb_stop = dur_hyper-50, dur_hyper+dur_burst # SETPARAM: stimulus interval for eFEL features
+		self.response_interval = (reb_start, reb_stop)
 
-	reb_clmp1 = NrnSpaceClamp(
-					step_amplitudes	= [0, 0, -75],
-					step_durations	= [0, 0, dur_hyper],
-					total_duration	= reb_stop,
-					location		= soma_center_loc)
+		reb_clmp1 = NrnSpaceClamp(
+						step_amplitudes	= [0, 0, -75],
+						step_durations	= [0, 0, dur_hyper],
+						total_duration	= reb_stop,
+						location		= soma_center_loc)
 
-	reb_rec1 = ephys.recordings.CompRecording(
-					name			= '{}.soma.v'.format(IMPL_PROTO.name),
-					location		= soma_center_loc,
-					variable		= 'v')
+		reb_rec1 = ephys.recordings.CompRecording(
+						name			= '{}.soma.v'.format(self.IMPL_PROTO.name),
+						location		= soma_center_loc,
+						variable		= 'v')
 
-	ephys_protocol = PhysioProtocol(
-					name		= IMPL_PROTO.name, 
-					stimuli		= [reb_clmp1],
-					recordings	= [reb_rec1],
-					init_func	= init_rebound)
+		self.ephys_protocol = PhysioProtocol(
+						name		= self.IMPL_PROTO.name, 
+						stimuli		= [reb_clmp1],
+						recordings	= [reb_rec1],
+						init_func	= init_rebound)
 
-	proto_vars = {
-		# 'pp_mechs':			[],
-		# 'pp_comp_locs':		[],
-		# 'pp_target_locs':	[],
-		# 'pp_mech_params':	[],
-		'stims':			[reb_clmp1],
-		'recordings':		[reb_rec1],
-		# 'range_mechs':		[],
-	}
+		self.proto_vars = {
+			# 'pp_mechs':			[],
+			# 'pp_comp_locs':		[],
+			# 'pp_target_locs':	[],
+			# 'pp_mech_params':	[],
+			'stims':			[reb_clmp1],
+			'recordings':		[reb_rec1],
+			# 'range_mechs':		[],
+		}
 
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
@@ -337,7 +334,7 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 		# 'ISI_log',			# no documentation
 		'Victor_Purpura_distance': {
 			'weight':	2.0,
-			'double': { 'spike_shift_cost' : 1.0 },
+			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 		},
 		### SPIKE SHAPE RELATED ###
 		# 'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
@@ -427,6 +424,7 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 									- proto_vars: dict with protocol variables
 									- response_interval: expected time interval of response
 		"""
+		raise NotImplementedError("Cannot be used since parameter modifications change mapping: this needs to be adjusted!")
 
 		# SETPARAM: synapse locations (name of icell SectionList & index)
 		if stn_model_type == StnModel.Gillies2005:
@@ -635,7 +633,7 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		},
 		'Victor_Purpura_distance': {
 			'weight':	2.0,
-			'double': { 'spike_shift_cost' : 1.0 },
+			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 		},
 		### SPIKE SHAPE RELATED ###
 		# 'AP_duration_half_width_change': { # (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
@@ -704,78 +702,75 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 									- proto_vars: dict with protocol variables
 									- response_interval: expected time interval of response
 		"""
-		pass # protol specification independent of model type
 
+		sim_end = 5000.0
+		self.response_interval = (300.0, sim_end)
 
-	# TODO: find out how to make it run long enough if no ephys Stimuli present (set in ExtProtocol?)
-	sim_end = 5000.0
-	response_interval = (300.0, sim_end)
+		bg_recV = ephys.recordings.CompRecording(
+						name			= '{}.soma.v'.format(self.IMPL_PROTO.name),
+						location		= soma_center_loc,
+						variable		= 'v')
 
-	bg_recV = ephys.recordings.CompRecording(
-					name			= '{}.soma.v'.format(IMPL_PROTO.name),
-					location		= soma_center_loc,
-					variable		= 'v')
+		# Protocol setup
+		proto_setup_funcs = [
+			proto_background.make_inputs_ctx_impl, 
+			proto_background.make_inputs_gpe_impl
+		]
 
-	# Protocol setup
-	proto_setup_funcs = [
-		proto_background.make_inputs_ctx_impl, 
-		proto_background.make_inputs_gpe_impl
-	]
+		proto_init_funcs = [
+			proto_background.init_sim_impl
+		]
 
-	proto_init_funcs = [
-		proto_background.init_sim_impl
-	]
+		proto_setup_kwargs_const = {
+			'base_seed': 8, # 25031989,
+			'gid': 1,
+			'do_map_synapses': True,
+			'physio_state': cpd.PhysioState.NORMAL.name,
+		}
 
-	proto_setup_kwargs_const = {
-		'base_seed': 8, # 25031989,
-		'gid': 1,
-		'do_map_synapses': True,
-		'physio_state': cpd.PhysioState.NORMAL.name,
-	}
+		proto_setup_kwargs_getters = collections.OrderedDict([
+			('rng', rng_getter),
+			('connector', connector_getter),
+		])
 
-	proto_setup_kwargs_getters = collections.OrderedDict([
-		('rng', rng_getter),
-		('connector', connector_getter),
-	])
+		# Recording and plotting traces
+		proto_rec_funcs = [
+			proto_background.rec_spikes,
+		]
 
-	# Recording and plotting traces
-	proto_rec_funcs = [
-		proto_background.rec_spikes,
-	]
+		proto_plot_funcs = [
+			# proto_common.plot_all_spikes,
+			proto_common.report_spikes,
+		]
 
-	proto_plot_funcs = [
-		# proto_common.plot_all_spikes,
-		proto_common.report_spikes,
-	]
+		self.ephys_protocol = SelfContainedProtocol(
+							name				= self.IMPL_PROTO.name, 
+							recordings			= [bg_recV],
+							total_duration		= sim_end,
+							proto_init_funcs			= proto_init_funcs,
+							proto_setup_funcs_pre		= proto_setup_funcs,
+							proto_setup_kwargs_const	= proto_setup_kwargs_const,
+							proto_setup_kwargs_getters	= proto_setup_kwargs_getters,
+							rec_traces_funcs	= proto_rec_funcs,
+							plot_traces_funcs	= proto_plot_funcs)
 
-	ephys_protocol = SelfContainedProtocol(
-						name				= IMPL_PROTO.name, 
-						recordings			= [bg_recV],
-						total_duration		= sim_end,
-						proto_init_funcs			= proto_init_funcs,
-						proto_setup_funcs_pre		= proto_setup_funcs,
-						proto_setup_kwargs_const	= proto_setup_kwargs_const,
-						proto_setup_kwargs_getters	= proto_setup_kwargs_getters,
-						rec_traces_funcs	= proto_rec_funcs,
-						plot_traces_funcs	= proto_plot_funcs)
+		self.ephys_protocol.autoplot_contained_traces = True
 
-	ephys_protocol.autoplot_contained_traces = True
-
-	proto_vars = {
-		'pp_mechs':			[],
-		'pp_comp_locs':		[],
-		'pp_target_locs':	[],
-		'pp_mech_params':	[],
-		'stims':			[],
-		'recordings':		[bg_recV],
-		'range_mechs':		[],
-	}
+		self.proto_vars = {
+			'pp_mechs':			[],
+			'pp_comp_locs':		[],
+			'pp_target_locs':	[],
+			'pp_mech_params':	[],
+			'stims':			[],
+			'recordings':		[bg_recV],
+			'range_mechs':		[],
+		}
 
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
 		'Victor_Purpura_distance': {
 			'weight':	8.0,
-			'double': { 'spike_shift_cost' : 1.0 },
+			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 		},
 	}
 

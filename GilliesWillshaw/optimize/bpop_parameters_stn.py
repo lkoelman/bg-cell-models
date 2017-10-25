@@ -23,7 +23,7 @@ gleak_name = gillies_model.gleak_name
 
 somatic_region = ephys.locations.NrnSeclistLocation('somatic', seclist_name='somatic')
 
-dendritic_region = ephys.locations.NrnSeclistLocation('somatic', seclist_name='dendritic')
+dendritic_region = ephys.locations.NrnSeclistLocation('dendritic', seclist_name='dendritic')
 
 ################################################################################
 # MODEL PARAMETERS

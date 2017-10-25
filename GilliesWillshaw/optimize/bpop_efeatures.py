@@ -271,11 +271,17 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             # TODO: read up and decide on q factor
             if self.metric_name.lower() == 'victor_purpura_distance':
 
-                spike_shift_cost = self.double_settings.get('spike_shift_cost', 1.0)
-                
+                if 'spike_shift_cost_ms' in self.double_settings:
+                    cost_ms = self.double_settings['spike_shift_cost_ms']
+                    spike_shift_cost = 1.0/(cost_ms*1e-3) * pq.Hz
+                elif 'spike_shift_cost_hz' in self.double_settings:
+                    spike_shift_cost = self.double_settings['spike_shift_cost_hz'] * pq.Hz
+                else:
+                    spike_shift_cost = 1.0/(20e-3) * pq.Hz # 20 ms is kernel quarter width
+
                 dist_mat = stds.victor_purpura_dist(
                                 [self.target_spike_train, resp_spike_train], 
-                                q = spike_shift_cost * pq.Hz, 
+                                q = spike_shift_cost, 
                                 algorithm = 'fast')
 
                 score = dist_mat[0, 1]

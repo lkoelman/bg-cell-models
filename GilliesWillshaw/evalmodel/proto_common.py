@@ -3,14 +3,14 @@ Functions for setting up STN experimental protocols.
 """
 
 from enum import Enum, unique
-import re, sys
+import re
 
 import numpy as np
 import neuron
 h = neuron.h
 
 from common import analysis, logutils
-logger = logutils.getBasicLogger(name='stn_protos', stream=sys.stdout)
+logger = logutils.getBasicLogger(name='stn_protos')
 
 @unique
 class StimProtocol(Enum):

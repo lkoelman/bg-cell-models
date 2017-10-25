@@ -17,7 +17,7 @@ import mapsyn
 # logging of DEBUG/INFO/WARNING messages
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = "reduction" # __name__
+logname = __name__
 logger = logging.getLogger(logname) # create logger for this module
 
 
@@ -391,6 +391,7 @@ class FoldReduction(object):
 			self.prepare_folds(method)
 			self.calc_folds(method, i_pass)
 			self.make_fold_equivalents(method)
+			logger.debug('Finished folding pass {}'.format(i_pass))
 
 		# Finalize reduction process
 		self.postprocess_cell(method)
@@ -398,6 +399,8 @@ class FoldReduction(object):
 		# Map synapses
 		if map_synapses:
 			self.map_synapses(method=method)
+
+		logger.debug('Finished cell reduction with method {}'.format(method))
 
 
 ################################################################################
@@ -486,7 +489,6 @@ def fold_gillies_stratford(export_locals=True):
 
 	# Do reduction
 	reduction.reduce_model(num_passes=1)
-	logger.debug("Successfully folded Gillies model using Stratford method!")
 
 	if export_locals:
 		globals().update(locals())
@@ -555,8 +557,6 @@ def fold_gillies_marasco(export_locals=True):
 	# Do reduction
 	reduction.reduce_model(num_passes=7)
 	reduction.update_refs()
-
-	logger.debug("Successfully folded Gillies model using Marsco method!")
 
 	if export_locals:
 		globals().update(locals())

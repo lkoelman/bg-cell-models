@@ -11,6 +11,7 @@ Extensions to BluePyOpt optimization-related classes
 
 import bluepyopt.ephys as ephys
 
+import re
 import logging
 logger = logging.getLogger('bpop_ext')
 
@@ -360,3 +361,57 @@ class NrnNamedSecLocation(ephys.locations.Location, ephys.serializer.DictMixin):
     def __str__(self):
         """String representation"""
         return '%s(%s)' % (self.sec_name, self.comp_x)
+
+
+class NrnSeclistLocationExt(ephys.locations.Location, ephys.serializer.DictMixin):
+    """
+    Section in a sectionlist
+    """
+
+    SERIALIZED_FIELDS = (
+        'name', 
+        'comment', 
+        'seclist_name',
+        'section_filter'
+    )
+
+    def __init__(
+            self,
+            name,
+            seclist_name=None,
+            comment='',
+            secname_filter=None):
+        """
+        Constructor
+        
+        Args:
+            name (str): name of the object
+            seclist_name (str): name of NEURON section list (ex: 'somatic')
+            secname_filter: regular expression to match section name
+
+        NOTE: can't serialize functions, unless we change DixtMixon to make 
+              use of external library for serialization, e.g. Dill or Pyro.
+        """
+
+        super(NrnSeclistLocationExt, self).__init__(name, comment)
+        self.seclist_name = seclist_name
+        
+        if secname_filter is None:
+            secname_filter = r'' # matches any string
+        self.secname_filter = secname_filter
+
+    def instantiate(self, sim=None, icell=None):  # pylint: disable=W0613
+        """
+        Find the instantiate compartment
+        """
+
+        isectionlist = getattr(icell, self.seclist_name)
+
+        return (isection for isection in isectionlist if re.search(self.secname_filter, isection.name()))
+
+    def __str__(self):
+        """
+        String representation
+        """
+
+        return '%s' % (self.seclist_name)

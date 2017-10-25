@@ -25,7 +25,6 @@ Different approaches to creating a cell model
 
 """
 
-import os
 import collections
 
 import bluepyopt.ephys as ephys
@@ -358,9 +357,8 @@ class StnReducedModel(StnBaseModel):
             reduction = reduce_cell.gillies_stratford_reduction()
 
         # Apply pre-reduction protocol setup functions
-        full_cell = Cell()
+        full_cell = Cell() # dummy cell
         full_cell.dendritic = [ref.sec for ref in reduction.dend_refs]
-
         self.exec_proto_setup_funcs(icell=full_cell)
 
         # Prepare synapse mapping
@@ -384,7 +382,7 @@ class StnReducedModel(StnBaseModel):
         self._persistent_refs = self.icell._all_refs
 
         # Apply parameters _before mapping_ (mapping measures electrotonic properties)
-        super(StnReducedModel, self).instantiate(sim)
+        icell = super(StnReducedModel, self).instantiate(sim)
 
         # Do synapse mapping
         if 'do_map_synapses' in self.proto_setup_kwargs:
@@ -399,6 +397,8 @@ class StnReducedModel(StnBaseModel):
         for ref in self.icell._all_refs:
             redutils.store_seg_props(ref, gillies_model.gillies_gdict, attr_name='initial_params')
 
+        return icell
+
 
     def instantiate(self, sim=None):
         """
@@ -412,7 +412,8 @@ class StnReducedModel(StnBaseModel):
 
         # Make sure original STN cell is built
         if self._persistent_refs is None:
-            self.first_instantiate(sim=sim)
+            # first instantiation does cell reduction
+            return self.first_instantiate(sim=sim)
 
         else:
             # Restore persistent SectionRef

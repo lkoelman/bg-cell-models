@@ -8,7 +8,7 @@ Physiological & Anatomical parameters: see notes/BG_observations_experiments.md
 """
 
 # Python stdlib
-import re, sys
+import re
 from collections import namedtuple
 
 # NEURON
@@ -32,7 +32,7 @@ from proto_common import (
 )
 
 from common import logutils
-logger = logutils.getBasicLogger(name='stn_protos', stream=sys.stdout)
+logger = logutils.getBasicLogger(name='stn_protos')
 # from IPython.config import Application
 # logger = Application.instance().log 
 
