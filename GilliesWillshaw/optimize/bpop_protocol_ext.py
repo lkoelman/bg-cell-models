@@ -70,7 +70,7 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 
 		# Common keyword arguments for all functions
 		self._proto_setup_kwargs_const = proto_setup_kwargs_const if proto_setup_kwargs_const is not None else {}
-		self._proto_setup_kwargs_getters = proto_setup_kwargs_getters if proto_setup_kwargs_getters is not None else []
+		self._proto_setup_kwargs_getters = proto_setup_kwargs_getters if proto_setup_kwargs_getters is not None else {}
 
 		# Data used by protocol setup functions
 		self.recorded_trace_vectors = {}

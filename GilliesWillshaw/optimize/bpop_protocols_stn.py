@@ -14,15 +14,13 @@ NOTES
 
 import collections
 
-import numpy as np
-
 import bluepyopt.ephys as ephys
-from bpop_extensions import PhysioProtocol, NrnSpaceClamp, NrnNamedSecLocation
+from bpop_extensions import PhysioProtocol, NrnSpaceClamp
 from bpop_protocol_ext import SelfContainedProtocol
 
 from evalmodel import (
 	cellpopdata as cpd,
-	proto_common, proto_background
+	proto_common, proto_background, proto_simple_syn
 )
 from evalmodel.proto_common import StimProtocol
 
@@ -30,8 +28,6 @@ Pop = cpd.Populations
 NTR = cpd.NTReceptors
 Ref = cpd.ParameterSource
 StnModel = cpd.StnModel
-
-from gillies_model import set_aCSF
 
 import logging
 logger = logging.getLogger('bpop_ext')
@@ -104,6 +100,28 @@ class BpopProtocolWrapper(object):
 			all_params.extend(params)
 
 		return all_mechs, all_params
+
+
+# Helper functions for SelfContainedProtocol
+
+def rng_getter(setup_kwargs):
+	"""
+	Function to get Numpy.Random object for stimulation protocol setup functions.
+	"""
+	import numpy as np
+	base_seed = setup_kwargs['base_seed']
+	return np.random.RandomState(base_seed)
+
+
+def connector_getter(setup_kwargs):
+	"""
+	Function to get CellConnector for stimulation protocol setup functions.
+	"""
+	from evalmodel import cellpopdata as cpd
+	physio_state = setup_kwargs['physio_state']
+	rng = setup_kwargs['rng']
+	return cpd.CellConnector(physio_state, rng)
+
 
 ################################################################################
 # PLATEAU protocol
@@ -372,46 +390,12 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 ################################################################################
 # SYNAPTIC protocol
 
-# - References:
-# 	- see https://github.com/BlueBrain/BluePyOpt/blob/master/examples/expsyn/
-
-def init_burstsyn(sim, icell):
-	"""
-	Initialize simulator to run synaptic burst protocol
-
-	NOTE: function must be declared at top-level of module in order to be pickled
-	"""
-	h = sim.neuron.h
-
-	h.celsius = 35
-	h.v_init = -60
-	set_aCSF(4) # gillies_model.set_aCSF(4) # if called before model.instantiate()
-	
-	logger.debug("Set aCSF concentrations.")
-
-	# lower sKCa conductance to promote bursting
-	for sec in icell.all:
-		for seg in sec:
-			seg.gk_sKCa = 0.6 * seg.gk_sKCa
-
-	# BluePyOpt never calls h.init()/stdinit()/finitialize()
-	h.init()
-
-
 class BpopSynBurstProtocol(BpopProtocolWrapper):
 	"""
-	Functions for setting up plateau protocol.
+	Functions for setting up rebound protocol.
 	"""
 
 	IMPL_PROTO = StimProtocol.MIN_SYN_BURST
-
-	rng = np.random.RandomState(25031989)
-	cc = cpd.CellConnector(cpd.PhysioState.NORMAL, rng)
-
-	# TODO: adjust start of spike volleys and times here, also adjust CSF ioninc concentrations
-	synburst_start = 700
-	synburst_stop = synburst_start + 350
-	response_interval = (synburst_start, synburst_stop) # interval to analyze eFEL features
 
 	def __init__(self, stn_model_type=None):
 		"""
@@ -424,264 +408,99 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 									- proto_vars: dict with protocol variables
 									- response_interval: expected time interval of response
 		"""
-		raise NotImplementedError("Cannot be used since parameter modifications change mapping: this needs to be adjusted!")
 
-		# SETPARAM: synapse locations (name of icell SectionList & index)
-		if stn_model_type == StnModel.Gillies2005:
-			# TODO: fix locations and weights for full model
-			self.synapse_info = {
-				'GLUsyn':	[('SThcell[0].dend0[11]', 0.25, 1.0), 
-							('SThcell[0].dend0[16]', 0.625, 1.0), 
-							('SThcell[0].dend0[19]', 0.875, 1.0), 
-							('SThcell[0].dend0[11]', 0.416667, 1.0)],
-				
-				'GABAsyn':	[('SThcell[0].dend0[2]', 0.75, 1.0)],
-							# ('SThcell[0].dend0[2]', 0.75)],
-			}
-		elif stn_model_type == StnModel.Gillies_FoldMarasco:
-			self.synapse_info = {
-				'GLUsyn':	[('zipF_zipE_zipD_SThcell0dend01', 0.9375, 0.996135509079), 
-							('zipG_zipF_zipE_zipD_SThcell0dend02', 1, 0.93307003268), 
-							('zipG_zipF_zipE_zipD_SThcell0dend02', 1, 0.840762949423), 
-							('zipG_zipF_zipE_zipD_SThcell0dend01', 1, 0.956082747602)],
-				
-				'GABAsyn':	[('SThcell[0].dend0[2]', 0.75, 0.985420572679)],
-							# ('SThcell[0].dend0[2]', 0.75)],
-			}
-		else:
-			raise NotImplementedError("Protocol not implemented for model {}".format(stn_model_type))
+		stim_delay = 700.0
+		sim_end = stim_delay + 500.0
+		self.response_interval = (stim_delay+5.0, sim_end)
 
-		# Make elements of the protocol
-		self.proto_vars = self.make_synburst_proto_vars()
-
-		self.ephys_protocol = PhysioProtocol(
-							name		= self.IMPL_PROTO.name, 
-							stimuli		= self.proto_vars['stims'],
-							recordings	= self.proto_vars['recordings'],
-							init_func	= init_burstsyn)
-
-
-	def get_syn_mechs_params(self, mech_name, stim_pp, nrn_params, proto_vars):
-		"""
-		Get ephys.mechanisms, ephys.locations, ephys.parameters objects for 
-		synapses of given mechanism.
-
-		@param	mech_name		synaptic mechanism name
-
-		@param	stim_bp			BluePyOpt.ephys.stimuli.NrnNetStimStimulus object
-
-		@param	nrn_params		dictionary with NEURON object parameters for this connection type
-
-		@param	proto_vars		dictionary to store BluePyOpt objects created
-		"""
-
-		# Get compartmental locations for GLU synapses
-		# TODO: make locations here and copy weights from evalmodel implementation
-		loc_data = self.synapse_info[mech_name]
-		comp_locs = []
-		for i_loc, (sec_name, sec_x, nc_weight) in enumerate(loc_data):
-
-			loc = NrnNamedSecLocation(
-					name			= '{}_loc_{}'.format(mech_name, i_loc),
-					sec_name		= sec_name,
-					comp_x			= sec_x)
-
-			comp_locs.append(loc)
-
-		proto_vars['pp_comp_locs'].extend(comp_locs)
-
-		# Make synapse at locations
-		syn_pp = ephys.mechanisms.NrnMODPointProcessMechanism(
-						name		= '{}_synapses'.format(mech_name),
-						suffix		= mech_name,
-						locations	= comp_locs)
-
-		proto_vars['pp_mechs'].append(syn_pp)
-
-		# Make 'target location' for synapse parameters & NetStims
-		loc_pp = ephys.locations.NrnPointProcessLocation(
-						name			= '{}_locs'.format(mech_name),
-						pprocess_mech	= syn_pp, # NOTE: this encapsulates multiple distributed instances of the point process mechaism
-						comment			= "location of {}".format(syn_pp.name))
-
-		proto_vars['pp_comp_locs'].append(loc_pp)
-			
-
-		# Make BluePyOpt parameter objects
-		for param_name, param_value in nrn_params['pointprocess'].iteritems():
-
-			syn_param = ephys.parameters.NrnPointProcessParameter(                   
-							name			= "{}_{}".format(mech_name, param_name),
-							param_name		= param_name,
-							value			= param_value,
-							bounds			= [param_value, param_value],
-							frozen			= True,
-							locations		= [loc_pp]) # one loc can encapsulate multiple locations
-
-			proto_vars['pp_mech_params'].append(syn_param)
-		
-		# Save stimulus with updated locations
-		stim_pp.weight = sum([weight for _,_,weight in loc_data]) / len(loc_data) # TODO: now this is average weight because of limitations of ephys.NetStim -> change this
-		stim_pp.locations.append(loc_pp)
-		proto_vars['stims'].append(stim_pp)
-
-
-	def make_synburst_proto_vars(self):
-		"""
-		Make minimal set of synapses, with locations and parameters that generate
-		a burst in STN.
-		"""
-
-		# All variables for protocol (keep alive)
-		proto_vars = {
-			'pp_mechs':		[],
-			'pp_comp_locs':		[],
-			'pp_target_locs':	[],
-			'pp_mech_params':	[],
-			'stims':			[],
-			'recordings':		[],
-			#'range_mechs':		[], # not used in this case
-		}
-
-		############################################################################
-		# Recordings
-
-		# Recording for EFeatures
-		proto_rec = ephys.recordings.CompRecording(
+		rec_soma_V = ephys.recordings.CompRecording(
 						name			= '{}.soma.v'.format(self.IMPL_PROTO.name),
 						location		= soma_center_loc,
 						variable		= 'v')
 
-		proto_vars['recordings'].append(proto_rec)
-		
-		############################################################################
-		# Get compartmental locations for GLU synapses
-		mech_name = 'GLUsyn'
+		# Protocol setup
+		proto_setup_funcs = [
+			proto_simple_syn.make_inputs_BURST_impl
+		]
 
-		# Get physiological parameters
-		physio_params = self.cc.getPhysioConParams(Pop.CTX, Pop.STN, [Ref.Default, Ref.Chu2015, Ref.Gradinaru2009])
-		
-		# Get NEURON parameters
-		nrn_params = self.cc.getNrnObjParams(mech_name, physio_params)
+		proto_init_funcs = [
+			proto_simple_syn.init_sim_BURST_impl
+		]
 
-		# SETPARAM: set parameters from burst experiment
-		nrn_params['pointprocess'].update({ # copied from printed values in notebook
-									'gmax_AMPA': 0.0049107, #0.0034375,
-									'gmax_NMDA': 0.0034375, #0.00240625,
-									})
+		proto_setup_kwargs_const = {
+			'do_map_synapses': True,
+			'base_seed':  25031989, # same as StnModelEvaluator
+			'gid': 1, # same as StnModelEvaluator
+			'physio_state': cpd.PhysioState.NORMAL.name,
+			'n_gpe_syn': 1,
+			'n_ctx_syn': 4,
+			'delay': stim_delay,
+		}
 
-		# Spike generator for GLU synapses
-		stim_glu = ephys.stimuli.NrnNetStimStimulus(
-						locations		= [],		# assigned later
-						total_duration	= self.synburst_stop,# total duration of stim protocol
-						interval		= 100.0**-1 * 1e3, # 100 Hz to ms
-						number			= 5,
-						start			= self.synburst_start + 150,
-						noise			= 0,
-						weight			= None)		# assigned later
+		proto_setup_kwargs_getters = collections.OrderedDict([
+			('rng', rng_getter),
+			('connector', connector_getter),
+		])
 
-		# Make GLU synapses (put everything in proto_vars)
-		self.get_syn_mechs_params(mech_name, stim_glu, nrn_params, proto_vars)
+		# Recording and plotting traces
+		proto_rec_funcs = [
+			# proto_background.rec_spikes,
+		]
 
-		############################################################################
-		# Get compartmental locations for GABA synapses
-		mech_name = 'GABAsyn'
+		proto_plot_funcs = [
+			# proto_common.plot_all_spikes,
+			# proto_common.report_spikes,
+		]
 
-		# Get physiological parameters
-		physio_params = self.cc.getPhysioConParams(
-								Pop.GPE, Pop.STN, 
-								[Ref.Custom, Ref.Chu2015, Ref.Fan2012, Ref.Atherton2013])
-		
-		# Get NEURON parameters
-		nrn_params = self.cc.getNrnObjParams(mech_name, physio_params)
-		
-		# SETPARAM: set parameters from burst experiment
-		nrn_params['pointprocess'].update({ # copied from printed values in notebook
-									'gmax_GABAA': 0.0466666,
-									'gmax_GABAB': 0.0724637,
-									})
+		self.ephys_protocol = SelfContainedProtocol(
+					name				= self.IMPL_PROTO.name, 
+					recordings			= [rec_soma_V],
+					total_duration		= sim_end,
+					proto_init_funcs			= proto_init_funcs,
+					proto_setup_funcs_pre		= proto_setup_funcs,
+					proto_setup_kwargs_const	= proto_setup_kwargs_const,
+					proto_setup_kwargs_getters	= proto_setup_kwargs_getters,
+					rec_traces_funcs	= proto_rec_funcs,
+					plot_traces_funcs	= proto_plot_funcs)
 
-		# Spike generator for GABA synapses
-		stim_gaba = ephys.stimuli.NrnNetStimStimulus(
-						locations		= [],		# assigned later
-						total_duration	= self.synburst_stop,# total duration of stim protocol
-						interval		= 100.0**-1 * 1e3, # 100 Hz to ms
-						number			= 5,
-						start			= self.synburst_start,
-						noise			= 0,
-						weight			= None)		# assigned later
+		self.ephys_protocol.autoplot_contained_traces = True
 
-		# Make GLU synapses (put everything in proto_vars)
-		self.get_syn_mechs_params(mech_name, stim_gaba, nrn_params, proto_vars)
+		self.proto_vars = {
+			'pp_mechs':			[],
+			'pp_comp_locs':		[],
+			'pp_target_locs':	[],
+			'pp_mech_params':	[],
+			'stims':			[],
+			'recordings':		[rec_soma_V],
+			'range_mechs':		[],
+		}
 
-		return proto_vars
-
-
-	# Characterizing features and parameters for protocol
-	characterizing_feats = {
-		### SPIKE TIMING RELATED ###
-		'Spikecount': {			# (int) The number of peaks during stimulus
-			'weight':	2.0,
-		},
-		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
-			'weight':	1.0,
-			'double':	{'spike_skipf': 0.0},
-			'int':		{'max_spike_skip': 0},
-		},
-		'ISI_CV': {				# (float) coefficient of variation of ISI durations
-			'weight':	1.0,
-		},
-		'Victor_Purpura_distance': {
-			'weight':	2.0,
-			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
-		},
-		### SPIKE SHAPE RELATED ###
-		# 'AP_duration_half_width_change': { # (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
-		# 	'weight':	1.0,
-		# },
-		# 'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
-		# 	'weight':	1.0,
-		# },
-		# 'AP_height': {			# (array) The voltages at the maxima of the peak
-		# 	'weight':	1.0,
-		# },
-		# 'AP_amplitude': {		# (array) The relative height of the action potential
-		# 	'weight':	1.0,
-		# },
-		# 'spike_half_width':	{	# (array) The FWHM of each peak
-		# 	'weight':	1.0,
-		# },
-		# 'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
-		# 	'weight':	1.0,
-		# },
-		# 'AHP_depth': {			# (array) relative voltage values at the AHP
-		# 	'weight':	1.0,
-		# },
-		'min_AHP_values': {		# (array) Voltage values at the AHP
-			'weight':	2.0,	# this feature recognizes that there is an elevated plateau
-		},
-	}
+		# Characterizing features and parameters for protocol
+		self.characterizing_feats = {
+			### SPIKE TIMING FEATURES ##############################################
+			'Spikecount': {			# (int) The number of peaks during stimulus
+				'weight':	2.0,
+			},
+			'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
+				'weight':	1.0,
+				'double':	{'spike_skipf': 0.0},
+				'int':		{'max_spike_skip': 0},
+			},
+			'ISI_CV': {				# (float) coefficient of variation of ISI durations
+				'weight':	1.0,
+			},
+			'Victor_Purpura_distance': {
+				'weight':	2.0,
+				'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
+			},
+			### SPIKE SHAPE FEATURES ###############################################
+			'min_AHP_values': {		# (array) Voltage values at the AHP
+				'weight':	2.0,	# this feature recognizes that there is an elevated plateau
+			},
+		}
 
 ################################################################################
-# REBOUND protocol
-
-def rng_getter(setup_kwargs):
-	"""
-	Function to get Numpy.Random object for stimulation protocol setup functions.
-	"""
-	import numpy as np
-	base_seed = setup_kwargs['base_seed']
-	return np.random.RandomState(base_seed)
-
-
-def connector_getter(setup_kwargs):
-	"""
-	Function to get CellConnector for stimulation protocol setup functions.
-	"""
-	from evalmodel import cellpopdata as cpd
-	physio_state = setup_kwargs['physio_state']
-	rng = setup_kwargs['rng']
-	return cpd.CellConnector(physio_state, rng)
+# BACKGROUND protocol
 
 
 class BpopBackgroundProtocol(BpopProtocolWrapper):

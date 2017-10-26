@@ -66,7 +66,7 @@ logging.getLogger('marasco').setLevel(logging.WARNING)
 # cpd.logger.setLevel(logging.WARNING)
 
 
-class StnModelEvaluator(object, proto_common.VExperiment):
+class StnModelEvaluator(object):
 	"""
 	Evaluate STN models
 
@@ -986,10 +986,10 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		rec_dict = self.model_data[model]['rec_data'][protocol]
 		recData, rec_dt = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
 
-		return proto_common.plot_all_sikes(recData, **kwargs)
+		return proto_common.plot_all_spikes(recData, recordStep=rec_dt, **kwargs)
 
 
-	def _plot_GABA_traces(self, model, protocol, fig_per='trace'):
+	def _plot_GABA_traces(self, model, protocol, fig_per='cell'):
 		"""
 		Plot GABA synapse traces.
 		"""
@@ -997,10 +997,13 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		rec_dict = self.model_data[model]['rec_data'][protocol]
 		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
 
-		return proto_common.plot_GABA_traces(recData, fig_per=fig_per)
+		return proto_common.plot_GABA_traces(
+								recData, 
+								recordStep=recordStep, 
+								fig_per=fig_per)
 
 
-	def _plot_GLU_traces(self, model, protocol, fig_per='trace'):
+	def _plot_GLU_traces(self, model, protocol, fig_per='cell'):
 		"""
 		Plot GABA synapse traces.
 		"""
@@ -1008,7 +1011,10 @@ class StnModelEvaluator(object, proto_common.VExperiment):
 		rec_dict = self.model_data[model]['rec_data'][protocol]
 		recData, recordStep = (rec_dict[k] for k in ('trace_data', 'rec_dt'))
 
-		return proto_common.plot_GABA_traces(recData, fig_per=fig_per)
+		return proto_common.plot_GLU_traces(
+								recData, 
+								recordStep=recordStep, 
+								fig_per=fig_per)
 
 
 	############################################################################

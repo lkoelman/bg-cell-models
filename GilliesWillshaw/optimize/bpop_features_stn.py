@@ -32,15 +32,18 @@ def make_features(proto_wrapper):
 
 	for feat_name, feat_params in proto_wrapper.characterizing_feats.iteritems():
 
-		# TODO: check feature name: make with library that provides this feature
+		# Get interval of response trace from which feature is calculated
+		response_interval = feat_params.get('response_interval', proto_wrapper.response_interval)
+
+		# Identify library providing feature and make it
 		if feat_name in eFEL_available_features:
 
 			feature = ephys.efeatures.eFELFeature(
 						name				='{}.{}'.format(protocol.name, feat_name),
 						efel_feature_name	= feat_name,
 						recording_names		= feat_params.get('traces', default_trace),
-						stim_start			= proto_wrapper.response_interval[0],
-						stim_end			= proto_wrapper.response_interval[1],
+						stim_start			= response_interval[0],
+						stim_end			= response_interval[1],
 						double_settings		= feat_params.get('double', None),
 						int_settings		= feat_params.get('int', None),
 						threshold			= proto_wrapper.spike_threshold,
@@ -52,8 +55,8 @@ def make_features(proto_wrapper):
 						name				='{}.{}'.format(protocol.name, feat_name),
 						metric_name			= feat_name,
 						recording_names		= feat_params.get('traces', default_trace),
-						stim_start			= proto_wrapper.response_interval[0],
-						stim_end			= proto_wrapper.response_interval[1],
+						stim_start			= response_interval[0],
+						stim_end			= response_interval[1],
 						double_settings		= feat_params.get('double', None),
 						int_settings		= feat_params.get('int', None),
 						threshold			= proto_wrapper.spike_threshold,

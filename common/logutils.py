@@ -28,7 +28,7 @@ def anal_logfun(self, message, *args, **kws):
 logging.Logger.anal = anal_logfun
 
 
-def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handlers_from=None):
+def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handlers_from=None, propagate=False):
 	"""
 	Similar to logging.basicConfig() except this works on a new logger rather
 	than on the root logger (logging.root).
@@ -41,9 +41,11 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 	if level is None:
 		level = logging.DEBUG
 
-	# create logger
-	logger = logging.getLogger(name) # creates logger if not present, RootLogger if name is None,
+	# Creates logger if not present, returns RootLogger if name is None
+	# By default messages will propagate to parent (root logger) handlers
+	logger = logging.getLogger(name)
 	logger.setLevel(level)
+	logger.propagate = propagate
 
 	# Get handlers
 	handlers = list(logger.handlers) # new list
@@ -65,12 +67,11 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 	fmt = logging.Formatter(format)
 
 	# Create new handler if none exists or stream explicitly specified
-	if (len(handlers)==0) or (stream is not None):
-		if stream is None:
-			stream = sys.stderr # same as default
-
+	default_stream = sys.stderr if stream is None else stream
+	if (stream is not None) or (not any((h.stream==default_stream for h in logger.handlers))):
+		
 		# create stream handler and set level to debug
-		sh = logging.StreamHandler(stream=stream)
+		sh = logging.StreamHandler(stream=default_stream)
 		sh.setLevel(level)
 		sh.setFormatter(fmt)
 
@@ -85,10 +86,10 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 		# Add handler if handler with same stream not present
 		if h in logger.handlers:
 			continue
-		if any((h.stream==hdlr.stream for hdlr in logger.handlers)):
+		elif any((h.stream==hdlr.stream for hdlr in logger.handlers)):
 			continue
-			
-		logger.addHandler(h)
+		else:
+			logger.addHandler(h)
 
 	return logger
 

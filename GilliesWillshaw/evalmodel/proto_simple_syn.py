@@ -4,12 +4,12 @@ to elicit interesting behaviours, e.g. a burst.
 
 @author Lucas Koelman
 """
+from collections import namedtuple
 
 import neuron
 h = neuron.h
 
 # Physiological parameters
-import cellpopdata as cpd
 from cellpopdata import (
 	Populations as Pop, 
 	NTReceptors as NTR, 
@@ -19,8 +19,11 @@ from cellpopdata import (
 # Stimulation protocols
 from proto_common import (
 	StimProtocol, EvaluationStep, 
-	register_step, pick_random_segments, extend_dictitem,
+	register_step, pick_random_segments,
 )
+
+from common import logutils
+logger = logutils.getBasicLogger(name='stn_protos')
 
 ################################################################################
 # Interface functions
@@ -52,20 +55,8 @@ def init_sim(self, protocol):
 				for gbar in gbar_active:
 					setattr(seg, gbar, 0.0)
 
-@register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.MIN_SYN_BURST)
-def init_sim_BURST(self, protocol):
-	"""
-	Initialize simulator and cell for stimulation protocol
-	"""
-
-	# Change simulation duration
-	self._init_sim(dur=2000)
-
-	# lower sKCa conductance to promote bursting
-	for sec in h.allsec():
-		for seg in sec:
-			seg.gk_sKCa = 0.6 * seg.gk_sKCa
-
+################################################################################
+# GLU synapse
 
 @register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.SINGLE_SYN_GLU)
 def make_inputs_GLU(self, connector=None):
@@ -75,55 +66,12 @@ def make_inputs_GLU(self, connector=None):
 	make_GLU_inputs(self, 1, connector=connector)
 
 
-@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.SINGLE_SYN_GABA)
-def make_inputs_GABA(self, connector=None):
-	"""
-	Make single synaptic input
-	"""
-	make_GABA_inputs(self, 1, connector=connector)
-
-
-@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.MIN_SYN_BURST)
-def make_inputs_BURST(self, connector=None):
-	"""
-	Make minimal number of synapses that elicit burst
-	"""
-	# Minimal number of GABA + GLU synapses to trigger burst
-	make_GABA_inputs(self, 1)
-	make_GLU_inputs(self, 4)
-
-
 @register_step(EvaluationStep.RECORD_TRACES, StimProtocol.SINGLE_SYN_GLU)
 def rec_traces_GLU(self, protocol, traceSpecs):
 	"""
 	Record all traces for this protocol.
 	"""
 	# Record synaptic variables
-	self.rec_GLU_traces(protocol, traceSpecs)
-
-	# Record membrane voltages
-	self.rec_Vm(protocol, traceSpecs)
-
-
-@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.SINGLE_SYN_GABA)
-def rec_traces_GABA(self, protocol, traceSpecs):
-	"""
-	Record all traces for this protocol.
-	"""
-	# Record synaptic variables
-	self.rec_GABA_traces(protocol, traceSpecs)
-
-	# Record membrane voltages
-	self.rec_Vm(protocol, traceSpecs)
-
-
-@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.MIN_SYN_BURST)
-def rec_traces_BURST(self, protocol, traceSpecs):
-	"""
-	Record all traces for this protocol.
-	"""
-	# Record both GABA and GLU synapses
-	self.rec_GABA_traces(protocol, traceSpecs)
 	self.rec_GLU_traces(protocol, traceSpecs)
 
 	# Record membrane voltages
@@ -142,6 +90,29 @@ def plot_traces_GLU(self, model, protocol):
 	self._plot_GLU_traces(model, protocol)
 
 
+################################################################################
+# GABA synapse
+
+@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.SINGLE_SYN_GABA)
+def make_inputs_GABA(self, connector=None):
+	"""
+	Make single synaptic input
+	"""
+	make_GABA_inputs(self, 1, connector=connector)
+
+
+@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.SINGLE_SYN_GABA)
+def rec_traces_GABA(self, protocol, traceSpecs):
+	"""
+	Record all traces for this protocol.
+	"""
+	# Record synaptic variables
+	self.rec_GABA_traces(protocol, traceSpecs)
+
+	# Record membrane voltages
+	self.rec_Vm(protocol, traceSpecs)
+
+
 @register_step(EvaluationStep.PLOT_TRACES, StimProtocol.SINGLE_SYN_GABA)
 def plot_traces_GABA(self, model, protocol):
 	"""
@@ -152,6 +123,95 @@ def plot_traces_GABA(self, model, protocol):
 
 	# Plot synaptic variables
 	self._plot_GABA_traces(model, protocol)
+
+
+################################################################################
+# BURST protocol (GLU + GABA)
+
+
+@register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.MIN_SYN_BURST)
+def init_sim_BURST(self, protocol):
+	"""
+	Initialize simulator and cell for stimulation protocol
+	"""
+
+	self.sim_dur = 2000.0
+	h.tstop = self.sim_dur
+
+	init_sim_BURST_impl(nrnsim=neuron.h)
+
+
+def init_sim_BURST_impl(**kwargs):
+	"""
+	Initialize simulator (common interface).
+	"""
+	h = kwargs['nrnsim']
+
+	# Initialize phsyiology
+	h.celsius = 35
+	h.v_init = -60
+	h.set_aCSF(4)
+
+	# lower sKCa conductance to promote bursting
+	for sec in h.allsec():
+		for seg in sec:
+			seg.gk_sKCa = 0.6 * seg.gk_sKCa
+
+	h.init()
+
+@register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.MIN_SYN_BURST)
+def make_inputs_BURST(self, connector=None):
+	"""
+	Make minimal number of synapses that elicit burst
+	"""
+	model = self.target_model
+
+	# Prepare inputs for common interface
+	ICell = namedtuple("ICell", ['dendritic'])
+	icell = ICell(dendritic=[sec for sec in self.model_data[model]['dend_refs']])
+
+	common_args = {
+		'nrnsim':		neuron.h,
+		'connector':	connector,
+		'gid':			self.model_data[model]['gid'],
+		'icell':		icell,
+		'rng':			self.rng,
+		'delay':		700.0,
+	}
+
+	# Make GPE inputs
+	gpe_stim_data = {}
+	make_GABA_inputs(n_gpe_syn=1, stim_data=gpe_stim_data, **common_args)
+	self.add_inputs(Pop.GPE.name.lower(), model, **gpe_stim_data)
+
+	# Make CTX inputs
+	ctx_stim_data = {}
+	make_GLU_inputs(n_ctx_syn=4, stim_data=ctx_stim_data, **common_args)
+	self.add_inputs(Pop.CTX.name.lower(), model, **ctx_stim_data)
+
+
+def make_inputs_BURST_impl(**kwargs):
+	"""
+	Make minimal number of synapses that elicit burst
+
+	(common interface signature)
+	"""
+	# Minimal number of GABA + GLU synapses to trigger burst
+	make_GABA_inputs(**kwargs)
+	make_GLU_inputs(**kwargs)
+
+
+@register_step(EvaluationStep.RECORD_TRACES, StimProtocol.MIN_SYN_BURST)
+def rec_traces_BURST(self, protocol, traceSpecs):
+	"""
+	Record all traces for this protocol.
+	"""
+	# Record both GABA and GLU synapses
+	self.rec_GABA_traces(protocol, traceSpecs)
+	self.rec_GLU_traces(protocol, traceSpecs)
+
+	# Record membrane voltages
+	self.rec_Vm(protocol, traceSpecs)
 
 
 @register_step(EvaluationStep.PLOT_TRACES, StimProtocol.MIN_SYN_BURST)
@@ -171,25 +231,32 @@ def plot_traces_BURST(self, model, protocol):
 # Building block functions
 ################################################################################
 
-def make_GLU_inputs(self, n_ctx_syn, connector=None):
+def make_GLU_inputs(**kwargs):
 	"""
 	Make excitatory inputs distributed randomly over the dendrite
 	"""
-	if connector is None:
-		cc = cpd.CellConnector(self.physio_state, self.rng)
-	else:
-		cc = connector
+	cc				= kwargs['connector']
+	rng 			= kwargs['rng']
+	icell			= kwargs['icell']
+	stim_data		= kwargs['stim_data']
+	n_ctx_syn		= kwargs['n_ctx_syn']
+	delay			= kwargs['delay']
 
-	model = self.target_model
+	rng_pos = rng.get_state()[2]
+	logger.debug('Using NumPy Random object with position = {}'.format(rng_pos))
 		
 	# Add CTX inputs using Tsodyks-Markram synapses
 	# Distribute synapses over dendritic trees
 	is_ctx_target = lambda seg: seg.diam <= 1.0         
-	dend_secrefs = self.model_data[model]['dend_refs']
-	ctx_target_segs = pick_random_segments(dend_secrefs, n_ctx_syn, is_ctx_target, rng=self.rng)
+	dendritic_secs = icell.dendritic
+	ctx_target_segs = pick_random_segments(
+							dendritic_secs, 
+							n_ctx_syn, 
+							is_ctx_target, 
+							rng=rng,
+							refs=False)
 
 	# Make synapses
-	new_inputs = {}
 	for target_seg in ctx_target_segs:
 
 		# Make poisson spike generator
@@ -215,7 +282,7 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 							custom_synpar=syn_params)
 
 		# Control netstim
-		tstart = 850
+		tstart = delay + 150.0
 		tstop = tstart + 10*stim_T # SETPARAM: number of spikes in burst
 		stimsource.start = tstart
 		turn_off = h.NetCon(None, stimsource)
@@ -225,39 +292,44 @@ def make_GLU_inputs(self, n_ctx_syn, connector=None):
 		fih = h.FInitializeHandler(queue_events)
 
 		# Save inputs
-		extend_dictitem(new_inputs, 'PyInitHandlers', queue_events)
-		extend_dictitem(new_inputs, 'HocInitHandlers', fih)
-		extend_dictitem(new_inputs, 'syn_NetCons', nc)
-		extend_dictitem(new_inputs, 'com_NetCons', turn_off)
-		extend_dictitem(new_inputs, 'synapses', syn)
-		extend_dictitem(new_inputs, 'NetStims', stimsource)
-		extend_dictitem(new_inputs, 'stimweightvec', wvecs)
-
-	self.add_inputs('ctx', model, **new_inputs)
+		stim_data.setdefault('PyInitHandlers', []).append(queue_events)
+		stim_data.setdefault('HocInitHandlers', []).append(fih)
+		stim_data.setdefault('syn_NetCons', []).append(nc)
+		stim_data.setdefault('com_NetCons', []).append(turn_off)
+		stim_data.setdefault('synapses', []).append(syn)
+		stim_data.setdefault('NetStims', []).append(stimsource)
+		stim_data.setdefault('stimweightvec', []).append(wvecs)
 
 
 
-def make_GABA_inputs(self, n_gpe_syn, connector=None):
+def make_GABA_inputs(**kwargs):
 	"""
 	Make GABAergic synapses on the STN neuron.
 
 	@param self         StnModelEvaluator object
 	"""
-	if connector is None:
-		cc = cpd.CellConnector(self.physio_state, self.rng)
-	else:
-		cc = connector
+	cc				= kwargs['connector']
+	rng 			= kwargs['rng']
+	icell			= kwargs['icell']
+	stim_data		= kwargs['stim_data']
+	n_gpe_syn		= kwargs['n_gpe_syn']
+	delay			= kwargs['delay']
 
-	model = self.target_model
+	rng_pos = rng.get_state()[2]
+	logger.debug('Using NumPy Random object with position = {}'.format(rng_pos))
 		
 	# Add GPe inputs using Tsodyks-Markram synapses
 	# NOTE: one synapse represents a multi-synaptic contact from one GPe axon
-	new_inputs = {}
 
 	# Pick random segments in dendrites for placing synapses
 	is_gpe_target = lambda seg: seg.diam > 1.0 # select proximal dendrites
-	dend_secrefs = self.model_data[model]['dend_refs']
-	gpe_target_segs = pick_random_segments(dend_secrefs, n_gpe_syn, is_gpe_target, rng=self.rng)
+	dendritic_secs = icell.dendritic
+	gpe_target_segs = pick_random_segments(
+							dendritic_secs, 
+							n_gpe_syn, 
+							is_gpe_target, 
+							rng=rng,
+							refs=False)
 
 	# Make synapses
 	for target_seg in gpe_target_segs:
@@ -285,22 +357,20 @@ def make_GABA_inputs(self, n_gpe_syn, connector=None):
 							custom_synpar=syn_params)
 
 		# Control netstim
-		tstart = 700
+		tstart = delay
 		tstop = tstart + 5*stim_T # SETPARAM: number of spikes in burst
 		stimsource.start = tstart
 		turn_off = h.NetCon(None, stimsource)
 		turn_off.weight[0] = -1
 		def queue_events():
 			turn_off.event(tstop)
-		
-		extend_dictitem(new_inputs, 'PyInitHandlers', queue_events)
-		extend_dictitem(new_inputs, 'HocInitHandlers', h.FInitializeHandler(queue_events))
-		extend_dictitem(new_inputs, 'syn_NetCons', nc)
-		extend_dictitem(new_inputs, 'com_NetCons', turn_off)
-		extend_dictitem(new_inputs, 'synapses', syn)
-		extend_dictitem(new_inputs, 'NetStims', stimsource)
-		extend_dictitem(new_inputs, 'stimweightvec', wvecs)
 
-	# Save inputs
-	self.add_inputs('gpe', model, **new_inputs)
+		# Save inputs
+		stim_data.setdefault('PyInitHandlers', []).append(queue_events)
+		stim_data.setdefault('HocInitHandlers', []).append(h.FInitializeHandler(queue_events))
+		stim_data.setdefault('syn_NetCons', []).append(nc)
+		stim_data.setdefault('com_NetCons', []).append(turn_off)
+		stim_data.setdefault('synapses', []).append(syn)
+		stim_data.setdefault('NetStims', []).append(stimsource)
+		stim_data.setdefault('stimweightvec', []).append(wvecs)
 
