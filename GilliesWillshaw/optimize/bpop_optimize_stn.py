@@ -38,7 +38,7 @@ SYN_BACKGROUND_HIGH = StimProtocol.SYN_BACKGROUND_HIGH
 
 # Adjust verbosity of loggers
 import logging
-logger = logging.getLogger('bpop_ext')
+logger = logging.getLogger('__main__')
 # logutils.setLogLevel('quiet', ['marasco', 'folding', 'redops', 'bluepyopt.ephys.parameters'])
 
 

@@ -336,10 +336,12 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
 		### SPIKE TIMING RELATED ###
-		# 'Spikecount': {			# (int) The number of peaks during stimulus
+		'Spikecount': {			# (int) The number of peaks during stimulus
+			'weight':	1.0,
+		},
+		# 'mean_frequency': {	# (float) the mean frequency of the firing rate
 		# 	'weight':	2.0,
 		# },
-		# 'mean_frequency',		# (float) the mean frequency of the firing rate
 		# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
 		'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
 			'weight':	1.0,
@@ -350,10 +352,10 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 			'weight':	1.0,
 		},
 		# 'ISI_log',			# no documentation
-		'Victor_Purpura_distance': {
-			'weight':	2.0,
-			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
-		},
+		# 'Victor_Purpura_distance': {
+		# 	'weight':	2.0,
+		# 	'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
+		# },
 		### SPIKE SHAPE RELATED ###
 		# 'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
 		# 	'weight':	1.0,
@@ -368,11 +370,11 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 			'weight':	1.0,
 		},
 		'AP_height': {			# (array) The voltages at the maxima of the peak
-			'weight':	1.0,
+			'weight':	2.0,
 		},
-		# 'AP_amplitude': {		# (array) The relative height of the action potential
-		# 	'weight':	1.0,
-		# },
+		'AP_amplitude': {		# (array) The relative height of the action potential
+			'weight':	2.0,
+		},
 		'spike_half_width':	{	# (array) The FWHM of each peak
 			'weight':	1.0,
 		},
@@ -383,7 +385,7 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 		# 	'weight':	1.0,
 		# },
 		'min_AHP_values': {		# (array) Voltage values at the AHP
-			'weight':	2.0,	# this feature recognizes that there is an elevated plateau
+			'weight':	3.0,	# this feature recognizes that there is an elevated plateau
 		},
 	}
 
@@ -477,10 +479,15 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 
 		# Characterizing features and parameters for protocol
 		self.characterizing_feats = {
-			### SPIKE TIMING FEATURES ##############################################
+			### SPIKE TIMING RELATED ###
 			'Spikecount': {			# (int) The number of peaks during stimulus
+				'weight':	4.0,
+				'response_interval': (350.0, stim_delay) # SPONTANEOUS period
+			},
+			'mean_frequency': {	# (float) the mean frequency of the firing rate
 				'weight':	2.0,
 			},
+			# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
 			'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
 				'weight':	1.0,
 				'double':	{'spike_skipf': 0.0},
@@ -489,11 +496,39 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 			'ISI_CV': {				# (float) coefficient of variation of ISI durations
 				'weight':	1.0,
 			},
-			'Victor_Purpura_distance': {
-				'weight':	2.0,
-				'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
+			# 'ISI_log',			# no documentation
+			# 'Victor_Purpura_distance': {
+			# 	'weight':	2.0,
+			# 	'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
+			# },
+			### SPIKE SHAPE RELATED ###
+			# 'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
+			# 	'weight':	1.0,
+			# },
+			# 'AP_duration_half_width_change': { # (array) Difference of the FWHM of the second and the first action potential divided by the FWHM of the first action potential
+			# 	'weight':	1.0,
+			# },
+			# 'AP_rise_time': {		# (array) Time from action potential onset to the maximum
+			# 	'weight':	1.0,
+			# },
+			'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
+				'weight':	1.0,
 			},
-			### SPIKE SHAPE FEATURES ###############################################
+			'AP_height': {			# (array) The voltages at the maxima of the peak
+				'weight':	2.0,
+			},
+			'AP_amplitude': {		# (array) The relative height of the action potential
+				'weight':	2.0,
+			},
+			'spike_half_width':	{	# (array) The FWHM of each peak
+				'weight':	1.0,
+			},
+			# 'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
+			# 	'weight':	1.0,
+			# },
+			# 'AHP_depth': {			# (array) relative voltage values at the AHP
+			# 	'weight':	1.0,
+			# },
 			'min_AHP_values': {		# (array) Voltage values at the AHP
 				'weight':	2.0,	# this feature recognizes that there is an elevated plateau
 			},
@@ -558,8 +593,8 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 		]
 
 		proto_plot_funcs = [
-			# proto_common.plot_all_spikes,
-			proto_common.report_spikes,
+			proto_common.plot_all_spikes,
+			# proto_common.report_spikes,
 		]
 
 		self.ephys_protocol = SelfContainedProtocol(
@@ -591,6 +626,9 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 			'weight':	8.0,
 			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 		},
+		# 'burst_mean_freq': {
+		# 	'weight':	2.0,
+		# }
 	}
 
 # ==============================================================================

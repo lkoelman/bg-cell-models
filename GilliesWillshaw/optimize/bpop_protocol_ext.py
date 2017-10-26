@@ -74,7 +74,7 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 
 		# Data used by protocol setup functions
 		self.recorded_trace_vectors = {}
-		self.record_contained_traces = True
+		self.record_contained_traces = False
 		self.autoplot_contained_traces = False
 
 		########################################################################

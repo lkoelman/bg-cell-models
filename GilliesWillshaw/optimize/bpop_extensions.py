@@ -86,10 +86,9 @@ class NrnScaleRangeParameter(ephys.parameters.NrnParameter, ephys.serializer.Dic
                     setattr(seg, '%s' % self.param_name, new_val)
         
         logger.debug(
-            'Scaled %s in %s by factor %s', self.param_name,
-            [str(location)
-             for location in self.locations],
-            self.value)
+                'Scaled %s in %s by factor %s', self.param_name,
+                [str(location) for location in self.locations],
+                self.value)
 
 
     def __str__(self):
