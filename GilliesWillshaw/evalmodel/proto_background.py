@@ -61,6 +61,8 @@ FRAC_SYN = {
 MSR_METHOD = MSRC.SCALE_NUMSYN_MSR # How to take into account multi-synapse rule
 # NOTE: if method is SCALE_NUMSYN_MSR => n_syn = n_syn_stn_tot * FRAC_SYN / MSR_NUM_SYN
 
+USE_BURSTSTIM = True
+
 ################################################################################
 # Interface functions
 ################################################################################
@@ -400,7 +402,7 @@ def make_background_inputs(**kwargs):
 	# Data for configuring inputs
 	tstart = 300
 	stim_rate = fire_par['rate_mean']
-	pause_rate = fire_par.get('pause_rate_mean', 0)
+	pause_rate_hz = fire_par.get('pause_rate_mean', 0)
 	pause_dur = fire_par.get('pause_dur_mean', 0)
 	discharge_dur = fire_par.get('discharge_dur_mean', 0)
 	# TODO: set intra-burst rate (higher than mean rate), set burst dur, calculate 'number' from these two, then set controlling stim rate to pause rate
@@ -410,8 +412,10 @@ def make_background_inputs(**kwargs):
 
 		# MCellRan4: each stream should be statistically independent as long as the highindex values differ by more than the eventual length of the stream. See http://www.neuron.yale.edu/neuron/static/py_doc/programming/math/random.html?highlight=MCellRan4
 
-		dur_max_ms, dt_ms = 10000.0, 0.025
-		stim_interval = stim_rate**-1*1e3 
+		dur_max_ms = 10000.0
+		stim_interval = stim_rate**-1*1e3
+
+		# RNG settings
 		num_indep_repicks = dur_max_ms / stim_interval + 1000
 		low_index = gid+250+base_seed
 		highest_index = highest_indices.get(low_index, 0)
@@ -422,21 +426,50 @@ def make_background_inputs(**kwargs):
 		stimrand = h.Random() # see CNS2014 Dura-Bernal example or EPFL cell synapses.hoc file
 		stimrand.MCellRan4(high_index, low_index) # high_index can also be set using .seq()
 		stimrand.negexp(1) # if num arrivals is poisson distributed, ISIs are negexp-distributed
-		
-		# make NetStim spike generator
-		stimsource = h.NetStim()
-		stimsource.interval = stim_interval # Interval between spikes
-		stimsource.number = 1e9 # inexhaustible for our simulation
-		stimsource.noise = 1.0
-		stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
-		stimsource.start = tstart
 
-		if pause_rate > 0:
-			assert (discharge_dur < 1/pause_rate), "Discharge duration must be smaller than inter-pause interval"
-			# logger.debug("Creating pausing NetStim with pause_rate={} and pause_dur={}".format(pause_rate, pause_dur))
+		if pause_rate_hz > 0 and USE_BURSTSTIM: # make bursting spike generator
+
+			stimsource = h.BurstStim()
+			stimsource.fast_invl = stim_interval
+			stimsource.slow_invl = pause_dur*1e3
+			stimsource.burst_len = discharge_dur*stim_rate # ((1.0/pause_rate_hz) - pause_dur) * stim_rate
+			stimsource.start = tstart
+			stimsource.noise = 1.0
+			stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
+
+		else: # make poisson spike generator
+			
+			# make NetStim spike generator
+			stimsource = h.NetStimExt()
+			stimsource.interval = stim_interval # Interval between spikes
+			stimsource.start = tstart
+			stimsource.number = 1e9 # inexhaustible for our simulation
+			stimsource.noise = 1.0
+			stimsource.noiseFromRandom(stimrand) # Set it to use this random number generator
+
+		# Make synapse and NetCon
+		syn, nc, wvecs = cc.make_synapse((POP_PRE, Pop.STN), (stimsource, target_seg), 
+							syn_mech, syn_NTRs, con_par_data=con_par)
+
+		# Save inputs
+		stim_data.setdefault('NetStims', []).append(stimsource)
+		stim_data.setdefault('RNG_data', []).append({
+			'HocRandomObj': stimrand, 
+			'seq': stimrand.seq(),
+		})
+		stim_data.setdefault('syn_NetCons', []).append(nc)
+		stim_data.setdefault('synapses', []).append(syn)
+		stim_data.setdefault('stimweightvec', []).append(wvecs)
+		
+
+		if pause_rate_hz > 0 and not USE_BURSTSTIM:
+
+			# Sanity check timing params
+			assert (discharge_dur < 1/pause_rate_hz), "Discharge duration must be smaller than inter-pause interval"
 
 			# Make spike generator exhaustible
 			stimsource.number = discharge_dur*stim_rate # expected number of spikes in discharge duration
+			stimsource.ispike = int(discharge_dur*stim_rate*rng.rand())
 
 			pause_interval = pause_dur*1e3
 			num_indep_repicks = dur_max_ms / pause_interval + 1000
@@ -452,7 +485,7 @@ def make_background_inputs(**kwargs):
 
 			# control spike generator spiking pattern
 			stimctl = h.NetStim()
-			# stimctl.interval = pause_rate**-1*1e3
+			# stimctl.interval = pause_rate_hz**-1*1e3
 			stimctl.interval = pause_interval # replenish only works when spikes exhaused
 			stimctl.number = 1e9
 			stimctl.noise = 1.0
@@ -476,19 +509,6 @@ def make_background_inputs(**kwargs):
 				'seq': ctlrand.seq(),
 			})
 
-		# Make synapse and NetCon
-		syn, nc, wvecs = cc.make_synapse((POP_PRE, Pop.STN), (stimsource, target_seg), 
-							syn_mech, syn_NTRs, con_par_data=con_par)
-
-		# Save inputs
-		stim_data.setdefault('syn_NetCons', []).append(nc)
-		stim_data.setdefault('synapses', []).append(syn)
-		stim_data.setdefault('NetStims', []).append(stimsource)
-		stim_data.setdefault('stimweightvec', []).append(wvecs)
-		stim_data.setdefault('RNG_data', []).append({
-				'HocRandomObj': stimrand, 
-				'seq': stimrand.seq(),
-		})
 
 
 def rec_GABA_traces(**kwargs):

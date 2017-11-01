@@ -15,6 +15,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 
 import gillies_model as gillies
 import redutils as redtools
+from common import conutils
 from redutils import getsecref, seg_index
 
 class SynInfo(object):
@@ -461,14 +462,41 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 			raise Exception("Unknown synapse placement method '{}'".format(method))
 
 		# Scale conductances (weights) of all incoming connections
-		for i_nc, nc in enumerate(syn_info.afferent_netcons):
-			
-			orig_weights = syn_info.afferent_weights[i_nc]
-			assert len(orig_weights) == int(nc.wcnt())
-			
-			for i_w in xrange(int(nc.wcnt())):
-				nc.weight[i_w] = orig_weights[i_w] * scale_g
-				logger.anal("Scaled weight {} by factor {}".format(orig_weights[i_w], scale_g))
+		scale_netcon_weights = False
+
+		if len(getattr(syn_info, 'gbar_param_specs', [])) > 0:
+			for gbar_spec in syn_info.gbar_param_specs:
+
+				mechtype, mech_parname, mech_paridx = conutils.interpretParamSpec(gbar_spec)
+				
+				if mechtype == 'syn':
+					target = mapped_syn
+					if mech_paridx is None:
+						old_val = getattr(target, mech_parname)
+						setattr(target, mech_parname, old_val*scale_g)
+					else:
+						old_val = getattr(target, mech_parname)[int(mech_paridx)]
+						getattr(target, mech_parname)[int(mech_paridx)] = old_val*scale_g
+				
+				elif mechtype == 'netcon':
+					scale_netcon_weights = True
+
+		else:
+			scale_netcon_weights = True
+					
+
+		if scale_netcon_weights:
+			# Default action: scale NetCon weights
+			for i_nc, nc in enumerate(syn_info.afferent_netcons):
+				
+				# Get original weights (weights are reset when disconnecting)
+				orig_weights = syn_info.afferent_weights[i_nc]
+				assert len(orig_weights) == int(nc.wcnt())
+				
+				# Scale original weights
+				for i_w in xrange(int(nc.wcnt())):
+					nc.weight[i_w] = orig_weights[i_w] * scale_g
+					logger.anal("Scaled weight {} by factor {}".format(orig_weights[i_w], scale_g))
 
 			
 		

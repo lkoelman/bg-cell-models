@@ -13,7 +13,7 @@ import bpop_efeatures as espk
 import efel
 
 import logging
-logger = logging.getLogger('bpop_ext')
+logger = logging.getLogger('bluepyopt.ephys.efeatures')
 
 def make_features(proto_wrapper):
 	"""
@@ -49,7 +49,7 @@ def make_features(proto_wrapper):
 						threshold			= proto_wrapper.spike_threshold,
 						)
 
-		elif feat_name.lower() in custom_spiketrain_features:
+		elif feat_name in custom_spiketrain_features:
 
 			feature = espk.SpikeTrainFeature(
 						name				='{}.{}'.format(protocol.name, feat_name),
@@ -100,13 +100,15 @@ def make_opt_features(proto_wrappers):
 
 		# Add them to dict
 		for feat_name in candidate_feats.keys():
+			# Weight and normalization factor for feature score (distance)
 			feat_weight = proto.characterizing_feats[feat_name]['weight']
-			feat_std = proto.characterizing_feats[feat_name].get('exp_std', 1.0)
+			norm_factor = proto.characterizing_feats[feat_name].get('norm_factor', 1.0)
 			
 			# Add to feature dict if nonzero weight
+			# NOTE: feature score = sum(feat[i] - exp_mean) / N / exp_std  => so exp_std determines weight (in case of SingletonObjective)
 			if feat_weight > 0.0:
 				feat_obj = candidate_feats[feat_name]
-				feat_obj.exp_std = feat_std
+				feat_obj.exp_std = norm_factor / feat_weight
 				proto_feat_dict[proto.IMPL_PROTO][feat_name] = feat_obj, feat_weight
 
 	return proto_feat_dict
@@ -158,10 +160,10 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 				# NOTE: exp_std will have as much influence as weight! This needs to eb set in protocols file
 				e_feature.exp_mean = target_value
 
-			elif feat_name.lower() in custom_spiketrain_features:
+			elif feat_name in custom_spiketrain_features:
 
 				# Set target spike train
-				e_feature.target_spike_times = target_value
+				e_feature.set_target_values(target_value)
 
 			else:
 				raise ValueError('Unknown feature: <{}>'.format(feat_name))

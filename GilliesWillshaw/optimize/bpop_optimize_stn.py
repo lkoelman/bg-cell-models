@@ -17,6 +17,7 @@ import bluepyopt as bpop
 import bluepyopt.ephys as ephys
 
 # Our custom BluePyOpt modules
+import bpop_extensions
 from bpop_cellmodels import StnFullModel, StnReducedModel
 import bpop_protocols_stn as StnProtocols
 from bpop_protocols_stn import BpopProtocolWrapper
@@ -304,10 +305,13 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 	all_opt_features, all_opt_weights = StnFeatures.all_features_weights(stimprotos_feats.values())
 
 	# Make final objective function based on selected set of features
-	total_objective = ephys.objectives.WeightedSumObjective(
+	# total_objective = ephys.objectives.WeightedSumObjective(
+	# 							name	= 'optimise_all',
+	# 							features= all_opt_features,
+	# 							weights	= all_opt_weights)
+	total_objective = bpop_extensions.RootMeanSquareObjective(
 								name	= 'optimise_all',
-								features= all_opt_features,
-								weights	= all_opt_weights)
+								features= all_opt_features)
 
 	# Calculator maps model responses to scores
 	fitcalc = ephys.objectivescalculators.ObjectivesCalculator([total_objective])

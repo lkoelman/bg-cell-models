@@ -25,15 +25,19 @@ Modified by Michael Hines for use with CVode
 
 Modified by Michael Hines to use logical event style with NET_RECEIVE
 
-Modified by Lucas Koelman: renamed SpikeGenerator to BurstStim, restructure comments
+Modified by Lucas Koelman: 
+	- renamed SpikeGenerator to BurstStim, restructure comments
+	- changed mechanism type from POINT_PROCESS to ARTIFICIAL_CELL
+	- changed exprand(1) call to custom function erand() copied from netstim.mod
 ENDCOMMENT
 
 
 NEURON	{ 
-  POINT_PROCESS BurstStim
+  ARTIFICIAL_CELL BurstStim
   RANGE y
   RANGE fast_invl, slow_invl, burst_len, start, end
   RANGE noise
+  POINTER donotuse
 }
 
 
@@ -48,6 +52,7 @@ PARAMETER {
 	noise		= 0		: amount of randomeaness (0.0 - 1.0)
 }
 
+
 ASSIGNED {
 	y
 	burst
@@ -56,13 +61,24 @@ ASSIGNED {
 	burst_on (ms)
 	toff (ms)
 	on
+	donotuse
 }
 
+
+:backward compatibility
 PROCEDURE seed(x) {
 	set_seed(x)
 }
 
 INITIAL {
+
+	if (noise < 0) {
+		noise = 0
+	}
+	if (noise > 1) {
+		noise = 1
+	}
+
 	on = 1
 	toff = 1e9
 	y = -90
@@ -90,9 +106,53 @@ FUNCTION interval(mean (ms)) (ms) {
 	if (noise == 0) {
 		interval = mean
 	}else{
-		interval = (1. - noise)*mean + noise*mean*exprand(1)
+		interval = (1. - noise)*mean + noise*mean*erand()
 	}
 }
+
+VERBATIM
+double nrn_random_pick(void* r);
+void* nrn_random_arg(int argpos);
+ENDVERBATIM
+
+
+: sample negexp distribution from specified random stream
+
+FUNCTION erand() {
+VERBATIM
+	if (_p_donotuse) {
+		/*
+		:Supports separate independent but reproducible streams for
+		: each instance. However, the corresponding hoc Random
+		: distribution MUST be set to Random.negexp(1)
+		*/
+		_lerand = nrn_random_pick(_p_donotuse);
+	}else{
+		/* only can be used in main thread */
+ENDVERBATIM
+		: the old standby. Cannot use if reproducible parallel sim
+		: independent of nhost or which host this instance is on
+		: is desired, since each instance on this cpu draws from
+		: the same stream
+		erand = exprand(1)
+VERBATIM
+	}
+ENDVERBATIM
+}
+
+PROCEDURE noiseFromRandom() {
+VERBATIM
+ {
+	void** pv = (void**)(&_p_donotuse);
+	if (ifarg(1)) {
+		*pv = nrn_random_arg(1);
+	}else{
+		*pv = (void*)0;
+	}
+ }
+ENDVERBATIM
+}
+
 
 PROCEDURE event_time() {
 	: Update state variables

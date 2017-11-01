@@ -30,7 +30,7 @@ import quantities as pq
 import neo
 
 import logging
-logger = logging.getLogger('bpop_ext')
+logger = logging.getLogger('bluepyopt.ephys.efeatures')
 
 
 def getFeatureNames():
@@ -40,6 +40,264 @@ def getFeatureNames():
     return list(SpikeTrainFeature.DISTANCE_METRICS)
 
 
+################################################################################
+# Feature: spike train distance
+################################################################################
+
+
+def calc_feat_values_spiketimes(self, efel_trace, raise_warnings):
+    """
+    Calculate feature values for spike-timing based metrics.
+    """
+
+    self._setup_efel()
+    import efel
+
+    efel_feats = ['peak_time']
+
+    # Calculate spike times from response
+    values = efel.getFeatureValues(
+        [efel_trace],
+        efel_feats,
+        raise_warnings=raise_warnings
+    )
+    efeat_values = {
+        feat_name: values[0][feat_name] for feat_name in efel_feats
+    }
+
+    efel.reset()
+
+    return efeat_values
+
+
+def calc_score_VP_dist(self, efel_trace, trace_check):
+    """
+    Calculate feature score for new response with regard to target values
+    """
+
+    self._setup_efel()
+    import efel
+
+    # Calculate spike times from response
+    efel_feat = 'peak_time'
+    feat_vals = efel.getFeatureValues(
+        [efel_trace],
+        [efel_feat],
+        raise_warnings = True
+    )
+    resp_spike_times = feat_vals[0][efel_feat]
+    resp_spike_train = self._construct_neo_spiketrain(resp_spike_times)
+    target_spike_times = self.target_value_data['peak_time']
+    target_spike_train = self._construct_neo_spiketrain(target_spike_times)
+
+
+    # Set spike shift cost parameter
+    if 'spike_shift_cost_ms' in self.double_settings:
+        cost_ms = self.double_settings['spike_shift_cost_ms']
+        spike_shift_cost = 1.0/(cost_ms*1e-3) * pq.Hz
+    
+    elif 'spike_shift_cost_hz' in self.double_settings:
+        spike_shift_cost = self.double_settings['spike_shift_cost_hz'] * pq.Hz
+    
+    else:
+        spike_shift_cost = 1.0/(20e-3) * pq.Hz # 20 ms is kernel quarter width
+
+    # Compute distance function
+    dist_mat = stds.victor_purpura_dist(
+                    [target_spike_train, resp_spike_train], 
+                    q = spike_shift_cost, 
+                    algorithm = 'fast')
+
+    score = dist_mat[0, 1]
+    
+
+    # Need to take into account std (can be used as weight too)
+    efel.reset()
+    score /= self.exp_std
+    if self.force_max_score:
+            score = max(score, self.max_score)
+
+    return score
+
+
+def calc_score_instantaneous_rate(self, efel_trace, trace_check):
+    """
+    Calculate feature score for new response with regard to target values
+    """
+
+    self._setup_efel()
+    import efel
+    from common.analysis import numpy_avg_rate_simple
+    import numpy as np
+
+    # Calculate spike times from response
+    efel_feat = 'peak_time'
+    feat_vals = efel.getFeatureValues(
+        [efel_trace],
+        [efel_feat],
+        raise_warnings = True
+    )
+    resp_spike_times = feat_vals[0][efel_feat]
+    target_spike_times = self.target_value_data['peak_time']
+
+    # min_spk = self.int_settings.get('min_AP', 2)
+    bin_width = self.double_settings.get('bin_width', 50.0)
+
+    resp_psth = numpy_avg_rate_simple(
+                        [resp_spike_times], 
+                        self.stim_start, self.stim_end,
+                        bin_width)
+
+    tar_psth  = numpy_avg_rate_simple(
+                        [target_spike_times], 
+                        self.stim_start, self.stim_end,
+                        bin_width)
+
+    logger.debug(
+        "PSTHs for old and new spike train are:"
+        "\nold:{}\nnew:{}".format(tar_psth, resp_psth))
+
+    # Sum of squared differences, averaged
+    score = np.sum((tar_psth-resp_psth)**2) / tar_psth.size
+
+    # Need to take into account std (can be used as weight too)
+    efel.reset()
+    score /= self.exp_std
+    if self.force_max_score:
+            score = max(score, self.max_score)
+
+    return score
+
+
+def calc_score_Kreuz_ISI_dist(self, efel_trace, trace_check):
+    """
+    Calculate feature score for new response with regard to target values
+    """
+
+    self._setup_efel()
+    import efel
+    import pyspike
+
+    # Calculate spike times from response
+    efel_feat = 'peak_time'
+    feat_vals = efel.getFeatureValues(
+        [efel_trace],
+        [efel_feat],
+        raise_warnings = True
+    )
+
+    # Construct spike trains
+    resp_spike_times = feat_vals[0][efel_feat]
+    st_resp = pyspike.SpikeTrain(
+                        resp_spike_times,
+                        [self.stim_start, self.stim_end],
+                        is_sorted=True)
+
+    target_spike_times = self.target_value_data['peak_time']
+    st_targ = pyspike.SpikeTrain(
+                        target_spike_times,
+                        [self.stim_start, self.stim_end],
+                        is_sorted=True)
+
+    # Sum of squared differences, averaged
+    score = pyspike.isi_distance(st_targ, st_resp)
+
+    # Need to take into account std (can be used as weight too)
+    efel.reset()
+    score /= self.exp_std
+    if self.force_max_score:
+            score = max(score, self.max_score)
+
+    return score
+
+################################################################################
+# Feature: ISI Voltages
+################################################################################
+
+def calc_feat_values_ISI_voltage(self, efel_trace, raise_warnings):
+    """
+    Calculate feature values required for ISI voltage distance.
+    """
+
+    self._setup_efel()
+    import efel
+
+    # Calculate required features / dependencies
+    efel_feats = ['AP_begin_indices', 'AP_end_indices']
+    values = efel.getFeatureValues(
+        [efel_trace],
+        efel_feats,
+        raise_warnings=raise_warnings
+    )
+    efeat_values = {
+        feat_name: values[0][feat_name] for feat_name in efel_feats
+    }
+
+    # Voltage itself is required as well
+    # TODO: only save values where stim_start <= T <= stim_end
+    efeat_values['V'] = efel_trace['V'].values
+    efeat_values['dt'] = efel_trace['T'][1] - efel_trace['T'][0]
+
+    efel.reset()
+
+    return efeat_values
+
+
+def calc_score_ISI_voltage(self, efel_trace, trace_check):
+    """
+    Calculate feature score for new response with regard to target values
+    """
+
+    self._setup_efel()
+    import efel
+
+    import pyximport; pyximport.install()
+    from efeatures_fast_ops import calc_ISI_voltage_distance_dt_equal
+
+    # Calculate required features / dependencies
+    efel_feats = ['AP_begin_indices', 'AP_end_indices']
+    feat_vals = efel.getFeatureValues(
+        [efel_trace],
+        efel_feats,
+        raise_warnings=True
+    )
+
+    # Compute distance function
+    tar_AP_begin    = self.target_value_data['AP_begin_indices']
+    tar_AP_end      = self.target_value_data['AP_end_indices']
+    tar_Vm          = self.target_value_data['V']
+    tar_dt          = self.target_value_data['dt']
+
+    cur_AP_begin    = feat_vals[0]['AP_begin_indices']
+    cur_AP_end      = feat_vals[0]['AP_end_indices']
+    cur_Vm          = efel_trace['V'].values # pandas.Series to numpy.ndarray
+    cur_dt          = efel_trace['T'][1] - efel_trace['T'][0]
+
+    dt_equal = abs(tar_dt-cur_dt) <= 0.00001
+    if not dt_equal:
+        raise Exception("ISI voltage distance only implemented for traces calculated with equal time step (dt_old={}, dt_new={}).".format(tar_dt, cur_dt))
+
+    
+    score = calc_ISI_voltage_distance_dt_equal(
+                            tar_Vm, cur_Vm, 
+                            tar_AP_begin, cur_AP_begin,
+                            tar_AP_end, cur_AP_end,
+                            self.stim_start, self.stim_end, tar_dt)
+
+    # Need to take into account std (can be used as weight too)
+    efel.reset()
+    score /= self.exp_std
+    if self.force_max_score:
+            score = max(score, self.max_score)
+
+    return score
+
+
+################################################################################
+# Feature class
+################################################################################
+
+
 class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
 
     """
@@ -47,13 +305,32 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
     computed usinng a given similarity metric.
     """
 
-    # TODO: for serialization, check that only raw spike times/start/end are serialized, and spike train is rebuit after serialization.
+    # Fields to be serialized for data transfer between threads via pickle/unpickle
     SERIALIZED_FIELDS = ('name', 'metric_name', 'recording_names',
-                         'stim_start', 'stim_end', 'target_spike_times',
+                         'stim_start', 'stim_end', 'target_value_data',
                          'threshold', 'comment')
 
     # List of available distance metrics
-    DISTANCE_METRICS = ('victor_purpura_distance',)
+    DISTANCE_METRICS = (
+        'Victor_Purpura_distance', 
+        'instantaneous_rate',
+        'ISI_voltage_distance',
+        'Kreuz_ISI_distance'
+    )
+
+    CALC_FEAT_FUNCS = {
+        'Victor_Purpura_distance': calc_feat_values_spiketimes,
+        'instantaneous_rate': calc_feat_values_spiketimes,
+        'ISI_voltage_distance': calc_feat_values_ISI_voltage,
+        'Kreuz_ISI_distance': calc_feat_values_spiketimes,
+    }
+
+    CALC_SCORE_FUNCS = {
+        'Victor_Purpura_distance': calc_score_VP_dist,
+        'instantaneous_rate': calc_score_instantaneous_rate,
+        'ISI_voltage_distance': calc_score_ISI_voltage,
+        'Kreuz_ISI_distance': calc_score_Kreuz_ISI_dist,
+    }
 
     def __init__(
             self,
@@ -62,7 +339,6 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             recording_names=None,
             stim_start=None,
             stim_end=None,
-            target_spike_times=None,
             threshold=None,
             interp_step=None,
             comment='',
@@ -93,13 +369,15 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             
             interp_step(float):     interpolation step (ms)
             
-            target_spike_train:     list(float) or numpy.array with spike times.
+
+
+            target_trace:           dict {
+                                        T:np.array , V:np.array , 
+                                        stim_start:[float] , stim_end:[float]
+                                    }
         """
 
         super(SpikeTrainFeature, self).__init__(name, comment)
-
-        if metric_name.lower() not in self.DISTANCE_METRICS:
-            raise NotImplementedError("Metric {} not implemented".format(metric_name))
 
         if double_settings is None:
             double_settings = {}
@@ -107,7 +385,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             int_settings = {}
 
         self.recording_names = recording_names
-        self.metric_name = metric_name
+        self.metric_name = metric_name # function of var 'efeal_feature_name' in original class
 
         self.stim_start = stim_start
         self.stim_end = stim_end
@@ -119,9 +397,20 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         
         self.force_max_score = force_max_score
         self.max_score = max_score
-        self._target_spike_times = target_spike_times # also builds spike train
+        
         self.exp_std = 1.0
         self.exp_mean = None
+
+        self.target_value_data = {} # data for computing distance
+
+
+    def set_target_values(self, value_dict):
+        """
+        Set data needed for computing distance.
+
+        @param value_dict   the result of a call to self.calculate_feature()
+        """
+        self.target_value_data = value_dict
 
 
     def _construct_neo_spiketrain(self, spike_times):
@@ -141,27 +430,11 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         return spike_train
 
 
-    def get_target_spike_times(self):
-        """
-        Return target spike times as list.
-        """
-        return self._target_spike_times
-
-
-    def set_target_spike_times(self, value):
-        """
-        Set target spike times.
-        """
-        self._target_spike_times = value
-        self.target_spike_train = self._construct_neo_spiketrain(value)
-
-    # Make property explicitly
-    target_spike_times = property(get_target_spike_times, set_target_spike_times)
-
-
     def _construct_efel_trace(self, responses):
         """
         Construct trace that can be passed to eFEL
+
+        @note   data type of time and voltage series is pandas.core.series.Series
         """
 
         trace = {}
@@ -185,8 +458,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             if responses[self.recording_names['']] is None or \
                     responses[recording_name] is None:
                 return None
-            trace['T%s' % postfix] = \
-                responses[self.recording_names['']]['time']
+            trace['T%s' % postfix] = responses[self.recording_names['']]['time']
             trace['V%s' % postfix] = responses[recording_name]['voltage']
             trace['stim_start%s' % postfix] = [self.stim_start]
             trace['stim_end%s' % postfix] = [self.stim_end]
@@ -218,28 +490,14 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         efel_trace = self._construct_efel_trace(responses)
 
         if efel_trace is None:
-            feature_value = None
+            feat_vals = None
         else:
+            feat_name = self.metric_name
+            feat_vals = self.CALC_FEAT_FUNCS[feat_name](self, efel_trace, raise_warnings)
 
-            self._setup_efel()
-            import efel
-
-            # Calculate spike times from response
-            values = efel.getFeatureValues(
-                [efel_trace],
-                ['peak_time'],
-                raise_warnings=raise_warnings
-            )
-            feature_value = values[0]['peak_time']
-
-            efel.reset()
-
-        logger.debug(
-            'Calculated value for %s: %s',
-            self.name,
-            str(feature_value))
-
-        return feature_value
+        logger.debug('Calculated feature value for %s: %s', self.name, feat_vals)
+        
+        return feat_vals
 
 
     def calculate_score(self, responses, trace_check=False):
@@ -253,46 +511,8 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         if efel_trace is None:
             score = self.max_score
         else:
-            
-            self._setup_efel()
-            import efel
-
-            # Calculate spike times from response
-            feat_vals = efel.getFeatureValues(
-                [efel_trace],
-                ['peak_time'],
-                raise_warnings = True
-            )
-            resp_spike_times = feat_vals[0]['peak_time']
-            resp_spike_train = self._construct_neo_spiketrain(resp_spike_times)
-
-
-            # Compute spike train dissimilarity
-            # TODO: read up and decide on q factor
-            if self.metric_name.lower() == 'victor_purpura_distance':
-
-                if 'spike_shift_cost_ms' in self.double_settings:
-                    cost_ms = self.double_settings['spike_shift_cost_ms']
-                    spike_shift_cost = 1.0/(cost_ms*1e-3) * pq.Hz
-                elif 'spike_shift_cost_hz' in self.double_settings:
-                    spike_shift_cost = self.double_settings['spike_shift_cost_hz'] * pq.Hz
-                else:
-                    spike_shift_cost = 1.0/(20e-3) * pq.Hz # 20 ms is kernel quarter width
-
-                dist_mat = stds.victor_purpura_dist(
-                                [self.target_spike_train, resp_spike_train], 
-                                q = spike_shift_cost, 
-                                algorithm = 'fast')
-
-                score = dist_mat[0, 1]
-            else:
-                raise NotImplementedError("Metric {} not implemented".format(self.metric_name))
-
-            # Need to take into account std (can be used as weight too)
-            score /= self.exp_std
-            
-            if self.force_max_score:
-                score = max(score, self.max_score)
+            feat_name = self.metric_name
+            score = self.CALC_SCORE_FUNCS[feat_name](self, efel_trace, trace_check)
 
         logger.debug('Calculated score for %s: %f', self.name, score)
 
@@ -305,10 +525,10 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         """
 
         return "%s for %s with stim start %s and end %s, " \
-            "target_spike_times and AP threshold override %s" % \
+            "and AP threshold override %s" % \
             (self.metric_name,
              self.recording_names,
              self.stim_start,
              self.stim_end,
-             self.target_spike_train,
              self.threshold)
+

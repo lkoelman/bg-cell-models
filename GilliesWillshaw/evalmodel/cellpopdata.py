@@ -29,6 +29,7 @@ import neuron
 nrn = neuron.nrn # types nrn.Section and nrn.Segment
 h = neuron.h
 
+from common.conutils import interpretParamSpec
 
 @unique
 class PhysioState(IntEnum):
@@ -238,6 +239,14 @@ def get_synapse_data(connector, synapses, netcons):
 		freqs = [con_par[receptor]['f_med_PSP_burst'] for receptor in syn_receptors]
 		syn_info.PSP_median_frequency = max(freqs)
 
+		# gbar parameters that need to be scaled
+		syn_info.gbar_param_specs = []
+		ntrs_params = getNrnConParamMap(modname)
+		for ntr, syn_param_specs in ntrs_params.iteritems():
+			if 'gbar' in syn_param_specs:
+				syn_info.gbar_param_specs.append(syn_param_specs['gbar'])
+
+		# Save SynInfo object
 		syn_list.append(syn_info)
 
 	return syn_list
@@ -396,21 +405,6 @@ def getSynMechParamNames(mech_name):
 
 	return mech_parnames
 
-def interpretParamSpec(spec):
-	"""
-	Extract <mechanism_type>, <parameter_name>, <index> from parameter specification in format 'mechanism:parameter[index]'
-
-	@return		tuple (mechanism_type, parameter_name, index)
-	"""
-	# Regular expression with ?P<groupname> to mark named groups
-	matches = re.search(r'^(?P<mech>\w+):(?P<parname>\w+)(\[(?P<idx>\d+)\])?', spec)
-	
-	mech_type = matches.group('mech')
-	mech_param = matches.group('parname')
-	param_index = matches.group('idx')
-	
-	return mech_type, mech_param, param_index
-
 
 def evalValueSpec(value_spec, rng=None):
 	"""
@@ -487,7 +481,7 @@ class CellConnector(object):
 		fp[Pop.GPE][Src.Bergman2015RetiCh3] = {}
 
 		fp[Pop.GPE][Src.Bergman2015RetiCh3][PhysioState.NORMAL | PhysioState.AWAKE] = {
-			'rate_mean': 60.0,
+			'rate_mean': 60.0, # 50-70 Hz
 			'rate_deviation': 10.0,
 			'rate_units': 'Hz',
 			'pause_dur_mean': 0.6, # average pause duration 0.5-0.7 s in monkeys
@@ -495,8 +489,9 @@ class CellConnector(object):
 			'pause_rate_mean': 15.0/60.0, # 10-20 pauses per minute
 			'pause_rate_units': 'Hz',
 			'pause_rate_dist': 'poisson', # Can control rate NetStim with pause NetStim (stim.number resets, see mod file)
+			# NOTE: discarge_dur = 1/pause_rate - pause_dur ~= 4 - 0.6
 			'discharge_dur_mean': 1.0, # must be < 1/pause_rate_mean
-			'discharge_dur_units': 'Hz',
+			'discharge_dur_units': 's',
 			'species': 'primates',
 		}
 

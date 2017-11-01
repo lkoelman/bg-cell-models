@@ -431,7 +431,7 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 
 		proto_setup_kwargs_const = {
 			'do_map_synapses': True,
-			'base_seed':  25031989, # same as StnModelEvaluator
+			'base_seed':  25031989, # SETPARAM: same as StnModelEvaluator
 			'gid': 1, # same as StnModelEvaluator
 			'physio_state': cpd.PhysioState.NORMAL.name,
 			'n_gpe_syn': 1,
@@ -465,8 +465,6 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 					rec_traces_funcs	= proto_rec_funcs,
 					plot_traces_funcs	= proto_plot_funcs)
 
-		self.ephys_protocol.autoplot_contained_traces = True
-
 		self.proto_vars = {
 			'pp_mechs':			[],
 			'pp_comp_locs':		[],
@@ -481,11 +479,11 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		self.characterizing_feats = {
 			### SPIKE TIMING RELATED ###
 			'Spikecount': {			# (int) The number of peaks during stimulus
-				'weight':	4.0,
-				'response_interval': (350.0, stim_delay) # SPONTANEOUS period
+				'weight':	2.0,
 			},
 			'mean_frequency': {	# (float) the mean frequency of the firing rate
 				'weight':	2.0,
+				'response_interval': (350.0, stim_delay) # SPONTANEOUS period
 			},
 			# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
 			'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
@@ -497,10 +495,10 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 				'weight':	1.0,
 			},
 			# 'ISI_log',			# no documentation
-			# 'Victor_Purpura_distance': {
-			# 	'weight':	2.0,
-			# 	'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
-			# },
+			'Victor_Purpura_distance': {
+				'weight':	2.0,
+				'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
+			},
 			### SPIKE SHAPE RELATED ###
 			# 'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
 			# 	'weight':	1.0,
@@ -557,7 +555,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 									- response_interval: expected time interval of response
 		"""
 
-		sim_end = 5000.0
+		sim_end = 2000.0
 		self.response_interval = (300.0, sim_end)
 
 		bg_recV = ephys.recordings.CompRecording(
@@ -576,7 +574,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 		]
 
 		proto_setup_kwargs_const = {
-			'base_seed': 8, # 25031989,
+			'base_seed': 8, # SETPARAM: 25031989 in StnModelEvaluator,
 			'gid': 1,
 			'do_map_synapses': True,
 			'physio_state': cpd.PhysioState.NORMAL.name,
@@ -589,11 +587,11 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 		# Recording and plotting traces
 		proto_rec_funcs = [
-			proto_background.rec_spikes,
+			# proto_background.rec_spikes,
 		]
 
 		proto_plot_funcs = [
-			proto_common.plot_all_spikes,
+			# proto_common.plot_all_spikes,
 			# proto_common.report_spikes,
 		]
 
@@ -608,8 +606,6 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 							rec_traces_funcs	= proto_rec_funcs,
 							plot_traces_funcs	= proto_plot_funcs)
 
-		self.ephys_protocol.autoplot_contained_traces = True
-
 		self.proto_vars = {
 			'pp_mechs':			[],
 			'pp_comp_locs':		[],
@@ -622,13 +618,21 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
-		'Victor_Purpura_distance': {
-			'weight':	8.0,
-			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
-		},
+		# 'Victor_Purpura_distance': {
+		# 	'weight':	16.0,
+		# 	'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
+		# },
 		# 'burst_mean_freq': {
 		# 	'weight':	2.0,
 		# }
+		'ISI_voltage_distance': {
+			'weight':	1.0,
+		},
+		'instantaneous_rate': {
+			'weight':	1.0,
+			'int':		{'min_AP': 2.0},
+			'double':	{'bin_width': 50.0},
+		},
 	}
 
 # ==============================================================================

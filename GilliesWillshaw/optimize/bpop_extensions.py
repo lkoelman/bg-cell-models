@@ -11,6 +11,7 @@ Extensions to BluePyOpt optimization-related classes
 
 import bluepyopt.ephys as ephys
 
+import math
 import re
 import logging
 logger = logging.getLogger('bpop_ext')
@@ -414,3 +415,60 @@ class NrnSeclistLocationExt(ephys.locations.Location, ephys.serializer.DictMixin
         """
 
         return '%s' % (self.seclist_name)
+
+
+class SumOfSquaresObjective(ephys.objectives.EFeatureObjective):
+    """
+    Objective that calculates sum of squares of EFeature scores
+    """
+
+    def __init__(self, name, features):
+        """
+        Constructor
+
+        Args:
+            name (str): name of this object
+            features (list of EFeatures): eFeatures in the objective
+        """
+
+        super(SumOfSquaresObjective, self).__init__(name, features)
+
+
+    def calculate_score(self, responses):
+        """
+        Objective score
+        """
+
+        feature_scores = self.calculate_feature_scores(responses)
+
+        sumsq = sum((score**2 for score in feature_scores))
+        return sumsq
+
+
+class RootMeanSquareObjective(ephys.objectives.EFeatureObjective):
+    """
+    Objective that calculates sum of squares of EFeature scores
+    """
+
+    def __init__(self, name, features):
+        """
+        Constructor
+
+        Args:
+            name (str): name of this object
+            features (list of EFeatures): eFeatures in the objective
+        """
+
+        super(SumOfSquaresObjective, self).__init__(name, features)
+
+
+    def calculate_score(self, responses):
+        """
+        Objective score
+        """
+
+        feature_scores = self.calculate_feature_scores(responses)
+
+        rms = math.sqrt(
+                    sum((score**2 for score in feature_scores)) / len(feature_scores))
+        return rms
