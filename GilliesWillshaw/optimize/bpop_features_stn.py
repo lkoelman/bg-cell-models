@@ -102,13 +102,13 @@ def make_opt_features(proto_wrappers):
 		for feat_name in candidate_feats.keys():
 			# Weight and normalization factor for feature score (distance)
 			feat_weight = proto.characterizing_feats[feat_name]['weight']
-			norm_factor = proto.characterizing_feats[feat_name].get('norm_factor', 1.0)
+			norm_factor = proto.characterizing_feats[feat_name].get('norm_factor', float('nan'))
 			
 			# Add to feature dict if nonzero weight
 			# NOTE: feature score = sum(feat[i] - exp_mean) / N / exp_std  => so exp_std determines weight (in case of SingletonObjective)
 			if feat_weight > 0.0:
 				feat_obj = candidate_feats[feat_name]
-				feat_obj.exp_std = norm_factor / feat_weight
+				feat_obj.exp_std = norm_factor
 				proto_feat_dict[proto.IMPL_PROTO][feat_name] = feat_obj, feat_weight
 
 	return proto_feat_dict
@@ -145,6 +145,8 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 
 			# Calculate feature value from full model response
 			e_feature, weight = feat_data
+			# weight = math.sqrt(weight) # because feature scores will be squared
+
 			target_value = e_feature.calculate_feature(responses, raise_warnings=True)
 
 			if feat_name in eFEL_available_features:
@@ -157,13 +159,31 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 
 				# Now we can set the target value
 				# NOTE: distance is sum_i^N(feat[i] - exp_mean) / N / exp_std
-				# NOTE: exp_std will have as much influence as weight! This needs to eb set in protocols file
+				# NOTE: exp_std will have as much influence as weight! This needs to be set in protocols file
 				e_feature.exp_mean = target_value
+
+				# if a normalization factor was set, use it, otherwise distance will be relative to initial target
+				if math.isnan(e_feature.exp_std):
+					logger.debug('No normalization factor specified for feature {}'.format(e_feature.name))
+					e_feature.exp_std = abs(target_value / weight)
+				else:
+					e_feature.exp_std /= abs(weight)
 
 			elif feat_name in custom_spiketrain_features:
 
 				# Set target spike train
 				e_feature.set_target_values(target_value)
+
+				# target is not a number so need to decide normalization factor in other way
+				# exp_std was set to normalization factor or NaN
+				if math.isnan(e_feature.exp_std):
+					logger.warning(
+						'No normalization factor given for custom eFeature. '
+						'Since custom eFeatures may not have a value for a single response '
+						'it is highly recommended to provide a normalization factor.')
+					e_feature.exp_std = abs(1.0 / weight)
+				else:
+					e_feature.exp_std /= abs(weight) # exp_std already set to norm factor
 
 			else:
 				raise ValueError('Unknown feature: <{}>'.format(feat_name))

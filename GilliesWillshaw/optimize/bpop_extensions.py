@@ -459,7 +459,7 @@ class RootMeanSquareObjective(ephys.objectives.EFeatureObjective):
             features (list of EFeatures): eFeatures in the objective
         """
 
-        super(SumOfSquaresObjective, self).__init__(name, features)
+        super(RootMeanSquareObjective, self).__init__(name, features)
 
 
     def calculate_score(self, responses):

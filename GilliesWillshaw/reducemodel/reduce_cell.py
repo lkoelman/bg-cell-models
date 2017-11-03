@@ -496,7 +496,7 @@ def fold_gillies_stratford(export_locals=True):
 	return reduction._soma_refs, reduction._dend_refs
 
 
-def gillies_marasco_reduction():
+def gillies_marasco_reduction(tweak=True):
 	"""
 	Make FoldReduction object with Marasco method.
 	"""
@@ -538,7 +538,7 @@ def gillies_marasco_reduction():
 		'Z_linearize_gating' :	False,
 		'gbar_scaling' :		'area',
 		'syn_map_method' :		'Ztransfer',
-		'post_tweak_funcs' :	[adjust_gbar_spontaneous],
+		'post_tweak_funcs' :	[adjust_gbar_spontaneous] if tweak else [],
 	})
 
 	return reduction

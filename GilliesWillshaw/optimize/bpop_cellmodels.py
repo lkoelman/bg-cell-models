@@ -352,7 +352,7 @@ class StnReducedModel(StnBaseModel):
 
         # Create Reduction object (creates full model)
         if self._fold_method == 'marasco':
-            reduction = reduce_cell.gillies_marasco_reduction()
+            reduction = reduce_cell.gillies_marasco_reduction(tweak=False)
         elif self._fold_method == 'stratford':
             reduction = reduce_cell.gillies_stratford_reduction()
 

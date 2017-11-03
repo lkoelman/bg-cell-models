@@ -231,6 +231,7 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
 		# 'ISI_log',			# no documentation
 		'Victor_Purpura_distance': {
 			'weight':	2.0,
+			'norm_factor': 50.0,
 			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 		},
 		### SPIKE SHAPE RELATED ###
@@ -354,6 +355,7 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 		# 'ISI_log',			# no documentation
 		# 'Victor_Purpura_distance': {
 		# 	'weight':	2.0,
+		# 	'norm_factor': 50.0,
 		# 	'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 		# },
 		### SPIKE SHAPE RELATED ###
@@ -411,6 +413,7 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 									- response_interval: expected time interval of response
 		"""
 
+		transient_delay = 350.0
 		stim_delay = 700.0
 		sim_end = stim_delay + 500.0
 		self.response_interval = (stim_delay+5.0, sim_end)
@@ -482,8 +485,8 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 				'weight':	2.0,
 			},
 			'mean_frequency': {	# (float) the mean frequency of the firing rate
-				'weight':	2.0,
-				'response_interval': (350.0, stim_delay) # SPONTANEOUS period
+				'weight':	4.0,
+				'response_interval': (transient_delay, stim_delay) # SPONTANEOUS period
 			},
 			# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
 			'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
@@ -494,9 +497,13 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 			'ISI_CV': {				# (float) coefficient of variation of ISI durations
 				'weight':	1.0,
 			},
+			'time_to_first_spike': {
+				'weight':	2.0,
+			},
 			# 'ISI_log',			# no documentation
 			'Victor_Purpura_distance': {
 				'weight':	2.0,
+				'norm_factor': 50.0,
 				'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 			},
 			### SPIKE SHAPE RELATED ###
@@ -620,6 +627,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 	characterizing_feats = {
 		# 'Victor_Purpura_distance': {
 		# 	'weight':	16.0,
+		# 	'norm_factor': 50.0,
 		# 	'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
 		# },
 		# 'burst_mean_freq': {

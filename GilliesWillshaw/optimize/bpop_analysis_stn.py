@@ -164,10 +164,12 @@ def plot_log(log):
 	axes.set_xlim(min(gen_numbers) - 1, max(gen_numbers) + 1)
 	axes.set_xlabel('Generation #')
 	axes.set_ylabel('Sum of objectives')
-	axes.set_ylim([0, max(maximum)])
+	axes.set_ylim([0, max(std)])
 	axes.legend()
 
 	fig.tight_layout()
+
+	return fig, axes
 
 
 def plot_fitness_scores(objectives, box=None):
@@ -210,6 +212,8 @@ def plot_fitness_scores(objectives, box=None):
 	axes.set_ylim(-0.5, len(objectives.values()) + 0.5)
 	axes.set_xlabel('Objective value (# std)')
 	axes.set_ylabel('Objectives')
+
+	return fig, axes
 
 
 def plot_history(history):
@@ -329,3 +333,5 @@ def plot_diversity(opt, checkpoint_file, param_names):
 	plt.tight_layout()
 	plt.plot()
 	ax.set_autoscalex_on(True)
+
+	return fig, ax
