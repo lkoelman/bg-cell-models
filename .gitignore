@@ -13,7 +13,7 @@
 *.DS_Store
 
 # Simulation results
-*.dat
+# *.dat
 
 # NEURON #
 **/x86_64
