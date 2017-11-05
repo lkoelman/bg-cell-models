@@ -659,12 +659,13 @@ def eaAlphaMuPlusLambdaCheckpoint(
 
     if continue_cp:
         # A file name has been given, then load the data from the file
+        import cPickle
         cp = None
-        with open(cp_filename, "r") as f:
+        with open(cp_filename, "rb") as f:
             # Load last saved checkpoint
             while True:
                 try:
-                    cp = pickle.load(f)
+                    cp = cPickle.load(f)
                 except EOFError:
                     break
         population = cp["population"]

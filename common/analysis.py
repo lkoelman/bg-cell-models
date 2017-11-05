@@ -712,7 +712,7 @@ def numpy_avg_rate_simple(spiketrains, tstart, tstop, binwidth):
 	avghist = numpy_sum_psth(spiketrains, tstart, tstop, binwidth)
 
 	# divide by nb. of cells/trials and by binwidth in ms to get rate
-	return avghist / (binwidth*1e3*len(spiketrains))
+	return avghist / (binwidth*1e-3*len(spiketrains))
 
 
 def nrn_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):

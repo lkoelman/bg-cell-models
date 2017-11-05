@@ -562,7 +562,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 									- response_interval: expected time interval of response
 		"""
 
-		sim_end = 2000.0
+		sim_end = 3000.0
 		self.response_interval = (300.0, sim_end)
 
 		bg_recV = ephys.recordings.CompRecording(
@@ -625,19 +625,21 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 	# Characterizing features and parameters for protocol
 	characterizing_feats = {
-		# 'Victor_Purpura_distance': {
-		# 	'weight':	16.0,
-		# 	'norm_factor': 50.0,
-		# 	'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
-		# },
+		'Victor_Purpura_distance': {
+			'weight':	8.0,
+			'norm_factor': 50.0,
+			'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
+		},
 		# 'burst_mean_freq': {
 		# 	'weight':	2.0,
 		# }
 		'ISI_voltage_distance': {
-			'weight':	1.0,
+			'weight':	5.0,
+			'norm_factor': 150.0,
 		},
 		'instantaneous_rate': {
-			'weight':	1.0,
+			'weight':	5.0,
+			'norm_factor': 700.0,
 			'int':		{'min_AP': 2.0},
 			'double':	{'bin_width': 50.0},
 		},

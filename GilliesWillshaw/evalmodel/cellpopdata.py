@@ -14,7 +14,6 @@ Based on structure of:
 """
 
 from enum import Enum, IntEnum, unique
-import collections
 import types
 import re
 from textwrap import dedent
@@ -28,6 +27,12 @@ import numpy as np
 import neuron
 nrn = neuron.nrn # types nrn.Section and nrn.Segment
 h = neuron.h
+
+# Load NEURON mechanisms
+import os.path
+scriptdir, scriptfile = os.path.split(__file__)
+NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
+neuron.load_mechanisms(NRN_MECH_PATH)
 
 from common.conutils import interpretParamSpec
 
