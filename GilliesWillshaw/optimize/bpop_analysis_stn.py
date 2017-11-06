@@ -19,7 +19,7 @@ import bluepyopt.ephys as ephys
 
 def plot_proto_responses(proto_responses):
 	"""
-	Plot responses stored in a dictionary.
+	Plot responses dict for each EphysProtocol in dict
 
 	@param	proto_responses		dict {protocol_name: responses_dict}
 	"""
@@ -46,7 +46,7 @@ def plot_proto_responses(proto_responses):
 
 def plot_responses(responses):
 	"""
-	Plot response dictionary for a protocol
+	Plot responses dict returned by an EphysProtocol
 
 	@param	proto_responses		dict {str: responses.TimeVoltageResponse}
 	"""

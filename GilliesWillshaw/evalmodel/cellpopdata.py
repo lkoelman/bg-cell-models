@@ -29,12 +29,10 @@ nrn = neuron.nrn # types nrn.Section and nrn.Segment
 h = neuron.h
 
 # Load NEURON mechanisms
-import os.path, inspect
-modulepath = os.path.abspath(inspect.getsourcefile(lambda:None))
-path_dirs = modulepath.split(os.sep)
-root_index = path_dirs.index('GilliesWillshaw')
-mechs_dir = os.path.join(*(path_dirs[:root_index+1]+['nrn_mechs']))
-neuron.load_mechanisms(os.path.normpath(mechs_dir))
+import os.path
+scriptdir, scriptfile = os.path.split(__file__) 
+NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, '..', 'nrn_mechs')) 
+neuron.load_mechanisms(NRN_MECH_PATH) 
 
 from common.conutils import interpretParamSpec
 
