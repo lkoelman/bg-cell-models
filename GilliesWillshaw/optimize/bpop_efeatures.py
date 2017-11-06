@@ -153,10 +153,6 @@ def calc_score_instantaneous_rate(self, efel_trace, trace_check):
                         self.stim_start, self.stim_end,
                         bin_width)
 
-    logger.debug(
-        "PSTHs for old and new spike train are:"
-        "\nold:{}\nnew:{}".format(tar_psth, resp_psth))
-
     # Sum of squared differences, averaged
     score = np.sum((tar_psth-resp_psth)**2) / tar_psth.size
 
@@ -252,8 +248,9 @@ def calc_score_ISI_voltage(self, efel_trace, trace_check):
     import efel
     import numpy as np
 
-    import pyximport; pyximport.install()
-    from efeatures_fast_ops import calc_ISI_voltage_distance_dt_equal
+    # import pyximport; pyximport.install()
+    # from efeatures_fast_cython import calc_ISI_voltage_distance_dt_equal
+    from efeatures_fast_numba import calc_ISI_voltage_distance_dt_equal
 
     # Calculate required features / dependencies
     efel_feats = ['AP_begin_indices', 'AP_end_indices']

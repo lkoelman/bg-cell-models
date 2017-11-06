@@ -5,7 +5,7 @@ Object-oriented interface for various compartmental cell reduction methods.
 @data	24-08-2017
 """
 
-from enum import Enum, IntEnum, unique
+from enum import Enum, unique
 
 from common.treeutils import ExtSecRef, getsecref
 from neuron import h
@@ -17,7 +17,7 @@ import mapsyn
 # logging of DEBUG/INFO/WARNING messages
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = __name__
+logname = 'folding'
 logger = logging.getLogger(logname) # create logger for this module
 
 

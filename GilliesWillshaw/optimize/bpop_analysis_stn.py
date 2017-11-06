@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 
 import bluepyopt.ephys as ephys
 
-def plot_proto_responses(proto_responses):
+def plot_proto_responses(proto_responses, show=True):
 	"""
 	Plot responses dict for each EphysProtocol in dict
 
@@ -41,10 +41,13 @@ def plot_proto_responses(proto_responses):
 		
 		fig.tight_layout()
 	
-	plt.show(block=False)
+	if show:
+		plt.show(block=False)
+
+	return fig, axes
 
 
-def plot_responses(responses):
+def plot_responses(responses, show=True, plot_kws=None):
 	"""
 	Plot responses dict returned by an EphysProtocol
 
@@ -57,13 +60,18 @@ def plot_responses(responses):
 	except TypeError:
 		axes = [axes]
 
+	if plot_kws is None:
+		plot_kws = {}
+
 	for index, (resp_name, response) in enumerate(sorted(responses.items())):
-		axes[index].plot(response['time'], response['voltage'], label=resp_name)
+		axes[index].plot(response['time'], response['voltage'], label=resp_name, **plot_kws)
 		axes[index].set_title(resp_name)
 	
 	fig.tight_layout()
+	if show:
+		plt.show(block=False)
 	
-	plt.show(block=False)
+	return fig, axes
 
 
 def save_proto_responses(responses, filepath):

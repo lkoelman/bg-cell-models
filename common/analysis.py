@@ -607,7 +607,8 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
 	ARGUMENTS:
 
 	- spikeData
-		dict(trace_name -> h.Vector()) containing spike times
+		dict<str, array> : {trace_name: spike_times}
+		array can be Hoc.Vector(), numpy.array, or any iterable
 
 	- timeRange ([start:stop])
 		Time range of spikes shown; if None shows all (default: None)
@@ -639,25 +640,25 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
 	
 	# Plot data as scatter plot
 	fig, ax = plt.subplots()
-	plt.scatter(x_data, y_data, s=4, c=color, lw=0, marker=',')
-	plt.xlabel('time (ms)')
+	ax.scatter(x_data, y_data, s=4, c=color, lw=0, marker=',')
+	ax.set_xlabel('time (ms)')
 	
 	# X-Y limits
 	if timeRange is not None:
-		plt.xlim(timeRange)
+		ax.set_xlim(timeRange)
 
 	# X-ticks labels examples
 	# https://matplotlib.org/examples/ticks_and_spines/ticklabels_demo_rotation.html
 	# https://matplotlib.org/devdocs/gallery/ticks_and_spines/tick_labels_from_values.html
-	plt.yticks(range(len(spike_vecs)), traceNames, rotation='horizontal')
+	ax.set_yticklabels(range(len(spike_vecs)), traceNames, rotation='horizontal')
 	# plt.margins(0.2) # Pad margins so that markers don't get clipped by the axes
-	plt.subplots_adjust(left=0.15) # Tweak spacing to prevent clipping of tick-labels
+	fig.subplots_adjust(left=0.15) # Tweak spacing to prevent clipping of tick-labels
 
 	# Cosmetics
 	ax.grid(showGrid, axis='x')
 	
 	if title:
-		plt.suptitle(title) # suptitle() is Fig title, title() is ax title
+		fig.suptitle(title) # suptitle() is Fig title, title() is ax title
 
 	if showFig:
 		plt.show(block=False)
