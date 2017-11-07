@@ -60,12 +60,15 @@ class BpopProtocolWrapper(object):
 	spike_threshold = -10.0
 	
 	@classmethod
-	def make(cls, stim_proto, model_type=None):
+	def make(cls, stim_proto, *args, **kwargs):
 		"""
 		Instantiate protocol one of the protocol objects defined in this model.
 		"""
+		if len(args) > 0:
+			kwargs['model_type'] = args[0]
+
 		wrapper_class = PROTOCOL_WRAPPERS[stim_proto]
-		return wrapper_class(model_type)
+		return wrapper_class(**kwargs)
 
 
 	def get_mechs_params(self):
@@ -550,7 +553,11 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 	IMPL_PROTO = StimProtocol.SYN_BACKGROUND_HIGH
 
-	def __init__(self, stn_model_type=None):
+	def __init__(
+			self,
+			stn_model_type=None,
+			impl_proto=None,
+			base_seed=None):
 		"""
 		Initialize all protocol variables for given model type
 
@@ -561,6 +568,8 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 									- proto_vars: dict with protocol variables
 									- response_interval: expected time interval of response
 		"""
+		if impl_proto is not None:
+			self.IMPL_PROTO = impl_proto # quick fix
 
 		sim_end = 3000.0
 		self.response_interval = (300.0, sim_end)
@@ -581,7 +590,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 		]
 
 		proto_setup_kwargs_const = {
-			'base_seed': 8, # SETPARAM: 25031989 in StnModelEvaluator,
+			'base_seed': 8 if base_seed is None else base_seed, # SETPARAM: 25031989 in StnModelEvaluator,
 			'gid': 1,
 			'do_map_synapses': True,
 			'physio_state': cpd.PhysioState.NORMAL.name,
@@ -653,4 +662,5 @@ PROTOCOL_WRAPPERS = {
 	StimProtocol.CLAMP_REBOUND: BpopReboundProtocol,
 	StimProtocol.MIN_SYN_BURST: BpopSynBurstProtocol,
 	StimProtocol.SYN_BACKGROUND_HIGH: BpopBackgroundProtocol,
+	StimProtocol.SYN_BACKGROUND_LOW: BpopBackgroundProtocol, # quick fix, though need to specify impl_proto to __init__
 }

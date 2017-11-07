@@ -29,6 +29,10 @@ class StimProtocol(Enum):
 	MIN_SYN_BURST = 8			# burst using minimal combination of GLU + GABA synapses
 	PASSIVE_SYN = 10			# propagation of EPSP/IPSP in passive cell
 
+	@classmethod
+	def from_str(cls, descr):
+		return cls._member_map_[descr.upper()]
+
 
 ClampProtocols = (StimProtocol.CLAMP_REBOUND, StimProtocol.CLAMP_PLATEAU)
 

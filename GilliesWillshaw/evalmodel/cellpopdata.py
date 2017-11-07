@@ -76,6 +76,10 @@ class PhysioState(IntEnum):
 	def from_descr(cls, descr):
 		return cls._member_map_[descr.upper()]
 
+	@classmethod
+	def from_str(cls, descr):
+		return cls._member_map_[descr.upper()]
+
 
 @unique
 class Populations(Enum):

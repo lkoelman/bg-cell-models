@@ -275,10 +275,11 @@ def calc_score_ISI_voltage(self, efel_trace, trace_check):
     if not dt_equal:
         raise Exception("ISI voltage distance only implemented for traces calculated with equal time step (dt_old={}, dt_new={}).".format(tar_dt, cur_dt))
 
-    if not all([np.issubdtype(v.dtype, int) for v in tar_AP_begin, tar_AP_end, cur_AP_begin, cur_AP_end]):
-        logger.warning("Calculation of AP indices failed")
-        efel.reset()
-        return self.max_score
+    for vec in (tar_AP_begin, tar_AP_end, cur_AP_begin, cur_AP_end):
+        if not isinstance(vec, np.ndarray):
+            return self.max_score
+        if not np.issubdtype(vec.dtype, int):
+            return self.max_score
     
     score = calc_ISI_voltage_distance_dt_equal(
                             tar_Vm, cur_Vm, 
