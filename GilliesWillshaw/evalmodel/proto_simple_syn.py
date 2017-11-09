@@ -177,6 +177,7 @@ def make_inputs_BURST(self, connector=None):
 		'icell':		icell,
 		'rng':			self.rng,
 		'delay':		700.0,
+		'use_refs':		True,
 	}
 
 	# Make GPE inputs
@@ -241,6 +242,7 @@ def make_GLU_inputs(**kwargs):
 	stim_data		= kwargs['stim_data']
 	n_ctx_syn		= kwargs['n_ctx_syn']
 	delay			= kwargs['delay']
+	use_refs		= kwargs.get('use_refs', True)
 
 	rng_pos = rng.get_state()[2]
 	logger.debug('Using NumPy Random object with position = {}'.format(rng_pos))
@@ -254,7 +256,7 @@ def make_GLU_inputs(**kwargs):
 							n_ctx_syn, 
 							is_ctx_target, 
 							rng=rng,
-							refs=False)
+							refs=use_refs)
 
 	# Make synapses
 	for target_seg in ctx_target_segs:
@@ -314,6 +316,7 @@ def make_GABA_inputs(**kwargs):
 	stim_data		= kwargs['stim_data']
 	n_gpe_syn		= kwargs['n_gpe_syn']
 	delay			= kwargs['delay']
+	use_refs		= kwargs.get('use_refs', True)
 
 	rng_pos = rng.get_state()[2]
 	logger.debug('Using NumPy Random object with position = {}'.format(rng_pos))
@@ -329,7 +332,7 @@ def make_GABA_inputs(**kwargs):
 							n_gpe_syn, 
 							is_gpe_target, 
 							rng=rng,
-							refs=False)
+							refs=use_refs)
 
 	# Make synapses
 	for target_seg in gpe_target_segs:

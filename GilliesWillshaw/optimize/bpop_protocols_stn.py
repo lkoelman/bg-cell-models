@@ -65,7 +65,7 @@ class BpopProtocolWrapper(object):
 		Instantiate protocol one of the protocol objects defined in this model.
 		"""
 		if len(args) > 0:
-			kwargs['model_type'] = args[0]
+			kwargs['stn_model_type'] = args[0]
 
 		wrapper_class = PROTOCOL_WRAPPERS[stim_proto]
 		return wrapper_class(**kwargs)
@@ -293,11 +293,9 @@ class BpopReboundProtocol(BpopProtocolWrapper):
 
 	IMPL_PROTO = StimProtocol.CLAMP_REBOUND
 
-	def __init__(self, stn_model_type=None):
+	def __init__(self, **kwargs):
 		"""
 		Initialize all protocol variables for given model type
-
-		@param stn_model_type		cellpopdata.StnModel enum instance
 
 		@post						following attributes will be available on this object:
 									- ephys_protocol: PhysioProtocol instance
@@ -404,11 +402,9 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 
 	IMPL_PROTO = StimProtocol.MIN_SYN_BURST
 
-	def __init__(self, stn_model_type=None):
+	def __init__(self, **kwargs):
 		"""
 		Initialize all protocol variables for given model type
-
-		@param stn_model_type		cellpopdata.StnModel enum instance
 
 		@post						following attributes will be available on this object:
 									- ephys_protocol: PhysioProtocol instance
@@ -419,7 +415,10 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		transient_delay = 350.0
 		stim_delay = 700.0
 		sim_end = stim_delay + 500.0
-		self.response_interval = (stim_delay+5.0, sim_end)
+		self.spont_interval = (transient_delay, stim_delay)
+		self.burst_interval = (stim_delay+5.0, 1010.0)
+		self.total_interval = (transient_delay, sim_end)
+		self.response_interval = self.total_interval
 
 		rec_soma_V = ephys.recordings.CompRecording(
 						name			= '{}.soma.v'.format(self.IMPL_PROTO.name),
@@ -485,29 +484,34 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		self.characterizing_feats = {
 			### SPIKE TIMING RELATED ###
 			'Spikecount': {			# (int) The number of peaks during stimulus
-				'weight':	2.0,
+				'weight':	4.0,
+				'response_interval': self.burst_interval,
 			},
 			'mean_frequency': {	# (float) the mean frequency of the firing rate
 				'weight':	4.0,
-				'response_interval': (transient_delay, stim_delay) # SPONTANEOUS period
+				'response_interval': self.spont_interval, # SPONTANEOUS period
 			},
 			# 'burst_mean_freq',	# (array) The mean frequency during a burst for each burst
 			'adaptation_index': {	# (float) Normalized average difference of two consecutive ISIs
 				'weight':	1.0,
 				'double':	{'spike_skipf': 0.0},
 				'int':		{'max_spike_skip': 0},
+				'response_interval': self.burst_interval,
 			},
 			'ISI_CV': {				# (float) coefficient of variation of ISI durations
 				'weight':	1.0,
+				'response_interval': self.burst_interval,
 			},
 			'time_to_first_spike': {
 				'weight':	2.0,
+				'response_interval': self.burst_interval,
 			},
 			# 'ISI_log',			# no documentation
 			'Victor_Purpura_distance': {
 				'weight':	2.0,
 				'norm_factor': 50.0,
 				'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
+				'response_interval': self.total_interval,
 			},
 			### SPIKE SHAPE RELATED ###
 			# 'AP_duration_change': {	# (array) Difference of the durations of the second and the first action potential divided by the duration of the first action potential
@@ -521,15 +525,19 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 			# },
 			'AP_rise_rate':	{		# (array) Voltage change rate during the rising phase of the action potential
 				'weight':	1.0,
+				'response_interval': self.spont_interval,
 			},
 			'AP_height': {			# (array) The voltages at the maxima of the peak
 				'weight':	2.0,
+				'response_interval': self.burst_interval,
 			},
 			'AP_amplitude': {		# (array) The relative height of the action potential
 				'weight':	2.0,
+				'response_interval': self.burst_interval,
 			},
 			'spike_half_width':	{	# (array) The FWHM of each peak
 				'weight':	1.0,
+				'response_interval': self.spont_interval,
 			},
 			# 'AHP_time_from_peak': {	# (array) Time between AP peaks and AHP depths
 			# 	'weight':	1.0,
@@ -539,6 +547,7 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 			# },
 			'min_AHP_values': {		# (array) Voltage values at the AHP
 				'weight':	2.0,	# this feature recognizes that there is an elevated plateau
+				'response_interval': self.burst_interval,
 			},
 		}
 
@@ -555,13 +564,13 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 	def __init__(
 			self,
-			stn_model_type=None,
 			impl_proto=None,
-			base_seed=None):
+			**kwargs):
 		"""
 		Initialize all protocol variables for given model type
 
-		@param stn_model_type		cellpopdata.StnModel enum instance
+		@param    kwargs			any other keyword arguments will be passed to 
+									SelfContainedProtocol as 'proto_setup_kwargs_const'
 
 		@post						following attributes will be available on this object:
 									- ephys_protocol: PhysioProtocol instance
@@ -590,11 +599,13 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 		]
 
 		proto_setup_kwargs_const = {
-			'base_seed': 8 if base_seed is None else base_seed, # SETPARAM: 25031989 in StnModelEvaluator,
+			'base_seed': 8, # SETPARAM: 25031989 in StnModelEvaluator,
 			'gid': 1,
 			'do_map_synapses': True,
 			'physio_state': cpd.PhysioState.NORMAL.name,
 		}
+		# Pass user arguments
+		proto_setup_kwargs_const.update(kwargs)
 
 		proto_setup_kwargs_getters = collections.OrderedDict([
 			('rng', rng_getter),
@@ -603,12 +614,12 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 		# Recording and plotting traces
 		proto_rec_funcs = [
-			# proto_background.rec_spikes,
+			proto_background.rec_spikes,
 		]
 
 		proto_plot_funcs = [
-			# proto_common.plot_all_spikes,
-			# proto_common.report_spikes,
+			proto_common.plot_all_spikes,
+			proto_common.report_spikes,
 		]
 
 		self.ephys_protocol = SelfContainedProtocol(

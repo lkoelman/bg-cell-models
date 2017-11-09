@@ -227,6 +227,10 @@ def make_inputs_ctx_impl(**kwargs):
 	passed_args = ['stim_data', 'icell', 'gid', 'rng_info']
 	passed_kwargs = {k:v for k,v in kwargs.items() if (k in passed_args)}
 
+	# Let user override number of placed synapses
+	if 'num_syn_ctx' in kwargs:
+		passed_kwargs['num_syn_pp'] = kwargs['num_syn_ctx']
+
 	# Make CTX GLUtamergic inputs
 	make_background_inputs(
 					pre_pop			=POP_PRE,
@@ -274,6 +278,7 @@ def make_inputs_gpe_impl(**kwargs):
 	refs_fire = [Cit.Bergman2015RetiCh3]
 
 	# Get connection & firing parameters
+	# SETPARAM: method for scaling gbar of synapse point process
 	nsyn_per_ax = MSR_NUM_SYN[Pop.GPE] # if MSR_METHOD==MSRC.SCALE_GSYN_MSR else 0
 	con_par = connector.getPhysioConParams(Pop.GPE, Pop.STN, refs_con,
 						adjust_gsyn_msr=nsyn_per_ax)
@@ -283,6 +288,10 @@ def make_inputs_gpe_impl(**kwargs):
 	# Make GPe GABAergic inputs
 	passed_args = ['stim_data', 'icell','gid', 'rng_info']
 	passed_kwargs = {k:v for k,v in kwargs.items() if (k in passed_args)}
+
+	# Let user override number of placed synapses
+	if 'num_syn_gpe' in kwargs:
+		passed_kwargs['num_syn_pp'] = kwargs['num_syn_gpe']
 
 	make_background_inputs(
 					pre_pop			=Pop.GPE,
@@ -379,8 +388,13 @@ def make_background_inputs(**kwargs):
 
 	# Calculate number of synapses
 	n_syn_single = int(FRAC_SYN[POP_PRE] * n_syn_stn_tot) # number of unitary synapses (actual synaptic contacts) for this population
+
+	if 'num_syn_pp' in kwargs:
+		# Let user override number of actual synapses
+		n_syn_multi = kwargs['num_syn_pp']
+		logger.debug('Override number of synapses for {} : n={}'.format(POP_PRE, n_syn_multi))
 	
-	if MSR_METHOD == MSRC.SCALE_NUMSYN_GSYN:
+	elif MSR_METHOD == MSRC.SCALE_NUMSYN_GSYN:
 		gsyn_tot = n_syn_single * gsyn_single # total parallel condutance desired [uS]
 		n_syn_multi = int(gsyn_tot / gsyn_multi)
 	
