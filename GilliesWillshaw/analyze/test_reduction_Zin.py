@@ -5,9 +5,6 @@ Test suite for Marasco reduction module
 @date	14-12-2016
 """
 
-# Python modules
-import math
-
 # NEURON modules
 import neuron
 h = neuron.h
