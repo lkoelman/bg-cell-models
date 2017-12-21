@@ -13,10 +13,10 @@ h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 # Load NEURON mechanisms
-import os.path
-scriptdir, scriptfile = os.path.split(__file__)
-NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'channels'))
-neuron.load_mechanisms(NRN_MECH_PATH)
+# import os.path
+# scriptdir, scriptfile = os.path.split(__file__)
+# NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'channels'))
+# neuron.load_mechanisms(NRN_MECH_PATH)
 
 # Channel mechanisms (key = suffix of mod mechanism) : max conductance parameters
 balbi_gdict = {
@@ -34,6 +34,7 @@ balbi_glist = [gname+'_'+mech for mech,chans in balbi_gdict.iteritems() for gnam
 gleak_name = 'gpas_STh'
 active_gbar_names = [gname for gname in balbi_glist if gname != gleak_name]
 
+secnames_used = ['soma', 'dend', 'AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN']
 
 def make_cell_balbi(model_no=1):
     """
@@ -61,7 +62,7 @@ def make_cell_balbi(model_no=1):
                             - FLUT[paranodes2] <Section>
                             - STIN[axoninter] <Section>
     """
-    secnames_used = ['soma', 'dend', 'AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN']
+    
     if any((hasattr(h, attr) for attr in secnames_used)):
         raise Exception("Folowing global variables must be unallocated on Hoc interpreter object: {}".format(', '.join(secnames_used)))
 
@@ -70,8 +71,25 @@ def make_cell_balbi(model_no=1):
     h.choose_model(model_no)
     
     # Get created sections
-    named_sections = { secname: list(getattr(h, secname)) for secname in secnames_used}
+    named_sections = { secname: getattr(h, secname) for secname in secnames_used }
     return named_sections
+
+
+def get_named_sec_lists():
+    """
+    Get one Python list per section group.
+
+    @NOTE       node[0] is deleted in file '2_complete_cell.hoc': this crashes
+                NEURON when trying to access
+    """
+    # NOTE: node[0] is deleted in file '2_complete_cell.hoc'
+    full_seclists = list(secnames_used)
+    full_seclists.remove('node')
+    named_sections = { secname: list(getattr(h, secname)) for secname in full_seclists}
+
+    # Add existing sections named 'node'
+    node_sec_ids = range(1, h.axonnodes) # node[0] does not exist
+    named_sections['node'] = [h.node[i] for i in node_sec_ids]
 
 
 def motocell_steadystate(model_no):

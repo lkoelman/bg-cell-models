@@ -92,19 +92,18 @@ def get_interpolation_path_sections(reduction):
 	return path_secs
 
 
-def set_ion_styles(reduction):
+def set_ion_styles(reduction, secref):
 	"""
 	Set correct ion styles for each Section.
 
 	@note	assigned to key 'set_ion_styles_func'
 	"""
 	# Set ion styles
-	for sec in reduction.all_sec_refs:
-		sec.push()
-		h.ion_style("na_ion",1,2,1,0,1)
-		h.ion_style("k_ion",1,2,1,0,1)
-		h.ion_style("ca_ion",3,2,1,1,1)
-		h.pop_section()
+	secref.sec.push()
+	h.ion_style("na_ion",1,2,1,0,1)
+	h.ion_style("k_ion",1,2,1,0,1)
+	h.ion_style("ca_ion",3,2,1,1,1)
+	h.pop_section()
 
 
 def fix_topology_below_roots(reduction):

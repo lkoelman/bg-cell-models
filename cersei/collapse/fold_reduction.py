@@ -12,7 +12,7 @@ from neuron import h
 
 import marasco_folding as marasco
 import stratford_folding as stratford
-import mapsyn
+import mapsyn, redutils
 
 # logging of DEBUG/INFO/WARNING messages
 import logging
@@ -90,7 +90,14 @@ class FoldReduction(object):
 		self._REDUCTION_STEPS_FUNCS[step][method] = (func, kwarg_list)
 
 
-	def __init__(self, soma_secs, dend_secs, fold_root_secs, method):
+	def __init__(
+			self, 
+			soma_secs, 
+			dend_secs, 
+			fold_root_secs, 
+			method=None,
+			mechs_gbars_dict=None,
+			gleak_name=None):
 		"""
 		Initialize reduction of NEURON cell with given root Section.
 
@@ -111,7 +118,10 @@ class FoldReduction(object):
 
 		# Reduction method
 		self.active_method = method
-		self._mechs_gbars_dict = None
+		self.gleak_name = gleak_name
+		if mechs_gbars_dict is None:
+			raise ValueError("Must provide mechanisms to conductances map!")
+		self.set_mechs_gbars_dict(mechs_gbars_dict)
 
 		# Find true root section
 		first_root_ref = ExtSecRef(sec=soma_secs[0])
@@ -186,9 +196,12 @@ class FoldReduction(object):
 		Set mechanism names and their conductances
 		"""
 		self._mechs_gbars_dict = val
-		self.gbar_names = [gname+'_'+mech for mech,chans in val.iteritems() for gname in chans]
-		self.active_gbar_names = list(self.gbar_names)
-		self.active_gbar_names.remove(self.gleak_name)
+		if val is not None:
+			self.gbar_names = [gname+'_'+mech 
+									for mech,chans in val.iteritems() 
+										for gname in chans]
+			self.active_gbar_names = list(self.gbar_names)
+			self.active_gbar_names.remove(self.gleak_name)
 
 	# make property
 	mechs_gbars_dict = property(get_mechs_gbars_dict, set_mechs_gbars_dict)
@@ -285,6 +298,17 @@ class FoldReduction(object):
 					in addition to other side effects specified by the
 					specific preprocessing function called.
 		"""
+		# Assign initial identifiers (gid)
+		self.assign_initial_identifiers()
+
+		# Save Section properties for whole tree
+		range_props = dict(self.mechs_gbars_dict) # RANGE properties to save
+		range_props.update({'': ['diam', 'cm']})
+		custom_props = ['gid'] # our own properties
+		self.orig_tree_props = redutils.save_tree_properties_ref(
+									self._root_ref, range_props,
+									assigned_props=custom_props)
+
 		# Execute custom preprocess function
 		self._exec_reduction_step('preprocess', method, step_args=[self])
 
@@ -403,3 +427,63 @@ class FoldReduction(object):
 
 		logger.debug('Finished cell reduction with method {}'.format(method))
 
+	############################################################################
+	# Cell model-specific reduction functions
+	############################################################################
+
+	def assign_initial_identifiers(self):
+		"""
+		Assign identifiers to Sections.
+
+		@post	all SectionRef.gid attributes are set
+		"""
+		raise NotImplementedError(
+				"This function is model-specific and must be implemented for "
+				"each cell model individually.")
+
+
+	def assign_new_identifiers(self, node_ref, all_refs, par_ref=None):
+		"""
+		Assign identifiers to newly created Sections
+
+		@post	all SectionRef.gid attributes are set for newly created Sections
+		"""
+		raise NotImplementedError(
+				"This function is model-specific and must be implemented for "
+				"each cell model individually.")
+
+
+	def get_interpolation_path_sections(self, secref):
+		"""
+		Return sections along path from soma to distal end of dendrites used
+		for interpolating dendritic properties.
+
+		@param	secref		<SectionRef> section for which a path is needed
+
+		@return				<list(Section)>
+		"""
+		raise NotImplementedError(
+				"This function is model-specific and must be implemented for "
+				"each cell model individually.")
+
+
+	def set_ion_styles(self, secref):
+		"""
+		Set correct ion styles for each Section.
+
+		@param	secref		<SectionRef> section to set ion styles for
+		"""
+		raise NotImplementedError(
+				"This function is model-specific and must be implemented for "
+				"each cell model individually.")
+
+
+	def fix_topology_below_roots(self):
+		"""
+		Assign topology numbers for sections located below the folding roots.
+
+		@note	assigned to key 'fix_topology_func'
+		"""
+		raise NotImplementedError(
+				"This function is model-specific and must be implemented for "
+				"each cell model individually.")

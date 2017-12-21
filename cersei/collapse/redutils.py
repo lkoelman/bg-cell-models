@@ -16,8 +16,8 @@ logger = logging.getLogger(logname) # create logger for this module
 
 from neuron import h
 
-from common.treeutils import *
-from common.electrotonic import *
+from common.treeutils import getsecref, seg_index, next_segs, prev_seg, subtreeroot, same_seg
+from common.electrotonic import seg_lambda, sec_lambda
 
 # Load NEURON function libraries
 h.load_file("stdlib.hoc") # Load the standard library
@@ -436,15 +436,28 @@ def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False)
 # Clustering & Topology
 ################################################################################
 
-class EqProps(object):
+class SecProps(object):
 	"""
 	Equivalent properties of merged sections
 
 	NOTE: this is the 'Bunch' recipe from the python cookbook
 		  al alternative would be `myobj = type('Bunch', (object,), {})()`
+
+	ATTRIBUTES
+	----------
+
+		L			<float> section length
+		Ra			<float> axial resistance
+		nseg		<int> number of segments
+		seg			<list(dict)> RANGE properties for each segment, including
+					'diam' and 'cm'
+		children	<list(EqProps)> children attached to 1-end of section
+	
 	"""
 	def __init__(self, **kwds):
 		self.__dict__.update(kwds)
+
+EqProps = SecProps # alias
 
 ################################################################################
 # Editing cells/dendritic trees
@@ -498,6 +511,11 @@ def find_dist_cuts(nodeseg, cuts, cluster, allsecrefs):
 	"""
 	Find distal cuts for given cluster.
 
+	@param	nodeseg	<nrn.Segment>
+
+	@param	cuts	<set(tuple(nrn.Segment, nrn.Segment))> indicating locations
+					where tree should be cut
+
 	@post	argument 'cuts' is filled with pairs (seg_a, seg_b) where
 			seg_a is last segment in cluster along its path, and seg_b
 			is first segment in next cluster
@@ -509,7 +527,7 @@ def find_dist_cuts(nodeseg, cuts, cluster, allsecrefs):
 	if node_label != cluster.label:
 		return
 	else:
-		chi_segs = next_segs(aseg)
+		chi_segs = next_segs(nodeseg)
 		# if no child segs: this is a cut
 		if not any(chi_segs):
 			cuts.add((nodeseg,None))
@@ -850,7 +868,11 @@ def set_range_props(secref, seg_prop_dicts):
 			setattr(seg, pname, pval)
 
 
-def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
+def get_sec_props_ref(
+		secref, 
+		mechs_pars, 
+		seg_assigned=None, 
+		sec_assigned=None):
 	"""
 	Get both RANGE properties and assigned properties for each segment.
 
@@ -873,15 +895,25 @@ def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
 
 	@return		object EqProps with the desired properties stored as attributes
 	"""
+	if seg_assigned is None:
+		seg_assigned = []
+	if sec_assigned is None:
+		sec_assigned = []
 
 	# Store section properties (non-Range)
-	sec_props = EqProps(L=secref.sec.L, Ra=secref.sec.Ra, nseg=secref.sec.nseg)
+	sec_props = EqProps(
+					L=secref.sec.L, 
+					Ra=secref.sec.Ra, 
+					nseg=secref.sec.nseg)
+	
 	for prop in sec_assigned:
 		setattr(sec_props, prop, getattr(secref, prop))
 
 	# Initialize segment RANGE properties
 	sec_props.seg = [dict() for i in xrange(secref.sec.nseg)]
-	bprops = [par+'_'+mech for mech,pars in mechs_pars.iteritems() for par in pars] # NEURON properties
+	bprops = [par+'_'+mech 
+				for mech,pars in mechs_pars.iteritems() 
+					for par in pars]
 	
 	# Store segment RANGE properties
 	for j_seg, seg in enumerate(secref.sec):
@@ -896,13 +928,46 @@ def get_sec_props_obj(secref, mechs_pars, seg_assigned, sec_assigned):
 	
 	return sec_props
 
+# Aliases
+get_sec_props_obj = get_sec_props_ref
+
+
+def get_sec_props(sec, mechs_pars):
+	"""
+	Get Section properties and save in new SecProps object.
+
+	@param	sec				<nrn.Section> NEURON section
+
+	@param	mechs_pars		dict mechanism_name -> [parameter_names] with segment 
+							properties to save. To include diam and cm, use a
+							key-value pair {'' : ['diam', 'cm']}
+
+	@return					<SecProps> object
+	"""
+	# Store section properties (non-Range)
+	sec_props = SecProps(
+					L=sec.L, 
+					Ra=sec.Ra,
+					nseg=sec.nseg)
+
+	# Initialize dicts with RANGE properties
+	sec_props.seg = [dict() for i in xrange(sec.nseg)]
+	parnames = [par+'_'+mech for mech, pars in mechs_pars.iteritems() for par in pars]
+	
+	# Store segment RANGE properties
+	for j_seg, seg in enumerate(sec):
+		for pname in parnames:
+			sec_props.seg[j_seg][pname] = getattr(seg, pname)
+
+	return sec_props
+
 
 def store_seg_props(secref, mechs_pars, attr_name='or_seg_props', assigned_props=None):
 	"""
 	Store each segment's properties (RANGE variables) in a dictionary
 	on the given SectionRef.
 
-	@param mechs_pars		dict mechanism_name -> [paramerter_names] with segment properties
+	@param mechs_pars		dict mechanism_name -> [parameter_names] with segment properties
 							to store
 
 	@param assigned_props	list of assigned properties (assigned attributed of SectionRef)
@@ -928,8 +993,6 @@ def store_seg_props(secref, mechs_pars, attr_name='or_seg_props', assigned_props
 		# Store self-assigned properties (stored on SectionRef)
 		for prop in ref_props:
 			secref.__getattribute__(attr_name)[j_seg][prop] = getattr(secref, prop)[j_seg]
-
-
 
 
 def copy_sec_properties(src_sec, tar_sec, mechs_pars):
@@ -994,6 +1057,9 @@ def copy_ion_styles(src_sec, tar_sec, ions=None):
 def get_ion_styles(src_sec, ions=None):
 	"""
 	Get ion styles as integer for each ion.
+
+	@return		<dict({str:int})> for each ion in arguments ions: integer
+				containing bit flags that signify ion styles
 	"""
 	if ions is None:
 		ions = ['na', 'k', 'ca']
@@ -1029,10 +1095,62 @@ def set_ion_styles(tar_sec, **kwargs):
 	h.pop_section()
 
 
+def save_tree_properties(node_sec, mechs_pars):
+	"""
+	@param mechs_pars		dict mechanism_name -> [parameter_names] with segment 
+							properties to save
+	"""
+	# Create SecProps object for current node
+	sec_props = get_sec_props(node_sec, mechs_pars)
+
+	# Call for each child and add to children
+	sec_props.children = []
+	for child_sec in node_sec.children(): # Depth-first tree traversal
+		sec_props.children.append(save_tree_properties(child_sec, mechs_pars))
+
+	return sec_props
+
+
+def save_tree_properties_ref(
+		node_ref,
+		all_refs,
+		mechs_pars,
+		assigned_props=None,
+		save_ion_styles=None
+	):
+	"""
+	@param mechs_pars		dict mechanism_name -> [parameter_names] with segment 
+							properties to save
+
+	@param save_ion_styles	list(str) containing ion names: ion styles you want to save
+	"""
+	# Create SecProps object for current node
+	sec_props = get_sec_props_ref(node_ref, mechs_pars, sec_assigned=assigned_props)
+
+	if save_ion_styles is not None:
+		sec_props.ion_styles = get_ion_styles(node_ref.sec, ions=save_ion_styles)
+
+	# Call for each child and add to children
+	sec_props.children = []
+	for child_sec in node_ref.sec.children(): # Depth-first tree traversal
+		child_ref = getsecref(child_sec, all_refs)
+		sec_props.children.append(
+			save_tree_properties_ref(
+					child_ref, all_refs, mechs_pars, 
+					assigned_props=assigned_props,
+					save_ion_styles=save_ion_styles))
+
+	return sec_props
+
+
 def duplicate_subtree(rootsec, mechs_pars, tree_copy):
-	""" Duplicate tree of given section
+	"""
+	Duplicate tree of given section
+	
 	@param rootsec		root section of the subtree
+	
 	@param mechs_pars	dictionary mechanism_name -> parameter_name
+	
 	@param tree_copy	out argument: list to be filled
 	"""
 	# Copy current root node

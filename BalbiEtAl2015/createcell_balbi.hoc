@@ -67,7 +67,7 @@ proc load_mechanism() { local ret_load localobj arch_list
 
 }
 
-// load_mechanism("channels")
+load_mechanism("channels")
 
 /*******************************************************************************
 * START ORIGINAL SOURCE CODE

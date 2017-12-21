@@ -442,14 +442,8 @@ def preprocess_impl(reduction):
 
 	# Get cell-specific functions
 	method = reduction.active_method
-	assign_identifiers	= reduction.get_reduction_param(method, 
-										'assign_initial_identifiers_func')
 	get_interp_path		= reduction.get_reduction_param(method, 
 										'interpolation_path_func')
-
-		
-	# Assign unique identifiers to each section
-	assign_identifiers(reduction)
 
 	# Calculate section path properties for entire tree
 	for secref in reduction.all_sec_refs:
@@ -535,10 +529,8 @@ def make_folds_impl(reduction):
 							gbar_scaling='area')
 
 	# Set ion styles
-	set_ion_styles = reduction.get_reduction_param(
-								reduction.active_method, 
-								'set_ion_styles_func')
-	set_ion_styles()
+	for ref in eq_refs:
+		reduction.set_ion_styles(ref)
 
 	reduction.update_refs(dend_refs=eq_refs) # prepare for next iteration
 
