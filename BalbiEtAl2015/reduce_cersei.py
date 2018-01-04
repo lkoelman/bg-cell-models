@@ -5,6 +5,7 @@ Reduction of Balbi et al. motoneuron model using CERSEI folding tools
 from common.treeutils import ExtSecRef, getsecref
 from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
 from cersei.collapse.marasco_folding import assign_identifiers_dfs
+import cersei.collapse.redutils as redutils
 
 from neuron import h
 
@@ -27,7 +28,6 @@ class BalbiFoldReduction(FoldReduction):
         """
         Assign identifiers to Sections.
         """
-
         assign_identifiers_dfs(reduction._root_ref, reduction.all_sec_refs)
 
 
@@ -49,15 +49,23 @@ class BalbiFoldReduction(FoldReduction):
 
     def get_interpolation_path_sections(reduction, secref):
         """
-        Return sections along path from soma to distal end of dendrites used
-        for interpolating dendritic properties.
+        Return Sections forming a path from soma to dendritic terminal/endpoint. 
+        The path is used for interpolating spatially non-uniform properties.
+        
+        @param  secref      <SectionRef> section for which a path is needed
 
-        TODO: determine based on secref's gid
+        @return             <list(Section)>
+
         """
+        # TODO: determine an interpolation path based on secref's zipped_sec_gids
+        # - 
+        
+
+
         # Choose stereotypical path for interpolation
         # Get path from root node to this sections
         start_sec = reduction._root_ref.sec
-        end_sec = h.dend[300] # TODO: choose a representative terminal section?
+        end_sec = h.dend[300] # TODONOTE: choose a representative terminal section?
         # dend[9] 9, 76, 305, 378, 300 # terminal sections with mechanism 'L_Ca'
         # dend[300] # terminal section with both mechanisms 'L_Ca' and 'mAHP'
         
@@ -81,14 +89,6 @@ class BalbiFoldReduction(FoldReduction):
         return list(root_path)
 
 
-    def set_ion_styles(reduction):
-        """
-        Set correct ion styles for each Section.
-        """
-        # Set ion styles
-        # TODO: look up in orig_tree_props
-
-
     def fix_topology_below_roots(reduction):
         """
         Assign topology numbers for sections located below the folding roots.
@@ -96,6 +96,7 @@ class BalbiFoldReduction(FoldReduction):
         @note   assigned to key 'fix_topology_func'
         """
         # TODO: set topology numbers, see how they are used
+        pass
 
 
 ################################################################################
@@ -105,17 +106,21 @@ class BalbiFoldReduction(FoldReduction):
 def balbi_marasco_reduction(tweak=True):
     """
     Make FoldReduction object with Marasco method.
+
+    TODO: move all cell-specific actions into subclass methods
     """
 
     import balbi_model
-    BALBI_CELL_ID = 1
+    BALBI_CELL_ID = 1 # morphology file to load
     balbi_model.make_cell_balbi(model_no=BALBI_CELL_ID)
     named_secs = balbi_model.get_named_sec_lists()
 
     # Group subtrees by trunk
     somatic = list(named_secs['soma'])
+    
     # Dendritic sections have other subtrees (trunks = first level branchpoints)
     dendritic = list(named_secs['dend'])
+    
     # Axonic sections are first subtree (trunk = AH)
     axonic = sum((list(named_secs[name]) for 
                     name in ('AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN')), [])
