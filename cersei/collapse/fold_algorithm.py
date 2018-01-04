@@ -7,6 +7,7 @@ Common functionality for folding algorithms.
 """
 
 from enum import Enum, unique
+import abc # abstract base class
 
 @unique
 class ReductionMethod(Enum):
@@ -21,7 +22,10 @@ class FoldingAlgorithm(object):
     Abstract base class for folding algorithms.
     """
 
-    def preprocess_impl(reduction):
+    __metaclass__ = abc.ABCMeta # Python2 way
+
+    @abc.abstractmethod
+    def preprocess_impl(self):
         """
         Preprocess cell for folding reduction.
 
@@ -37,7 +41,9 @@ class FoldingAlgorithm(object):
         raise NotImplementedError(
                 "Virtual method of abstract base class FoldingAlgorithm not implemented.")
 
-    def prepare_folds_impl(reduction):
+
+    @abc.abstractmethod
+    def prepare_folds_impl(self):
         """
         Prepare next collapse operation: assign topology information
         to each Section.
@@ -48,7 +54,8 @@ class FoldingAlgorithm(object):
                 "Virtual method of abstract base class FoldingAlgorithm not implemented.")
 
 
-    def calc_folds_impl(reduction, i_pass, Y_criterion):
+    @abc.abstractmethod
+    def calc_folds_impl(self, i_pass, Y_criterion):
         """
         Collapse branches at branch points identified by given criterion.
         """
@@ -56,7 +63,8 @@ class FoldingAlgorithm(object):
                 "Virtual method of abstract base class FoldingAlgorithm not implemented.")
 
 
-    def make_folds_impl(reduction):
+    @abc.abstractmethod
+    def make_folds_impl(self):
         """
         Make equivalent Sections for branches that have been folded.
         """
@@ -64,7 +72,8 @@ class FoldingAlgorithm(object):
                 "Virtual method of abstract base class FoldingAlgorithm not implemented.")
 
 
-    def postprocess_impl(reduction):
+    @abc.abstractmethod
+    def postprocess_impl(self):
         """
         Post-process cell for Marasco reduction.
 

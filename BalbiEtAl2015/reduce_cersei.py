@@ -5,7 +5,6 @@ Reduction of Balbi et al. motoneuron model using CERSEI folding tools
 from common.treeutils import ExtSecRef, getsecref
 from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
 from cersei.collapse.marasco_folding import assign_identifiers_dfs
-import cersei.collapse.redutils as redutils
 
 from neuron import h
 

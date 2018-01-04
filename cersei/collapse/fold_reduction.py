@@ -89,7 +89,7 @@ class FoldReduction(object):
             soma_secs, 
             dend_secs, 
             fold_root_secs, 
-            method=None,
+            method,
             mechs_gbars_dict=None,
             gleak_name=None):
         """
@@ -296,14 +296,22 @@ class FoldReduction(object):
         self.assign_initial_identifiers()
 
         # Save Section properties for whole tree
+        ## Calculate path-accumulated properties for entire tree
+        for secref in self.all_sec_refs:
+            # Assign path length, path resistance, electrotonic path length to each segment
+            redtools.sec_path_props(secref, f_lambda, gleak_name)
+        
         ## Which properties to save
         range_props = dict(self.mechs_gbars_dict) # RANGE properties to save
         range_props.update({'': ['diam', 'cm']})
-        custom_props = ['gid'] # our own properties
+        sec_custom_props = ['gid', 'pathL0', 'pathL1', 'pathri0', 'pathri1', 'pathLelec0', 'pathLelec1']
+        seg_custom_props = ['pathL_seg', 'pathri_seg', 'pathL_elec']
+        
         ## Build tree data structure
         self.orig_tree_props = redutils.save_tree_properties_ref(
                                     self._root_ref, range_props,
-                                    assigned_props=custom_props)
+                                    sec_assigned_props=sec_custom_props,
+                                    seg_assigned_props=seg_custom_props)
 
         # Custom preprocessing function
         self._exec_reduction_step('preprocess', method, step_args=[self])

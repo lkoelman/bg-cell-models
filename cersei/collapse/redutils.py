@@ -1122,7 +1122,8 @@ def save_tree_properties_ref(
         node_ref,
         all_refs,
         mechs_pars,
-        assigned_props=None,
+        sec_assigned_props=None,
+        seg_assigned_props=None,
         save_ion_styles=None
     ):
     """
@@ -1136,7 +1137,11 @@ def save_tree_properties_ref(
     @return     EqProps tree with requested properties stored as attributes
     """
     # Create SecProps object for current node
-    sec_props = get_sec_props_ref(node_ref, mechs_pars, sec_assigned=assigned_props)
+    sec_props = get_sec_props_ref(
+                    node_ref,
+                    mechs_pars,
+                    sec_assigned=sec_assigned_props,
+                    seg_assigned=seg_assigned_props)
 
     if save_ion_styles is not None:
         sec_props.ion_styles = get_ion_styles(node_ref.sec, ions=save_ion_styles)
@@ -1148,7 +1153,8 @@ def save_tree_properties_ref(
         sec_props.children.append(
             save_tree_properties_ref(
                     child_ref, all_refs, mechs_pars, 
-                    assigned_props=assigned_props,
+                    sec_assigned_props=sec_assigned_props,
+                    seg_assigned_props=seg_assigned_props,
                     save_ion_styles=save_ion_styles))
 
     return sec_props
