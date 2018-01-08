@@ -115,6 +115,9 @@ proc load_steadystate() {
      *  for motoneuron cell model with given cell id, 
      *  see see https://www.neuron.yale.edu/neuron/static/new_doc/simctrl/savstate.html
      *
+     * @note   h.load_steadystate() uses SaveState.restore() which means 
+           Between a save and a restore, it is important not to create or delete sections, NetCon objects, or point processes. Do not change the number of segments, insert or delete mechanisms, or change the location of point processes.
+     *
      * @param $1    cell number
      */
 

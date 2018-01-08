@@ -6,9 +6,8 @@ from common.treeutils import ExtSecRef, getsecref
 from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
 from cersei.collapse.marasco_folding import assign_identifiers_dfs
 
-from neuron import h
-
-# Make Gillies model files findable
+# Make model files findable
+import balbi_model
 cell_model_dir = "../BalbiEtAl2015"
 import sys
 sys.path.append(cell_model_dir)
@@ -22,6 +21,16 @@ class BalbiFoldReduction(FoldReduction):
     Model-specific functions for folding reduction of Balbi et al. (2015)
     motoneuron model.
     """
+
+    def __init__(self, **kwargs):
+        """
+        Initialize new Balbi cell model reduction.
+
+        @param  balbi_motocell_id   (int) morphology file identifier
+        """
+        self.balbi_motocell_id = kwargs.pop('balbi_motocell_id')
+        super(BalbiFoldReduction, self).__init__(**kwargs)
+
 
     def assign_initial_identifiers(reduction):
         """
@@ -46,131 +55,98 @@ class BalbiFoldReduction(FoldReduction):
             reduction.assign_new_identifiers(childref, all_refs, parref=node_ref)
 
 
-    def get_interpolation_path_sections(reduction, secref):
-        """
-        Return Sections forming a path from soma to dendritic terminal/endpoint. 
-        The path is used for interpolating spatially non-uniform properties.
-        
-        @param  secref      <SectionRef> section for which a path is needed
-
-        @return             <list(Section)>
-
-        """
-        # TODO: determine an interpolation path based on secref's zipped_sec_gids
-        # - 
-        
-
-
-        # Choose stereotypical path for interpolation
-        # Get path from root node to this sections
-        start_sec = reduction._root_ref.sec
-        end_sec = h.dend[300] # TODONOTE: choose a representative terminal section?
-        # dend[9] 9, 76, 305, 378, 300 # terminal sections with mechanism 'L_Ca'
-        # dend[300] # terminal section with both mechanisms 'L_Ca' and 'mAHP'
-        
-        calc_path = h.RangeVarPlot('v')
-        
-        # Start in the utmost root
-        start_sec.push()
-        calc_path.begin(0.5)
-        
-        # End in a terminal section
-        end_sec.push()
-        calc_path.end(0.5)
-        
-        # let NEURON traverse the path
-        root_path = h.SectionList()
-        calc_path.list(root_path) # store path in list
-        
-        h.pop_section()
-        h.pop_section()
-
-        return list(root_path)
-
-
     def fix_topology_below_roots(reduction):
         """
         Assign topology numbers for sections located below the folding roots.
-
-        @note   assigned to key 'fix_topology_func'
         """
         # TODO: set topology numbers, see how they are used
         pass
+
+
+    # @FoldReduction.reduction_param(ReductionMethod.Marasco, 'Z_init_func')
+    def init_cell_steadystate(self):
+        """
+        Initialize cell for analyzing electrical properties.
+        
+        TODO: read ion concentrations after SaveState.restore() once and
+        hardcode them somewhere to restore them here. This is necessary since
+        Balbi's function h.load_steadystate() cannot be called after modification of the model
+        """
+        balbi_model.motocell_steadystate(self.balbi_motocell_id) # loads correct states file
 
 
 ################################################################################
 # Gillies Model Reduction Experiments
 ################################################################################
 
-def balbi_marasco_reduction(tweak=True):
+def make_fold_reduction(tweak=True):
     """
     Make FoldReduction object with Marasco method.
 
     TODO: move all cell-specific actions into subclass methods
     """
-
-    import balbi_model
+    # Instantiate NEURON model
     BALBI_CELL_ID = 1 # morphology file to load
     balbi_model.make_cell_balbi(model_no=BALBI_CELL_ID)
     named_secs = balbi_model.get_named_sec_lists()
 
     # Group subtrees by trunk
     somatic = list(named_secs['soma'])
-    
     # Dendritic sections have other subtrees (trunks = first level branchpoints)
     dendritic = list(named_secs['dend'])
-    
     # Axonic sections are first subtree (trunk = AH)
     axonic = sum((list(named_secs[name]) for 
                     name in ('AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN')), [])
-    
     nonsomatic = axonic + dendritic
 
     # Get the folding branchpoints for the dendritic subtrees
     dend_refs = [ExtSecRef(sec=sec) for sec in dendritic]
     root_ref = getsecref(named_secs['dend'][0], dend_refs) # root section of dendritic tree
 
+    # Calculate topology attributes
     import treeutils as tree, cluster as clu
     clu.assign_topology_attrs(root_ref, dend_refs)
     trunk_refs = tree.find_roots_at_level(2, root_ref, dend_refs) # level 2 roots
     
+    # At which nodes should tree be folded?
     fold_roots = [named_secs['AH'][0]]
     fold_roots.extend([ref.sec for ref in trunk_refs])
 
-    # Parameters for reduction
-    # TODO: read ion concentrations after SaveState.restore() and write them in new function so it can be executed after modification of the model
-    def motocell_setstate():
-        """ Initialize cell for analyzing electrical properties """
-        balbi_model.motocell_steadystate(BALBI_CELL_ID) # load correct states file
-
     # Reduce model
-    red_method = ReductionMethod.Marasco
-    reduction = FoldReduction(somatic, nonsomatic, fold_roots, red_method)
+    reduction = BalbiFoldReduction(
+                    method=ReductionMethod.Marasco,
+                    balbi_motocell_id=BALBI_CELL_ID,
+                    soma_secs=somatic, dend_secs=nonsomatic,
+                    fold_root_secs=fold_roots, 
+                    gleak_name=balbi_model.gleak_name,
+                    mechs_gbars_dict=balbi_model.balbi_gdict,
+                    mechs_params_dict=balbi_model.mechs_params_dict)
 
-    # Reduction parameters
-    reduction.gleak_name = balbi_model.gleak_name
-    reduction.mechs_gbars_dict = balbi_model.balbi_gdict
-    reduction.set_reduction_params(red_method, {
-        'Z_freq' :              25.,
-        'Z_init_func' :         motocell_setstate,
-        'Z_linearize_gating' :  False,
-        'gbar_scaling' :        'area',
-        'syn_map_method' :      'Ztransfer',
-        'post_tweak_funcs' :    [],
-    })
+    # Extra Reduction parameters
+    reduction.set_reduction_params(ReductionMethod.Marasco, 
+        {
+            'Z_freq' :              25.,
+            'Z_init_func' :         reduction.init_cell_steadystate,
+            'Z_linearize_gating' :  False,
+            'f_lambda':             100.0,
+            'gbar_scaling' :        'area',
+            'syn_map_method' :      'Ztransfer',
+            'post_tweak_funcs' :    [],
+        })
 
     return reduction
 
 
-def fold_balbi_marasco(export_locals=True):
+
+def reduce_model_folding(export_locals=True):
     """
-    Fold Gillies STN model using given reduction method
+    Reduce cell model using given folding algorithm
     
     @param  export_locals       if True, local variables will be exported to the global
                                 namespace for easy inspection
     """
     # Make reduction object
-    reduction = balbi_marasco_reduction()
+    reduction = make_fold_reduction()
     
     # Do reduction
     # TODO: in FoldReduction _*_FUNCS: go over functions and remove gillies-specific code
@@ -182,5 +158,6 @@ def fold_balbi_marasco(export_locals=True):
 
     return reduction._soma_refs, reduction._dend_refs
 
+
 if __name__ == '__main__':
-    fold_balbi_marasco()
+    reduce_model_folding()

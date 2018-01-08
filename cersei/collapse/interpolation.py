@@ -16,6 +16,7 @@ import neuron
 h = neuron.h
 
 # Our own modules
+import redutils
 from redutils import ExtSecRef, getsecref # for convenience
 from gillies_model import gillies_gdict, gillies_glist
 
@@ -155,6 +156,47 @@ def find_adj_path_segs(interp_prop, interp_L, path_secs):
 
     # Return pairs of boundary segments and boundary path lengths
     return bound_segs, bound_L
+
+
+def get_interpolation_path_sections(secref, tree_properties):
+    """
+    Return Sections forming a path from soma to dendritic terminal/endpoint.
+    The path is used for interpolating spatially non-uniform properties.
+
+    @param  secref      <SectionRef> section for which a path is needed
+
+    @return             <list(Section)>
+    """
+
+    # Return each Section/SecProps in secref.zipped_sec_gids
+    absorbed = redutils.find_secprops(tree_properties,
+                            lambda sec: sec.gid in secref.zipped_sec_gids)
+
+    # Find the farthest one (highest path length from soma)
+    max_dist = max((sec.pathL1 for sec in absorbed))
+    farthest_sec = next((sec for sec in absorbed if sec.pathL1==max_dist))
+
+    # Descend farther, following child branch with largest mean diameter
+    def mean_diam(sec):
+        return sum((sec.seg[i]['diam'] for i in range(sec.nseg))) / sec.nseg
+    
+    terminal_sec = farthest_sec
+    while any(terminal_sec.children):
+        best_diam = 0.0
+        for child in terminal_sec.children:
+            child_diam = mean_diam(child)
+            if child_diam > best_diam:
+                best_diam = child_diam
+                terminal_sec = child
+        assert best_diam > 0.0
+
+    # Construct path to terminal section
+    path_secs = [terminal_sec]
+    while True:
+        path_secs.append(path_secs[-1].parent)
+        if path_secs[-1].parent is None:
+            break
+    path_secs = list(reversed(path_secs)) # soma to terminal order
 
 
 def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):

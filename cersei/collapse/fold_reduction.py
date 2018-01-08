@@ -10,8 +10,7 @@ from neuron import h
 
 from fold_algorithm import ReductionMethod
 import marasco_folding as marasco
-import stratford_folding as stratford
-import mapsyn, redutils
+import mapsyn, redutils, interpolation as interp
 
 # logging of DEBUG/INFO/WARNING messages
 import logging
@@ -29,68 +28,21 @@ class FoldReduction(object):
     """
     Class grouping methods and data used for reducing
     a compartmental cable model of a NEURON cell.
-
-    TODO: make interface/virtual class CollapsingAlgorithm and let
-    Marasco and Stratford algorithms implement methods
     """
 
-    # For each step in reduction process: a dict mapping ReductionMethod -> (func, arg_names)
-
-    _PREPROC_FUNCS = {
-        ReductionMethod.Marasco:    (marasco.preprocess_impl, []),
-        ReductionMethod.Stratford:  (stratford.preprocess_impl, []),
+    _FOLDER_CLASSES = {
+        ReductionMethod.Marasco: marasco.MarascoFolder
     }
-
-    _PREP_FOLD_FUNCS = {
-        ReductionMethod.Marasco:    (marasco.prepare_folds_impl, []),
-        ReductionMethod.Stratford:  (stratford.prepare_folds_impl, []),
-    }
-
-    _CALC_FOLD_FUNCS = {
-        ReductionMethod.Marasco:    (marasco.calc_folds_impl, []),
-        ReductionMethod.Stratford:  (stratford.calc_folds_impl, []),
-    }
-
-    _MAKE_FOLD_EQ_FUNCS = {
-        ReductionMethod.Marasco:    (marasco.make_folds_impl, []),
-        ReductionMethod.Stratford:  (stratford.make_folds_impl, []),
-    }
-
-    _POSTPROC_FUNCS = {
-        ReductionMethod.Marasco:    (marasco.postprocess_impl, []),
-        ReductionMethod.Stratford:  (stratford.post_process_impl, []),
-    }
-
-    # Make accessible by step
-    _REDUCTION_STEPS_FUNCS = {
-        'preprocess':       _PREPROC_FUNCS,
-        'prepare_fold':     _PREP_FOLD_FUNCS,
-        'calculate_fold':   _CALC_FOLD_FUNCS,
-        'make_fold':        _MAKE_FOLD_EQ_FUNCS,
-        'postprocess':      _POSTPROC_FUNCS,
-    }
-
-
-    def register_reduction_step(self, method, step, func, kwarg_list=None):
-        """
-        Register function to perform reduction step 'step' for reduction method 'method'/
-
-        @param  method          ReductionMethod member
-
-        @param  step            ReductionStep member
-        """
-        if kwarg_list is None:
-            kwarg_list = []
-        self._REDUCTION_STEPS_FUNCS[step][method] = (func, kwarg_list)
 
 
     def __init__(
             self,
-            soma_secs,
-            dend_secs,
-            fold_root_secs,
-            method,
+            soma_secs=None,
+            dend_secs=None,
+            fold_root_secs=None,
+            method=None,
             mechs_gbars_dict=None,
+            mechs_params_dict=None,
             gleak_name=None):
         """
         Initialize reduction of NEURON cell with given root Section.
@@ -108,14 +60,18 @@ class FoldReduction(object):
         """
 
         # Parameters for reduction method (set by user)
-        self._REDUCTION_PARAMS = dict((method, {}) for method in list(ReductionMethod))
+        self._REDUCTION_PARAMS = {method: {} for method in list(ReductionMethod)}
 
         # Reduction method
         self.active_method = method
+        self.folder = self._FOLDER_CLASSES[method]
+
+        # Model mechanisms
         self.gleak_name = gleak_name
         if mechs_gbars_dict is None:
             raise ValueError("Must provide mechanisms to conductances map!")
         self.set_mechs_gbars_dict(mechs_gbars_dict)
+        self._mechs_params_dict = mechs_params_dict
 
         # Find true root section
         first_root_ref = ExtSecRef(sec=soma_secs[0])
@@ -138,6 +94,7 @@ class FoldReduction(object):
         # Set NetCon to be mapped
         self._syns_tomap = []
         self._map_syn_info = []
+
 
     @property
     def all_sec_refs(self):
@@ -225,15 +182,44 @@ class FoldReduction(object):
 
     def set_reduction_params(self, method, params):
         """
-        Set parameters for given reduction method.
+        Set entire parameters dict for reduction
         """
         self._REDUCTION_PARAMS[method] = params
+
+
+    def set_reduction_param(self, method, pname, pval):
+        """
+        Set a reduction parameter.
+        """
+        self._REDUCTION_PARAMS[method][pname] = pval
+
+
+    _REDUCTION_PARAM_GETTERS = {method: {} for method in list(ReductionMethod)}
+
+
+    @classmethod
+    def reduction_param(cls, method, param_name):
+        """
+        Decorator factory to register reduction parameter.
+
+        @note   decorators with argument are defined in a a decorator factory
+                rather than a immediate decorator function
+        """
+        
+        def getter_decorator(getter_func):
+            cls._REDUCTION_PARAM_GETTERS[method][param_name] = getter_func
+            return getter_func # don't wrap function, return it unchanged
+
+        return getter_decorator
 
 
     def get_reduction_param(self, method, param):
         """
         Get reduction parameter for given method.
         """
+        if param in self._REDUCTION_PARAM_GETTERS[method]:
+            getter = self._REDUCTION_PARAM_GETTERS[method][param]
+            return getter()
         return self._REDUCTION_PARAMS[method][param]
 
 
@@ -252,29 +238,6 @@ class FoldReduction(object):
 
         self._syns_tomap = None
         self._map_syn_info = None
-
-
-    def _exec_reduction_step(self, step, method, step_args=None):
-        """
-        Execute reduction step 'step' using method 'method'
-        """
-        try:
-            func, arg_names = self._REDUCTION_STEPS_FUNCS[step][method]
-
-        except KeyError:
-            raise NotImplementedError("{} function not implemented for "
-                                      "reduction method {}".format(step, method))
-
-        else:
-            user_params = self._REDUCTION_PARAMS[method]
-            user_kwargs = dict((kv for kv in user_params.iteritems() if kv[0] in arg_names)) # get required args
-
-            if step_args is None:
-                step_args = []
-
-            logger.anal("Executing reduction step {}".format(step))
-
-            func(*step_args, **user_kwargs)
 
 
     def preprocess_cell(self, method):
@@ -299,7 +262,8 @@ class FoldReduction(object):
         ## Calculate path-accumulated properties for entire tree
         for secref in self.all_sec_refs:
             # Assign path length, path resistance, electrotonic path length to each segment
-            redtools.sec_path_props(secref, f_lambda, gleak_name)
+            redutils.sec_path_props(secref, self.get_reduction_param('f_lambda'), 
+                                    self.gleak_name)
 
         ## Which properties to save
         range_props = dict(self.mechs_gbars_dict) # RANGE properties to save
@@ -314,7 +278,7 @@ class FoldReduction(object):
                                     seg_assigned_props=seg_custom_props)
 
         # Custom preprocessing function
-        self._exec_reduction_step('preprocess', method, step_args=[self])
+        self.folder.preprocess_impl()
 
         # Compute synapse mapping info
         if any(self._syns_tomap):
@@ -334,39 +298,6 @@ class FoldReduction(object):
                                 save_ref_attrs=save_ref_attrs)
 
             self._map_syn_info = syn_info
-
-
-    def prepare_folds(self, method):
-        """
-        Prepare next fold operation.
-        """
-        self._exec_reduction_step('prepare_fold', method, step_args=[self])
-
-
-    def calc_folds(self, method, i_pass):
-        """
-        Fold branches at branch points identified by given criterion.
-        """
-        self._exec_reduction_step('calculate_fold', method, step_args=[self, i_pass])
-
-
-    def make_fold_equivalents(self, method):
-        """
-        Make equivalent Sections for branches that have been folded.
-        """
-        self._exec_reduction_step('make_fold', method, step_args=[self])
-
-
-    def postprocess_cell(self, method=None):
-        """
-        Post-process cell: perform any additional modifications for reduction
-        algorithm.
-        """
-        if method is None:
-            method = self.active_method
-
-        # Execute custom postprocess function
-        self._exec_reduction_step('postprocess', method, step_args=[self])
 
 
     def map_synapses(self, method=None):
@@ -417,13 +348,13 @@ class FoldReduction(object):
 
         # Fold one pass at a time
         for i_pass in xrange(num_passes):
-            self.prepare_folds(method)
-            self.calc_folds(method, i_pass)
-            self.make_fold_equivalents(method)
+            self.folder.prepare_folds_impl()
+            self.folder.calc_folds_impl(i_pass)
+            self.folder.make_folds_impl()
             logger.debug('Finished folding pass {}'.format(i_pass))
 
         # Finalize reduction process
-        self.postprocess_cell(method)
+        self.folder.postprocess_impl()
 
         # Map synapses
         if map_synapses:
@@ -466,9 +397,7 @@ class FoldReduction(object):
 
         @return             <list(Section)>
         """
-        raise NotImplementedError(
-                "This function is model-specific and must be implemented for "
-                "each cell model individually.")
+        return interp.get_interpolation_path_sections(secref)
 
 
     def set_ion_styles(self, secref):
@@ -484,7 +413,7 @@ class FoldReduction(object):
         """
         # Look up ion styles info of sections that have been merged into this one
         filter_fun = lambda node: node.gid in secref.zipped_sec_gids
-        merged_props = redutils.find_secprops(reduction.orig_tree_props, filter_fun)
+        merged_props = redutils.find_secprops(self.orig_tree_props, filter_fun)
         ionstyles_dicts = [p.ion_styles for p in merged_props]
 
         # They must all be the same or we have a problem with mechanisms
@@ -505,7 +434,7 @@ class FoldReduction(object):
         """
         Assign topology numbers for sections located below the folding roots.
 
-        @note   assigned to key 'fix_topology_func'
+        @note   can be called by Folder class
         """
         raise NotImplementedError(
                 "This function is model-specific and must be implemented for "

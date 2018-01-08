@@ -912,9 +912,7 @@ def get_sec_props_ref(
 
     # Initialize segment RANGE properties
     sec_props.seg = [dict() for i in xrange(secref.sec.nseg)]
-    bprops = [par+'_'+mech 
-                for mech,pars in mechs_pars.iteritems() 
-                    for par in pars]
+    bprops = [par+'_'+mech for mech,pars in mechs_pars.iteritems() for par in pars]
     
     # Store segment RANGE properties
     for j_seg, seg in enumerate(secref.sec):
@@ -1147,15 +1145,17 @@ def save_tree_properties_ref(
         sec_props.ion_styles = get_ion_styles(node_ref.sec, ions=save_ion_styles)
 
     # Call for each child and add to children
+    sec_props.parent = None
     sec_props.children = []
     for child_sec in node_ref.sec.children(): # Depth-first tree traversal
         child_ref = getsecref(child_sec, all_refs)
-        sec_props.children.append(
-            save_tree_properties_ref(
-                    child_ref, all_refs, mechs_pars, 
-                    sec_assigned_props=sec_assigned_props,
-                    seg_assigned_props=seg_assigned_props,
-                    save_ion_styles=save_ion_styles))
+        child_props = save_tree_properties_ref(
+                        child_ref, all_refs, mechs_pars, 
+                        sec_assigned_props=sec_assigned_props,
+                        seg_assigned_props=seg_assigned_props,
+                        save_ion_styles=save_ion_styles)
+        child_props.parent = sec_props
+        sec_props.children.append(child_props)
 
     return sec_props
 

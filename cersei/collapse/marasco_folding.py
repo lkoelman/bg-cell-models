@@ -26,14 +26,6 @@ import interpolation as interp
 from fold_algorithm import FoldingAlgorithm, ReductionMethod
 from marasco_merging import merge_seg_subtree
 
-# Gillies STN model
-from gillies_model import gillies_gdict, gillies_glist
-
-mechs_chans = gillies_gdict
-glist = gillies_glist
-gleak_name = 'gpas_STh'
-f_lambda = 100.0
-
 # logging of DEBUG/INFO/WARNING messages
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
@@ -184,9 +176,7 @@ def calc_collapses(target_Y_secs, i_pass, allsecrefs):
 
 
 def sub_equivalent_Y_sections(
-        clusters,
-        orsecrefs,
-        interp_path,
+        reduction,
         interp_prop='path_L', 
         interp_method='linear_neighbors', 
         gbar_scaling='area'
@@ -195,6 +185,8 @@ def sub_equivalent_Y_sections(
     Substitute equivalent Section for each cluster into original cell.
 
     @see    docstring of function `reduce_bush_sejnowski.equivalent_sections()`
+
+    @param	reduction		FoldReduction object
 
     @param  interp_prop     property used for calculation of path length (x of interpolated
                             x,y values), one of following:
@@ -222,28 +214,28 @@ def sub_equivalent_Y_sections(
     eq_refs = []
 
     # Create equivalent sections and passive electric structure
-    for i, cluster in enumerate(clusters):
+    for i, cluster in enumerate(reduction.clusters):
 
         # Create equivalent section
         if cluster.label in [sec.name() for sec in h.allsec()]:
             raise Exception('Section named {} already exists'.format(cluster.label))
+        
         created = h("create %s" % cluster.label)
         if created != 1:
             raise Exception("Could not create section with name '{}'".format(cluster.label))
+        
         eqsec = getattr(h, cluster.label)
         eqref = ExtSecRef(sec=eqsec)
 
-        # Set geometry 
+        # Set passive properties
         eqsec.L = cluster.eqL
         eqsec.diam = cluster.eqdiam
-        cluster.eq_area = sum(seg.area() for seg in eqsec) # should be same as cluster eqSurf
-
-        # Passive electrical properties (except Rm/gleak)
         eqsec.Ra = cluster.eqRa
 
         # Save metadata
-        eqref.zipped_sec_gids = cluster.zipped_sec_gids
-        eqref.zip_id = cluster.zip_id
+        cluster.eq_area = sum(seg.area() for seg in eqsec) # should be same as cluster eqSurf
+        for prop in ['zipped_sec_gids', 'zip_id', 'or_area']:
+        	setattr(eqref, prop, getattr(cluster, prop)) # copy some useful attributes
 
         # Append to list of equivalent sections
         eq_secs.append(eqsec)
@@ -253,12 +245,14 @@ def sub_equivalent_Y_sections(
         eqsec.connect(cluster.parent_seg, 0.0) # see help(sec.connect)
 
     # Set active properties and finetune
-    for i_clu, cluster in enumerate(clusters):
-        logger.debug("Scaling properties of cluster %s ..." % clusters[i_clu].label)
+    for i_clu, cluster in enumerate(reduction.clusters):
+        logger.debug("Scaling properties of cluster %s ..." % reduction.clusters[i_clu].label)
+        
         eqsec = eq_secs[i_clu]
         eqref = eq_refs[i_clu]
 
         # Insert all mechanisms
+        # TODO: here instead of inserting, copy from absorbed sections
         for mech in mechs_chans.keys():
             eqsec.insert(mech)
 
@@ -308,15 +302,10 @@ def sub_equivalent_Y_sections(
         # Find conductances at same path length (to each segment midpoint) in original cell
         for j_seg, seg in enumerate(eqsec):
             
-            # Get adjacent segments along path
+            # Get adjacent segments along interpolation path
             path_L = getattr(eqref, seg_prop)[j_seg]
-            # TODO: get SecProps objects that can be used for interpolating:
-            # - look in saved tree and return sequence of SecProps along suuitable path
-            #   - locate sections merged into this equivalent section
-            #   - choose subtree with largest area?
-            #   - find a terminal section in that subtree
-            #   - return path to that terminal section
-            bound_segs, bound_L = interp.find_adj_path_segs(interp_prop, path_L, interp_path)
+            path_secs = reduction.get_interpolation_path_secs(eqref)
+            bound_segs, bound_L = interp.find_adj_path_segs(interp_prop, path_L, path_secs)
             
             # DEBUG STATEMENTS:
             # bounds_info = "\n".join(("\t- bounds {0} - {1}".format(a, b) for a,b in bound_segs))
@@ -376,19 +365,21 @@ def sub_equivalent_Y_sections(
 
         # Debugging info:
         logger.debug("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
-                        "\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", 
-                        clusters[i_clu].label, eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
+                     "\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", reduction.clusters[i_clu].label, 
+                     eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
     
     # Substitute equivalent section into tree
     logger.info("\n###############################################################"
                 "\nSubstituting equivalent sections...\n")
-    
-    for i_clu, cluster in enumerate(clusters):
+
+    orsecrefs = reduction.all_sec_refs
+    for i_clu, cluster in enumerate(reduction.clusters):
         eqsec = eq_secs[i_clu]
         # Disconnect substituted segments and attach segment after Y boundary
         # Can only do this now since all paths need to be walkable before this
         logger.debug("Substituting zipped section {0}".format(eqsec))
-        redtools.sub_equivalent_Y_sec(eqsec, cluster.parent_seg, cluster.bound_segs, 
+        redtools.sub_equivalent_Y_sec(eqsec, 
+        			cluster.parent_seg, cluster.bound_segs, 
                     orsecrefs, mechs_chans, delete_substituted=True)
         logger.debug("Substitution complete.\n")
 
@@ -442,7 +433,7 @@ def assign_identifiers_dfs(node_ref, all_refs, parent_id=0):
 ################################################################################
 
 
-class MarascoAlgorithm(FoldingAlgorithm):
+class MarascoFolder(FoldingAlgorithm):
     """
     Marasco folding/collapsing algorithm.
 
@@ -463,16 +454,7 @@ class MarascoAlgorithm(FoldingAlgorithm):
 
     def preprocess_impl(self):
         """
-        Preprocess cell for Marasco reduction. 
-
-        Calculates properties needed during reduction and saves them on reduction 
-        object and individual SectionRef instances.
-
-        @param  reduction   reduce_cell.CollapseReduction object
-
-        @effect             - assign identifiers to each sections
-                            - compute electrotonic properties in each segment of cell
-                            - determine interpolation path for channel distributions and save them
+        Preprocess cell for Marasco reduction.
         """
         pass
 
@@ -482,7 +464,7 @@ class MarascoAlgorithm(FoldingAlgorithm):
         Prepare next collapse operation: assign topology information
         to each Section.
 
-        (Implementation of interface declared in reduce_cell.CollapseReduction)
+        (Implementation of interface declared in FoldingAlgorithm)
         """
         reduction = self.reduction
 
@@ -505,10 +487,7 @@ class MarascoAlgorithm(FoldingAlgorithm):
             clutools.assign_topology_attrs(fold_root, allsecrefs)
 
         # Fix topology below folding roots
-        fix_topology = reduction.get_reduction_param(
-                                    reduction.active_method, 
-                                    'fix_topology_func')
-        fix_topology()
+        reduction.fix_topology_below_roots()
 
         # Assign path properties
         for secref in allsecrefs:

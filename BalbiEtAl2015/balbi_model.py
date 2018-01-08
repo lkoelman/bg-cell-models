@@ -29,6 +29,26 @@ balbi_gdict = {
     'naps':     ['gbar'],       # Persistent Na current (Na ion)
     'pas':      ['g_pas'],      # Passive/leak channel
 }
+# Mechanism parameters that are changed from default values in original model code
+# TODO: copy mechanisms + parameters from zipped_sec_gids properties
+#       - alternatively: query all mechanism keys and then use seg.mechname.parname where all the parname can be obtained using dir(seg.mechname) and taking the ones that end in '_mechname' (then use part without '_mechname' to get seg.mechname.parname)
+balbi_mechs_params = {
+    'gh':       ['ghbar', 'htau', 'half', 'slp'], # H channel (Na + K ions)
+    'kca2':     ['g', 'depth2', 'taur2'], # Ca-dependent K channel (K ion)
+    'kdrRL':    ['gMax', 'mVh'], # Delayed Rectifier K Channel (K ion)
+    'L_Ca':     ['gcabar', 'tau_m', 'theta_m'], # L-type Ca channel (Ca ion, CaL virtual ion)
+    'mAHP':     ['gkcamax', 'gcamax', 'taur'], # Ca-dependent K + Ca channel (Ca + K ions)
+    'na3rp':    ['gbar', 'sh', 'ar', 'Rd', 'qd', 'qg', 'thi1', 'thi2'], # Fast Na current (Na ion)
+    'naps':     ['gbar', 'sh', 'ar'], # Persistent Na current (Na ion)
+    'pas':      ['g', 'e'],  # Passive/leak channel
+    'extracellular': ['xraxial', 'xg', 'xc', 'e'], # extracellular layers
+    'hh':       ['gnabar', 'gkbar', 'gl', 'el'], # Hodgkin-Huxley mechanisms
+}
+balbi_global_params = [ # TODO: restore via h.fix_global_params() in interface function implementation
+    'tmin_kdrRL', 'taumax_kdrRL',
+    'qinf_na3rp', 'thinf_na3rp',
+    'vslope_naps'
+]
 balbi_mechs = list(balbi_gdict.keys()) # all mechanisms
 balbi_glist = [gname+'_'+mech for mech,chans in balbi_gdict.iteritems() for gname in chans]
 gleak_name = 'gpas_STh'
@@ -106,4 +126,5 @@ def motocell_steadystate(model_no):
 
 
 if __name__ == '__main__':
-    named_sec = make_cell_balbi()
+    named_sec = make_cell_balbi(model_no=1)
+    # from neuron import gui
