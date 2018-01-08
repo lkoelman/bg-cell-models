@@ -30,12 +30,12 @@ class FoldReduction(object):
     Class grouping methods and data used for reducing
     a compartmental cable model of a NEURON cell.
 
-    TODO: make interface/virtual class CollapsingAlgorithm and let 
+    TODO: make interface/virtual class CollapsingAlgorithm and let
     Marasco and Stratford algorithms implement methods
     """
 
     # For each step in reduction process: a dict mapping ReductionMethod -> (func, arg_names)
-    
+
     _PREPROC_FUNCS = {
         ReductionMethod.Marasco:    (marasco.preprocess_impl, []),
         ReductionMethod.Stratford:  (stratford.preprocess_impl, []),
@@ -85,10 +85,10 @@ class FoldReduction(object):
 
 
     def __init__(
-            self, 
-            soma_secs, 
-            dend_secs, 
-            fold_root_secs, 
+            self,
+            soma_secs,
+            dend_secs,
+            fold_root_secs,
             method,
             mechs_gbars_dict=None,
             gleak_name=None):
@@ -120,7 +120,7 @@ class FoldReduction(object):
         # Find true root section
         first_root_ref = ExtSecRef(sec=soma_secs[0])
         root_sec = first_root_ref.root # pushes CAS
-        
+
         # Save unique sections
         self._soma_refs = [ExtSecRef(sec=sec) for sec in soma_secs]
         self._dend_refs = [ExtSecRef(sec=sec) for sec in dend_secs]
@@ -153,7 +153,7 @@ class FoldReduction(object):
         Get list of SectionRef to somatic sections.
         """
         return self._soma_refs
-    
+
 
     @property
     def dend_refs(self):
@@ -176,14 +176,14 @@ class FoldReduction(object):
         Synapse properties before and after mapping (electrotonic properties etc.)
         """
         return self._map_syn_info
-    
+
 
     def get_mechs_gbars_dict(self):
         """
         Get dictionary of mechanism names and their conductances.
         """
         return self._mechs_gbars_dict
-    
+
 
     def set_mechs_gbars_dict(self, val):
         """
@@ -191,8 +191,8 @@ class FoldReduction(object):
         """
         self._mechs_gbars_dict = val
         if val is not None:
-            self.gbar_names = [gname+'_'+mech 
-                                    for mech,chans in val.iteritems() 
+            self.gbar_names = [gname+'_'+mech
+                                    for mech,chans in val.iteritems()
                                         for gname in chans]
             self.active_gbar_names = list(self.gbar_names)
             self.active_gbar_names.remove(self.gleak_name)
@@ -214,7 +214,7 @@ class FoldReduction(object):
         # Destroy references to deleted sections
         self._soma_refs = [ref for ref in self._soma_refs if ref.exists()]
         self._dend_refs = [ref for ref in self._dend_refs if ref.exists()]
-        
+
         # Add newly created sections
         if soma_refs is not None:
             self._soma_refs = list(set(self._soma_refs + soma_refs)) # get unique references
@@ -260,20 +260,20 @@ class FoldReduction(object):
         """
         try:
             func, arg_names = self._REDUCTION_STEPS_FUNCS[step][method]
-        
+
         except KeyError:
             raise NotImplementedError("{} function not implemented for "
                                       "reduction method {}".format(step, method))
-        
+
         else:
             user_params = self._REDUCTION_PARAMS[method]
             user_kwargs = dict((kv for kv in user_params.iteritems() if kv[0] in arg_names)) # get required args
-            
+
             if step_args is None:
                 step_args = []
 
             logger.anal("Executing reduction step {}".format(step))
-            
+
             func(*step_args, **user_kwargs)
 
 
@@ -300,13 +300,13 @@ class FoldReduction(object):
         for secref in self.all_sec_refs:
             # Assign path length, path resistance, electrotonic path length to each segment
             redtools.sec_path_props(secref, f_lambda, gleak_name)
-        
+
         ## Which properties to save
         range_props = dict(self.mechs_gbars_dict) # RANGE properties to save
         range_props.update({'': ['diam', 'cm']})
         sec_custom_props = ['gid', 'pathL0', 'pathL1', 'pathri0', 'pathri1', 'pathLelec0', 'pathLelec1']
         seg_custom_props = ['pathL_seg', 'pathri_seg', 'pathL_elec']
-        
+
         ## Build tree data structure
         self.orig_tree_props = redutils.save_tree_properties_ref(
                                     self._root_ref, range_props,
@@ -326,10 +326,10 @@ class FoldReduction(object):
             Z_freq          = self.get_reduction_param(method, 'Z_freq')
             init_func       = self.get_reduction_param(method, 'Z_init_func')
             linearize_gating= self.get_reduction_param(method, 'Z_linearize_gating')
-            
+
             # Compute mapping data
-            syn_info = mapsyn.get_syn_info(self.soma_refs[0].sec, self.all_sec_refs, 
-                                syn_tomap=self._syns_tomap, Z_freq=Z_freq, 
+            syn_info = mapsyn.get_syn_info(self.soma_refs[0].sec, self.all_sec_refs,
+                                syn_tomap=self._syns_tomap, Z_freq=Z_freq,
                                 init_cell=init_func, linearize_gating=linearize_gating,
                                 save_ref_attrs=save_ref_attrs)
 
@@ -367,7 +367,7 @@ class FoldReduction(object):
 
         # Execute custom postprocess function
         self._exec_reduction_step('postprocess', method, step_args=[self])
-        
+
 
     def map_synapses(self, method=None):
         """
@@ -376,7 +376,7 @@ class FoldReduction(object):
         @see    set_syns_tomap() for setting synapses.
 
         @pre    Any synapses provided through syns_tomap must be preprocessed
-                for mapping (electronic properties computed), with results 
+                for mapping (electronic properties computed), with results
                 stored in map_syn_info attribute.
         """
         if method is None:
@@ -391,9 +391,9 @@ class FoldReduction(object):
             init_func       = self.get_reduction_param(method, 'Z_init_func')
             linearize       = self.get_reduction_param(method, 'Z_linearize_gating')
             map_method      = self.get_reduction_param(method, 'syn_map_method')
-            
+
             # Map synapses (this modifies syn_info objects)
-            mapsyn.map_synapses(self.soma_refs[0], self.all_sec_refs, self._map_syn_info, 
+            mapsyn.map_synapses(self.soma_refs[0], self.all_sec_refs, self._map_syn_info,
                                 init_func, Z_freq, linearize_gating=linearize,
                                 method=map_method)
         else:
@@ -459,9 +459,9 @@ class FoldReduction(object):
 
     def get_interpolation_path_sections(self, secref):
         """
-        Return Sections forming a path from soma to dendritic terminal/endpoint. 
+        Return Sections forming a path from soma to dendritic terminal/endpoint.
         The path is used for interpolating spatially non-uniform properties.
-        
+
         @param  secref      <SectionRef> section for which a path is needed
 
         @return             <list(Section)>
@@ -489,8 +489,8 @@ class FoldReduction(object):
 
         # They must all be the same or we have a problem with mechanisms
         final_styles = ionstyles_dicts[0]
-        for styles_dict in ionstyles_dicts[1:]
-            for ion, style_flags in styles_dict.iteritems()
+        for styles_dict in ionstyles_dicts[1:]:
+            for ion, style_flags in styles_dict.iteritems():
                 if final_styles[ion] != style_flags:
                     raise ValueError(
                         "Cannot merge Sections with distinct ion styles! "
