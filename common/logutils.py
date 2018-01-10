@@ -101,11 +101,11 @@ def setLogLevel(level, logger_names):
 	@param level	any log level accepted by logging.setLevel() or one of following:
 					'verbose', 'quiet', 'silent', 'anal'
 	"""
-	if level=='verbose':
+	if level in ['verbose', 'debug', 'DEBUG']:
 		level = logging.DEBUG
-	elif level=='silent' or level=='quiet':
+	elif level in ['silent', 'quiet', 'warning', 'WARNING']:
 		level = logging.WARNING
-	elif level=='anal':
+	elif level in ['anal', 'highly_verbose']:
 		level = DEBUG_ANAL_LVL
 
 	for logname in logger_names:

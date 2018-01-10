@@ -17,7 +17,7 @@ logger = logging.getLogger(logname) # create logger for this module
 from neuron import h
 
 from common.nrnutil import getsecref, seg_index, same_seg
-from common.treeutils import next_segs, prev_seg, subtreeroot
+from common.treeutils import subtreeroot
 from common.electrotonic import seg_lambda, sec_lambda
 
 # Load NEURON function libraries
@@ -28,59 +28,6 @@ h.load_file("stdrun.hoc") # Load the standard run library
 # Electrotonic structure
 ################################################################################
 
-def sec_path_ri(secref, store_seg_ri=False):
-    """ Calculate axial path resistance from root to 0 and 1 end of each section
-
-    @effect     calculate axial path resistance from root to 0/1 end of sections
-                and set as properties pathri0/pathri1 on secref
-
-    @return     tuple pathri0, pathri1
-    """
-    # Create attribute for storing path resistance
-    if store_seg_ri and not(hasattr(secref, 'pathri_seg')):
-        secref.pathri_seg = [0.0] * secref.sec.nseg
-
-    # Get subtree root
-    rootsec = subtreeroot(secref)
-    rootparent = rootsec.parentseg()
-
-    # Calculate path Ri
-    if rootparent is None: # if we are soma/top root: path length is zero
-        secref.pathri0 = 0.
-        secref.pathri1 = 0.
-        return 0., 0.
-    
-    # Get path from root node to this sections
-    calc_path = h.RangeVarPlot('v')
-    rootsec.push()
-    calc_path.begin(0.5)
-    secref.sec.push()
-    calc_path.end(0.5)
-    root_path = h.SectionList()
-    calc_path.list(root_path) # store path in list
-    h.pop_section()
-    h.pop_section()
-
-    # Compute axial path resistances
-    pathri0 = 0. # axial path resistance from root to start of target Section
-    pathri1 = 0. # axial path resistance from root to end of target Section
-    path_secs = list(root_path)
-    path_len = len(path_secs)
-    for isec, psec in enumerate(path_secs):
-        arrived = bool(psec.same(secref.sec))
-        for jseg, seg in enumerate(psec):
-            # Axial path resistance to start of current segment
-            if store_seg_ri and arrived:
-                secref.pathri_seg[jseg] = pathri1
-            # Axial path resistance to end of current segment
-            pathri1 += seg.ri()
-            # Axial path resistance to start of target section
-            if isec < path_len-1:
-                pathri0 = pathri1
-
-    secref.pathri0 = pathri0
-    secref.pathri1 = pathri1
-    return pathri0, pathri1
 
 def sec_path_L_elec(secref, f, gleak_name):
     """ Calculate electrotonic path length up to but not including soma
@@ -130,51 +77,6 @@ def sec_path_L_elec(secref, f, gleak_name):
     return secref.pathLelec0, secref.pathLelec1
 
 
-def sec_path_L(secref):
-    """
-    Assign path length to end of all segments and to 0 and 1-end of Section
-
-    @param to_end   if True, return distance to end of segment, else
-                    return distance to start of segment
-    """
-    rootsec = subtreeroot(secref)
-    endseg = rootsec(1.0)
-    j_endseg = seg_index(endseg)
-    rootparent = rootsec.parentseg()
-    if rootparent is None:
-        return 0.0 # if we are soma/topmost root: path length is zero
-
-    # Create attribute for storing path resistance
-    secref.pathL_seg = [0.0] * secref.sec.nseg
-    
-    # Get path from root section to endseg
-    calc_path = h.RangeVarPlot('v')
-    rootsec.push()
-    calc_path.begin(0.0) # x doesn't matter since we only use path sections
-    endseg.sec.push()
-    calc_path.end(endseg.x)
-    root_path = h.SectionList() # SectionList structure to store path
-    calc_path.list(root_path) # copy path sections to SectionList
-    h.pop_section()
-    h.pop_section()
-
-    # Compute path length
-    path_secs = list(root_path)
-    path_L = 0.0
-    for isec, psec in enumerate(path_secs):
-        arrived_sec = bool(psec.same(endseg.sec))
-        seg_L = psec.L/psec.nseg
-        for j_seg, seg in enumerate(psec):
-            if arrived_sec:
-                if j_seg==0:
-                    secref.pathL0 = path_L
-                elif (j_seg==j_endseg):
-                    secref.pathL1 = path_L + seg_L
-                    return secref.pathL1
-            path_L += seg_L
-            secref.pathL_seg[j_seg] = path_L
-
-
 def sec_path_props(secref, f, gleak_name, linearize_gating=False, init_cell=None):
     """
     Assign path properties to start and end of section, and to all internal segments
@@ -193,10 +95,7 @@ def sec_path_props(secref, f, gleak_name, linearize_gating=False, init_cell=None
             - seg_path_Lelec0       electrotonic path length to START of each SEGMENT
             - seg_path_Lelec1       electrotonic path length to END of each SEGMENT
     """
-    rootsec = subtreeroot(secref)
-    rootparent = rootsec.parentseg()
-    if rootparent is None:
-        return # if we are soma/topmost root: path length is zero
+    rootsec = subtreeroot(secref) # first child section of absolute root
 
     # Create attribute for storing path resistance
     secref.pathL_seg        = [0.0] * secref.sec.nseg
@@ -236,6 +135,7 @@ def sec_path_props(secref, f, gleak_name, linearize_gating=False, init_cell=None
     for isec, psec in enumerate(path_secs):
         arrived_sec = (isec==path_len-1) # alternative: use sec.same()
         
+        # Start at 0-end of section
         for j_seg, seg in enumerate(psec):
             
             # store path length to start of segment
@@ -265,44 +165,6 @@ def sec_path_props(secref, f, gleak_name, linearize_gating=False, init_cell=None
                     secref.pathLelec1 = path_L_elec
                     secref.pathri1 = path_ri
 
-def seg_path_ri(endseg, f, gleak_name):
-    """ 
-    Calculate axial path resistance from start of segment up to but 
-    not including soma section (the topmost root section).
-
-    @return     electrotonic path length
-    """
-    secref = h.SectionRef(sec=endseg.sec)
-    rootsec = subtreeroot(secref)
-    j_endseg = seg_index(endseg)
-    rootparent = rootsec.parentseg()
-    if rootparent is None:
-        return 0.0 # if we are soma/topmost root: path length is zero
-
-    # Get path from soma (not including) up to and including this section
-    calc_path = h.RangeVarPlot('v')
-    rootsec.push()
-    calc_path.begin(0.5)
-    secref.sec.push()
-    calc_path.end(0.5)
-    root_path = h.SectionList() # SectionList structure to store path
-    calc_path.list(root_path) # copy path sections to SectionList
-    h.pop_section()
-    h.pop_section()
-
-    # Compute electrotonic path length
-    pathri0 = 0. # axial path resistance from root sec to 0 end of this sec
-    path_secs = list(root_path)
-    assert(endseg.sec in path_secs)
-    for i, psec in enumerate(path_secs): # walk sections
-        for j_seg, seg in enumerate(psec): # walk segments
-            if seg.sec.same(endseg.sec) and j_seg==j_endseg: # reached end segment
-                assert same_seg(seg, endseg)
-                pathri1 = pathri0 + seg.ri()
-                return pathri0, pathri1
-            pathri0 += seg.ri()
-
-    raise Exception('End segment not reached')
 
 def seg_path_L_elec(endseg, f, gleak_name):
     """ 
@@ -350,6 +212,7 @@ def seg_path_L_elec(endseg, f, gleak_name):
 
     raise Exception('End segment not reached')
 
+
 def seg_path_L(endseg, to_end):
     """
     Calculate path length from center of root section to given segment
@@ -390,53 +253,6 @@ def seg_path_L(endseg, to_end):
                     return path_L
             path_L += seg_L
 
-def assign_electrotonic_length(rootref, allsecrefs, f, gleak_name, allseg=False):
-    """ 
-    Assign length constant (lambda) and electrotonic path length (L/lambda)
-    to 0- and 1-end for each section in subtree of given section.
-
-    @type   rootref     SectionRef
-    @param  rootref     Section reference to current node
-
-    @type   allsecrefs  list(SectionRef)
-    @param  allsecrefs  references to all sections in the cell
-
-    @post               all section references have the following attributes:
-                        - 'f_lambda': frequency at which length constant is computed
-                        - 'lambda_f': section's length constant at given frequency
-                        - 'pathLelec0': electrotonic path length to 0-end
-                        - 'pathLelec1': Electrotonic path length to 1-end
-    """
-    if rootref is None:
-        return
-
-    # Compute length constant
-    gleak = sum([getattr(seg, gleak_name) for seg in rootref.sec])
-    gleak /= rootref.sec.nseg # average gleak of segments in section
-    lambda_f = sec_lambda(rootref.sec, gleak, f)
-    rootref.lambda_f = lambda_f
-    rootref.f_lambda = f
-
-    # Compute electrotonic path length
-    if allseg:
-        rootref.pathL_elec = [0.0]*rootref.sec.nseg
-        for i, seg in enumerate(rootref.sec):
-            # visit every segment expcent 0/1 end zero-area segments
-            pathL = seg_path_L_elec(seg, f, gleak_name)
-            rootref.pathL_elec[i] = pathL
-    pathLelec0, pathLelec1 = sec_path_L_elec(rootref, f, gleak_name)
-    rootref.pathLelec0 = pathLelec0
-    rootref.pathLelec1 = pathLelec1
-
-    # Assign to children
-    for childsec in rootref.sec.children():
-        childref = getsecref(childsec, allsecrefs)
-        assign_electrotonic_length(childref, allsecrefs, f, gleak_name, allseg=allseg)
-
-
-################################################################################
-# Clustering & Topology
-################################################################################
 
 class SecProps(object):
     """
@@ -461,369 +277,6 @@ class SecProps(object):
 
 EqProps = SecProps # alias
 
-################################################################################
-# Editing cells/dendritic trees
-################################################################################
-
-# def find_first_cut(noderef):
-#   """ Utility function to find first segment in cluster """
-#   for jseg, seg in enumerate(noderef.sec):
-#       if noderef.cluster_labels[jseg] == cluster.label:
-#           return seg
-#
-#   child_secs = noderef.sec.children()
-#   if not any(child_secs):
-#       return None
-#
-#   next_cut = None
-#   for childsec in child_secs:
-#       childref = getsecref(childsec, allsecrefs)
-#       next_cut = find_cut(childref)
-#       if next_cut is not None:
-#           break
-#   return next_cut
-
-def find_prox_cuts(nodeseg, cuts, cluster, allsecrefs):
-    """
-    Find proximal cuts for given cluster.
-
-    i.e. cluster boundaries given by pairs of segments where the first segment
-    is proximal to the root section and in a different cluster, and the second
-    segment is in the given cluster and distal to the first one.
-    """
-    noderef = getsecref(nodeseg.sec, allsecrefs)
-    i_node = seg_index(nodeseg)
-    node_label = noderef.cluster_labels[i_node]
-
-    if node_label==cluster.label:
-        # return nodeseg
-        parseg = prev_seg(nodeseg)
-        parref = getsecref(parseg.sec, allsecrefs)
-        parlabel = parref.cluster_labels[seg_index(parseg)]
-        if parlabel != cluster.label:
-            cuts.add((parseg, nodeseg))
-        else:
-            return # don't descend any further
-    else:
-        chi_segs = next_segs(nodeseg)
-        for chiseg in chi_segs:
-            find_prox_cuts(chiseg, cuts, cluster, allsecrefs)
-
-def find_dist_cuts(nodeseg, cuts, cluster, allsecrefs):
-    """
-    Find distal cuts for given cluster.
-
-    @param  nodeseg <nrn.Segment>
-
-    @param  cuts    <set(tuple(nrn.Segment, nrn.Segment))> indicating locations
-                    where tree should be cut
-
-    @post   argument 'cuts' is filled with pairs (seg_a, seg_b) where
-            seg_a is last segment in cluster along its path, and seg_b
-            is first segment in next cluster
-    """
-    noderef = getsecref(nodeseg.sec, allsecrefs)
-    i_node = seg_index(nodeseg)
-    node_label = noderef.cluster_labels[i_node]
-
-    if node_label != cluster.label:
-        return
-    else:
-        chi_segs = next_segs(nodeseg)
-        # if no child segs: this is a cut
-        if not any(chi_segs):
-            cuts.add((nodeseg,None))
-            return
-        # if child segs: check their labels
-        for chiseg in chi_segs:
-            chiref = getsecref(chiseg.sec, allsecrefs)
-            chilabel = chiref.cluster_labels[seg_index(chiseg)]
-            # if same label: continue searching
-            if chilabel == cluster.label:
-                find_dist_cuts(chiseg, cuts, cluster, allsecrefs)
-            else: # if different label: this is a cut
-                cuts.add((nodeseg,chiseg))
-
-def substitute_cluster(rootref, cluster, clu_eqsec, allsecrefs, mechs_pars, 
-                        delete_substituted=False):
-    """
-    Substitute equivalent section of cluster in dendritic tree.
-
-    @param rootref      SectionRef to root section where algorithm
-                        should start to descend tree.
-
-    @param cluster      Cluster object containing information about
-                        the cluster
-
-    @param clu_eqsec    equivalent Section for cluster
-
-    ALGORITHM
-    - descend tree from root:
-    - find first segment assigned to cluster
-    - descend tree along all children and find last segments assigned to cluster
-    - cut section of first segment (segments after first)
-    - cut sections of last segments (segments before last)
-    - fix the cut parts: re-set nseg, and active conductances
-    - substitution: connect everything
-    """
-
-    # Mark all sections as uncut
-    for secref in allsecrefs:
-        if not hasattr(secref, 'is_cut'):
-            setattr(secref, 'is_cut', False)
-
-    # Find proximal cuts
-    prox_cuts = set()
-    find_prox_cuts(rootref.sec(0.0), prox_cuts, cluster, allsecrefs)
-    if not any(prox_cuts):
-        raise Exception("Could not find segment assigned to cluster in subtree of {}".format(rootref))
-    elif len(prox_cuts) > 1:
-        raise Exception("Inserting cluster at location where it has > 1 parent Section not supported")
-    first_cut_seg = prox_cuts[0][1]
-    
-    # Find distal cuts
-    dist_cuts = set() # pairs (seg_a, seg_b) where a is in same cluster, and b in next cluster
-    find_dist_cuts(first_cut_seg, dist_cuts, cluster, allsecrefs)
-
-    # Sever tree at proximal cuts
-    cut_seg_index = seg_index(first_cut_seg)
-    if cut_seg_index > 0:
-        cut_sec = first_cut_seg.sec
-        
-        # Calculate new properties
-        pre_cut_L = cut_sec.L/cut_sec.nseg * cut_seg_index
-        cut_props = get_sec_properties(cut_sec, mechs_pars)
-        
-        # Set new properties
-        cut_sec.nseg = cut_seg_index
-        cut_sec.L = pre_cut_L
-        for jseg, seg in enumerate(cut_sec):
-            pseg = cut_props[jseg]
-            for pname, pval in pseg.iteritems():
-                seg.__setattr__(pname, pval)
-
-        # Mark as being cut
-        cut_ref = getsecref(cut_sec, allsecrefs)
-        cut_ref.is_cut = True
-
-        # Set parent for equivalent section
-        eqsec_parseg = cut_sec(1.0)
-    else:
-        eqsec_parseg = cut_sec.parentseg()
-
-    # Sever tree at distal cuts
-    eqsec_child_segs = []
-    for dist_cut in dist_cuts:
-        cut_seg = dist_cut[1] # Section will be cut before this segment
-        cut_sec = cut_seg.sec
-        cut_seg_index = seg_index(cut_seg)
-
-        # If Section cut in middle: need to resize
-        if cut_seg_index > 0:
-            # Check if not already cut
-            cut_ref = getsecref(cut_sec, allsecrefs)
-            if cut_ref.is_cut:
-                raise Exception('Section has already been cut before')
-
-            # Calculate new properties
-            new_nseg = cut_sec.nseg-(cut_seg_index+1)
-            post_cut_L = cut_sec.L/cut_sec.nseg * new_nseg
-            cut_props = get_sec_properties(cut_sec, mechs_pars)
-            
-            # Set new properties
-            cut_sec.nseg = new_nseg
-            cut_sec.L = post_cut_L
-            for jseg, seg in enumerate(cut_sec):
-                pseg = cut_props[cut_seg_index + jseg]
-                for pname, pval in pseg.iteritems():
-                    seg.__setattr__(pname, pval)
-
-        # Set child segment for equivalent section
-        eqsec_child_segs.append(cut_sec(0.0))
-
-    # Connect the equivalent section
-    clu_eqsec.connect(eqsec_parseg, 0.0) # see help(sec.connect)
-    for chiseg in eqsec_child_segs:
-        chiseg.sec.connect(clu_eqsec, 1.0, chiseg.x) # this disconnects them
-
-    # Disconnect the substituted parts
-    for subbed_sec in eqsec_parseg.sec.children():
-        chiref = getsecref(subbed_sec, allsecrefs)
-        if chiref.cluster_labels[0] == cluster.label:
-            # NOTE: only need to disconnect proximal ends of the subtree: the distal ends have already been disconnected by connecting them to the equivalent section for the cluster
-            h.disconnect(sec=subbed_sec)
-
-            # Delete disconnected subtree if requested
-            if delete_substituted:
-                child_tree = h.SectionList()
-                subbed_sec.push()
-                child_tree.subtree()
-                h.pop_section()
-                for sec in child_tree: # iterates CAS
-                    h.delete_section()
-
-def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars, 
-                            delete_substituted):
-    """
-    Substitute equivalent section of a collapsed Y into the tree.
-
-    @param eqsec    equivalent Section for cluster
-
-    @param parent_seg   parent segment (where equivalent section will be attached)
-
-    @param bound_segs   list of distal boundary segments of the cluster
-                        of segments that the equivalent section is substituting for
-
-    """
-
-    # Mark all sections as uncut
-    for secref in allsecrefs:
-        if not hasattr(secref, 'is_cut'):
-            setattr(secref, 'is_cut', False)
-
-    # Parent of equivalent section
-    parent_seg = parent_seg
-
-    # Sever tree at distal cuts
-    eqsec_child_segs = []
-    
-    for bound_seg in bound_segs: # last absorbed/collapsed segment
-        cut_segs = next_segs(bound_seg) # first segment after cut (not collapsed)
-        
-        for i in xrange(len(cut_segs)):
-            cut_seg = cut_segs[i] # cut_seg may be destroyed by resizing so don't make loop variable
-            cut_sec = cut_seg.sec
-            cut_seg_index = seg_index(cut_seg)
-
-            # If Section cut in middle: need to resize
-            if cut_seg_index > 0:
-                # Check if not already cut
-                cut_ref = getsecref(cut_sec, allsecrefs)
-                if cut_ref.is_cut:
-                    raise Exception('Section has already been cut before')
-
-                # Calculate new properties
-                new_nseg = cut_sec.nseg-(cut_seg_index)
-                post_cut_L = cut_sec.L/cut_sec.nseg * new_nseg
-                cut_props = get_sec_properties(cut_sec, mechs_pars)
-                
-                # Set new properties
-                cut_sec.nseg = new_nseg
-                cut_sec.L = post_cut_L
-                for jseg, seg in enumerate(cut_sec):
-                    pseg = cut_props[cut_seg_index + jseg]
-                    for pname, pval in pseg.iteritems():
-                        seg.__setattr__(pname, pval)
-                logger.debug("Cut section {0} and re-assigned segment properties.".format(cut_sec.name()))
-
-            # Set child segment for equivalent section
-            eqsec_child_segs.append(cut_sec(0.0))
-
-    # Connect the equivalent section
-    eqsec.connect(parent_seg, 0.0) # see help(sec.connect)
-    for chi_seg in eqsec_child_segs:
-        chi_seg.sec.connect(eqsec, 1.0, chi_seg.x) # this disconnects them
-
-    # Disconnect the substituted parts
-    for subbed_sec in parent_seg.sec.children():
-        # Skip the equivalent/substituting section
-        if subbed_sec.same(eqsec):
-            continue
-
-        # Only need to disconnect proximal ends of the subtree: the distal ends have already been disconnected by connecting them to the equivalent section for the cluster
-        logger.debug("Disconnecting substituted section '{}'...".format(subbed_sec.name()))
-        h.disconnect(sec=subbed_sec)
-
-        # Delete disconnected subtree if requested
-        child_tree = h.SectionList()
-        subbed_sec.push()
-        child_tree.subtree()
-        h.pop_section()
-        for sec in child_tree: # iterates CAS
-            subbed_ref = getsecref(sec, allsecrefs)
-            subbed_ref.is_substituted = True
-            if delete_substituted:
-                logger.debug("Deleting substituted section '{}'...".format(sec.name()))
-                subbed_ref.is_deleted = True # can also be tested with NEURON ref.exists()
-                h.delete_section()
-                
-
-def split_section(src_sec, mechs_pars, delete_src=False):
-    """
-    Split section by deleting it and adding two sections in series
-
-    @param mechs_pars   dictionary of mechanism name -> [parameter names]
-                        that need to be copied
-    """
-    # Create two halves
-    halfA_name = src_sec.name() + "_A"
-    h("create %s" % halfA_name)
-    secA = getattr(h, halfA_name)
-
-    halfB_name = src_sec.name() + "_B"
-    h("create %s" % halfB_name)
-    secB = getattr(h, halfB_name)
-
-    # Copy properties
-    for tar_sec in [secA, secB]:
-        # Copy passive properties
-        tar_sec.L = src_sec.L / 2.
-        tar_sec.Ra = src_sec.Ra
-        if src_sec.nseg % 2 == 0:
-            tar_sec.nseg = src_sec.nseg / 2
-        else:
-            logger.warning("Splitting section with uneven number of segments")
-            tar_sec.nseg = int(src_sec.nseg) / 2 + 1 # don't lose accuracy
-
-        # Copy mechanisms
-        for mechname in mechs_pars.keys():
-            if hasattr(src_sec(0.5), mechname):
-                tar_sec.insert(mechname)
-
-        # Copy range variables
-        for tar_seg in tar_sec:
-            src_seg = src_sec(tar_seg.x/2.) # segment that it maps to
-            tar_seg.diam = src_seg.diam
-            tar_seg.cm = src_seg.cm
-            for mech in mechs_pars.keys():
-                for par in mechs_pars[mech]:
-                    prop = par+'_'+mech
-                    setattr(tar_seg, prop, getattr(src_seg, prop))
-
-        # Copy ion styles
-        copy_ion_styles(src_sec, tar_sec)
-
-    # Connect A to B
-    secB.connect(secA, 1, 0)
-
-    # Connect A to parent of src_sec
-    secA.connect(src_sec.parentseg().sec, src_sec.parentseg().x, 0)
-
-    # Connect children of src_sec to B
-    for childsec in src_sec.children():
-        xloc = childsec.parentseg().x
-        # NOTE: connecting section disconnects it from previous parent
-        if xloc >= 0.5:
-            childsec.connect(secB, 2*(xloc-0.5), 0)
-        else:
-            childsec.connect(secA, 2*xloc, 0)
-
-    # Disconnect and delete src_sec
-    h.disconnect(sec=src_sec)
-    if delete_src:
-        h.delete_section(sec=src_sec)
-
-def join_unbranched_sections(nodesec, max_joins=1e9):
-    """
-    Join unbranched sections into a single section.
-
-    This operation preserves the number of segments and distribution of 
-    diameter and electrical properties.
-
-    @pre    the method assumes Ra is uniform in all the sections
-    """
-    pass
-
 
 def get_sec_properties(src_sec, mechs_pars):
     """
@@ -843,33 +296,6 @@ def get_sec_properties(src_sec, mechs_pars):
                 pseg[prop] = getattr(seg, prop)
         props.append(pseg)
     return props
-
-
-def get_range_props(secref, prop_names):
-    """
-    Get Section's requested RANGE properties for each segment.
-    """
-
-    seg_prop_dicts = [dict() for i in xrange(secref.sec.nseg)]
-
-    for j_seg, seg in enumerate(secref.sec):
-        for prop in prop_names:
-            seg_prop_dicts[j_seg][prop] = getattr(seg, prop)
-
-    return seg_prop_dicts
-
-
-def set_range_props(secref, seg_prop_dicts):
-    """
-    Set Section's RANGE properties stored in given dictionaries.
-    """
-    if secref.sec.nseg != len(seg_prop_dicts):
-        raise ValueError("Must provide one dictionary for each segment.")
-    
-    for j_seg, seg in enumerate(secref.sec):
-        propdict = seg_prop_dicts[j_seg]
-        for pname, pval in propdict.iteritems():
-            setattr(seg, pname, pval)
 
 
 def get_sec_props_ref(
@@ -965,37 +391,61 @@ def get_sec_props(sec, mechs_pars):
     return sec_props
 
 
-def store_seg_props(secref, mechs_pars, attr_name='or_seg_props', assigned_props=None):
+def merge_sec_properties(src_props, tar_sec, mechs_pars, check_uniform=True):
     """
-    Store each segment's properties (RANGE variables) in a dictionary
-    on the given SectionRef.
+    Merge section properties from multiple SecProps objects into target Section.
 
-    @param mechs_pars       dict mechanism_name -> [parameter_names] with segment properties
-                            to store
+    WARNING: properties are queried at center segment and assigned to the
+    target section like sec.ppty = val (i.e. not on a per-segment basis)
 
-    @param assigned_props   list of assigned properties (assigned attributed of SectionRef)
-                            that should be saved
+    @param  src_props   list(SecProps), each with attribute 'seg' containing one dict
+                        of segment attributes per segment
 
-    @param attr_name        the attribute name to use for saving the properties, in format:
-                            list(dict(param : value))
-
-    @effect     SectionRef will have an attribute 'attr_name' that is
-                a list with a dict for each segment containing all its properties.
+    @param  mechs_pars  dict mechanism_name -> [parameter_names] with segment 
+                        properties (RANGE properties) to copy
     """
+    
 
-    # Initialize segment RANGE properties
-    secref.__setattr__(attr_name, [dict() for i in xrange(secref.sec.nseg)])
-    nrn_props = [par+'_'+mech for mech,pars in mechs_pars.iteritems() for par in pars] # NEURON properties
-    ref_props = [] if assigned_props is None else assigned_props
+    # keep track of assigned parameters
+    assigned_params = {par+'_'+mech: None for mech,pars in mechs_pars.iteritems() 
+                                            for par in pars}
 
-    # Store segment RANGE properties
-    for j_seg, seg in enumerate(secref.sec):
-        # Store built-in properties
-        for prop in nrn_props:
-            secref.__getattribute__(attr_name)[j_seg][prop] = getattr(seg, prop)
-        # Store self-assigned properties (stored on SectionRef)
-        for prop in ref_props:
-            secref.__getattribute__(attr_name)[j_seg][prop] = getattr(secref, prop)[j_seg]
+    for src_sec in src_props:
+        nseg = src_sec.nseg
+        segs = src_sec.seg
+        for mechname, parnames in mechs_pars.iteritems():
+            
+            # Check if any segment in source has the mechanism
+            if any((p.startswith(mechname) for i in range(nseg)
+                    for p in segs[i].keys())):
+                tar_sec.insert(mechname)
+            else:
+                continue
+            
+            # Copy parameter values
+            for pname in parnames:
+                fullpname = pname+'_'+mechname
+
+                # Check that parameter values are uniform in section
+                mid_val = segs[int(nseg)/2].get(fullpname, None)
+                
+                if check_uniform and any(
+                    (mid_val!=segs[i].get(fullpname, None) for i in range(nseg))):
+                    raise Exception("Parameter {} is not uniform in source section {}."
+                                    "Cannot assign non-uniform value to Section.".format(
+                                        fullpname, src_sec))
+
+                # Check that parameter value is same as in other source sections
+                prev_val = assigned_params[fullpname]
+                
+                if check_uniform and (prev_val is not None) and mid_val!=prev_val:
+                    raise Exception("Parameter {} is not uniform between source sections."
+                                    "Cannot assign non-uniform value to Section.".format(
+                                        fullpname))
+
+                # Copy value to entire section
+                setattr(tar_sec, fullpname, mid_val)
+                assigned_params[fullpname] = mid_val
 
 
 def copy_sec_properties(src_sec, tar_sec, mechs_pars):
@@ -1023,60 +473,6 @@ def copy_sec_properties(src_sec, tar_sec, mechs_pars):
 
     # ion styles
     copy_ion_styles(src_sec, tar_sec)
-
-
-def merge_sec_properties(src_props, tar_sec, mechs_pars, check_uniform=True):
-    """
-    Merge section properties from multiple SecProps objects into target Section.
-
-    WARNING: properties are queried at center segment and assigned to the
-    target section like sec.ppty = val (i.e. not on a per-segment basis)
-
-    @param  src_props   list(SecProps), each with attribute 'seg' containing one dict
-                        of segment attributes per segment
-
-    @param  mechs_pars  dict mechanism_name -> [parameter_names] with segment 
-                        properties (RANGE properties) to copy
-    """
-    
-
-    # keep track of assigned parameters
-    assigned_params = {par+'_'+mech: None for mech,pars in mechs_pars.iteritems() 
-                                            for par in pars}
-
-    for src_sec in src_props:
-        for mechname, parnames in mechs_pars.iteritems():
-            
-            # Check if any segment in source has the mechanism
-            if any((p.startswith(mechname) for i in range(src_sec.nseg)
-                    for p in src_sec.seg[i].keys())):
-                tar_sec.insert(mechname)
-            else:
-                continue
-            
-            # Copy parameter values
-            for pname in parnames:
-                fullpname = pname+'_'+mechname
-
-                # Check that parameter values are uniform in section
-                mid_val = src_sec.seg[int(src_sec.nseg)/2].get(fullpname, None)
-                if check_uniform and any(
-                    (pval!=mid_val for i in range(src_sec.nseg) 
-                                    for pval in src_sec.seg[i].get(fullpname, None))):
-                    raise Exception("Parameter {} is not uniform in source section {}."
-                                    "Cannot assign non-uniform value to Section.".format(
-                                        fullpname, src_sec))
-
-                # Check that parameter value is same as in other source sections
-                prev_val = assigned_params[fullpname]
-                if check_uniform and (prev_val is not None) and mid_val!=prev_val:
-                    raise Exception("Parameter {} is not uniform between source sections."
-                                    "Cannot assign non-uniform value to Section.".format(
-                                        fullpname))
-
-                # Copy value to entire section
-                setattr(tar_sec, fullpname, mid_val)
-                assigned_params[fullpname] = mid_val
 
 
 def copy_ion_styles(src_sec, tar_sec, ions=None):
@@ -1260,7 +656,7 @@ def dfs_iter_tree_recursive(node):
     """
     yield node
 
-    for child_node in node.get('children', []):
+    for child_node in getattr(node, 'children', []):
         for cn in dfs_iter_tree_recursive(child_node):
             yield cn
 
@@ -1275,7 +671,7 @@ def dfs_iter_tree_stack(start_node):
     while stack:
         node = stack.pop()
         yield node
-        for child in node.get('children', []):
+        for child in getattr(node, 'children', []):
             stack.append(child)
 
 
@@ -1301,37 +697,6 @@ def find_secprops(node, filter_fun, find_all=True):
             return []
 
 
-def duplicate_subtree(rootsec, mechs_pars, tree_copy):
-    """
-    Duplicate tree of given section
-    
-    @param rootsec      root section of the subtree
-    
-    @param mechs_pars   dictionary mechanism_name -> parameter_name
-    
-    @param tree_copy    out argument: list to be filled
-    """
-    # Copy current root node
-    copyname = 'copyof_' + rootsec.name()
-    i = 0
-    while h.issection(copyname):
-        if i > 1000:
-            raise Exception('Too many copies of this section!')
-        i += 1
-        copyname = ('copy%iof' % i) + rootsec.name()
-    h("create %s" % copyname)
-    root_copy = getattr(h, copyname)
-    copy_sec_properties(rootsec, root_copy, mechs_pars)
-    tree_copy.append(root_copy)
-
-    # Copy children
-    for childsec in rootsec.children():
-        child_copy = duplicate_subtree(childsec, mechs_pars, tree_copy)
-        child_copy.connect(root_copy, childsec.parentseg().x, 0)
-
-    return root_copy
-
-
 def find_roots_at_level(level, root_ref, all_refs):
     """
     Find all root Sections art a particular level.
@@ -1344,83 +709,7 @@ def find_roots_at_level(level, root_ref, all_refs):
     return [ref for ref in all_refs if (ref.level==level and ref.end_branchpoint)]
 
 
-def find_collapsable(
-        allsecrefs, 
-        i_pass, 
-        Y_criterion='highest_level', 
-        zips_per_pass=1e9,
-        **kwargs):
-    """
-    Find branch points with child branches that can be collapsed.
 
-    @return     list of SectionRef to the branchpoint-Sections with
-                collapsable children
-    """
-
-    if Y_criterion=='max_electrotonic':
-        
-        # Find Y with longest electrotonic length to first Y among its children.
-        # This corresponds to  Y with child section that has longest L/lambda.
-        # (Collapsing this Y will eliminate most compartments.)
-
-        # Get minimum distance to next branch point (determines collapsable length)
-        for secref in allsecrefs:
-            
-            child_secs = secref.sec.children()
-            secref.collapsable_L_elec = 0.0
-            
-            if any(child_secs):
-                min_child_L = min(sec.L for sec in child_secs)
-            
-            for chi_sec in child_secs:
-                # Get segment that is that distance away from child
-                furthest_seg = chi_sec(min_child_L/chi_sec.L)
-                furthest_L_elec = seg_path_L_elec(
-                                    furthest_seg, kwargs['f_lambda'], kwargs['gleak_name'])
-                secref.collapsable_L_elec += (secref.pathLelec1 - furthest_L_elec)
-
-        # Get maximum collapsable length
-        max_L_collapsable = max(ref.collapsable_L_elec for ref in allsecrefs)
-
-        # Find all branch points that have +/- same collapsable length
-        low, high = 0.95*max_L_collapsable, 1.05*max_L_collapsable
-        candidate_Y_secs = [ref for ref in allsecrefs if (any(ref.sec.children())) and (
-                                                            low<ref.collapsable_L_elec<high)]
-        
-        # Off these, pick the one with highest level, and select all branch points at this level
-        target_level = max(ref.level for ref in candidate_Y_secs)
-        target_Y_secs = [ref for ref in candidate_Y_secs if ref.level==target_level]
-
-        # Report findings
-        logger.debug("The maximal collapsable electrotonic length is %f", max_L_collapsable)
-        logger.debug("Found %i sections with collapsable length within 5%% of this value", 
-                        len(candidate_Y_secs))
-        logger.debug(("The highest level of a parent node with this value is %i, "
-                        "and the number of nodes at this level with the same value is %i"), 
-                        target_level, len(target_Y_secs))
-
-
-    elif Y_criterion=='highest_level':
-
-        # Simplify find all branch points at highest level
-        max_level = max(ref.level for ref in allsecrefs)
-        target_Y_secs = [ref for ref in allsecrefs if (ref.level==max_level-1) and (
-                         i_pass+1 <= ref.max_passes) and (len(ref.sec.children()) >= 2)]
-
-    else:
-        raise Exception("Unknow Y-section selection criterion '{}'".format(Y_criterion))
-
-
-    # Prune branchpoints: can't collapse more branchpoints than given maximum
-    n_Y = len(target_Y_secs)
-    target_Y_secs = [ref for i,ref in enumerate(target_Y_secs) if i<zips_per_pass]
-
-    logger.debug("Found {0} Y-sections that meet selection criterion. Keeping {1}/{2}\n\n".format(
-                    n_Y, min(n_Y, zips_per_pass), n_Y))
-    
-
-    # Return branch points identified for collapsing
-    return target_Y_secs
 
 
 if __name__ == '__main__':

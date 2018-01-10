@@ -36,7 +36,7 @@ gbar_dict = {
     'mAHP':     ['gkcamax', 'gcamax'], # Ca-dependent K channel + Ca channel (Ca + K ions)
     'na3rp':    ['gbar'],       # Fast Na current (Na ion)
     'naps':     ['gbar'],       # Persistent Na current (Na ion)
-    'pas':      ['g_pas'],      # Passive/leak channel
+    'pas':      ['g'],      # Passive/leak channel
 }
 gleak_name = 'g_pas'
 

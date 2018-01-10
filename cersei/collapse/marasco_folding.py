@@ -16,7 +16,8 @@ h = neuron.h
 h.load_file("stdlib.hoc") # Load the standard library
 
 # Own modules
-import redutils
+import redutils, tree_edit as treeops
+import common.electrotonic as electro
 from common.nrnutil import ExtSecRef, seg_index
 import cluster as clutools
 from cluster import Cluster
@@ -65,7 +66,7 @@ class MarascoFolder(FoldingAlgorithm):
         self.reduction = None
 
 
-    def preprocess_reductions(self):
+    def preprocess_reduction(self):
         """
         Preprocess cell for Marasco reduction. Execute once before all
         folding passes.
@@ -97,17 +98,14 @@ class MarascoFolder(FoldingAlgorithm):
         allsecrefs = reduction.all_sec_refs
 
         # Set properties used in calculation
-        reduction.assign_new_sec_gids()
+        reduction.assign_new_sec_gids(root_ref, allsecrefs)
         redutils.subtree_assign_attributes(root_ref, allsecrefs, {'max_passes': 100})
 
         logger.info("\n###############################################################"
                     "\nAssigning topology & path properties ...\n")
 
         # Assign topology info (order, level, strahler number)
-        for fold_root in reduction._fold_root_refs:
-            clutools.assign_topology_attrs(fold_root, allsecrefs)
-
-        # Fix topology below folding roots
+        clutools.assign_topology_attrs(root_ref, allsecrefs)
         reduction.fix_topology_below_roots()
 
         # Assign path properties
@@ -125,10 +123,10 @@ class MarascoFolder(FoldingAlgorithm):
         allsecrefs = self.reduction.all_sec_refs
 
         # Find collapsable branch points
-        target_Y_secs = redutils.find_collapsable(allsecrefs, i_pass, Y_criterion)
+        target_Y_secs = treeops.find_collapsable(allsecrefs, i_pass, Y_criterion)
 
         # Do collapse operation at each branch points
-        fold_pass.clusters = calc_collapses(target_Y_secs, i_pass, allsecrefs)
+        fold_pass.clusters = calc_fold_equivalents(self.reduction, target_Y_secs, i_pass, allsecrefs)
 
         return fold_pass
 
@@ -162,6 +160,7 @@ class MarascoFolder(FoldingAlgorithm):
         folding passes.
         """
         reduction = self.reduction
+        all_sec_refs = reduction.all_sec_refs
 
         # Tweaking
         tweak_funcs = reduction.get_reduction_param('post_tweak_funcs')
@@ -169,11 +168,11 @@ class MarascoFolder(FoldingAlgorithm):
             func(reduction)
 
         # Assign identifiers (for synapse placement etc.)
-        reduction.assign_new_sec_gids()
+        reduction.assign_new_sec_gids(reduction._root_ref, all_sec_refs)
 
         # Assign topology info (order, level, strahler number)
         for fold_root in reduction._fold_root_refs:
-            clutools.assign_topology_attrs(fold_root, reduction.all_sec_refs)
+            clutools.assign_topology_attrs(fold_root, all_sec_refs)
 
 
 ################################################################################
@@ -183,7 +182,7 @@ class MarascoFolder(FoldingAlgorithm):
 
 class FoldingPass(object):
     """
-    Encapsulate data for one folding pass.
+    Encapsulate data for one folding pass (all folds in one reduction step)
 
     Member data
     -----------
@@ -196,11 +195,39 @@ class FoldingPass(object):
 
     """
 
-    def __init__(self, i_pass):
+    def __init__(self, i_pass): # TODO: add argument target_Y_secs
         self.i_pass = i_pass
 
+    def do_folds(self):
+        # loop that does all folds
+        pass
 
-def calc_collapses(
+    def fold_subtree(self, Ysec):
+        # calculate one fold and return cluster (1st half of calc_fold_equivalents)
+        pass
+
+    def calc_fold_statistics(self, cluster):
+        # calculate cluster statistics (2nd half of calc_fold_equivalents)
+        pass
+
+    def make_equivalent_secs(clusters):
+        # create eqsec/eqref for each cluster
+        pass
+
+    def set_equivalent_properties():
+        # takes map clusters -> equivalents?
+        pass
+
+    def set_passive_params():
+        # first half of substitute_fold_equivalents
+        pass
+
+    def set_conductances():
+        # second half of substitute_fold_equivalents
+        pass
+
+
+def calc_fold_equivalents(
         reduction,
         target_Y_secs,
         i_pass,
@@ -263,8 +290,7 @@ def calc_collapses(
         eq_seq, eq_br = merge_seg_subtree(par_sec(1.0), allsecrefs, eligfunc, 
                             process_zipped_seg, far_bound_segs)
 
-        logger.debug("Target Y-section for zipping: {0} (tree_id:{1} , table_id:{2})".format(
-                        par_sec.name(), par_ref.tree_index, par_ref.table_index))
+        logger.debug("Target Y-section for zipping: {0}".format(par_sec.name()))
         bounds_info = ["\n\tsegment {0} [{1}/{2}]".format(seg, seg_index(seg)+1, seg.sec.nseg) for seg in far_bound_segs]
         logger.debug("Zipping up to {0} boundary segments:{1}".format(len(far_bound_segs), "\n".join(bounds_info)))
 
@@ -304,7 +330,11 @@ def calc_collapses(
         cluster.or_cm = cluster.or_cmtot / cluster.or_area
         cluster.or_gtot = dict((gname, 0.0) for gname in glist)
         for gname in glist:
-            cluster.or_gtot[gname] += sum(getattr(seg, gname)*seg.area() for seg in clu_segs)
+            try:
+                gval = getattr(seg, gname, 0.0)
+            except NameError: # NEURON error if mechanism not inserted in section
+                gval = 0.0
+            cluster.or_gtot[gname] += sum(gval*seg.area() for seg in clu_segs)
 
         # Equivalent axial resistance
         clu_segs_Ra = [seg.sec.Ra for seg in clu_segs]
@@ -317,10 +347,10 @@ def calc_collapses(
         clusters.append(cluster)
 
         # Calculate electrotonic path length
-        cluster.or_L_elec = sum(redutils.seg_L_elec(seg, gleak_name, f_lambda) for seg in clu_segs)
-        cluster.eq_lambda = redutils.calc_lambda_AC(f_lambda, cluster.eqdiam, cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
+        cluster.or_L_elec = sum(electro.seg_L_elec(seg, gleak_name, f_lambda) for seg in clu_segs)
+        cluster.eq_lambda = electro.calc_lambda_AC(f_lambda, cluster.eqdiam, cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
         cluster.eq_L_elec = cluster.eqL/cluster.eq_lambda
-        eq_min_nseg = redutils.calc_min_nseg_hines(f_lambda, cluster.eqL, cluster.eqdiam, 
+        eq_min_nseg = electro.calc_min_nseg_hines(f_lambda, cluster.eqL, cluster.eqdiam, 
                                             cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
 
         # Debug
@@ -429,7 +459,7 @@ def substitute_fold_equivalents(
 
         # Set number of segments based on rule of thumb electrotonic length
         eqsec.cm = eq_cm
-        eqsec.nseg = redutils.calc_min_nseg_hines(f_lambda, eqsec.L, eqsec.diam, eqsec.Ra, eq_cm)
+        eqsec.nseg = electro.calc_min_nseg_hines(f_lambda, eqsec.L, eqsec.diam, eqsec.Ra, eq_cm)
 
         # Copy section mechanisms and properties
         absorbed_secs = redutils.find_secprops(reduction.orig_tree_props,
@@ -542,7 +572,7 @@ def substitute_fold_equivalents(
         # Disconnect substituted segments and attach segment after Y boundary
         # Can only do this now since all paths need to be walkable before this
         logger.debug("Substituting zipped section {0}".format(eqsec))
-        redutils.sub_equivalent_Y_sec(eqsec, 
+        treeops.sub_equivalent_Y_sec(eqsec, 
                     cluster.parent_seg, cluster.bound_segs, 
                     orsecrefs, reduction.mechs_gbars_dict, delete_substituted=True)
         logger.debug("Substitution complete.\n")

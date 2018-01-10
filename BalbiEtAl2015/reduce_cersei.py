@@ -10,12 +10,14 @@ sys.path.append(pkg_root)
 
 import cersei.collapse.redutils as redutils
 import cersei.collapse.cluster as cluster
+import common.logutils as logutils
 from common.nrnutil import ExtSecRef, getsecref
 from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
 
 import balbi_model
-
 from neuron import h
+
+logutils.setLogLevel('verbose', ['marasco', 'folding'])
 
 ################################################################################
 # Cell model-specific implementations of reduction functions
@@ -68,7 +70,7 @@ class BalbiFoldReduction(FoldReduction):
         # Set all parameters
         kwargs['gleak_name'] = balbi_model.gleak_name
         kwargs['mechs_gbars_dict'] = balbi_model.gbar_dict
-        kwargs['mechs_params_dict'] = balbi_model.mechs_params_dict
+        kwargs['mechs_params_nogbar'] = balbi_model.mechs_params_nogbar
         super(BalbiFoldReduction, self).__init__(**kwargs)
 
 
@@ -100,7 +102,7 @@ class BalbiFoldReduction(FoldReduction):
         childsecs = node_ref.sec.children()
         childrefs = [getsecref(sec, all_refs) for sec in childsecs]
         for childref in childrefs:
-            reduction.assign_new_identifiers(childref, all_refs, parref=node_ref)
+            reduction.assign_new_sec_gids(childref, all_refs, par_ref=node_ref)
 
 
     def assign_region_label(reduction, secref):

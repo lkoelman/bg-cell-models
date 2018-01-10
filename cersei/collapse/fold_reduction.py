@@ -62,9 +62,11 @@ class FoldReduction(object):
         # Parameters for reduction method (set by user)
         self._REDUCTION_PARAMS = {method: {} for method in list(ReductionMethod)}
 
-        # Reduction method
+        # Reduction algorithm
         self.active_method = method
-        self.folder = self._FOLDER_CLASSES[method]
+        FolderClass = self._FOLDER_CLASSES[method]
+        self.folder = FolderClass()
+        self.folder.reduction = self # bidirectional association
 
         # Model mechanisms
         self.gleak_name = gleak_name
@@ -74,16 +76,11 @@ class FoldReduction(object):
 
         # Find true root section
         first_root_ref = ExtSecRef(sec=soma_secs[0])
-        root_sec = first_root_ref.root # pushes CAS
+        root_sec = first_root_ref.root; h.pop_section() # pushes CAS
 
         # Save unique sections
         self._soma_refs = [ExtSecRef(sec=sec) for sec in soma_secs]
         self._dend_refs = [ExtSecRef(sec=sec) for sec in dend_secs]
-
-        # Save ion styles
-        ions = ['na', 'k', 'ca']
-        self._ion_styles = dict(((ion, h.ion_style(ion+'_ion')) for ion in ions))
-        h.pop_section() # pops CAS
 
         # Save root sections
         self._root_ref = getsecref(root_sec, self._soma_refs)
@@ -254,7 +251,8 @@ class FoldReduction(object):
         ## Which properties to save
         range_props = dict(self.mechs_params_all) # RANGE properties to save
         range_props.update({'': ['diam', 'cm']})
-        sec_custom_props = ['gid', 'pathL0', 'pathL1', 'pathri0', 'pathri1', 'pathLelec0', 'pathLelec1']
+        sec_custom_props = ['gid', 'pathL0', 'pathL1', 'pathri0', 'pathri1', 
+                            'pathLelec0', 'pathLelec1']
         seg_custom_props = ['pathL_seg', 'pathri_seg', 'pathL_elec']
 
         ## Build tree data structure
@@ -458,10 +456,9 @@ class FoldReduction(object):
 
     def fix_topology_below_roots(self):
         """
-        Assign topology numbers for sections located below subtrees of folding
+        Virtual method: assign topology numbers for sections located below subtrees of folding
         roots. Only neccessary for reduction based on automatic clustering.
 
         @note   can be called by Folder class
         """
-        logger.debug("Abstract/Virtual method '{}' not implemented.").format(
-                self.fix_topology_below_roots)
+        pass
