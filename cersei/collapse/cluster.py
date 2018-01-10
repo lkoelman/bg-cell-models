@@ -135,13 +135,8 @@ def assign_topology_attrs(
         cur_ref.end_branchpoint = False
         return
     
-    elif len(childsecs) > 1:
-        # Cylinder ends in branchpoint (fork)
-        cur_ref.end_branchpoint = True
-    
     else:
-        # Single child (no branching)
-        cur_ref.end_branchpoint = False
+        cur_ref.end_branchpoint = (len(childsecs) > 1)
 
     # NON LEAF NODE: descend tree and calculate strahler
     for childref in childrefs:

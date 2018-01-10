@@ -16,7 +16,7 @@ sys.path.append(gillies_model_dir)
 # Cell model-specific implementations of reduction functions
 ################################################################################
 
-def assign_new_identifiers(node_ref, all_refs, par_ref=None):
+def assign_new_sec_gids(node_ref, all_refs, par_ref=None):
 	"""
 	Assign identifiers to newly created Sections
 
@@ -38,10 +38,10 @@ def assign_new_identifiers(node_ref, all_refs, par_ref=None):
 	childsecs = node_ref.sec.children()
 	childrefs = [getsecref(sec, all_refs) for sec in childsecs]
 	for childref in childrefs:
-		assign_new_identifiers(childref, all_refs, parref=node_ref)
+		assign_new_sec_gids(childref, all_refs, parref=node_ref)
 
 
-def assign_initial_identifiers(reduction):
+def assign_initial_sec_gids(reduction):
 	"""
 	Assign identifiers to Sections.
 
@@ -73,7 +73,7 @@ def assign_initial_identifiers(reduction):
 		
 	# Assign unique GID to each Section
 	assign_original_indices(reduction)
-	assign_new_identifiers(reduction._root_ref, allsecrefs)
+	assign_new_sec_gids(reduction._root_ref, allsecrefs)
 
 
 def get_interpolation_path_sections(reduction):
@@ -104,28 +104,6 @@ def set_ion_styles(reduction, secref):
 	h.ion_style("k_ion",1,2,1,0,1)
 	h.ion_style("ca_ion",3,2,1,1,1)
 	h.pop_section()
-
-
-def fix_topology_below_roots(reduction):
-	"""
-	Assign topology numbers for sections located below the folding roots.
-
-	@note	assigned to key 'fix_topology_func'
-	"""
-	allsecrefs = reduction.all_sec_refs
-	soma_refs = reduction._soma_refs
-
-	dendL_juction = getsecref(h.SThcell[0].dend0[0], allsecrefs)
-	dendL_upper_root = getsecref(h.SThcell[0].dend0[1], allsecrefs)
-
-	dendL_juction.order = 1
-	dendL_juction.level = 0
-	dendL_juction.strahlernumber = dendL_upper_root.strahlernumber+1
-	
-	for somaref in soma_refs:
-		somaref.order = 0
-		somaref.level = 0
-		somaref.strahlernumber = dendL_juction.strahlernumber
 
 
 ################################################################################

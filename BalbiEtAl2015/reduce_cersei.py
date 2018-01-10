@@ -2,15 +2,20 @@
 Reduction of Balbi et al. motoneuron model using CERSEI folding tools
 """
 
-from common.treeutils import ExtSecRef, getsecref
-from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
-from cersei.collapse.marasco_folding import assign_identifiers_dfs
-
-# Make model files findable
-import balbi_model
-cell_model_dir = "../BalbiEtAl2015"
+import re
 import sys
-sys.path.append(cell_model_dir)
+
+pkg_root = ".." # root dir for our packages
+sys.path.append(pkg_root)
+
+import cersei.collapse.redutils as redutils
+import cersei.collapse.cluster as cluster
+from common.nrnutil import ExtSecRef, getsecref
+from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
+
+import balbi_model
+
+from neuron import h
 
 ################################################################################
 # Cell model-specific implementations of reduction functions
@@ -29,19 +34,62 @@ class BalbiFoldReduction(FoldReduction):
         @param  balbi_motocell_id   (int) morphology file identifier
         """
         self.balbi_motocell_id = kwargs.pop('balbi_motocell_id')
+        named_secs = balbi_model.get_named_sec_lists()
+
+        # Group subtrees by trunk
+        somatic = list(named_secs['soma'])
+        # Dendritic sections have other subtrees (trunks = first level branchpoints)
+        dendritic = list(named_secs['dend'])
+        # Axonic sections are first subtree (trunk = AH)
+        axonic = sum((list(named_secs[name]) for 
+                        name in ('AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN')), [])
+        # Whole cell
+        wholecell = sum(named_secs.values(), [])
+        
+        nonsomatic = axonic + dendritic
+        kwargs['soma_secs'] = somatic
+        kwargs['dend_secs'] = nonsomatic
+
+        # Get the folding branchpoints for the dendritic subtrees
+        all_refs = [ExtSecRef(sec=sec) for sec in wholecell]
+        dend_refs = [getsecref(sec, all_refs) for sec in dendritic]
+        root_sec = dend_refs[0].root; h.pop_section() # true root, pushes CAS
+        root_ref = ExtSecRef(sec=root_sec)
+
+        # Choose root sections for folding operations
+        cluster.assign_topology_attrs(root_ref, all_refs)
+        trunk_refs = redutils.find_roots_at_level(2, root_ref, dend_refs) # level 2 roots
+        
+        # At which nodes should tree be folded?
+        fold_roots = [named_secs['AH'][0]]
+        fold_roots.extend([ref.sec for ref in trunk_refs])
+        kwargs['fold_root_secs'] = fold_roots
+
+        # Set all parameters
+        kwargs['gleak_name'] = balbi_model.gleak_name
+        kwargs['mechs_gbars_dict'] = balbi_model.gbar_dict
+        kwargs['mechs_params_dict'] = balbi_model.mechs_params_dict
         super(BalbiFoldReduction, self).__init__(**kwargs)
 
 
-    def assign_initial_identifiers(reduction):
+    def assign_initial_sec_gids(reduction):
         """
         Assign identifiers to Sections.
+
+        @effect     numbers all sections with a 'gid' attribute
         """
-        assign_identifiers_dfs(reduction._root_ref, reduction.all_sec_refs)
+        start_id = 0
+        redutils.subtree_assign_gids_dfs(
+                    reduction._root_ref,
+                    reduction.all_sec_refs,
+                    parent_id=start_id)
 
 
-    def assign_new_identifiers(reduction, node_ref, all_refs, par_ref=None):
+    def assign_new_sec_gids(reduction, node_ref, all_refs, par_ref=None):
         """
-        Assign identifiers to newly created Sections
+        Assign identifiers to newly created Sections.
+
+        @effect     assigns folded sections' 'zip_id' to their gid
         """
 
         # assign a unique cell GID
@@ -55,76 +103,96 @@ class BalbiFoldReduction(FoldReduction):
             reduction.assign_new_identifiers(childref, all_refs, parref=node_ref)
 
 
-    def fix_topology_below_roots(reduction):
+    def assign_region_label(reduction, secref):
         """
-        Assign topology numbers for sections located below the folding roots.
+        Assign region labels to sections.
         """
-        # TODO: set topology numbers, see how they are used
-        pass
+        arrayname = re.sub(r"\[\d+\]", "", secref.sec.name())
+        if secref.is_original:
+            if arrayname == 'soma':
+                secref.region_label = 'somatic'
+            elif arrayname == 'dend':
+                secref.region_label = 'dendritic'
+            elif arrayname in ['AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN']:
+                secref.region_label = 'axonic'
+            else:
+                raise Exception("Unrecognized original section {}".format(secref.sec))
+        else:
+            secref.region_label = '-'.join(sorted(secref.zipped_region_labels))
 
 
-    # @FoldReduction.reduction_param(ReductionMethod.Marasco, 'Z_init_func')
+    def fix_section_properties(self, new_sec_refs):
+        """
+        Fix properties of newly created sections.
+
+        @override   FoldReduction.fix_section_properties
+        """
+        # super call to fix ion styles
+        super(BalbiFoldReduction, self).fix_section_properties(new_sec_refs)
+
+        # Set global mechanism parameters again
+        h.fix_global_params() # defined in 3_ins_ch.hoc
+
+        # Set region-specific properties
+        for ref in new_sec_refs:
+            if not 'axonic' in ref.region_label:
+                ref.sec.insert('extracellular')
+                ref.sec.xraxial = 1e9
+                ref.sec.xg = 1e10
+                ref.sec.xc = 0
+            else:
+                raise Exception('Axonic sections should not be collapsed. '
+                                '(section {}'.format(ref.sec))
+
+
+    @staticmethod
     def init_cell_steadystate(self):
         """
         Initialize cell for analyzing electrical properties.
         
-        TODO: read ion concentrations after SaveState.restore() once and
-        hardcode them somewhere to restore them here. This is necessary since
-        Balbi's function h.load_steadystate() cannot be called after modification of the model
+        @note   Ideally, we should restore the following, like SaveState.restore():
+                - all mechanism STATE variables
+                - voltage for all segments (seg.v)
+                - ion concentrations (nao,nai,ko,ki, ...)
+                - reversal potentials (ena,ek, ...)
         """
-        balbi_model.motocell_steadystate(self.balbi_motocell_id) # loads correct states file
+        h.celsius = 37
+
+        # NOTE: cannot use h.load_steadystate(). This uses SaveState.restore() which means 
+        #       between a save and a restore, you cannot create or delete sections, 
+        #       NetCon objects, or point processes, nor change the number of segments, 
+        #       insert or delete mechanisms, or change the location of point processes.
+        
+        # Uniform ion concentrations, verified in all sections after h.load_steadystate()
+        h.nai0_na_ion = 10.0
+        h.nao0_na_ion = 140.0
+        h.ki0_k_ion = 54.0
+        h.ko0_k_ion = 2.5
+        h.cai0_ca_ion = 5e-5
+        h.cao0_ca_ion = 2.0
+
+        h.init()
 
 
 ################################################################################
 # Gillies Model Reduction Experiments
 ################################################################################
 
-def make_fold_reduction(tweak=True):
+def make_fold_reduction():
     """
     Make FoldReduction object with Marasco method.
-
-    TODO: move all cell-specific actions into subclass methods
     """
     # Instantiate NEURON model
     BALBI_CELL_ID = 1 # morphology file to load
     balbi_model.make_cell_balbi(model_no=BALBI_CELL_ID)
-    named_secs = balbi_model.get_named_sec_lists()
-
-    # Group subtrees by trunk
-    somatic = list(named_secs['soma'])
-    # Dendritic sections have other subtrees (trunks = first level branchpoints)
-    dendritic = list(named_secs['dend'])
-    # Axonic sections are first subtree (trunk = AH)
-    axonic = sum((list(named_secs[name]) for 
-                    name in ('AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN')), [])
-    nonsomatic = axonic + dendritic
-
-    # Get the folding branchpoints for the dendritic subtrees
-    dend_refs = [ExtSecRef(sec=sec) for sec in dendritic]
-    root_ref = getsecref(named_secs['dend'][0], dend_refs) # root section of dendritic tree
-
-    # Calculate topology attributes
-    import treeutils as tree, cluster as clu
-    clu.assign_topology_attrs(root_ref, dend_refs)
-    trunk_refs = tree.find_roots_at_level(2, root_ref, dend_refs) # level 2 roots
     
-    # At which nodes should tree be folded?
-    fold_roots = [named_secs['AH'][0]]
-    fold_roots.extend([ref.sec for ref in trunk_refs])
 
     # Reduce model
-    reduction = BalbiFoldReduction(
-                    method=ReductionMethod.Marasco,
-                    balbi_motocell_id=BALBI_CELL_ID,
-                    soma_secs=somatic, dend_secs=nonsomatic,
-                    fold_root_secs=fold_roots, 
-                    gleak_name=balbi_model.gleak_name,
-                    mechs_gbars_dict=balbi_model.balbi_gdict,
-                    mechs_params_dict=balbi_model.mechs_params_dict)
+    reduction = BalbiFoldReduction(method=ReductionMethod.Marasco,
+                                   balbi_motocell_id=BALBI_CELL_ID)
 
     # Extra Reduction parameters
-    reduction.set_reduction_params(ReductionMethod.Marasco, 
-        {
+    reduction.set_reduction_params({
             'Z_freq' :              25.,
             'Z_init_func' :         reduction.init_cell_steadystate,
             'Z_linearize_gating' :  False,
@@ -135,7 +203,6 @@ def make_fold_reduction(tweak=True):
         })
 
     return reduction
-
 
 
 def reduce_model_folding(export_locals=True):
@@ -149,7 +216,7 @@ def reduce_model_folding(export_locals=True):
     reduction = make_fold_reduction()
     
     # Do reduction
-    # TODO: in FoldReduction _*_FUNCS: go over functions and remove gillies-specific code
+    # TODO: in Folder interface methods: remove gillies-specific code
     reduction.reduce_model(num_passes=7)
     reduction.update_refs()
 

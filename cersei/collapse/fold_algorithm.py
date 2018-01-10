@@ -25,7 +25,7 @@ class FoldingAlgorithm(object):
     __metaclass__ = abc.ABCMeta # Python2 way
 
     @abc.abstractmethod
-    def preprocess_impl(self):
+    def preprocess_reduction(self):
         """
         Preprocess cell for folding reduction.
 
@@ -73,7 +73,7 @@ class FoldingAlgorithm(object):
 
 
     @abc.abstractmethod
-    def postprocess_impl(self):
+    def postprocess_reduction(self):
         """
         Post-process cell for Marasco reduction.
 

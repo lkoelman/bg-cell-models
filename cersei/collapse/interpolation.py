@@ -6,23 +6,18 @@ Manual reduction of Gillies & Willshaw (2006) STN neuron model
 @date   09-02-2017
 """
 
-# Enable logging
-import logging
-logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logger = logging.getLogger('redops') # create logger for this module
-
 # Load NEURON
 import neuron
 h = neuron.h
 
 # Our own modules
 import redutils
-from redutils import ExtSecRef, getsecref # for convenience
-from gillies_model import gillies_gdict, gillies_glist
+from common.nrnutil import ExtSecRef, getsecref # for convenience
 
-mechs_chans = gillies_gdict
-glist = gillies_glist
-gleak_name = 'gpas_STh'
+# Enable logging
+import logging
+logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
+logger = logging.getLogger('redops') # create logger for this module
 
 
 def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals=None):

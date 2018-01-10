@@ -18,8 +18,17 @@ h.load_file("stdrun.hoc") # Load the standard run library
 # NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'channels'))
 # neuron.load_mechanisms(NRN_MECH_PATH)
 
+model_secarray_vars = [ # Sections created using hoc 'create secname[N]'
+    'soma', 'dend', # somatic and dendritic sections
+    'node', 'MYSA', 'FLUT', 'STIN' # axonal sections
+]
+
+model_sec_vars = [ # Sections created using hoc 'create secname'
+    'AH', 'IS'
+]
+
 # Channel mechanisms (key = suffix of mod mechanism) : max conductance parameters
-balbi_gdict = {
+gbar_dict = {
     'gh':       ['ghbar'],      # H channel (Na + K ions)
     'kca2':     ['g'],          # Ca-dependent K channel (K ion)
     'kdrRL':    ['gMax'],       # Delayed Rectifier K Channel (K ion)
@@ -29,10 +38,10 @@ balbi_gdict = {
     'naps':     ['gbar'],       # Persistent Na current (Na ion)
     'pas':      ['g_pas'],      # Passive/leak channel
 }
+gleak_name = 'g_pas'
+
 # Mechanism parameters that are changed from default values in original model code
-# TODO: copy mechanisms + parameters from zipped_sec_gids properties
-#       - alternatively: query all mechanism keys and then use seg.mechname.parname where all the parname can be obtained using dir(seg.mechname) and taking the ones that end in '_mechname' (then use part without '_mechname' to get seg.mechname.parname)
-balbi_mechs_params = {
+mechs_params_dict = {
     'gh':       ['ghbar', 'htau', 'half', 'slp'], # H channel (Na + K ions)
     'kca2':     ['g', 'depth2', 'taur2'], # Ca-dependent K channel (K ion)
     'kdrRL':    ['gMax', 'mVh'], # Delayed Rectifier K Channel (K ion)
@@ -41,20 +50,29 @@ balbi_mechs_params = {
     'na3rp':    ['gbar', 'sh', 'ar', 'Rd', 'qd', 'qg', 'thi1', 'thi2'], # Fast Na current (Na ion)
     'naps':     ['gbar', 'sh', 'ar'], # Persistent Na current (Na ion)
     'pas':      ['g', 'e'],  # Passive/leak channel
-    'extracellular': ['xraxial', 'xg', 'xc', 'e'], # extracellular layers
     'hh':       ['gnabar', 'gkbar', 'gl', 'el'], # Hodgkin-Huxley mechanisms
 }
-balbi_global_params = [ # TODO: restore via h.fix_global_params() in interface function implementation
+
+# All mechanism parameters that are not conductances
+mechs_params_nogbar = dict(mechs_params_dict)
+for mech, params in mechs_params_nogbar.iteritems():
+    for gbar_param in gbar_dict.get(mech, []):
+        try:
+            params.remove(gbar_param)
+        except ValueError:
+            pass
+
+# GLOBAL mechanism parameters (assigned using h.param = val)
+global_params_list = [
     'tmin_kdrRL', 'taumax_kdrRL',
     'qinf_na3rp', 'thinf_na3rp',
     'vslope_naps'
 ]
-balbi_mechs = list(balbi_gdict.keys()) # all mechanisms
-balbi_glist = [gname+'_'+mech for mech,chans in balbi_gdict.iteritems() for gname in chans]
-gleak_name = 'gpas_STh'
-active_gbar_names = [gname for gname in balbi_glist if gname != gleak_name]
 
-secnames_used = ['soma', 'dend', 'AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN']
+mechs_list = list(mechs_params_dict.keys()) # all mechanisms
+gbar_list = [gname+'_'+mech for mech,chans in gbar_dict.iteritems() for gname in chans]
+active_gbar_names = [gname for gname in gbar_list if gname != gleak_name]
+
 
 def make_cell_balbi(model_no=1):
     """
@@ -82,17 +100,13 @@ def make_cell_balbi(model_no=1):
                             - FLUT[paranodes2] <Section>
                             - STIN[axoninter] <Section>
     """
-    
-    if any((hasattr(h, attr) for attr in secnames_used)):
-        raise Exception("Folowing global variables must be unallocated on Hoc interpreter object: {}".format(', '.join(secnames_used)))
+    varnames_used = model_secarray_vars + model_sec_vars
+    if any((hasattr(h, attr) for attr in varnames_used)):
+        raise Exception("Folowing global variables must be unallocated on Hoc interpreter object: {}".format(', '.join(varnames_used)))
 
     # load model
     h.xopen("createcell_balbi.hoc")
     h.choose_model(model_no)
-    
-    # Get created sections
-    named_sections = { secname: getattr(h, secname) for secname in secnames_used }
-    return named_sections
 
 
 def get_named_sec_lists():
@@ -101,15 +115,21 @@ def get_named_sec_lists():
 
     @NOTE       node[0] is deleted in file '2_complete_cell.hoc': this crashes
                 NEURON when trying to access
+
+    @return     <dict(str:list(h.Section))> with section array names as keys,
+                and their member sections stored in Python list as values
     """
     # NOTE: node[0] is deleted in file '2_complete_cell.hoc'
-    full_seclists = list(secnames_used)
-    full_seclists.remove('node')
-    named_sections = { secname: list(getattr(h, secname)) for secname in full_seclists}
+    sec_arrays = list(model_secarray_vars)
+    sec_arrays.remove('node')
+    named_sections = { arrayname: list(getattr(h, arrayname)) for arrayname in sec_arrays}
+    named_sections.update({ secname: [getattr(h, secname)] for secname in model_sec_vars})
 
     # Add existing sections named 'node'
-    node_sec_ids = range(1, h.axonnodes) # node[0] does not exist
+    node_sec_ids = range(1, int(h.axonnodes)) # node[0] does not exist
     named_sections['node'] = [h.node[i] for i in node_sec_ids]
+
+    return named_sections
 
 
 def motocell_steadystate(model_no):

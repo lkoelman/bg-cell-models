@@ -13,10 +13,9 @@ from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
-import gillies_model as gillies
-import redutils as redtools
+import redutils
 from common import conutils
-from redutils import getsecref, seg_index
+from common.nrnutil import getsecref, seg_index
 
 class SynInfo(object):
     """
@@ -106,9 +105,20 @@ synmech_parnames = {
                 'gmax_AMPA', 'gmax_NMDA', 'tau_rec', 'tau_facil', 'U1', 'e'],
 }
 
-def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_gating=False,
-                    init_cell=None, save_ref_attrs=None, sever_netcons=True,
-                    attr_mappers=None, nc_tomap=None, syn_tomap=None):
+def get_syn_info(
+    rootsec,
+    allsecrefs,
+    syn_mod_pars=None,
+    Z_freq=25.,
+    gleak_name=None,
+    linearize_gating=False,
+    init_cell=None,
+    save_ref_attrs=None,
+    sever_netcons=True,
+    attr_mappers=None,
+    nc_tomap=None,
+    syn_tomap=None
+    ):
     """
     For each synapse on the neuron, calculate and save information for placing an equivalent
     synaptic input on a morphologically simplified neuron.
@@ -150,7 +160,7 @@ def get_syn_info(rootsec, allsecrefs, syn_mod_pars=None, Z_freq=25., linearize_g
 
     # Calculate section path properties for entire tree
     for secref in allsecrefs:
-        redtools.sec_path_props(secref, 100., gillies.gleak_name)
+        redutils.sec_path_props(secref, 100., gleak_name)
 
     # Measure transfer impedance and filter parameters
     logger.debug("Initializing cell for electrotonic measurements...")

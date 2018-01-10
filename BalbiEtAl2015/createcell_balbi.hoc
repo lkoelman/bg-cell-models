@@ -118,6 +118,12 @@ proc load_steadystate() {
      * @note   h.load_steadystate() uses SaveState.restore() which means 
            Between a save and a restore, it is important not to create or delete sections, NetCon objects, or point processes. Do not change the number of segments, insert or delete mechanisms, or change the location of point processes.
      *
+     * @note    SaveState.restore() restores:
+     *          - all mechanism STATE variables
+     *          - voltage for all segments (seg.v)
+     *          - ion concentrations (nao,nai,ko,ki, ...)
+     *          - reversal potentials (ena,ek, ...)
+     *
      * @param $1    cell number
      */
 

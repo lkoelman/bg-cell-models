@@ -1,7 +1,5 @@
 """
-Reduce Gillies & Willshaw (2006) STN neuron model using the method
-described in Marasco & Migliore (2012)
-
+Morphology reduction using method described in Marasco & Migliore (2012)
 
 @author Lucas Koelman
 @date   5-12-2016
@@ -18,8 +16,8 @@ h = neuron.h
 h.load_file("stdlib.hoc") # Load the standard library
 
 # Own modules
-import redutils as redtools
-from redutils import ExtSecRef, getsecref, seg_index # for convenience
+import redutils
+from common.nrnutil import ExtSecRef, seg_index
 import cluster as clutools
 from cluster import Cluster
 import interpolation as interp
@@ -43,19 +41,182 @@ logger = logging.getLogger(logname) # create logger for this module
 # logger.addHandler(ch)
 
 
+################################################################################
+# Interface implementations
+################################################################################
+
+
+class MarascoFolder(FoldingAlgorithm):
+    """
+    Marasco folding/collapsing algorithm.
+
+    Original publication: Marasco, A., Limongiello, A. & Migliore, M. -
+    Fast and accurate low-dimensional reduction of biophysically detailed 
+    neuron models. Scientific Reports 2, (2012).
+    """
+
+    impl_algorithm = ReductionMethod.Marasco
+
+    def __init__(self):
+        """
+        @note   FoldReduction class is responsible for maintaining
+                bi-directional association
+        """
+        self.reduction = None
+
+
+    def preprocess_reductions(self):
+        """
+        Preprocess cell for Marasco reduction. Execute once before all
+        folding passes.
+        """
+        pass
+
+
+    def fold(self, i_pass):
+        """
+        Do a folding pass.
+        """
+
+        self.prepare_folds_impl()
+        fold_data = self.calc_folds_impl(i_pass)
+        new_refs = self.make_folds_impl(fold_data)
+        return new_refs
+
+
+    def prepare_folds_impl(self):
+        """
+        Prepare next folding pass: assign topology information
+        to each Section.
+
+        (Implementation of interface declared in FoldingAlgorithm)
+        """
+        reduction = self.reduction
+
+        root_ref = reduction._root_ref
+        allsecrefs = reduction.all_sec_refs
+
+        # Set properties used in calculation
+        reduction.assign_new_sec_gids()
+        redutils.subtree_assign_attributes(root_ref, allsecrefs, {'max_passes': 100})
+
+        logger.info("\n###############################################################"
+                    "\nAssigning topology & path properties ...\n")
+
+        # Assign topology info (order, level, strahler number)
+        for fold_root in reduction._fold_root_refs:
+            clutools.assign_topology_attrs(fold_root, allsecrefs)
+
+        # Fix topology below folding roots
+        reduction.fix_topology_below_roots()
+
+        # Assign path properties
+        f_lambda = self.reduction.get_reduction_param('f_lambda')
+        for secref in allsecrefs:
+            # Calculate path length, path resistance, electrotonic path length to each segment
+            redutils.sec_path_props(secref, f_lambda, reduction.gleak_name)
+
+
+    def calc_folds_impl(self, i_pass, Y_criterion='highest_level'):
+        """
+        Collapse branches at branch points identified by given criterion.
+        """
+        fold_pass = FoldingPass(i_pass)
+        allsecrefs = self.reduction.all_sec_refs
+
+        # Find collapsable branch points
+        target_Y_secs = redutils.find_collapsable(allsecrefs, i_pass, Y_criterion)
+
+        # Do collapse operation at each branch points
+        fold_pass.clusters = calc_collapses(target_Y_secs, i_pass, allsecrefs)
+
+        return fold_pass
+
+
+    def make_folds_impl(self, fold_data):
+        """
+        Make equivalent Sections for branches that have been folded.
+
+        @return     list(SectionRef) refs to new sections
+        """
+
+        # Mark Sections
+        for secref in self.reduction.all_sec_refs:
+            secref.is_substituted = False
+            secref.is_deleted = False
+
+        # Make new Sections
+        eq_refs, newsecrefs = substitute_fold_equivalents(
+                                self.reduction,
+                                fold_data,
+                                interp_prop='path_L',
+                                interp_method='linear_neighbors',
+                                gbar_scaling='area')
+
+        return eq_refs
+
+
+    def postprocess_reduction(self):
+        """
+        Post-process cell after Marasco reduction. Execute once after all
+        folding passes.
+        """
+        reduction = self.reduction
+
+        # Tweaking
+        tweak_funcs = reduction.get_reduction_param('post_tweak_funcs')
+        for func in tweak_funcs:
+            func(reduction)
+
+        # Assign identifiers (for synapse placement etc.)
+        reduction.assign_new_sec_gids()
+
+        # Assign topology info (order, level, strahler number)
+        for fold_root in reduction._fold_root_refs:
+            clutools.assign_topology_attrs(fold_root, reduction.all_sec_refs)
+
 
 ################################################################################
-# Merging / Folding segments
+# Private functions
 ################################################################################
 
 
-def calc_collapses(target_Y_secs, i_pass, allsecrefs):
+class FoldingPass(object):
+    """
+    Encapsulate data for one folding pass.
+
+    Member data
+    -----------
+
+    i_pass : int
+        number of the folding pass
+
+    clusters : list(cluster.Cluster)
+        data describing a collapsed fork
+
+    """
+
+    def __init__(self, i_pass):
+        self.i_pass = i_pass
+
+
+def calc_collapses(
+        reduction,
+        target_Y_secs,
+        i_pass,
+        allsecrefs
+    ):
     """
     Do collapse operations: calculate equivalent Section properties for each collapse.
 
     @return         list of Cluster objects with properties of equivalent
                     Section for each set of collapsed branches.
     """
+
+    # Get additional parameters
+    glist = reduction.gbar_names
+    gleak_name = reduction.gleak_name
+    f_lambda = reduction.get_reduction_param('f_lambda')
 
     # Flag all sections as unvisited
     for secref in allsecrefs:
@@ -85,14 +246,17 @@ def calc_collapses(target_Y_secs, i_pass, allsecrefs):
 
         # Function for processing zipped SectionRefs
         zipped_sec_gids = set()
+        zipped_region_labels = set()
         def process_zipped_seg(seg, jseg, ref):
             # Tag segment with label of current zip operation
             ref.zip_labels[jseg] = zip_label
-            # Save GIDs of original cell that are zipped/absorbed into equivalent section
-            if hasattr(ref, 'table_index') and ref.table_index >= 1:
+            # Save GIDs of original sections that are zipped/absorbed into equivalent section
+            if ref.is_original:
                 zipped_sec_gids.add(ref.gid)
+                zipped_region_labels.add(ref.region_label)
             else:
                 zipped_sec_gids.update(ref.zipped_sec_gids)
+                zipped_region_labels.update(ref.zipped_region_labels)
         
         # Perform 'zip' operation
         far_bound_segs = [] # last (furthest) segments that are zipped
@@ -153,10 +317,10 @@ def calc_collapses(target_Y_secs, i_pass, allsecrefs):
         clusters.append(cluster)
 
         # Calculate electrotonic path length
-        cluster.or_L_elec = sum(redtools.seg_L_elec(seg, gleak_name, f_lambda) for seg in clu_segs)
-        cluster.eq_lambda = redtools.calc_lambda_AC(f_lambda, cluster.eqdiam, cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
+        cluster.or_L_elec = sum(redutils.seg_L_elec(seg, gleak_name, f_lambda) for seg in clu_segs)
+        cluster.eq_lambda = redutils.calc_lambda_AC(f_lambda, cluster.eqdiam, cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
         cluster.eq_L_elec = cluster.eqL/cluster.eq_lambda
-        eq_min_nseg = redtools.calc_min_nseg_hines(f_lambda, cluster.eqL, cluster.eqdiam, 
+        eq_min_nseg = redutils.calc_min_nseg_hines(f_lambda, cluster.eqL, cluster.eqdiam, 
                                             cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
 
         # Debug
@@ -170,13 +334,9 @@ def calc_collapses(target_Y_secs, i_pass, allsecrefs):
     return clusters
 
 
-################################################################################
-# Equivalent Section creation
-################################################################################
-
-
-def sub_equivalent_Y_sections(
+def substitute_fold_equivalents(
         reduction,
+        fold_pass,
         interp_prop='path_L', 
         interp_method='linear_neighbors', 
         gbar_scaling='area'
@@ -186,7 +346,7 @@ def sub_equivalent_Y_sections(
 
     @see    docstring of function `reduce_bush_sejnowski.equivalent_sections()`
 
-    @param	reduction		FoldReduction object
+    @param  reduction       FoldReduction object
 
     @param  interp_prop     property used for calculation of path length (x of interpolated
                             x,y values), one of following:
@@ -214,7 +374,7 @@ def sub_equivalent_Y_sections(
     eq_refs = []
 
     # Create equivalent sections and passive electric structure
-    for i, cluster in enumerate(reduction.clusters):
+    for i, cluster in enumerate(fold_pass.clusters):
 
         # Create equivalent section
         if cluster.label in [sec.name() for sec in h.allsec()]:
@@ -233,9 +393,9 @@ def sub_equivalent_Y_sections(
         eqsec.Ra = cluster.eqRa
 
         # Save metadata
-        cluster.eq_area = sum(seg.area() for seg in eqsec) # should be same as cluster eqSurf
         for prop in ['zipped_sec_gids', 'zip_id', 'or_area']:
-        	setattr(eqref, prop, getattr(cluster, prop)) # copy some useful attributes
+            setattr(eqref, prop, getattr(cluster, prop)) # copy some useful attributes
+        eqref.is_original = False
 
         # Append to list of equivalent sections
         eq_secs.append(eqsec)
@@ -244,19 +404,19 @@ def sub_equivalent_Y_sections(
         # Connect to tree (need to trace path from soma to section)
         eqsec.connect(cluster.parent_seg, 0.0) # see help(sec.connect)
 
+    
+    gleak_name = reduction.gleak_name
+    f_lambda = reduction.get_reduction_param('f_lambda')
+
     # Set active properties and finetune
-    for i_clu, cluster in enumerate(reduction.clusters):
-        logger.debug("Scaling properties of cluster %s ..." % reduction.clusters[i_clu].label)
+    for i_clu, cluster in enumerate(fold_pass.clusters):
+        logger.debug("Scaling properties of cluster %s ..." % fold_pass.clusters[i_clu].label)
         
         eqsec = eq_secs[i_clu]
         eqref = eq_refs[i_clu]
 
-        # Insert all mechanisms
-        # TODO: here instead of inserting, copy from absorbed sections
-        for mech in mechs_chans.keys():
-            eqsec.insert(mech)
-
         # Scale passive electrical properties
+        cluster.eq_area = sum(seg.area() for seg in eqsec) # should be same as cluster eqSurf
         area_ratio = cluster.or_area / cluster.eq_area
         logger.debug("Surface area ratio is %f" % area_ratio)
 
@@ -268,11 +428,19 @@ def sub_equivalent_Y_sections(
         eq_gleak = or_gleak * area_ratio # same as reducing Rm by area_new/area_old
 
         # Set number of segments based on rule of thumb electrotonic length
-        eqsec.nseg = redtools.calc_min_nseg_hines(f_lambda, eqsec.L, eqsec.diam, eqsec.Ra, eq_cm)
+        eqsec.cm = eq_cm
+        eqsec.nseg = redutils.calc_min_nseg_hines(f_lambda, eqsec.L, eqsec.diam, eqsec.Ra, eq_cm)
+
+        # Copy section mechanisms and properties
+        absorbed_secs = redutils.find_secprops(reduction.orig_tree_props,
+                                lambda sec: sec.gid in eqref.zipped_sec_gids)
+        redutils.merge_sec_properties(absorbed_secs, eqsec, 
+                        reduction.mechs_params_nogbar, check_uniform=True)
 
         # Save Cm and conductances for each section for reconstruction
         cluster.nseg = eqsec.nseg # save for reconstruction
-        cluster.eq_gbar = dict((gname, [float('NaN')]*cluster.nseg) for gname in glist)
+        cluster.eq_gbar = dict((
+            (gname, [float('NaN')]*cluster.nseg) for gname in reduction.active_gbar_names))
         cluster.eq_cm = [float('NaN')]*cluster.nseg
 
         # Set Cm and gleak (Rm) for each segment
@@ -283,12 +451,8 @@ def sub_equivalent_Y_sections(
                 cluster.eq_cm[j] = eq_cm
                 cluster.eq_gbar[gleak_name][j] = eq_gleak
 
-        # Get active conductances
-        active_glist = list(glist)
-        active_glist.remove(gleak_name) # get list of active conductances
-
         # Calculate path lengths in equivalent section
-        redtools.sec_path_props(eqref, f_lambda, gleak_name)
+        redutils.sec_path_props(eqref, f_lambda, gleak_name)
         
         if interp_prop == 'path_L':
             seg_prop = 'pathL_seg'
@@ -313,7 +477,7 @@ def sub_equivalent_Y_sections(
             #              "x={0:.3f}:\n{1}".format(path_L, bounds_info))
 
             # INTERPOLATE: Set conductances by interpolating neighbors
-            for gname in active_glist:
+            for gname in reduction.active_gbar_names:
                 
                 if interp_method == 'linear_neighbors':
                     gval = interp.interp_gbar_linear_neighbors(path_L, gname, bound_segs, bound_L)
@@ -329,7 +493,7 @@ def sub_equivalent_Y_sections(
 
         # Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
         if gbar_scaling is not None:
-            for gname in active_glist:
+            for gname in reduction.active_gbar_names:
                 
                 eq_gtot = sum(getattr(seg, gname)*seg.area() for seg in eqsec)
                 if eq_gtot <= 0.:
@@ -365,7 +529,7 @@ def sub_equivalent_Y_sections(
 
         # Debugging info:
         logger.debug("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
-                     "\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", reduction.clusters[i_clu].label, 
+                     "\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", fold_pass.clusters[i_clu].label, 
                      eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
     
     # Substitute equivalent section into tree
@@ -373,192 +537,17 @@ def sub_equivalent_Y_sections(
                 "\nSubstituting equivalent sections...\n")
 
     orsecrefs = reduction.all_sec_refs
-    for i_clu, cluster in enumerate(reduction.clusters):
+    for i_clu, cluster in enumerate(fold_pass.clusters):
         eqsec = eq_secs[i_clu]
         # Disconnect substituted segments and attach segment after Y boundary
         # Can only do this now since all paths need to be walkable before this
         logger.debug("Substituting zipped section {0}".format(eqsec))
-        redtools.sub_equivalent_Y_sec(eqsec, 
-        			cluster.parent_seg, cluster.bound_segs, 
-                    orsecrefs, mechs_chans, delete_substituted=True)
+        redutils.sub_equivalent_Y_sec(eqsec, 
+                    cluster.parent_seg, cluster.bound_segs, 
+                    orsecrefs, reduction.mechs_gbars_dict, delete_substituted=True)
         logger.debug("Substitution complete.\n")
 
     # build new list of valid SectionRef
     newsecrefs = [ref for ref in orsecrefs if not (ref.is_substituted or ref.is_deleted)]
     newsecrefs.extend(eq_refs)
     return eq_refs, newsecrefs
-
-
-################################################################################
-# Utility functions
-################################################################################
-
-
-def assign_attributes(noderef, allsecrefs, attr_dict):
-    """
-    Assign attributes to all SectionRefs in subtree of given section
-
-    @param attr_dict    dictionary of key-value pairs (attribute_name, attribute_value)
-    """
-    # Assign current node
-    for aname, aval in attr_dict.iteritems():
-        setattr(noderef, aname, aval)
-
-    childsecs = noderef.sec.children()
-    childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
-    for childref in childrefs:
-        assign_attributes(childref, allsecrefs, attr_dict)
-
-
-def assign_identifiers_dfs(node_ref, all_refs, parent_id=0):
-    """
-    Label nodes with int identifier by doing depth-first tree traversal
-    and increment the id upon each visit.
-    """
-    if node_ref is None:
-        return
-
-    highest = node_ref.gid = parent_id + 1
-
-    childsecs = node_ref.sec.children()
-    childrefs = [getsecref(sec, all_refs) for sec in childsecs]
-    for childref in childrefs:
-        highest = assign_attributes(childref, all_refs, highest)
-
-    return highest
-
-
-################################################################################
-# Interface implementations (reduce_cell.py)
-################################################################################
-
-
-class MarascoFolder(FoldingAlgorithm):
-    """
-    Marasco folding/collapsing algorithm.
-
-    Original publication: Marasco, A., Limongiello, A. & Migliore, M. -
-    Fast and accurate low-dimensional reduction of biophysically detailed 
-    neuron models. Scientific Reports 2, (2012).
-    """
-
-    impl_algorithm = ReductionMethod.Marasco
-
-    def __init__(self):
-        """
-        @note   FoldReduction class is responsible for maintaining
-                bi-directional association
-        """
-        self.reduction = None
-
-
-    def preprocess_impl(self):
-        """
-        Preprocess cell for Marasco reduction.
-        """
-        pass
-
-
-    def prepare_folds_impl(self):
-        """
-        Prepare next collapse operation: assign topology information
-        to each Section.
-
-        (Implementation of interface declared in FoldingAlgorithm)
-        """
-        reduction = self.reduction
-
-        root_ref = reduction._root_ref
-        allsecrefs = reduction.all_sec_refs
-
-        # Calculate/assign properties used in calculation
-        assign_new_ids = reduction.get_reduction_param(
-                                reduction.active_method, 
-                                'assign_new_identifiers_func')
-        
-        assign_new_ids(root_ref, allsecrefs)
-        assign_attributes(root_ref, allsecrefs, {'max_passes': 100})
-
-        logger.info("\n###############################################################"
-                    "\nAssigning topology & path properties ...\n")
-
-        # Assign topology info (order, level, strahler number)
-        for fold_root in reduction._fold_root_refs:
-            clutools.assign_topology_attrs(fold_root, allsecrefs)
-
-        # Fix topology below folding roots
-        reduction.fix_topology_below_roots()
-
-        # Assign path properties
-        for secref in allsecrefs:
-            # Calculate path length, path resistance, electrotonic path length to each segment
-            redtools.sec_path_props(secref, f_lambda, gleak_name)
-
-
-    def calc_folds_impl(self, i_pass, Y_criterion='highest_level'):
-        """
-        Collapse branches at branch points identified by given criterion.
-        """
-        allsecrefs = self.reduction.all_sec_refs
-
-        # Find collapsable branch points
-        target_Y_secs = redtools.find_collapsable(allsecrefs, i_pass, Y_criterion)
-
-        # Do collapse operation at each branch points
-        clusters = calc_collapses(target_Y_secs, i_pass, allsecrefs)
-
-        # Save results
-        self.reduction.clusters = clusters
-
-
-    def make_folds_impl(self):
-        """
-        Make equivalent Sections for branches that have been folded.
-        """
-
-        # Mark Sections
-        for secref in self.reduction.all_sec_refs:
-            secref.is_substituted = False
-            secref.is_deleted = False
-
-        # Make new Sections
-        eq_refs, newsecrefs = sub_equivalent_Y_sections(
-                                self.reduction.clusters, 
-                                self.reduction.all_sec_refs,
-                                self.reduction.path_props,
-                                interp_prop='path_L',
-                                interp_method='linear_neighbors',
-                                gbar_scaling='area')
-
-        # Set ion styles
-        for ref in eq_refs:
-            self.reduction.set_ion_styles(ref)
-
-        self.reduction.update_refs(dend_refs=eq_refs) # prepare for next iteration
-
-
-    def postprocess_impl(self):
-        """
-        Post-process cell for Marasco reduction.
-
-        (interface declared in reduce_cell.CollapseReduction)
-
-        @param  reduction       reduce_cell.CollapseReduction object
-        """
-        reduction = self.reduction
-
-        # Tweaking
-        tweak_funcs = self.reduction.get_reduction_param(
-                                    reduction.active_method, 
-                                    'post_tweak_funcs')
-        for func in tweak_funcs:
-            func(reduction)
-
-        # Assign identifiers (for synapse placement etc.)
-        assign_new_ids = reduction.get_reduction_param(reduction.active_method, 
-                                            'assign_new_identifiers_func')
-        assign_new_ids(reduction._root_ref, reduction.all_sec_refs)
-
-        # Assign topology info (order, level, strahler number)
-        for fold_root in reduction._fold_root_refs:
-            clutools.assign_topology_attrs(fold_root, reduction.all_sec_refs)

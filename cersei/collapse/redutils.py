@@ -16,7 +16,8 @@ logger = logging.getLogger(logname) # create logger for this module
 
 from neuron import h
 
-from common.treeutils import getsecref, seg_index, next_segs, prev_seg, subtreeroot, same_seg
+from common.nrnutil import getsecref, seg_index, same_seg
+from common.treeutils import next_segs, prev_seg, subtreeroot
 from common.electrotonic import seg_lambda, sec_lambda
 
 # Load NEURON function libraries
@@ -685,8 +686,10 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
 
     # Sever tree at distal cuts
     eqsec_child_segs = []
+    
     for bound_seg in bound_segs: # last absorbed/collapsed segment
         cut_segs = next_segs(bound_seg) # first segment after cut (not collapsed)
+        
         for i in xrange(len(cut_segs)):
             cut_seg = cut_segs[i] # cut_seg may be destroyed by resizing so don't make loop variable
             cut_sec = cut_seg.sec
@@ -919,7 +922,8 @@ def get_sec_props_ref(
         
         # Store built-in properties
         for prop in bprops:
-            sec_props.seg[j_seg][prop] = getattr(seg, prop)
+            if hasattr(seg, prop):
+                sec_props.seg[j_seg][prop] = getattr(seg, prop)
         
         # Store self-assigned properties (stored on SectionRef)
         for prop in seg_assigned:
@@ -1019,6 +1023,60 @@ def copy_sec_properties(src_sec, tar_sec, mechs_pars):
 
     # ion styles
     copy_ion_styles(src_sec, tar_sec)
+
+
+def merge_sec_properties(src_props, tar_sec, mechs_pars, check_uniform=True):
+    """
+    Merge section properties from multiple SecProps objects into target Section.
+
+    WARNING: properties are queried at center segment and assigned to the
+    target section like sec.ppty = val (i.e. not on a per-segment basis)
+
+    @param  src_props   list(SecProps), each with attribute 'seg' containing one dict
+                        of segment attributes per segment
+
+    @param  mechs_pars  dict mechanism_name -> [parameter_names] with segment 
+                        properties (RANGE properties) to copy
+    """
+    
+
+    # keep track of assigned parameters
+    assigned_params = {par+'_'+mech: None for mech,pars in mechs_pars.iteritems() 
+                                            for par in pars}
+
+    for src_sec in src_props:
+        for mechname, parnames in mechs_pars.iteritems():
+            
+            # Check if any segment in source has the mechanism
+            if any((p.startswith(mechname) for i in range(src_sec.nseg)
+                    for p in src_sec.seg[i].keys())):
+                tar_sec.insert(mechname)
+            else:
+                continue
+            
+            # Copy parameter values
+            for pname in parnames:
+                fullpname = pname+'_'+mechname
+
+                # Check that parameter values are uniform in section
+                mid_val = src_sec.seg[int(src_sec.nseg)/2].get(fullpname, None)
+                if check_uniform and any(
+                    (pval!=mid_val for i in range(src_sec.nseg) 
+                                    for pval in src_sec.seg[i].get(fullpname, None))):
+                    raise Exception("Parameter {} is not uniform in source section {}."
+                                    "Cannot assign non-uniform value to Section.".format(
+                                        fullpname, src_sec))
+
+                # Check that parameter value is same as in other source sections
+                prev_val = assigned_params[fullpname]
+                if check_uniform and (prev_val is not None) and mid_val!=prev_val:
+                    raise Exception("Parameter {} is not uniform between source sections."
+                                    "Cannot assign non-uniform value to Section.".format(
+                                        fullpname))
+
+                # Copy value to entire section
+                setattr(tar_sec, fullpname, mid_val)
+                assigned_params[fullpname] = mid_val
 
 
 def copy_ion_styles(src_sec, tar_sec, ions=None):
@@ -1158,6 +1216,40 @@ def save_tree_properties_ref(
         sec_props.children.append(child_props)
 
     return sec_props
+
+
+def subtree_assign_attributes(noderef, allsecrefs, attr_dict):
+    """
+    Assign attributes to all SectionRefs in subtree of given section
+
+    @param attr_dict    dictionary of key-value pairs (attribute_name, attribute_value)
+    """
+    # Assign current node
+    for aname, aval in attr_dict.iteritems():
+        setattr(noderef, aname, aval)
+
+    childsecs = noderef.sec.children()
+    childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
+    for childref in childrefs:
+        subtree_assign_attributes(childref, allsecrefs, attr_dict)
+
+
+def subtree_assign_gids_dfs(node_ref, all_refs, parent_id=0):
+    """
+    Label nodes with int identifier by doing depth-first tree traversal
+    and increment the id upon each node visit.
+    """
+    if node_ref is None:
+        return
+
+    highest = node_ref.gid = parent_id + 1
+
+    childsecs = node_ref.sec.children()
+    childrefs = [getsecref(sec, all_refs) for sec in childsecs]
+    for childref in childrefs:
+        highest = subtree_assign_gids_dfs(childref, all_refs, highest)
+
+    return highest
 
 
 def dfs_iter_tree_recursive(node):
@@ -1332,4 +1424,4 @@ def find_collapsable(
 
 
 if __name__ == '__main__':
-    print("Main of redutils.py: TODO: execute tests")
+    print("__main__ @ redutils.py")
