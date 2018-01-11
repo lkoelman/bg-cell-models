@@ -18,7 +18,7 @@ h.load_file("stdlib.hoc") # Load the standard library
 # Own modules
 import redutils, tree_edit as treeops
 import common.electrotonic as electro
-from common.nrnutil import ExtSecRef, seg_index
+from common.nrnutil import ExtSecRef, seg_index, get_range_var
 import cluster as clutools
 from cluster import Cluster
 import interpolation as interp
@@ -301,6 +301,7 @@ def calc_fold_equivalents(
         cluster.eq_area_sum = eq_br.L_eq * PI * eq_br.diam_eq
         cluster.eqri = eq_br.Ri_eq
         cluster.zipped_sec_gids = zipped_sec_gids
+        cluster.zipped_region_labels = zipped_region_labels
         cluster.zip_id = zip_id
         cluster.parent_seg = par_sec(1.0)
         cluster.bound_segs = far_bound_segs # Save boundaries (for substitution)
@@ -423,7 +424,7 @@ def substitute_fold_equivalents(
         eqsec.Ra = cluster.eqRa
 
         # Save metadata
-        for prop in ['zipped_sec_gids', 'zip_id', 'or_area']:
+        for prop in ['zip_id', 'or_area', 'zipped_sec_gids', 'zipped_region_labels']:
             setattr(eqref, prop, getattr(cluster, prop)) # copy some useful attributes
         eqref.is_original = False
 
@@ -464,13 +465,14 @@ def substitute_fold_equivalents(
         # Copy section mechanisms and properties
         absorbed_secs = redutils.find_secprops(reduction.orig_tree_props,
                                 lambda sec: sec.gid in eqref.zipped_sec_gids)
+        
         redutils.merge_sec_properties(absorbed_secs, eqsec, 
                         reduction.mechs_params_nogbar, check_uniform=True)
 
         # Save Cm and conductances for each section for reconstruction
         cluster.nseg = eqsec.nseg # save for reconstruction
         cluster.eq_gbar = dict((
-            (gname, [float('NaN')]*cluster.nseg) for gname in reduction.active_gbar_names))
+            (gname, [float('NaN')]*cluster.nseg) for gname in reduction.gbar_names))
         cluster.eq_cm = [float('NaN')]*cluster.nseg
 
         # Set Cm and gleak (Rm) for each segment
@@ -493,12 +495,14 @@ def substitute_fold_equivalents(
         else:
             raise ValueError("Unknown path property '{}'".format(interp_prop))
 
+        # Get path of original sections running through one of folded branches
+        path_secs = reduction.get_interpolation_path_secs(eqref)
+
         # Find conductances at same path length (to each segment midpoint) in original cell
         for j_seg, seg in enumerate(eqsec):
             
             # Get adjacent segments along interpolation path
             path_L = getattr(eqref, seg_prop)[j_seg]
-            path_secs = reduction.get_interpolation_path_secs(eqref)
             bound_segs, bound_L = interp.find_adj_path_segs(interp_prop, path_L, path_secs)
             
             # DEBUG STATEMENTS:
@@ -508,6 +512,10 @@ def substitute_fold_equivalents(
 
             # INTERPOLATE: Set conductances by interpolating neighbors
             for gname in reduction.active_gbar_names:
+
+                if not hasattr(eqsec, gname):
+                    cluster.eq_gbar[gname][j_seg] = 0.0
+                    continue
                 
                 if interp_method == 'linear_neighbors':
                     gval = interp.interp_gbar_linear_neighbors(path_L, gname, bound_segs, bound_L)
@@ -518,18 +526,23 @@ def substitute_fold_equivalents(
                     gval = interp.interp_gbar_pick_neighbor(path_L, gname, 
                                         bound_segs[0], bound_L[0], method)
                 
-                seg.__setattr__(gname, gval)
+                setattr(seg, gname, gval)
                 cluster.eq_gbar[gname][j_seg] = gval
 
         # Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
         if gbar_scaling is not None:
             for gname in reduction.active_gbar_names:
+
+                if not hasattr(eqsec, gname):
+                    cluster.eq_gbar[gname][j_seg] = 0.0
+                    continue
                 
-                eq_gtot = sum(getattr(seg, gname)*seg.area() for seg in eqsec)
+                # original and current total conductance
+                or_gtot = cluster.or_gtot[gname]
+                eq_gtot = sum(get_range_var(seg, gname, 0.0)*seg.area() for seg in eqsec)
                 if eq_gtot <= 0.:
                     eq_gtot = 1.
                 
-                or_gtot = cluster.or_gtot[gname]
                 
                 for j_seg, seg in enumerate(eqsec):
                     
@@ -546,7 +559,7 @@ def substitute_fold_equivalents(
                     
                     # Set gbar
                     gval = getattr(seg, gname) * scale
-                    seg.__setattr__(gname, gval)
+                    setattr(seg, gname, gval)
                     
                     cluster.eq_gbar[gname][j_seg] = gval # save for reconstruction
 

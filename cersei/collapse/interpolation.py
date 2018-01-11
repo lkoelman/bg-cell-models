@@ -12,7 +12,7 @@ h = neuron.h
 
 # Our own modules
 import redutils
-from common.nrnutil import ExtSecRef, getsecref # for convenience
+from common.nrnutil import ExtSecRef, getsecref, get_range_var
 
 # Enable logging
 import logging
@@ -187,11 +187,13 @@ def get_interpolation_path_sections(secref, tree_properties):
 
     # Construct path to terminal section
     path_secs = [terminal_sec]
-    while True:
+    while path_secs[-1].parent is not None:
         path_secs.append(path_secs[-1].parent)
-        if path_secs[-1].parent is None:
-            break
+
     path_secs = list(reversed(path_secs)) # soma to terminal order
+    
+    if path_secs is None: raise Exception('No path sections found')
+    return path_secs
 
 
 def interp_gbar_linear_dist(L_elec, bounds, path_bounds, g_bounds):
@@ -258,24 +260,26 @@ def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
     """
     # Allow to give a dict instead of segment
     if isinstance(bound_segs[0][0], dict):
-        getfunc = dict.__getitem__
+        get_gval = lambda seg: seg.get(gname, 0.0)
     else:
-        getfunc = getattr
+        get_gval = lambda seg: get_range_var(seg, gname, 0.0)
 
     # Interpolate
     gbar_interp = 0.0
     for i, segs in enumerate(bound_segs):
         seg_a, seg_b = segs
+
+        # path length of bounding segments
         L_a, L_b = bound_L[i]
         assert L_b >= L_a, "Path lengths of bounding segments must be in ascending order."
 
         # Linear interpolation of gbar in seg_a and seg_b according to electrotonic length
         if L_elec <= L_a:
-            gbar_interp += getfunc(seg_a, gname)
+            gbar_interp += get_gval(seg_a)
             continue
         
         if L_elec >= L_b:
-            gbar_interp += getfunc(seg_b, gname)
+            gbar_interp += get_gval(seg_b)
             continue
         
         if L_b == L_a:
@@ -285,8 +289,8 @@ def interp_gbar_linear_neighbors(L_elec, gname, bound_segs, bound_L):
         if alpha > 1.0:
             alpha = 1.0 # if too close to eachother
         
-        gbar_a = getfunc(seg_a, gname)
-        gbar_b = getfunc(seg_b, gname)
+        gbar_a = get_gval(seg_a)
+        gbar_b = get_gval(seg_b)
         gbar_interp += gbar_a + alpha * (gbar_b - gbar_a)
 
     gbar_interp /= len(bound_segs) # take average

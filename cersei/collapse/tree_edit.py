@@ -14,10 +14,7 @@ from neuron import h
 from common.nrnutil import getsecref, seg_index
 from common.treeutils import next_segs
 
-from redutils import (
-    seg_path_L_elec, copy_ion_styles,
-    get_sec_properties, copy_sec_properties
-)
+from redutils import seg_path_L_elec, get_sec_range_props
 
 
 def find_collapsable(
@@ -142,7 +139,7 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
                 # Calculate new properties
                 new_nseg = cut_sec.nseg-(cut_seg_index)
                 post_cut_L = cut_sec.L/cut_sec.nseg * new_nseg
-                cut_props = get_sec_properties(cut_sec, mechs_pars)
+                cut_props = get_sec_range_props(cut_sec, mechs_pars)
                 
                 # Set new properties
                 cut_sec.nseg = new_nseg

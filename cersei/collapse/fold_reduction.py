@@ -5,6 +5,8 @@ Object-oriented interface for various compartmental cell reduction methods.
 @date   24-08-2017
 """
 
+from abc import abstractmethod
+
 from common.nrnutil import ExtSecRef, getsecref
 from neuron import h
 
@@ -300,7 +302,8 @@ class FoldReduction(object):
         self.fix_section_properties(new_sec_refs)
 
         # prepare for next iteration
-        self.reduction.update_refs(dend_refs=new_sec_refs)
+        self.update_refs(dend_refs=new_sec_refs)
+
 
     def map_synapses(self, method=None):
         """
@@ -358,6 +361,7 @@ class FoldReduction(object):
 
         # Finalize reduction process
         self.folder.postprocess_reduction()
+        self.update_refs()
 
         # Map synapses onto new sections
         if map_synapses:
@@ -369,6 +373,7 @@ class FoldReduction(object):
     # Cell model-specific / virtual methods
     ############################################################################
 
+    @abstractmethod
     def assign_initial_sec_gids(self):
         """
         Assign identifiers to Sections.
@@ -380,6 +385,7 @@ class FoldReduction(object):
                 "each cell model individually.")
 
 
+    @abstractmethod
     def assign_new_sec_gids(self, node_ref, all_refs, par_ref=None):
         """
         Assign identifiers to newly created Sections
@@ -391,6 +397,7 @@ class FoldReduction(object):
                 "each cell model individually.")
 
 
+    @abstractmethod
     def assign_region_label(self, secref):
         """
         Assigns a region label to the section.
@@ -402,7 +409,7 @@ class FoldReduction(object):
                 "each cell model individually.")
 
 
-    def get_interpolation_path_sections(self, secref):
+    def get_interpolation_path_secs(self, secref):
         """
         Return Sections forming a path from soma to dendritic terminal/endpoint.
         The path is used for interpolating spatially non-uniform properties.
@@ -411,49 +418,20 @@ class FoldReduction(object):
 
         @return             <list(Section)>
         """
-        return interp.get_interpolation_path_sections(secref)
+        return interp.get_interpolation_path_sections(secref, self.orig_tree_props)
 
 
-    def set_ion_styles(self, secref):
-        """
-        Set correct ion styles for each Section.
-
-        @param  secref  <SectionRef> section to set ion styles for
-
-        @effect         By default, ion styles of merged Sections are looked up
-                        in the saved original tree properties and copied to the
-                        sections (if they are all the same). This method may be
-                        overridden.
-        """
-        # Look up ion styles info of sections that have been merged into this one
-        filter_fun = lambda node: node.gid in secref.zipped_sec_gids
-        merged_props = redutils.find_secprops(self.orig_tree_props, filter_fun)
-        ionstyles_dicts = [p.ion_styles for p in merged_props]
-
-        # They must all be the same or we have a problem with mechanisms
-        final_styles = ionstyles_dicts[0]
-        for styles_dict in ionstyles_dicts[1:]:
-            for ion, style_flags in styles_dict.iteritems():
-                if final_styles[ion] != style_flags:
-                    raise ValueError(
-                        "Cannot merge Sections with distinct ion styles! "
-                        "Distinct styles found for sections with gids {} "
-                        "for ion {}".format(secref.zipped_sec_gids, ion))
-
-        # Copy styles to target Section
-        redutils.set_ion_styles(secref.sec, **final_styles)
-
-
+    @abstractmethod
     def fix_section_properties(self, new_sec_refs):
         """
         Fix properties of newly created sections.
-
-        @effect     sets ion styles in new sections to those of absorbed sections
         """
-        for ref in new_sec_refs:
-            self.reduction.set_ion_styles(ref)
+        raise NotImplementedError(
+                "This function is model-specific and must be implemented for "
+                "each cell model individually.")
 
 
+    # @abstractmethod
     def fix_topology_below_roots(self):
         """
         Virtual method: assign topology numbers for sections located below subtrees of folding

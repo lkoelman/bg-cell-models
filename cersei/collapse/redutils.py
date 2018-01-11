@@ -278,24 +278,37 @@ class SecProps(object):
 EqProps = SecProps # alias
 
 
-def get_sec_properties(src_sec, mechs_pars):
+def get_sec_range_props(src_sec, mechs_pars):
     """
     Get RANGE properties for each segment in Section.
 
     @return     list(dict()) of length nseg containing property names and 
                 values for each segment in Section
     """
-    props = []
-    for seg in src_sec:
-        pseg = {}
-        pseg['diam'] = seg.diam
-        pseg['cm'] = seg.cm
-        for mech in mechs_pars.keys():
-            for par in mechs_pars[mech]:
-                prop = par+'_'+mech
-                pseg[prop] = getattr(seg, prop)
-        props.append(pseg)
-    return props
+
+    pnames = []
+    for mech, pars in mechs_pars.iteritems():
+        for par in pars:
+            if mech == '':
+                pnames.append(par)
+            else:
+                pnames.append(par+'_'+mech)
+
+    seg_props = [{} for i in xrange(src_sec.nseg)]
+    
+    # Store segment RANGE properties
+    for j_seg, seg in enumerate(src_sec):
+
+        # built-in RANGE properties
+        seg_props[j_seg]['diam'] = seg.diam
+        seg_props[j_seg]['cm'] = seg.cm
+        
+        # mechanism RANGE properties
+        for pname in pnames:
+            if hasattr(seg, pname):
+                seg_props[j_seg][pname] = getattr(seg, pname)
+    
+    return seg_props
 
 
 def get_sec_props_ref(
@@ -336,22 +349,32 @@ def get_sec_props_ref(
                     Ra=secref.sec.Ra, 
                     nseg=secref.sec.nseg)
     
+    # custom properties
     for prop in sec_assigned:
         setattr(sec_props, prop, getattr(secref, prop))
 
+    # Save membrane mechanisms (density, NOT POINT_PROCESS)
+    sec_props.mechanisms = [mech for mech in mechs_pars.iterkeys() if secref.sec.has_membrane(mech)]
+
     # Initialize segment RANGE properties
-    sec_props.seg = [dict() for i in xrange(secref.sec.nseg)]
-    bprops = [par+'_'+mech for mech,pars in mechs_pars.iteritems() for par in pars]
+    sec_props.seg = [{} for i in xrange(secref.sec.nseg)]
+    bprops = []
+    for mech, pars in mechs_pars.iteritems():
+        for par in pars:
+            if mech == '':
+                bprops.append(par)
+            else:
+                bprops.append(par+'_'+mech)
     
     # Store segment RANGE properties
     for j_seg, seg in enumerate(secref.sec):
         
-        # Store built-in properties
+        # Store NEURON properties
         for prop in bprops:
             if hasattr(seg, prop):
                 sec_props.seg[j_seg][prop] = getattr(seg, prop)
         
-        # Store self-assigned properties (stored on SectionRef)
+        # Store CUSTOM properties (stored on SectionRef)
         for prop in seg_assigned:
             sec_props.seg[j_seg][prop] = getattr(secref, prop)[j_seg]
     
@@ -391,7 +414,13 @@ def get_sec_props(sec, mechs_pars):
     return sec_props
 
 
-def merge_sec_properties(src_props, tar_sec, mechs_pars, check_uniform=True):
+def merge_sec_properties(
+    src_props,
+    tar_sec,
+    mechs_pars,
+    ion_styles=True,
+    check_uniform=True
+    ):
     """
     Merge section properties from multiple SecProps objects into target Section.
 
@@ -409,15 +438,15 @@ def merge_sec_properties(src_props, tar_sec, mechs_pars, check_uniform=True):
     # keep track of assigned parameters
     assigned_params = {par+'_'+mech: None for mech,pars in mechs_pars.iteritems() 
                                             for par in pars}
-
+    # merge all mechanism RANGE properties
     for src_sec in src_props:
         nseg = src_sec.nseg
         segs = src_sec.seg
         for mechname, parnames in mechs_pars.iteritems():
             
             # Check if any segment in source has the mechanism
-            if any((p.startswith(mechname) for i in range(nseg)
-                    for p in segs[i].keys())):
+            if mechname in src_sec.mechanisms:
+                # if any((p.endswith(mechname) for i in range(nseg) for p in segs[i].keys())):
                 tar_sec.insert(mechname)
             else:
                 continue
@@ -444,8 +473,37 @@ def merge_sec_properties(src_props, tar_sec, mechs_pars, check_uniform=True):
                                         fullpname))
 
                 # Copy value to entire section
-                setattr(tar_sec, fullpname, mid_val)
-                assigned_params[fullpname] = mid_val
+                try:
+                    setattr(tar_sec, fullpname, mid_val)
+                    assigned_params[fullpname] = mid_val
+                except AttributeError:
+                    pass # setattr fails if property is a GLOBAL PARAM (default granularity for PARAM)
+
+    if ion_styles:
+        merge_ion_styles(src_props, tar_sec, check_uniform)
+
+
+def merge_ion_styles(src_props, tar_sec, check_uniform=True):
+    """
+    Set correct ion styles for each Section.
+
+    @effect         By default, ion styles of merged Sections are looked up
+                    in the saved original tree properties and copied to the
+                    sections (if they are all the same). This method may be
+                    overridden.
+    """
+    # Look up ion styles info of sections that have been merged into this one
+    ionstyles_dicts = [p.ion_styles for p in src_props]
+
+    # They must all be the same or we have a problem with mechanisms
+    final_styles = ionstyles_dicts[0]
+    for styles_dict in ionstyles_dicts[1:]:
+        for ion, style_flags in styles_dict.iteritems():
+            if final_styles[ion] != style_flags:
+                raise ValueError("Cannot merge Sections with distinct ion styles!")
+
+    # Copy styles to target Section
+    set_ion_styles(tar_sec, **final_styles)
 
 
 def copy_sec_properties(src_sec, tar_sec, mechs_pars):
@@ -514,12 +572,16 @@ def get_ion_styles(src_sec, ions=None):
     @return     dict({str:int}) with ion species as keys and integer
                 containing bit flags signifying ion styles as values
     """
-    if ions is None:
+    if not isinstance(ions, list):
         ions = ['na', 'k', 'ca']
 
     # Get ion style for each ion species
     src_sec.push()
-    styles = dict(((ion, h.ion_style(ion+'_ion')) for ion in ions))
+    styles = {}
+    for ion in ions:
+        pname = ion + '_ion'
+        if hasattr(src_sec(0.5), pname):
+            styles[ion] = h.ion_style(pname)
     h.pop_section()
 
     return styles
@@ -576,7 +638,7 @@ def save_tree_properties_ref(
         mechs_pars,
         sec_assigned_props=None,
         seg_assigned_props=None,
-        save_ion_styles=None
+        save_ion_styles=True
     ):
     """
     Save properties of all Sections in subtree of given SectionRef
@@ -584,7 +646,8 @@ def save_tree_properties_ref(
     @param      mechs_pars      dict mechanism_name -> [parameter_names] with segment 
                                 properties to save
 
-    @param      save_ion_styles list(str) containing ion names: ion styles you want to save
+    @param      save_ion_styles: bool or list(str)
+                ion styles you want to save
     
     @return     EqProps tree with requested properties stored as attributes
     """

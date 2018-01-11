@@ -98,3 +98,14 @@ def same_seg(seg_a, seg_b):
     seg_dx = 1.0/seg_a.sec.nseg
     # check if x locs map to same section
     return int(seg_a.x/seg_dx) == int(seg_b.x/seg_dx)
+
+
+def get_range_var(seg, varname, default=0.0):
+    """
+    Get RANGE variable at segment regardless whether the mechanism exists
+    or not.
+    """
+    try:
+        return getattr(seg, varname, default)
+    except NameError: # mechanisms is known but not inserted
+        return default
