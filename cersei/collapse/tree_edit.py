@@ -88,8 +88,7 @@ def find_collapsable(
     n_Y = len(target_Y_secs)
     target_Y_secs = [ref for i,ref in enumerate(target_Y_secs) if i<zips_per_pass]
 
-    logger.debug("Found {0} Y-sections that meet selection criterion. Keeping {1}/{2}\n\n".format(
-                    n_Y, min(n_Y, zips_per_pass), n_Y))
+    logger.debug("Found {0} Y-sections that meet selection criterion. Keeping {1}/{2}".format(n_Y, min(n_Y, zips_per_pass), n_Y))
     
 
     # Return branch points identified for collapsing

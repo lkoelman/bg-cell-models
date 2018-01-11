@@ -5,7 +5,7 @@ Object-oriented interface for various compartmental cell reduction methods.
 @date   24-08-2017
 """
 
-from abc import abstractmethod
+from abc import abstractmethod, ABCMeta
 
 from common.nrnutil import ExtSecRef, getsecref
 from neuron import h
@@ -31,6 +31,8 @@ class FoldReduction(object):
     Class grouping methods and data used for reducing
     a compartmental cable model of a NEURON cell.
     """
+
+    __metaclass__ = ABCMeta # Python2 way
 
     _FOLDER_CLASSES = {
         ReductionMethod.Marasco: marasco.MarascoFolder
@@ -351,9 +353,8 @@ class FoldReduction(object):
         self.preprocess_cell(method)
 
         for i_pass in xrange(num_passes):
-
             # Do a folding pass
-            new_refs = self.folder.fold(i_pass)
+            new_refs = self.folder.fold_one_pass(i_pass)
 
             self.postprocess_fold(new_refs)
 

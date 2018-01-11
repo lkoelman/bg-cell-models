@@ -18,18 +18,18 @@ h.load_file("stdlib.hoc") # Load the standard library
 # Own modules
 import redutils, tree_edit as treeops
 import common.electrotonic as electro
-from common.nrnutil import ExtSecRef, seg_index, get_range_var
+import logging, common.logutils as logutils
+from common.nrnutil import ExtSecRef, seg_index
+from common.treeutils import subtree_topology
 import cluster as clutools
 from cluster import Cluster
 import interpolation as interp
 from fold_algorithm import FoldingAlgorithm, ReductionMethod
 from marasco_merging import merge_seg_subtree
 
-# logging of DEBUG/INFO/WARNING messages
-import logging
-logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = "marasco" # __name__
-logger = logging.getLogger(logname) # create logger for this module
+logger = logutils.getBasicLogger(
+                    name='marasco', level=logging.DEBUG,
+                    format="%(levelname)s@%(filename)s:%(lineno)s  %(message)s")
 
 # Log to file
 # fmtr = logging.Formatter('%(levelname)s:%(message)s @%(filename)s:%(lineno)s')
@@ -74,18 +74,7 @@ class MarascoFolder(FoldingAlgorithm):
         pass
 
 
-    def fold(self, i_pass):
-        """
-        Do a folding pass.
-        """
-
-        self.prepare_folds_impl()
-        fold_data = self.calc_folds_impl(i_pass)
-        new_refs = self.make_folds_impl(fold_data)
-        return new_refs
-
-
-    def prepare_folds_impl(self):
+    def _preprocess_folding_pass(self):
         """
         Prepare next folding pass: assign topology information
         to each Section.
@@ -101,9 +90,6 @@ class MarascoFolder(FoldingAlgorithm):
         reduction.assign_new_sec_gids(root_ref, allsecrefs)
         redutils.subtree_assign_attributes(root_ref, allsecrefs, {'max_passes': 100})
 
-        logger.info("\n###############################################################"
-                    "\nAssigning topology & path properties ...\n")
-
         # Assign topology info (order, level, strahler number)
         clutools.assign_topology_attrs(root_ref, allsecrefs)
         reduction.fix_topology_below_roots()
@@ -115,43 +101,30 @@ class MarascoFolder(FoldingAlgorithm):
             redutils.sec_path_props(secref, f_lambda, reduction.gleak_name)
 
 
-    def calc_folds_impl(self, i_pass, Y_criterion='highest_level'):
+    def fold_one_pass(self, i_pass, Y_criterion='highest_level'):
         """
-        Collapse branches at branch points identified by given criterion.
+        Do a folding pass.
         """
-        fold_pass = FoldingPass(i_pass)
-        allsecrefs = self.reduction.all_sec_refs
+
+        self._preprocess_folding_pass()
+
 
         # Find collapsable branch points
-        target_Y_secs = treeops.find_collapsable(allsecrefs, i_pass, Y_criterion)
+        target_Y_secs = treeops.find_collapsable(
+                                self.reduction.all_sec_refs, 
+                                i_pass, Y_criterion)
 
-        # Do collapse operation at each branch points
-        fold_pass.clusters = calc_fold_equivalents(self.reduction, target_Y_secs, i_pass, allsecrefs)
+        fold_pass = FoldingPass(
+                        self.reduction, i_pass, 
+                        fold_roots=target_Y_secs,
+                        interp_prop='path_L',
+                        interp_method='linear_neighbors',
+                        gbar_scaling='area')
+        
+        new_refs = fold_pass.do_folds() # do collapse operation at each branch points
 
-        return fold_pass
+        return new_refs
 
-
-    def make_folds_impl(self, fold_data):
-        """
-        Make equivalent Sections for branches that have been folded.
-
-        @return     list(SectionRef) refs to new sections
-        """
-
-        # Mark Sections
-        for secref in self.reduction.all_sec_refs:
-            secref.is_substituted = False
-            secref.is_deleted = False
-
-        # Make new Sections
-        eq_refs, newsecrefs = substitute_fold_equivalents(
-                                self.reduction,
-                                fold_data,
-                                interp_prop='path_L',
-                                interp_method='linear_neighbors',
-                                gbar_scaling='area')
-
-        return eq_refs
 
 
     def postprocess_reduction(self):
@@ -195,70 +168,95 @@ class FoldingPass(object):
 
     """
 
-    def __init__(self, i_pass): # TODO: add argument target_Y_secs
+    def __init__(
+            self,
+            reduction,
+            i_pass,
+            fold_roots,
+            interp_prop,
+            interp_method,
+            gbar_scaling
+        ):
         self.i_pass = i_pass
+        self.reduction = reduction
+        self.fold_roots = fold_roots
+        self.interp_prop = interp_prop
+        self.interp_method = interp_method
+        self.gbar_scaling = gbar_scaling
+
+        self.f_lambda = self.reduction.get_reduction_param('f_lambda')
+        self.gleak_name = self.reduction.gleak_name
+
 
     def do_folds(self):
-        # loop that does all folds
-        pass
+        """
+        Calculate folds, make equivalent sections, and insert them into tree.
 
-    def fold_subtree(self, Ysec):
-        # calculate one fold and return cluster (1st half of calc_fold_equivalents)
-        pass
+        @return     list(SectionRef)
+                    list of equivalent sections for folds
+        """
 
-    def calc_fold_statistics(self, cluster):
-        # calculate cluster statistics (2nd half of calc_fold_equivalents)
-        pass
+        # Flag all sections as unvisited
+        for secref in self.reduction.all_sec_refs:
 
-    def make_equivalent_secs(clusters):
-        # create eqsec/eqref for each cluster
-        pass
+            secref.is_substituted = False
+            secref.is_deleted = False
 
-    def set_equivalent_properties():
-        # takes map clusters -> equivalents?
-        pass
+            if not hasattr(secref, 'absorbed'):
+                secref.absorbed = [False] * secref.sec.nseg
+                secref.visited = [False] * secref.sec.nseg
+            
+            secref.zip_labels = [None] * secref.sec.nseg
 
-    def set_passive_params():
-        # first half of substitute_fold_equivalents
-        pass
+        logger.info("\n###############################################################"
+                    "\nCalculating folds ..."
+                    "\n###############################################################")
 
-    def set_conductances():
-        # second half of substitute_fold_equivalents
-        pass
+        # Create equivalents: collapse (zip) each Y section up to length of first branch point
+        clusters = []
+        for j_zip, par_ref in enumerate(self.fold_roots):
+            cluster = self.fold_subtree(par_ref, j_zip)
+            self.calc_fold_statistics(cluster)
+            clusters.append(cluster)
+
+        # substitute equivalents
+        clusters_eqrefs = {cluster: None for cluster in clusters}
+        self.make_equivalent_secs(clusters_eqrefs)
+
+        logger.info("\n###############################################################"
+                    "\nDetermining active electrical properties ..."
+                    "\n###############################################################")
+
+        # Set their properties
+        self.set_passive_params(clusters_eqrefs)
+        self.set_conductances_interp(clusters_eqrefs)
+        self.scale_conductances(clusters_eqrefs)
+
+        logger.info("\n###############################################################"
+                    "\nSubstituting new sections ..."
+                    "\n###############################################################")
+
+        self.sub_equivalent_secs(clusters_eqrefs)
+
+        return clusters_eqrefs.values()
 
 
-def calc_fold_equivalents(
-        reduction,
-        target_Y_secs,
-        i_pass,
-        allsecrefs
-    ):
-    """
-    Do collapse operations: calculate equivalent Section properties for each collapse.
+    def fold_subtree(self, par_ref, j_zip):
+        """
+        Calculate one fold and return equivalent properties
 
-    @return         list of Cluster objects with properties of equivalent
-                    Section for each set of collapsed branches.
-    """
+        @param  par_ref : SectionRef
+                folding root (fork) whose children should be folded
 
-    # Get additional parameters
-    glist = reduction.gbar_names
-    gleak_name = reduction.gleak_name
-    f_lambda = reduction.get_reduction_param('f_lambda')
+        @param  j_zip : int
+                sequence number of the fold within current folding pass
 
-    # Flag all sections as unvisited
-    for secref in allsecrefs:
-
-        if not hasattr(secref, 'absorbed'):
-            secref.absorbed = [False] * secref.sec.nseg
-            secref.visited = [False] * secref.sec.nseg
-        
-        secref.zip_labels = [None] * secref.sec.nseg
-
-    # Create Clusters: collapse (zip) each Y section up to length of first branch point
-    clusters = []
-    for j_zip, par_ref in enumerate(target_Y_secs):
+        @return cluster: Cluster
+                cluster object describing properties of equivalent section
+        """
         par_sec = par_ref.sec
         child_secs = par_sec.children()
+        allsecrefs = self.reduction.all_sec_refs
 
         # Function to determine which segment can be 'zipped'
         min_child_L = min(sec.L for sec in child_secs) # Section is unbranched cable
@@ -268,8 +266,8 @@ def calc_fold_equivalents(
         # name_sanitized = par_sec.name().replace('[','').replace(']','').replace('.','_')
         name_sanitized = re.sub(r"[\[\]\.]", "", par_sec.name())
         alphabet_uppercase = [chr(i) for i in xrange(65,90+1)] # A-Z are ASCII 65-90
-        zip_label = "zip{0}_{1}".format(alphabet_uppercase[i_pass], name_sanitized)
-        zip_id = 1000*i_pass + j_zip
+        zip_label = "zip{0}_{1}".format(alphabet_uppercase[self.i_pass], name_sanitized)
+        zip_id = 1000*self.i_pass + j_zip
 
         # Function for processing zipped SectionRefs
         zipped_sec_gids = set()
@@ -290,9 +288,9 @@ def calc_fold_equivalents(
         eq_seq, eq_br = merge_seg_subtree(par_sec(1.0), allsecrefs, eligfunc, 
                             process_zipped_seg, far_bound_segs)
 
-        logger.debug("Target Y-section for zipping: {0}".format(par_sec.name()))
-        bounds_info = ["\n\tsegment {0} [{1}/{2}]".format(seg, seg_index(seg)+1, seg.sec.nseg) for seg in far_bound_segs]
-        logger.debug("Zipping up to {0} boundary segments:{1}".format(len(far_bound_segs), "\n".join(bounds_info)))
+        bounds_info = ["\n\t->| seg[{1}/{2}] @{0}".format(seg, seg_index(seg)+1, seg.sec.nseg) for seg in far_bound_segs]
+        logger.debug("Folding @{2} up to next {0} boundary segments:{1}".format(len(far_bound_segs), "".join(bounds_info), par_sec.name()))
+        logger.debug("Topology at folding root:\n"+subtree_topology(par_sec, max_depth=2))
 
         # Make Cluster object that represents collapsed segments
         cluster = Cluster(zip_label)
@@ -306,12 +304,35 @@ def calc_fold_equivalents(
         cluster.parent_seg = par_sec(1.0)
         cluster.bound_segs = far_bound_segs # Save boundaries (for substitution)
 
-        # Calculate cluster statistics #########################################
+        return cluster
+
+
+    def calc_fold_statistics(self, cluster):
+        """
+        Calculate statistics on sections that are absorbed into cluster.
+
+        @post   cluster has following attributes:
+
+                or_area: float
+                total area of original sections absorbed by cluster.
+
+                or_cm: float
+                mean specific capacitance in original sections, weighted by area
+
+                or_cmtot: float
+                total capacitance (non-specific) of original sections
+
+
+        """
+        
+        glist = self.reduction.gbar_names
+        allsecrefs = self.reduction.all_sec_refs
         
         # Gather all cluster sections & segments
         clu_secs = [secref for secref in allsecrefs if (cluster.label in secref.zip_labels)]
         clu_segs = [seg for ref in clu_secs for jseg,seg in enumerate(ref.sec) if (
                         ref.zip_labels[jseg]==cluster.label)]
+        cluster.or_nseg = len(clu_segs)
 
         # Calculate max/min path length
         clu_path_L = [ref.pathL_seg[j] for ref in clu_secs for j,seg in enumerate(ref.sec) if (
@@ -345,217 +366,215 @@ def calc_fold_equivalents(
             logger.warning("Sections have non-uniform Ra, calculating average "
                             "axial resistance per unit length, weighted by area")
             cluster.eqRa = PI*(cluster.eqdiam/2.)**2*cluster.eqri*100./cluster.eqL # eq. Ra^eq
-        clusters.append(cluster)
 
         # Calculate electrotonic path length
-        cluster.or_L_elec = sum(electro.seg_L_elec(seg, gleak_name, f_lambda) for seg in clu_segs)
-        cluster.eq_lambda = electro.calc_lambda_AC(f_lambda, cluster.eqdiam, cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
+        cluster.or_L_elec = sum(electro.seg_L_elec(seg, self.gleak_name, self.f_lambda) 
+                                for seg in clu_segs)
+        
+        cluster.eq_lambda = electro.calc_lambda_AC(
+                                self.f_lambda, cluster.eqdiam, cluster.eqRa, 
+                                cluster.or_cmtot/cluster.eq_area_sum)
+
         cluster.eq_L_elec = cluster.eqL/cluster.eq_lambda
-        eq_min_nseg = electro.calc_min_nseg_hines(f_lambda, cluster.eqL, cluster.eqdiam, 
-                                            cluster.eqRa, cluster.or_cmtot/cluster.eq_area_sum)
+        
 
         # Debug
         print_attrs = ['eqL', 'eqdiam', 'or_area', 'eq_area_sum', 'or_L_elec', 'eq_L_elec']
         clu_info = ("- {0}: {1}".format(prop, getattr(cluster, prop)) for prop in print_attrs)
-        logger.debug("Equivalent section for zipped Y-section has following properties:\n\t{0}".format(
-                        "\n\t".join(clu_info)))
-        logger.debug("Zip reduces L/lambda by {0:.2f} %; number of segments saved is {1} (Hines rule)\n".format(
-                        cluster.eq_L_elec/cluster.or_L_elec, len(clu_segs)-eq_min_nseg))
-
-    return clusters
-
-
-def substitute_fold_equivalents(
-        reduction,
-        fold_pass,
-        interp_prop='path_L', 
-        interp_method='linear_neighbors', 
-        gbar_scaling='area'
-    ):
-    """
-    Substitute equivalent Section for each cluster into original cell.
-
-    @see    docstring of function `reduce_bush_sejnowski.equivalent_sections()`
-
-    @param  reduction       FoldReduction object
-
-    @param  interp_prop     property used for calculation of path length (x of interpolated
-                            x,y values), one of following:
-                            
-                            'path_L': path length (in micrometers)
-
-                            'path_ri': axial path resistance (in Ohms)
-
-                            'path_L_elec': electrotonic path length (L/lambda, dimensionless)
-
-    @param  interp_method   how numerical values are interpolated, one of following:    
-                            
-                            'linear_neighbors':
-                                linear interpolation of 'adjacent' segments in full model 
-                                (i.e. next lower and higher electrotonic path length). 
-                            
-                            'linear_dist':
-                                estimate linear distribution and interpolate it
-                            
-                            'left_neighbor', 'right_neighbor', 'nearest_neighbor':
-                                extrapolation of 'neighoring' segments in terms of L/lambda
-    """
-    # List with equivalent section for each cluster
-    eq_secs = []
-    eq_refs = []
-
-    # Create equivalent sections and passive electric structure
-    for i, cluster in enumerate(fold_pass.clusters):
-
-        # Create equivalent section
-        if cluster.label in [sec.name() for sec in h.allsec()]:
-            raise Exception('Section named {} already exists'.format(cluster.label))
-        
-        created = h("create %s" % cluster.label)
-        if created != 1:
-            raise Exception("Could not create section with name '{}'".format(cluster.label))
-        
-        eqsec = getattr(h, cluster.label)
-        eqref = ExtSecRef(sec=eqsec)
-
-        # Set passive properties
-        eqsec.L = cluster.eqL
-        eqsec.diam = cluster.eqdiam
-        eqsec.Ra = cluster.eqRa
-
-        # Save metadata
-        for prop in ['zip_id', 'or_area', 'zipped_sec_gids', 'zipped_region_labels']:
-            setattr(eqref, prop, getattr(cluster, prop)) # copy some useful attributes
-        eqref.is_original = False
-
-        # Append to list of equivalent sections
-        eq_secs.append(eqsec)
-        eq_refs.append(eqref)
-
-        # Connect to tree (need to trace path from soma to section)
-        eqsec.connect(cluster.parent_seg, 0.0) # see help(sec.connect)
-
+        logger.anal("Properties of equivalent section for fold:\n\t{0}".format("\n\t".join(clu_info)))
     
-    gleak_name = reduction.gleak_name
-    f_lambda = reduction.get_reduction_param('f_lambda')
 
-    # Set active properties and finetune
-    for i_clu, cluster in enumerate(fold_pass.clusters):
-        logger.debug("Scaling properties of cluster %s ..." % fold_pass.clusters[i_clu].label)
+
+    def make_equivalent_secs(self, clusters_refs):
+        """
+        Create equivalent section for each cluster (only geometry and connections).
+
+        @param  clusters_refs: dict(Cluster: object)
+                (passed by reference) dict to fill with equivalent SectionRef
+        """
+
+        for cluster in clusters_refs.iterkeys():
+
+            # Create equivalent section
+            if cluster.label in [sec.name() for sec in h.allsec()]:
+                raise Exception('Section named {} already exists'.format(cluster.label))
+            
+            created = h("create %s" % cluster.label)
+            if created != 1:
+                raise Exception("Could not create section with name '{}'".format(cluster.label))
+            
+            eqsec = getattr(h, cluster.label)
+            eqref = ExtSecRef(sec=eqsec)
+
+            # Set passive properties
+            eqsec.L = cluster.eqL
+            eqsec.diam = cluster.eqdiam
+
+            # Connect to tree (need to trace path from soma to section)
+            eqsec.connect(cluster.parent_seg, 0.0) # see help(sec.connect)
+
+            # Save metadata
+            for prop in ['zip_id', 'or_area', 'zipped_sec_gids', 'zipped_region_labels']:
+                setattr(eqref, prop, getattr(cluster, prop)) # copy some useful attributes
+            eqref.is_original = False
+
+            clusters_refs[cluster] = eqref
+
+
+    def set_passive_params(self, clusters_refs):
+        """
+        Set passive parameters and insert mechanisms into equivalent sections.
+
+        @param  clusters_refs: dict(Cluster: SectionRef)
+                clusters representing collapsed branches and their equivalent section
+        """
         
-        eqsec = eq_secs[i_clu]
-        eqref = eq_refs[i_clu]
+        # Set passive electrical properties
+        for cluster, eqref in clusters_refs.iteritems():
+            eqsec = eqref.sec
 
-        # Scale passive electrical properties
-        cluster.eq_area = sum(seg.area() for seg in eqsec) # should be same as cluster eqSurf
-        area_ratio = cluster.or_area / cluster.eq_area
-        logger.debug("Surface area ratio is %f" % area_ratio)
+            # Scale passive electrical properties
+            cluster.eq_area = sum(seg.area() for seg in eqsec) # should be same as cluster eqSurf
+            area_ratio = cluster.or_area / cluster.eq_area
+            logger.debug("Surface area ratio is %f" % area_ratio)
 
-        # Scale Cm
-        eq_cm = cluster.or_cmtot / cluster.eq_area # more accurate than cm * or_area/eq_area
+            # Area scaling of passive electrical properties
+            eq_cm = cluster.or_cmtot / cluster.eq_area # more accurate than cm * or_area/eq_area
+            or_gleak = cluster.or_gtot[self.gleak_name] / cluster.or_area
+            eq_gleak = or_gleak * area_ratio # same as reducing Rm by area_new/area_old
 
-        # Scale Rm
-        or_gleak = cluster.or_gtot[gleak_name] / cluster.or_area
-        eq_gleak = or_gleak * area_ratio # same as reducing Rm by area_new/area_old
+            # Set number of segments based on rule of thumb electrotonic length
+            eqsec.Ra = cluster.eqRa
+            eqsec.cm = eq_cm
+            eqsec.nseg = electro.calc_min_nseg_hines(
+                                    self.f_lambda, eqsec.L, eqsec.diam, 
+                                    eqsec.Ra, eq_cm)
 
-        # Set number of segments based on rule of thumb electrotonic length
-        eqsec.cm = eq_cm
-        eqsec.nseg = electro.calc_min_nseg_hines(f_lambda, eqsec.L, eqsec.diam, eqsec.Ra, eq_cm)
+            logger.debug("Fold reduces number of segments saved by {0} (Hines rule) and reduces L/lambda by {1:.2f} \n".format(cluster.or_nseg-eqsec.nseg, cluster.eq_L_elec/cluster.or_L_elec))
 
-        # Copy section mechanisms and properties
-        absorbed_secs = redutils.find_secprops(reduction.orig_tree_props,
-                                lambda sec: sec.gid in eqref.zipped_sec_gids)
-        
-        redutils.merge_sec_properties(absorbed_secs, eqsec, 
-                        reduction.mechs_params_nogbar, check_uniform=True)
+            # Copy section mechanisms and properties
+            absorbed_secs = redutils.find_secprops(
+                                    self.reduction.orig_tree_props,
+                                    lambda sec: sec.gid in eqref.zipped_sec_gids)
+            
+            redutils.merge_sec_properties(
+                            absorbed_secs, eqsec, 
+                            self.reduction.mechs_params_nogbar, 
+                            check_uniform=True)
 
-        # Save Cm and conductances for each section for reconstruction
-        cluster.nseg = eqsec.nseg # save for reconstruction
-        cluster.eq_gbar = dict((
-            (gname, [float('NaN')]*cluster.nseg) for gname in reduction.gbar_names))
-        cluster.eq_cm = [float('NaN')]*cluster.nseg
+            # Save Cm and conductances for each section for reconstruction
+            cluster.nseg = eqsec.nseg # save for reconstruction
+            cluster.eq_gbar = dict((
+                (gname, [float('NaN')]*cluster.nseg) for gname in self.reduction.gbar_names))
+            cluster.eq_cm = [eq_cm]*cluster.nseg
 
-        # Set Cm and gleak (Rm) for each segment
-        if gbar_scaling is not None:
-            for j, seg in enumerate(eqsec):
-                setattr(seg, 'cm', eq_cm)
-                setattr(seg, gleak_name, eq_gleak)
-                cluster.eq_cm[j] = eq_cm
-                cluster.eq_gbar[gleak_name][j] = eq_gleak
+            # Set Cm and gleak (Rm) for each segment
+            if self.gbar_scaling is not None:
+                for j, seg in enumerate(eqsec):
+                    setattr(seg, self.gleak_name, eq_gleak)
+                    cluster.eq_gbar[self.gleak_name][j] = eq_gleak
 
-        # Calculate path lengths in equivalent section
-        redutils.sec_path_props(eqref, f_lambda, gleak_name)
-        
-        if interp_prop == 'path_L':
+
+    def set_conductances_interp(self, clusters_refs):
+        """
+        Set channel conductances by interpolating conductance values along
+        a path of sections in the original cell model.
+
+        @param  clusters_refs: dict(Cluster: SectionRef)
+                clusters representing collapsed branches and their equivalent section
+
+        @post   for each conductance in reduction.active_gbar_names, all segments
+                in the cluster are assigned a value true interpolation.
+        """
+        if self.interp_prop == 'path_L':
             seg_prop = 'pathL_seg'
-        elif interp_prop == 'path_ri':
+        elif self.interp_prop == 'path_ri':
             seg_prop = 'pathri_seg'
-        elif interp_prop == 'path_L_elec':
+        elif self.interp_prop == 'path_L_elec':
             seg_prop = 'pathL_elec'
         else:
-            raise ValueError("Unknown path property '{}'".format(interp_prop))
+            raise ValueError("Unknown path property '{}'".format(self.interp_prop))
 
-        # Get path of original sections running through one of folded branches
-        path_secs = reduction.get_interpolation_path_secs(eqref)
+        for cluster, eqref in clusters_refs.iteritems():
+            logger.debug("Scaling properties of cluster %s ..." % cluster.label)
+            eqsec = eqref.sec
 
-        # Find conductances at same path length (to each segment midpoint) in original cell
-        for j_seg, seg in enumerate(eqsec):
-            
-            # Get adjacent segments along interpolation path
-            path_L = getattr(eqref, seg_prop)[j_seg]
-            bound_segs, bound_L = interp.find_adj_path_segs(interp_prop, path_L, path_secs)
-            
-            # DEBUG STATEMENTS:
-            # bounds_info = "\n".join(("\t- bounds {0} - {1}".format(a, b) for a,b in bound_segs))
-            # logger.debug("Found boundary segments at path length "
-            #              "x={0:.3f}:\n{1}".format(path_L, bounds_info))
+            # Calculate path lengths in equivalent section
+            redutils.sec_path_props(eqref, self.f_lambda, self.gleak_name)
 
-            # INTERPOLATE: Set conductances by interpolating neighbors
-            for gname in reduction.active_gbar_names:
+            # Get path of original sections running through one of folded branches
+            path_secs = self.reduction.get_interpolation_path_secs(eqref)
 
+            # Find conductances at same path length (to each segment midpoint) in original cell
+            for j_seg, seg in enumerate(eqsec):
+                
+                # Get adjacent segments along interpolation path
+                path_L = getattr(eqref, seg_prop)[j_seg]
+                bound_segs, bound_L = interp.find_adj_path_segs(self.interp_prop, path_L, path_secs)
+                
+                # DEBUG STATEMENTS:
+                # bounds_info = "\n".join(("\t- bounds {0} - {1}".format(a, b) for a,b in bound_segs))
+                # logger.debug("Found boundary segments at path length "
+                #              "x={0:.3f}:\n{1}".format(path_L, bounds_info))
+
+                # INTERPOLATE: Set conductances by interpolating neighbors
+                for gname in self.reduction.active_gbar_names:
+
+                    if not hasattr(eqsec, gname):
+                        cluster.eq_gbar[gname][j_seg] = 0.0
+                        continue
+                    
+                    if self.interp_method == 'linear_neighbors':
+                        gval = interp.interp_gbar_linear_neighbors(path_L, gname, bound_segs, bound_L)
+                    
+                    else:
+                        match_method = re.search(r'^[a-z]+', self.interp_method)
+                        method = match_method.group() # should be nearest, left, or right
+                        gval = interp.interp_gbar_pick_neighbor(path_L, gname, 
+                                            bound_segs[0], bound_L[0], method)
+                    
+                    setattr(seg, gname, gval)
+                    cluster.eq_gbar[gname][j_seg] = gval
+
+
+    def scale_conductances(self, clusters_refs):
+        """
+        After interpolation of specific conductance values, scale values
+        so that total non-specific conductance integrated over cluster is the same.
+
+        @param  clusters_refs: dict(Cluster: SectionRef)
+                clusters representing collapsed branches and their equivalent section
+
+        @post   
+        """
+
+        for cluster, eqref in clusters_refs.iteritems():
+            eqsec = eqref.sec
+
+            # Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
+            for gname in self.reduction.active_gbar_names:
                 if not hasattr(eqsec, gname):
-                    cluster.eq_gbar[gname][j_seg] = 0.0
-                    continue
-                
-                if interp_method == 'linear_neighbors':
-                    gval = interp.interp_gbar_linear_neighbors(path_L, gname, bound_segs, bound_L)
-                
-                else:
-                    match_method = re.search(r'^[a-z]+', interp_method)
-                    method = match_method.group() # should be nearest, left, or right
-                    gval = interp.interp_gbar_pick_neighbor(path_L, gname, 
-                                        bound_segs[0], bound_L[0], method)
-                
-                setattr(seg, gname, gval)
-                cluster.eq_gbar[gname][j_seg] = gval
-
-        # Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
-        if gbar_scaling is not None:
-            for gname in reduction.active_gbar_names:
-
-                if not hasattr(eqsec, gname):
-                    cluster.eq_gbar[gname][j_seg] = 0.0
                     continue
                 
                 # original and current total conductance
                 or_gtot = cluster.or_gtot[gname]
-                eq_gtot = sum(get_range_var(seg, gname, 0.0)*seg.area() for seg in eqsec)
+                eq_gtot = sum(getattr(seg, gname, 0.0)*seg.area() for seg in eqsec)
                 if eq_gtot <= 0.:
                     eq_gtot = 1.
                 
                 
                 for j_seg, seg in enumerate(eqsec):
                     
-                    if gbar_scaling == 'area':
+                    if self.gbar_scaling == 'area':
                         # conserves ratio in each segment but not total original conductance
                         scale = cluster.or_area/cluster.eq_area
                     
-                    elif gbar_scaling == 'gbar_integral':
+                    elif self.gbar_scaling == 'gbar_integral':
                         # does not conserve ratio but conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
                         scale = or_gtot/eq_gtot
                     
                     else:
-                        raise Exception("Unknown gbar scaling method'{}'.".format(gbar_scaling))
+                        raise Exception("Unknown gbar scaling method'{}'.".format(self.gbar_scaling))
                     
                     # Set gbar
                     gval = getattr(seg, gname) * scale
@@ -563,34 +582,30 @@ def substitute_fold_equivalents(
                     
                     cluster.eq_gbar[gname][j_seg] = gval # save for reconstruction
 
-        # Check gbar calculation
-        # for gname in active_glist:
-        #   gtot_or = cluster.or_gtot[gname]
-        #   gtot_eq_scaled = sum(getattr(seg, gname)*seg.area() for seg in eqsec)
-        #   logger.debug("conductance %s : gtot_or = %.3f ; gtot_eq = %.3f",
-        #                   gname, gtot_or, gtot_eq_scaled)
+            # Debugging info:
+            logger.debug("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
+                         "\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", cluster.label, 
+                         eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
 
-        # Debugging info:
-        logger.debug("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
-                     "\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", fold_pass.clusters[i_clu].label, 
-                     eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
-    
-    # Substitute equivalent section into tree
-    logger.info("\n###############################################################"
-                "\nSubstituting equivalent sections...\n")
 
-    orsecrefs = reduction.all_sec_refs
-    for i_clu, cluster in enumerate(fold_pass.clusters):
-        eqsec = eq_secs[i_clu]
-        # Disconnect substituted segments and attach segment after Y boundary
-        # Can only do this now since all paths need to be walkable before this
-        logger.debug("Substituting zipped section {0}".format(eqsec))
-        treeops.sub_equivalent_Y_sec(eqsec, 
-                    cluster.parent_seg, cluster.bound_segs, 
-                    orsecrefs, reduction.mechs_gbars_dict, delete_substituted=True)
-        logger.debug("Substitution complete.\n")
+    def sub_equivalent_secs(self, clusters_refs):
+        """
+        Substitute / insert fold-equivalent sections into tree.
+        """
 
-    # build new list of valid SectionRef
-    newsecrefs = [ref for ref in orsecrefs if not (ref.is_substituted or ref.is_deleted)]
-    newsecrefs.extend(eq_refs)
-    return eq_refs, newsecrefs
+        orsecrefs = self.reduction.all_sec_refs
+
+        for cluster, eqref in clusters_refs.iteritems():
+            eqsec = eqref.sec
+
+            # Disconnect substituted segments and attach segment after Y boundary
+            # Can only do this now since all paths need to be walkable before this
+            logger.debug("Substituting zipped section {0}".format(eqsec))
+            treeops.sub_equivalent_Y_sec(
+                        eqsec, cluster.parent_seg, cluster.bound_segs, 
+                        orsecrefs, self.reduction.mechs_gbars_dict,
+                        delete_substituted=True)
+
+        # build new list of valid SectionRef
+        newsecrefs = [ref for ref in orsecrefs if not (ref.is_substituted or ref.is_deleted)]
+        newsecrefs.extend(clusters_refs.values())

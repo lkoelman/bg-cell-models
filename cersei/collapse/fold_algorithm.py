@@ -7,7 +7,7 @@ Common functionality for folding algorithms.
 """
 
 from enum import Enum, unique
-import abc # abstract base class
+from abc import ABCMeta, abstractmethod # abstract base class
 
 @unique
 class ReductionMethod(Enum):
@@ -22,9 +22,10 @@ class FoldingAlgorithm(object):
     Abstract base class for folding algorithms.
     """
 
-    __metaclass__ = abc.ABCMeta # Python2 way
+    __metaclass__ = ABCMeta # Python2 way
 
-    @abc.abstractmethod
+
+    @abstractmethod
     def preprocess_reduction(self):
         """
         Preprocess cell for folding reduction.
@@ -42,44 +43,10 @@ class FoldingAlgorithm(object):
                 "Virtual method of abstract base class FoldingAlgorithm not implemented.")
 
 
-    @abc.abstractmethod
-    def prepare_folds_impl(self):
-        """
-        Prepare next collapse operation: assign topology information
-        to each Section.
-
-        (Implementation of interface declared in reduce_cell.CollapseReduction)
-        """
-        raise NotImplementedError(
-                "Virtual method of abstract base class FoldingAlgorithm not implemented.")
-
-
-    @abc.abstractmethod
-    def calc_folds_impl(self, i_pass, Y_criterion):
+    @abstractmethod
+    def fold_one_pass(self, i_pass, Y_criterion):
         """
         Collapse branches at branch points identified by given criterion.
-        """
-        raise NotImplementedError(
-                "Virtual method of abstract base class FoldingAlgorithm not implemented.")
-
-
-    @abc.abstractmethod
-    def make_folds_impl(self):
-        """
-        Make equivalent Sections for branches that have been folded.
-        """
-        raise NotImplementedError(
-                "Virtual method of abstract base class FoldingAlgorithm not implemented.")
-
-
-    @abc.abstractmethod
-    def postprocess_reduction(self):
-        """
-        Post-process cell for Marasco reduction.
-
-        (interface declared in reduce_cell.CollapseReduction)
-
-        @param  reduction       reduce_cell.CollapseReduction object
         """
         raise NotImplementedError(
                 "Virtual method of abstract base class FoldingAlgorithm not implemented.")

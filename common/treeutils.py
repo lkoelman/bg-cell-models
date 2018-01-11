@@ -7,6 +7,7 @@ Utilities for dealing with NEURON cell models
 from neuron import h
 
 from nrnutil import seg_index
+import StringIO
 
 
 def prev_seg(curseg):
@@ -132,6 +133,49 @@ def wholetree_secs(sec):
 	h.pop_section()
 
 	return list(tree_secs)
+
+
+def subtree_topology(sub_root, max_depth=1e9):
+	"""
+	Like h.topology() but for subtree of section.
+
+	@see	nrnhome/nrn/src/nrnoc/solve.c::nrnhoc_topology()
+	"""
+
+	buff = StringIO.StringIO()
+
+	def dashes(sec, offset, lead_char, dist=0):
+		"""
+		@param	dist	distance from first section (subtree root)
+		"""
+
+		orient = int(h.section_orientation(sec=sec))
+		direc = "({}-{})".format(orient, 1-orient)
+
+		# Print section in format -----| with one dash per segment
+		buff.write(" " * offset)
+		buff.write(lead_char)
+		if dist == max_depth+1:
+			# truncate end sections
+			buff.write("-..")
+		else:
+			buff.write("-" * sec.nseg)
+		
+		# Print termination symbol and section description
+		buff.write("|       %s%s\n" % (sec.name(), direc))
+
+		for child_sec in reversed(sec.children()): # reversed since NEURON uses stack + pop
+			# get index of segment where child connects to parent
+			con_seg_idx = seg_index(child_sec.parentseg())
+			# buff.write(" ")
+			dashes(child_sec, con_seg_idx+offset+3, "`", dist+1)
+
+	
+	dashes(sub_root, 0, ".|")
+
+	buff_string = buff.getvalue()
+	buff.close()
+	return buff_string
 
 
 
