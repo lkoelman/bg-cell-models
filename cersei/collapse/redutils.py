@@ -772,7 +772,32 @@ def find_roots_at_level(level, root_ref, all_refs):
     return [ref for ref in all_refs if (ref.level==level and ref.end_branchpoint)]
 
 
+def find_outer_branchpoints(node_ref, inc_refs):
+    """
+    @param      node_ref: SectionRef
+                Section to start tree traversal
 
+    @param      inc_refs: list(SectionRef)
+                Sections included in search, other sections are skipped
+    
+    @return     list(SectionRef)
+    """
+
+    # Check if current cylinder ends in branch point (fork)
+    child_refs = [getsecref(sec, inc_refs) for sec in node_ref.sec.children()]
+    child_refs = [ch for ch in child_refs if ch is not None] # getsecref returns None if sec not in all_refs
+    if len(child_refs) == 0:
+        return []
+    
+    # Else, collect child branch points
+    child_branchpoints = sum((find_outer_branchpoints(ch, inc_refs) for ch in child_refs), [])
+
+    if len(child_branchpoints) > 0:
+        return child_branchpoints
+    elif node_ref.end_branchpoint:
+        return [node_ref]
+    else:
+        return []
 
 
 if __name__ == '__main__':

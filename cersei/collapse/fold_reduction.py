@@ -343,8 +343,7 @@ class FoldReduction(object):
         """
         Do a fold-based reduction of the compartmental cell model.
 
-        @param  num_passes      number of 'folding' passes to be done. One pass corresponds to
-                                folding at a particular node level (usually the highest).
+        @param  num_passes      number of 'folding' passes to be done.
         """
         if method is None:
             method = self.active_method

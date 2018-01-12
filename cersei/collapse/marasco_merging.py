@@ -169,14 +169,16 @@ def merge_seg_subtree(rootseg, allsecrefs, eligfunc=None, modfunc=None, bound_se
     if modfunc is None:
         modfunc = lambda seg, jsef, ref: None
 
-    # Get absorbable child segments
     child_segs = []
     root_is_bound = False # whether current root is a boundary segment
-    
+
+    # Find absorbable child segments
     if i_rootseg == rootsec.nseg-1:
         # IF END SEGMENT: get child segments that are in same cluster
         for secref in child_refs:
-            childseg = next(seg for seg in secref.sec) # get the first segment
+
+            # Get first segment (0-end) of child
+            childseg = next(seg for seg in secref.sec)
             
             if absorbable(childseg, 0, secref):
                 child_segs.append(childseg)

@@ -101,13 +101,15 @@ class MarascoFolder(FoldingAlgorithm):
             redutils.sec_path_props(secref, f_lambda, reduction.gleak_name)
 
 
-    def fold_one_pass(self, i_pass, Y_criterion='highest_level'):
+    def fold_one_pass(self, i_pass, Y_criterion='outer_branchpoints'):
         """
         Do a folding pass.
         """
+        logger.info("\n###############################################################"
+                    "\nPreprocessing folding pass ..."
+                    "\n###############################################################")
 
         self._preprocess_folding_pass()
-
 
         # Find collapsable branch points
         target_Y_secs = treeops.find_collapsable(
@@ -122,6 +124,10 @@ class MarascoFolder(FoldingAlgorithm):
                         gbar_scaling='area')
         
         new_refs = fold_pass.do_folds() # do collapse operation at each branch points
+
+        # TODO: merge linear sections so next folding pass can collapse further
+        #       OR BETTER: addapt merge_seg_subtree() so it jump over linear connection points
+        # TODO: check what happens to non-uniform diameter
 
         return new_refs
 
@@ -260,7 +266,18 @@ class FoldingPass(object):
 
         # Function to determine which segment can be 'zipped'
         min_child_L = min(sec.L for sec in child_secs) # Section is unbranched cable
-        eligfunc = lambda seg, jseg, ref: (ref.parent.same(par_sec)) and (seg.x*seg.sec.L <= min_child_L)
+        def can_absorb(seg, jseg, ref):
+            """
+            Can segment be absorbed? Yes if following criteria satisfied:
+                - section is connected to fold root
+                - segment is not farther from fold root than closest terminal
+                  segment of any child section of the fold root
+            
+            @param  seg     <nrn.Segment> with x-value equal to segment midpoint
+            """
+            direct_child = (ref.parent.same(par_sec))
+            not_too_far = (seg.x*seg.sec.L <= min_child_L) or jseg==0
+            return direct_child and not_too_far
         
         # Name for equivalent zipped section
         # name_sanitized = par_sec.name().replace('[','').replace(']','').replace('.','_')
@@ -285,7 +302,8 @@ class FoldingPass(object):
         
         # Perform 'zip' operation
         far_bound_segs = [] # last (furthest) segments that are zipped
-        eq_seq, eq_br = merge_seg_subtree(par_sec(1.0), allsecrefs, eligfunc, 
+        eq_seq, eq_br = merge_seg_subtree(
+                            par_sec(1.0), allsecrefs, can_absorb, 
                             process_zipped_seg, far_bound_segs)
 
         bounds_info = ["\n\t->| seg[{1}/{2}] @{0}".format(seg, seg_index(seg)+1, seg.sec.nseg) for seg in far_bound_segs]
@@ -583,7 +601,7 @@ class FoldingPass(object):
                     cluster.eq_gbar[gname][j_seg] = gval # save for reconstruction
 
             # Debugging info:
-            logger.debug("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
+            logger.anal("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
                          "\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", cluster.label, 
                          eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
 
@@ -600,7 +618,10 @@ class FoldingPass(object):
 
             # Disconnect substituted segments and attach segment after Y boundary
             # Can only do this now since all paths need to be walkable before this
-            logger.debug("Substituting zipped section {0}".format(eqsec))
+            logger.debug("Substituting zipped section {0} "
+                         "at proximal seg {1} and distal segments {2}".format(
+                         eqsec, cluster.parent_seg, cluster.bound_segs))
+            
             treeops.sub_equivalent_Y_sec(
                         eqsec, cluster.parent_seg, cluster.bound_segs, 
                         orsecrefs, self.reduction.mechs_gbars_dict,

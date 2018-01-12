@@ -110,6 +110,17 @@ def subtreeroot(secref):
 	return orig
 
 
+def wholetreeroot(secref, allsecrefs):
+	"""
+	Find absolute root of tree.
+
+	@return     nrn.Section
+				absolute root of tree
+	"""
+	root_sec = allsecrefs[0].root; h.pop_section() # pushes CAS
+	return root_sec
+
+
 def subtree_secs(rootsec):
 	"""
 	Get all Sections in subtree of but not including rootsec.

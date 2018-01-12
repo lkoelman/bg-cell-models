@@ -48,7 +48,8 @@ def getsecref(sec, refs):
     """
     Look for SectionRef pointing to Section sec in enumerable of SectionRef
 
-    @return     first SectionRef in refs with same section name as sec
+    @return     <SectionRef/NoneType> 
+                first SectionRef in refs with same section name as sec
     """
     if sec is None: return None
     # Section names are unique, but alternatively use sec.same(ref.sec)
@@ -74,10 +75,42 @@ def get_mod_name(hobj):
 
 
 def seg_at_index(sec, iseg):
-    """ Get the i-th segment of Section """
+    """
+    Get the i-th segment of Section
+
+    @return     nrn.Segment with x-value equal to segment midpoint
+    """
     xmid = (2.*(iseg+1)-1.)/(2.*sec.nseg) # See NEURON book p. 8
     # return next(seg for i,seg in enumerate(sec) if i==iseg)
     return sec(xmid)
+
+
+def seg_xmid(seg):
+    """
+    x-value at segment midpoint
+    """
+    nseg = seg.sec.nseg
+    iseg = min(int(seg.x * nseg), nseg-1)
+    xmid = (2.*(iseg+1)-1.)/(2.*nseg) # See NEURON book p. 8
+    return xmid
+
+
+def seg_xleft(seg):
+    """
+    x-value at left boundary of segment (towards 0-end)
+    """
+    nseg = seg.sec.nseg
+    iseg = min(int(seg.x * nseg), nseg-1)
+    return (1.0/nseg) * iseg
+
+
+def seg_xright(seg):
+    """
+    x-value at right boundary of segment (towards 1-end)
+    """
+    nseg = seg.sec.nseg
+    iseg = min(int(seg.x * nseg), nseg-1)
+    return (1.0/nseg) * (iseg + 1)
 
 
 def seg_index(tar_seg):

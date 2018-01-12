@@ -14,7 +14,7 @@ from neuron import h
 from common.nrnutil import getsecref, seg_index
 from common.treeutils import next_segs
 
-from redutils import seg_path_L_elec, get_sec_range_props
+from redutils import seg_path_L_elec, get_sec_range_props, find_outer_branchpoints
 
 
 def find_collapsable(
@@ -73,12 +73,22 @@ def find_collapsable(
                         target_level, len(target_Y_secs))
 
 
-    elif Y_criterion=='highest_level':
-
+    elif Y_criterion in ['max_level', 'highest_level']:
         # Simplify find all branch points at highest level
         max_level = max(ref.level for ref in allsecrefs)
-        target_Y_secs = [ref for ref in allsecrefs if (ref.level==max_level-1) and (
-                         i_pass+1 <= ref.max_passes) and (len(ref.sec.children()) >= 2)]
+
+        target_Y_secs = [ref for ref in allsecrefs if 
+                            (ref.level == max_level-1)
+                            and (len(ref.sec.children()) >= 2)
+                            and (ref.max_passes >= i_pass+1)]
+
+    elif Y_criterion == 'outer_branchpoints':
+        # All branch points that have no child branch points
+        root_sec = allsecrefs[0].root; h.pop_section() # pushes CAS
+        root_ref = getsecref(root_sec, allsecrefs)
+
+        target_Y_secs = find_outer_branchpoints(root_ref, allsecrefs)
+        
 
     else:
         raise Exception("Unknow Y-section selection criterion '{}'".format(Y_criterion))
@@ -95,8 +105,14 @@ def find_collapsable(
     return target_Y_secs
 
 
-def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars, 
-                            delete_substituted):
+def sub_equivalent_Y_sec(
+        eqsec,
+        parent_seg,
+        dist_bound_segs,
+        allsecrefs,
+        mechs_pars, 
+        delete_substituted
+    ):
     """
     Substitute equivalent section of a collapsed Y into the tree.
 
@@ -104,8 +120,8 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
 
     @param parent_seg   parent segment (where equivalent section will be attached)
 
-    @param bound_segs   list of distal boundary segments of the cluster
-                        of segments that the equivalent section is substituting for
+    @param dist_bound_segs   list of distal boundary segments,
+                        i.e. last absorbed/collapsed segment
 
     """
 
@@ -114,14 +130,13 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
         if not hasattr(secref, 'is_cut'):
             setattr(secref, 'is_cut', False)
 
-    # Parent of equivalent section
-    parent_seg = parent_seg
-
     # Sever tree at distal cuts
-    eqsec_child_segs = []
+    behind_cut_segs = []
     
-    for bound_seg in bound_segs: # last absorbed/collapsed segment
-        cut_segs = next_segs(bound_seg) # first segment after cut (not collapsed)
+    for dist_seg in dist_bound_segs: # last absorbed/collapsed segment
+
+        # first segment after cut (not collapsed)
+        cut_segs = next_segs(dist_seg) 
         
         for i in xrange(len(cut_segs)):
             cut_seg = cut_segs[i] # cut_seg may be destroyed by resizing so don't make loop variable
@@ -135,31 +150,33 @@ def sub_equivalent_Y_sec(eqsec, parent_seg, bound_segs, allsecrefs, mechs_pars,
                 if cut_ref.is_cut:
                     raise Exception('Section has already been cut before')
 
-                # Calculate new properties
+                # Resize section to portion behind cut
                 new_nseg = cut_sec.nseg-(cut_seg_index)
                 post_cut_L = cut_sec.L/cut_sec.nseg * new_nseg
                 cut_props = get_sec_range_props(cut_sec, mechs_pars)
                 
-                # Set new properties
+                # Reassign properties behind cut
                 cut_sec.nseg = new_nseg
                 cut_sec.L = post_cut_L
                 for jseg, seg in enumerate(cut_sec):
                     pseg = cut_props[cut_seg_index + jseg]
                     for pname, pval in pseg.iteritems():
                         seg.__setattr__(pname, pval)
+                
                 logger.debug("Cut section {0} and re-assigned segment properties.".format(cut_sec.name()))
 
             # Set child segment for equivalent section
-            eqsec_child_segs.append(cut_sec(0.0))
+            behind_cut_segs.append(cut_sec(0.0))
 
     # Connect the equivalent section
     eqsec.connect(parent_seg, 0.0) # see help(sec.connect)
-    for chi_seg in eqsec_child_segs:
-        chi_seg.sec.connect(eqsec, 1.0, chi_seg.x) # this disconnects them
+    for post_seg in behind_cut_segs:
+        post_seg.sec.connect(eqsec(1.0), 0.0) # this disconnects them
 
-    # Disconnect the substituted parts
+    # Disconnect sections absorbed into equivalent section that were not cut)
     for subbed_sec in parent_seg.sec.children():
-        # Skip the equivalent/substituting section
+        # NOTE: remaining children directly attached to parent are the equivalent
+        #       section and any sections that were not cut
         if subbed_sec.same(eqsec):
             continue
 
