@@ -6,7 +6,7 @@ Utilities for dealing with NEURON cell models
 
 from neuron import h
 
-from nrnutil import seg_index
+from nrnutil import seg_index, seg_xmin, seg_xmax
 import StringIO
 
 
@@ -19,19 +19,36 @@ def prev_seg(curseg):
 	return next(allseg, curseg.sec.parentseg())
 
 
-def next_segs(curseg):
+def next_segs(curseg, x_loc='mid'):
 	"""
 	Get child segments of given segment
+
+	@param	x_loc: str
+			
+			Which x-value to associate with each returned segment:
+			- 'mid': center of the segment
+			- 'min': minimum x-value inside the segment
+			- 'max': maximum x-value inside the segment
 	"""
 	cursec = curseg.sec
 	i_rootseg = seg_index(curseg)
 	child_segs = []
 
 	# find next segments
-	if i_rootseg < cursec.nseg-1: # Case 1: not end segment
+	if i_rootseg < cursec.nseg-1:
+		# not end segment -> return next segment of same Section
 		child_segs.append(next((seg for seg in cursec if seg_index(seg)>i_rootseg)))
-	else: # Case 2: end segment
+	else:
+		# end segment -> return first segment of each child section
 		child_segs = [next((seg for seg in sec)) for sec in cursec.children()]
+
+	# Adjust x-loc if required
+	if x_loc == 'min':
+		child_segs = [seg.sec(seg_xmin(seg)) for seg in child_segs]
+	elif x_loc == 'max':
+		child_segs = [seg.sec(seg_xmax(seg, inside=True)) for seg in child_segs]
+	elif x_loc != 'mid':
+		raise ValueError("Invalid value {} for argument 'x-loc'".format(x_loc))
 	
 	return child_segs
 

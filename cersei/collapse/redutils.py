@@ -651,7 +651,7 @@ def save_tree_properties_ref(
     
     @return     EqProps tree with requested properties stored as attributes
     """
-    # Create SecProps object for current node
+    # Process current node: create SecProps object
     sec_props = get_sec_props_ref(
                     node_ref,
                     mechs_pars,
@@ -661,7 +661,7 @@ def save_tree_properties_ref(
     if save_ion_styles is not None:
         sec_props.ion_styles = get_ion_styles(node_ref.sec, ions=save_ion_styles)
 
-    # Call for each child and add to children
+    # Process child nodes
     sec_props.parent = None
     sec_props.children = []
     for child_sec in node_ref.sec.children(): # Depth-first tree traversal
@@ -683,10 +683,11 @@ def subtree_assign_attributes(noderef, allsecrefs, attr_dict):
 
     @param attr_dict    dictionary of key-value pairs (attribute_name, attribute_value)
     """
-    # Assign current node
+    # Process self
     for aname, aval in attr_dict.iteritems():
         setattr(noderef, aname, aval)
 
+    # Process children
     childsecs = noderef.sec.children()
     childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
     for childref in childrefs:

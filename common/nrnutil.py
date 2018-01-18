@@ -74,6 +74,14 @@ def get_mod_name(hobj):
     return modname
 
 
+def seg_index(tar_seg):
+    """ Get index of given segment on Section """
+    # return next(i for i,seg in enumerate(tar_seg.sec) if seg.x==tar_seg.x) # DOES NOT WORK if you use a seg object obtained using sec(my_x)
+    seg_dx = 1.0/tar_seg.sec.nseg
+    seg_id = int(tar_seg.x/seg_dx) # same as tar_seg.x // seg_dx
+    return min(seg_id, tar_seg.sec.nseg-1)
+
+
 def seg_at_index(sec, iseg):
     """
     Get the i-th segment of Section
@@ -103,22 +111,28 @@ def seg_xleft(seg):
     iseg = min(int(seg.x * nseg), nseg-1)
     return (1.0/nseg) * iseg
 
+seg_xmin = seg_xleft
 
-def seg_xright(seg):
+
+def seg_xright(seg, inside=False):
     """
     x-value at right boundary of segment (towards 1-end)
+
+    @param  inside: bool
+            if True: x-location will be inside same segment, i.e. not true
+            boundary since this will yield the next segment if used for 
+            addressing the Section
     """
     nseg = seg.sec.nseg
     iseg = min(int(seg.x * nseg), nseg-1)
-    return (1.0/nseg) * (iseg + 1)
+    x_max = (1.0/nseg) * (iseg + 1)
+    
+    if inside:
+        return x_max - 1e-12
+    else:
+        return x_max
 
-
-def seg_index(tar_seg):
-    """ Get index of given segment on Section """
-    # return next(i for i,seg in enumerate(tar_seg.sec) if seg.x==tar_seg.x) # DOES NOT WORK if you use a seg object obtained using sec(my_x)
-    seg_dx = 1.0/tar_seg.sec.nseg
-    seg_id = int(tar_seg.x/seg_dx) # same as tar_seg.x // seg_dx
-    return min(seg_id, tar_seg.sec.nseg-1)
+seg_xmax = seg_xright
 
 
 def same_seg(seg_a, seg_b):
