@@ -50,3 +50,12 @@ class FoldingAlgorithm(object):
         """
         raise NotImplementedError(
                 "Virtual method of abstract base class FoldingAlgorithm not implemented.")
+
+
+    @abstractmethod
+    def postprocess_reduction(self):
+        """
+        Postprocess cell after reduction procedure. Executed once.
+        """
+        raise NotImplementedError(
+                "Virtual method of abstract base class FoldingAlgorithm not implemented.")

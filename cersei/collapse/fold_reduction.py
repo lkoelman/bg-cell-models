@@ -349,14 +349,14 @@ class FoldReduction(object):
             method = self.active_method
         self.active_method = method # indicate what method we are using
 
+        # Pre-processing for reduction
         self.preprocess_cell(method)
+        self.folder.preprocess_reduction()
 
+        # Actual reduction procedure
         for i_pass in xrange(num_passes):
-            # Do a folding pass
             new_refs = self.folder.fold_one_pass(i_pass)
-
             self.postprocess_fold(new_refs)
-
             logger.debug('Finished folding pass {}'.format(i_pass))
 
         # Finalize reduction process

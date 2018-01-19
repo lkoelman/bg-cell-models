@@ -242,6 +242,7 @@ class FoldingPass(object):
                     "\nSubstituting new sections ..."
                     "\n###############################################################")
 
+        # TODO FIXME: this must happen before interpolation?!
         self.sub_equivalent_secs(clusters_eqrefs)
 
         return clusters_eqrefs.values()

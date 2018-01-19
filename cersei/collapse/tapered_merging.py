@@ -8,10 +8,11 @@ Recursive merging procedures for cylindrical compartments
 # Python modules
 import math
 PI = math.pi
+from copy import deepcopy
 
 # Our modules
 from common.treeutils import next_segs
-from common.nrnutil import seg_xmin, seg_xmax
+from common.nrnutil import seg_xmin, seg_xmax, getsecref
 from common.electrotonic import seg_lambda
 from numpy import interp
 
@@ -19,13 +20,28 @@ from numpy import interp
 # Rewrite from formulas
 ################################################################################
 
+class MergedProps(object):
+    """
+    Information about merged properties
+
+    NOTE:   This is the 'Bunch' recipe from the python cookbook.
+            An alternative would be `myobj = type('Bunch', (object,), {})()`
+    """
+    def __init__(self, **kwds):
+        self.__dict__.update(kwds)
+
+
 class Cylinder(object):
     """
     Cylindrical compartment, the fundamental element of the cable
     representation of a neurite.
     """
 
-    def __init__(self, nrn_seg=None, use_seg_x=None, diam=None, L=None, Ra=None):
+    def __init__(
+            self,
+            nrn_seg=None, use_seg_x=None, x_bound=None,
+            diam=None, L=None, Ra=None
+        ):
         """
         Create new cylindrical compartment.
 
@@ -37,6 +53,15 @@ class Cylinder(object):
                 If not None: split given segment depending on value:
                 "x_min" use nrn_seg.x as its left boundary
                 "x_max" use nrn_seg.x as its right boundary
+
+        @param  x_bound: (optional) float
+                
+                A second x-value that should lie within the segment.
+                The value of 'use_seg_x' determines how 'x_bound' is used:
+                
+                - 'x_min': segment.x is left boundary and x_bound is right boundary
+                - 'x_max': segment.x is right boundary and x_bound is left boundary
+                - other: x_bound is not used
 
         @param  diam : float
                 Cylinder diameter in units of micron
@@ -54,10 +79,16 @@ class Cylinder(object):
             
             if use_seg_x is None:
                 self.L = nrn_seg.sec.L / nrn_seg.sec.nseg
+                self.x_lo = seg_xmin(nrn_seg)
+                self.x_hi = seg_xmax(nrn_seg, inside=True)
             elif use_seg_x == "x_min":
-                self.L = nrn_seg.sec.L * (seg_xmax(nrn_seg) - nrn_seg.x)
+                self.x_lo = nrn_seg.x
+                self.x_hi = x_bound if x_bound is not None else seg_xmax(nrn_seg, inside=True)
+                self.L = nrn_seg.sec.L * (self.x_hi - self.x_lo)
             elif use_seg_x == "x_max":
-                self.L = nrn_seg.sec.L * (nrn_seg.x - seg_xmin(nrn_seg))
+                self.x_hi = nrn_seg.x
+                self.x_lo = x_bound if x_bound is not None else seg_xmin(nrn_seg)
+                self.L = nrn_seg.sec.L * (self.x_hi - self.x_lo)
             else:
                 raise ValueError("Argument 'use_seg_x': invalid value {}".format(use_seg_x))
         else:
@@ -86,6 +117,91 @@ class Cylinder(object):
         # units = [Ohm] * [cm] * 1e2
         unit_factor = 1e2
         return (4.0 * self.Ra * self.L) / (PI * self.diam**2 * unit_factor)
+
+
+    def save_merged_properties(self, ref, glist):
+        """
+        Use portion of segment between sec(self.x_lo) and sec(self.x_hi)
+        to save area-specific properties.
+
+        @post   self.orig_props is SegProps object with attributes 
+                Ra: list, L: list, diam: list, cm: list,
+                area: float, cmtot: float, gtot: dict(str,float)
+        """
+        # Get original segment
+        sec = ref.sec
+        xmid = (self.x_hi + self.x_lo) / 2.0
+        seg = sec(xmid)
+
+        pmerge = MergedProps()
+        pmerge.Ra = [sec.Ra]
+        pmerge.L = [self.L]
+        pmerge.diam = [self.diam]
+        pmerge.cm = [seg.cm]
+
+        # Calculate area, capacitance, conductances
+        pmerge.area = self.area
+        pmerge.cmtot = seg.cm * self.area()
+        pmerge.gtot = dict((gname, 0.0) for gname in glist)
+        for gname in glist:
+            try:
+                gval = getattr(seg, gname, 0.0)
+            except NameError: # NEURON error if mechanism not inserted in section
+                gval = 0.0
+            pmerge.gtot[gname] = gval * pmerge.area
+
+        # Information about absorbed segments
+        pmerge.merged_sec_gids = set([ref.gid])
+        pmerge.merged_sec_names = set([sec.name()])
+        pmerge.merged_region_labels = set([ref.region_label])
+
+        self.orig_props = pmerge
+
+
+    @staticmethod
+    def update_merged_properties(pmerge, pother):
+        """
+        Update merged properties
+
+        @param  cyl : Cylinder
+                Cylinder object of which orig_props should be merged
+        """
+
+        pmerge.Ra.extend(pother.Ra)
+        pmerge.L.extend(pother.L)
+        pmerge.diam.extend(pother.diam)
+        pmerge.cm.extend(pother.cm)
+
+        # Calculate area, capacitance, conductances
+        pmerge.area += pother.area
+        pmerge.cmtot += pother.cmtot
+        for gname, gsum in pother.gtot.iteritems():
+            pmerge.gtot[gname] += gsum
+
+        # Information about absorbed segments
+        pmerge.merged_sec_gids.update(pother.merged_sec_gids)
+        pmerge.merged_region_labels.update(pother.merged_region_labels)
+
+
+    @staticmethod
+    def combine_merged_properties(all_pmerge):
+        """
+        Combine MergedProps objects.
+        """
+        if isinstance(all_pmerge[0], Cylinder):
+            pinit = deepcopy(all_pmerge[0].orig_props)
+            prest = (cyl.orig_props for cyl in all_pmerge[1:])
+        elif isinstance(all_pmerge[0], MergedProps):
+            pinit = deepcopy(all_pmerge[0])
+            prest = all_pmerge[1:]
+        else:
+            raise ValueError()
+
+        for pmerge in prest:
+            Cylinder.update_merged_properties(pinit, pmerge)
+
+        return pinit
+
     
 
 def merge_cylinders_sequential(cyls):
@@ -109,7 +225,11 @@ def merge_cylinders_sequential(cyls):
     Ra_seq = sum((cyl.Ra for cyl in cyls)) / len(cyls)
     diam_seq = math.sqrt(Ra_seq*L_seq*4./PI/Ri_seq/100.) # ensures that Ri_seq will be the total absolute axial resistance of the equivalent cylinder
 
-    return Cylinder(diam=diam_seq, L=L_seq, Ra=Ra_seq)
+    merged_cyl = Cylinder(diam=diam_seq, L=L_seq, Ra=Ra_seq)
+
+    # Save properties of original NEURON segments
+    merged_cyl.orig_props = Cylinder.combine_merged_properties(cyls)
+    return merged_cyl
 
 
 def merge_cylinders_parallel(cyls):
@@ -131,10 +251,14 @@ def merge_cylinders_parallel(cyls):
     Ra_br = sum((cyl.Ra for cyl in cyls)) / len(cyls)
     diam_br = math.sqrt(sum((cyl.diam**2 for cyl in cyls))) # ensures that absolute axial resistance Ri (also per unit length, Ri/L) is preserved
 
-    return Cylinder(diam=diam_br, L=L_br, Ra=Ra_br)
+    merged_cyl = Cylinder(diam=diam_br, L=L_br, Ra=Ra_br)
+
+    # Save properties of original NEURON segments
+    merged_cyl.orig_props = Cylinder.combine_merged_properties(cyls)
+    return merged_cyl
 
 
-def merge_until_distance(start_seg, stop_dist, distance_func):
+def merge_until_distance(start_seg, stop_dist, distance_func, all_refs, gbar_list):
     """
     Keep merging cylindrical compartments in subtree starting at start_seg until
     distance_func(end_seg) is equal to the desired stopping distance.
@@ -155,6 +279,8 @@ def merge_until_distance(start_seg, stop_dist, distance_func):
             Equivalent cylinder until stopping distance, and the list of
             stopping points
     """
+    start_ref = getsecref(start_seg.sec, all_refs)
+
     # Keep absorbing segments until the 1-end boundary is larger than distance
     start_x_max = start_seg.sec(seg_xmax(start_seg, inside=True))
     X_beg = distance_func(start_seg)
@@ -169,14 +295,23 @@ def merge_until_distance(start_seg, stop_dist, distance_func):
                     [stop_dist], 
                     [X_beg, X_end],
                     [seg_xmin(start_seg), seg_xmax(start_seg, inside=True)])
-        # Truncate segment at stopping dist
-        trunc_cyl = Cylinder(diam=start_seg.diam, Ra=start_seg.sec.Ra,
-                             L=start_seg.sec.L*(x_interp-start_seg.x))
+        
+        # Cut segment: Cylinder runs from segment.x to stopping distance
+        start_cyl = Cylinder(nrn_seg=start_seg,
+                             use_seg_x='x_min',
+                             x_bound=x_interp)
+        start_cyl.save_merged_properties(start_ref, gbar_list)
+        start_ref.visited = True
+
         term_seg = start_seg.sec(x_interp)
-        return trunc_cyl, [term_seg]
+        return start_cyl, [term_seg]
     
     # Scenario 2: stopping distance is beyond far boundary of segment
-    start_cyl = Cylinder(nrn_seg=start_seg, use_seg_x="x_min") # cylinder representing the starting segment
+    # Cylinder runs from segment.x to right boundary of segment
+    start_cyl = Cylinder(nrn_seg=start_seg, use_seg_x="x_min")
+    start_cyl.save_merged_properties(start_ref, gbar_list)
+    start_ref.visited = True
+    start_ref.absorbed = True # fully absorbed when walked past end
 
     # Scenario 2.1: no child segments
     child_segments = next_segs(start_seg, x_loc="min")
@@ -188,7 +323,9 @@ def merge_until_distance(start_seg, stop_dist, distance_func):
     parallel_cyls = []
     parallel_x_stop = []
     for child_seg in child_segments:
-        child_eq_cyl, child_x_term = merge_until_distance(child_seg, stop_dist, distance_func)
+        child_eq_cyl, child_x_term = merge_until_distance(
+                                        child_seg, stop_dist, distance_func,
+                                        all_refs, gbar_list)
         parallel_cyls.append(child_eq_cyl)
         parallel_x_stop.extend(child_x_term)
 
@@ -273,7 +410,8 @@ def merge_cylinders_subtree(
         node,
         allsecrefs,
         split_criterion,
-        distance_func
+        distance_func,
+        gbar_list
     ):
     """
     Merge all cylinders in subtree in one shot.
@@ -291,11 +429,6 @@ def merge_cylinders_subtree(
 
     @param  split_criterion : str
             See same argument @ next_splitpoints()
-
-    TODO:   for each sequential cylinder: save original total area,
-            and integrated conductances
-
-    TODO:   make tapered_folding module based on marasco_folding
 
     TODO:   make variant where you step with a small step size, but merge
             sequential equivalent cylinders until you get approx L/lambda = 0.1.
@@ -344,7 +477,8 @@ def merge_cylinders_subtree(
         parallel_cyls = []
         for seg_x in this_x_split:
             branch_eq_cyl, branch_x_stop = merge_until_distance(
-                                                seg_x, dist_x_split, distance_func)
+                                                seg_x, dist_x_split, distance_func,
+                                                allsecrefs, gbar_list)
             parallel_cyls.append(branch_eq_cyl) # always one cylinder
             parallel_x_stop.extend(branch_x_stop) # split points only if end not reached
 

@@ -20,54 +20,6 @@ logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(l
 logger = logging.getLogger('redops') # create logger for this module
 
 
-def calc_gdist_params(gname, secref, orsecrefs, tree_index, path_indices, xgvals=None):
-    """
-    Calculate parameters of the linear conductance distribution
-    as defined in the Gillies & Willshaw paper (A/B/C/D)
-
-    @type   orsecrefs   list(h.SectionRef)
-    @param  orsecrefs   References to sections in original model. Eac SectionRef
-                        must have properties pathLelec0, pathLelec1, and pathL_elec
-                        containing the electrotonic path length up to the 0 and
-                        1-end, and up to each segment
-
-    @return         tuple (L0, g0), (L1, g1), (Lstart, gstart), (Lend, gend), (gmin, gmax)
-                    gmin:   min gbar along path
-                    gmax:   max gbar along path
-                    L0:     electrotonic length of first segment with gbar > gmin
-                    L1:     electrotonic length of last segment with gbar > gmin
-                    Lstart: electrotonic length of first segment on path
-                    Lend:   electrotonic length of last segment on path
-    """
-    if secref is None:
-        return
-    first_call = xgvals is None
-    if first_call:
-        xgvals = []
-    secfilter = lambda secref: ((secref.tree_index==tree_index) and 
-                                (secref.table_index in path_indices))
-
-    # Measure current section
-    if secfilter(secref):
-        for i, seg in enumerate(secref.sec): # for each segment: save electrotonic path length & gbar
-            xgvals.append((secref.pathL_elec[i], getattr(seg, gname)))
-    
-    # Collect x and gbar values from chidlren
-    for childsec in secref.sec.children():
-        childref = getsecref(childsec, orsecrefs)
-        calc_gdist_params(gname, childref, orsecrefs, tree_index, path_indices, xgvals=xgvals) # this updates xgvals
-
-    # Calculate parameters from gbar distribution
-    if first_call:
-        xgvals = sorted(xgvals, key=lambda xg: xg[0]) # sort by ascending x (L_elec)
-        xvals, gvals = zip(*xgvals)
-        gmin = min(gvals)
-        gmax = max(gvals)
-        xg0 = next((xg for xg in xgvals if xg[1] > gmin), xgvals[0]) # first g > gmin
-        xg1 = next((xg for xg in reversed(xgvals) if xg[1] > gmin), xgvals[-1]) # last g > gmin
-        return (xg0, xg1), (xgvals[0], xgvals[-1]), (gmin, gmax)
-
-
 def find_adj_path_segs(interp_prop, interp_L, path_secs):
     """
     Find segments that are immediately before or after given path length value.

@@ -761,7 +761,7 @@ def find_secprops(node, filter_fun, find_all=True):
             return []
 
 
-def find_roots_at_level(level, root_ref, all_refs):
+def find_roots_at_level(level, all_refs):
     """
     Find all root Sections art a particular level.
 

@@ -12,3 +12,9 @@ class Bunch(object):
 	"""
 	def __init__(self, **kwds):
 		self.__dict__.update(kwds)
+
+def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
+	"""
+	same as Python >= 3.5 math.isclose
+	"""
+	return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)

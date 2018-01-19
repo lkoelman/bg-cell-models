@@ -14,7 +14,7 @@ from neuron import h
 from common.nrnutil import getsecref, seg_index
 from common.treeutils import next_segs
 
-from redutils import seg_path_L_elec, get_sec_range_props, find_outer_branchpoints
+import redutils
 
 
 def find_collapsable(
@@ -48,7 +48,7 @@ def find_collapsable(
             for chi_sec in child_secs:
                 # Get segment that is that distance away from child
                 furthest_seg = chi_sec(min_child_L/chi_sec.L)
-                furthest_L_elec = seg_path_L_elec(
+                furthest_L_elec = redutils.seg_path_L_elec(
                                     furthest_seg, kwargs['f_lambda'], kwargs['gleak_name'])
                 secref.collapsable_L_elec += (secref.pathLelec1 - furthest_L_elec)
 
@@ -82,12 +82,17 @@ def find_collapsable(
                             and (len(ref.sec.children()) >= 2)
                             and (ref.max_passes >= i_pass+1)]
 
+    elif Y_criterion == 'exact_level':
+
+        target_level = kwargs['level']
+        target_Y_secs = redutils.find_roots_at_level(target_level, allsecrefs)
+
     elif Y_criterion == 'outer_branchpoints':
         # All branch points that have no child branch points
         root_sec = allsecrefs[0].root; h.pop_section() # pushes CAS
         root_ref = getsecref(root_sec, allsecrefs)
 
-        target_Y_secs = find_outer_branchpoints(root_ref, allsecrefs)
+        target_Y_secs = redutils.find_outer_branchpoints(root_ref, allsecrefs)
         
 
     else:
@@ -153,7 +158,7 @@ def sub_equivalent_Y_sec(
                 # Resize section to portion behind cut
                 new_nseg = cut_sec.nseg-(cut_seg_index)
                 post_cut_L = cut_sec.L/cut_sec.nseg * new_nseg
-                cut_props = get_sec_range_props(cut_sec, mechs_pars)
+                cut_props = redutils.get_sec_range_props(cut_sec, mechs_pars)
                 
                 # Reassign properties behind cut
                 cut_sec.nseg = new_nseg
@@ -196,6 +201,35 @@ def sub_equivalent_Y_sec(
                 logger.debug("Deleting substituted section '{}'...".format(sec.name()))
                 subbed_ref.is_deleted = True # can also be tested with NEURON ref.exists()
                 h.delete_section()
+
+
+def disconnect_subtree(parent_sec, all_refs, should_disconnect, delete=False):
+    """
+    Disconnect substituted sections and delete them if requested.
+
+    @param  is_substituted : callable(SectionRef) -> bool
+            Function to check if Section is substituted
+    """
+    
+    # Delete disconnected subtree if requested
+    subtree_seclist = h.SectionList()
+    parent_sec.push()
+    subtree_seclist.subtree()
+    h.pop_section()
+    
+    for child_sec in subtree_seclist: # iterates CAS
+        child_ref = getsecref(child_sec, all_refs)
+        if should_disconnect(child_ref):
+            h.disconnect(sec=child_sec)
+            if delete:
+                logger.debug("Deleting substituted section '{}'.".format(child_sec.name()))
+                child_ref.is_deleted = True # can also be tested with NEURON ref.exists()
+                h.delete_section()
+
+    # Alternative approach: don't use SectionList.subtree() but do recursive
+    # call where children are processed first and then the current
+
+
 
 
 def merge_linear_sections(nodesec, max_joins=1e9):
