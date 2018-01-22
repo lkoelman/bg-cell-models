@@ -71,9 +71,8 @@ class TaperedFolder(FoldingAlgorithm):
         fold_pass = AdvancingFrontCollapse(
                         self.reduction, 
                         fold_roots=target_Y_secs,
-                        interp_prop='path_L',
-                        interp_method='linear_neighbors',
-                        gbar_scaling='area')
+                        gbar_init_method='linear_neighbors',
+                        gbar_scale_method='area')
         
         new_refs = fold_pass.do_folds() # do collapse operation at each branch points
 
@@ -95,21 +94,127 @@ class TaperedFolder(FoldingAlgorithm):
 class AdvancingFrontCollapse(object):
     """
     Encapsulate data for collapse operation.
+
+    @param      gbar_init_method : str
+
+                Method used for setting initial values of specific membrane
+                conductances and passive electrical properties (cm, gleak).
+                Valid values are:
+
+                    - 'area_weighted_average': average value of absorbed
+                      cylinders, weighted by their area
+
+                    - 'interp_<METHOD>': interpolate values found at equivalent
+                      path length in the full model
+
+    @param      gbar_scale_method : str
+
+                Method to scale specific membrane conductances. Valid values
+                are listed in section 'WAYS TO SET GBAR'
+
+    @param      passive_scale_method : str
+                
+                Method to scale specific passive electrical parameters: membrane
+                capacitance (sec.cm) and leak conductance (sec.gleak).
+
+                Valid values are one of the valid inputs for gbar_scale_method
+                or 'match_input_impedance'
+
+
+    WAYS TO SET GBAR
+    ----------------
+
+    - set them to the area-weighted average gbar of all cylinders
+      that have been merged into the equivalent sequential section, with
+      no further scaling
+
+        + gbar_scale_method = None / 'None'
+
+        + i.e. g_i = g_wavg = sum(g_j*S_j) / sum(S_j) where j are absorbed cylinders
+
+        +  => Gtot = sum(g_wavg * Snew_cyl)
+        
+        + this is likely to preserve the gradient/spatial profile since
+          gbar is the weighted average at each distance
+        
+        + this does NOT compensate for area reduction, so the total
+          integrated Gbar in an equivalent section will not be the same
+          as that in the original cylinders
+    
+
+    - initialize to area-weighted gbar, then multiply the gbar in each
+      equivalent section with the ration of original area over new area
+
+        + gbar_scale_method = 'surface_area_ratio'
+
+        + i.e. g_i = g_wavg * Sorig_cyl / Snew_cyl
+
+        + => Gtot = sum(g_wavg * Snew_cyl * Sorig_cyl / Snew_cyl)
+                  = sum(g_wavg * Sorig_cyl)
+                  ~= sum(Gorig_cyl)
+                  ~= Gorig_subtree
+
+        + since each cylinder has its own scaling factor, this will likely
+          NOT preserve the gradient/spatial profile
+
+        + this _approximately_ preserves Gbar in each cylinder and the
+          entire subtree
+
+
+    - initialize to area-weighted gbar, then multiply the gbar in each
+      equivalent section with the ratio of integrated Gbar over that
+      section vs over absorbed cylinders
+
+        + gbar_scale_method = 'gbar_integrated_cylinder_ratio'
+
+        + i.e. g_i = g_wavg * Gorig_cyl / Gnew_cyl
+
+        + => Gtot = sum(g_wavg * Snew_cyl * Gorig_cyl / Gnew_cyl)
+                  = sum(Gorig_cyl)
+                  = Gorig_subtree
+
+        + since each cylinder has its own scaling factor, this will likely
+          NOT preserve the gradient/spatial profile
+
+        + this _exactly_ preserves total Gbar in each cylinder AND over,
+          entire subtree so this has good area compensation
+
+
+    - initialize to area-weighted gbar, then multiply the gbar in each
+      equivalent section with the ratio of integrated Gbar over entire
+      subtree
+
+        + gbar_scale_method = 'gbar_integrated_subtree_ratio'
+
+        + i.e. g_i = g_wavg * Gorig_subtree / Gnew_subtree
+
+        + => Gtot = sum(g_wavg * Snew_cyl * Gorig_subtree / Gnew_subtree)
+                  = Gorig_subtree / Gnew_subtree * sum(g_wavg * Snew_cyl)
+                  = Gorig_subtree
+
+        + this is likely to preserve the gradient/spatial profile since all
+          the g_wavg are multiplied by constant factor
+
+        + this preserves total Gbar over entire subtree, but NOT in each
+          cylinder individually, which is a form of area compensation
+
     """
 
     def __init__(
             self,
             reduction,
             fold_roots,
-            interp_prop,
-            interp_method,
-            gbar_scaling
+            **kwargs
         ):
         self.reduction = reduction
         self.fold_roots = fold_roots
-        self.interp_prop = interp_prop
-        self.interp_method = interp_method
-        self.gbar_scaling = gbar_scaling
+
+        self.gbar_init_method = kwargs['gbar_init_method']
+        self.gbar_scale_method = kwargs['gbar_scale_method']
+        self.passive_scale_method = kwargs['passive_scale_method']
+        self.interp_prop = kwargs.get('interp_prop', None)
+        self.match_input_impedance = kwargs['match_input_impedance']
+        self.impedance_linearize_gating = kwargs.get('impedance_linearize_gating', True)
 
         self.f_lambda = self.reduction.get_reduction_param('f_lambda')
         self.gleak_name = self.reduction.gleak_name
@@ -132,6 +237,9 @@ class AdvancingFrontCollapse(object):
                 secref.absorbed = [False] * secref.sec.nseg
                 secref.visited = [False] * secref.sec.nseg
 
+        # Measure input impedance first
+        self.measure_input_impedance()
+
         logger.info("\n###############################################################"
                     "\nCollapsing subtrees ..."
                     "\n###############################################################")
@@ -143,28 +251,35 @@ class AdvancingFrontCollapse(object):
             seq_cyls = self.collapse_subtree(par_ref, collapse_index)
             subtree_eq_cyls.append(seq_cyls)
 
-        # substitute equivalents
+        # Make NEURON Section objects and connect them
         subtree_sec_refs = self.make_equivalent_secs(subtree_eq_cyls)
+        self.insert_mechanisms(subtree_sec_refs)
 
         logger.info("\n###############################################################"
-                    "\nDetermining active electrical properties ..."
+                    "\nSet electrical properties ..."
                     "\n###############################################################")
 
-        # Set their properties
-        self.set_specific_elec_params(subtree_sec_refs)
+        # Set initial values of electrical properties
+        self.init_passive_wavg(subtree_sec_refs)
+        
+        if self.gbar_init_method == 'area_weighted_average':
+            self.init_conductances_wavg(subtree_sec_refs)
+        
+        elif self.gbar_init_method.startswith('interp'):
+            self.init_conductances_interp(subtree_sec_refs)
 
-        if self.interp_method is not None:
-            logger.debug("Using path interpolation for setting conductances.")
-            self.set_conductances_interp(subtree_sec_refs)
-            self.scale_conductances(subtree_sec_refs)
-        else:
-            logger.debug("NOT using path interpolation for setting conductances")
+        # Compensate for area reduction
+        self.scale_specific_elec_params(subtree_sec_refs)
 
         logger.info("\n###############################################################"
                     "\nDelete substituted sections ..."
                     "\n###############################################################")
 
         self.disconnect_substituted_secs(delete=True)
+
+        # Fit input impedance if requested
+        if self.passive_scale_method == 'match_input_impedance':
+            self.fit_passive_params(subtree_sec_refs)
 
         new_sec_refs = [ref for subtree in subtree_sec_refs for ref in subtree]
         return new_sec_refs
@@ -272,106 +387,30 @@ class AdvancingFrontCollapse(object):
                 eqref.is_original = False
                 sequential_refs.append(eqref)
 
+                # Debugging info
+                logger.anal("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
+                             "\n\t%.3f\t%.3f\t%.3f\t%d\n", eqsec.name(), 
+                             eqsec.L, eqsec.diam, eqsec.Ra, eqsec.nseg)
+
             subtree_sec_refs.append(sequential_refs)
 
         return subtree_sec_refs
 
 
-    def set_specific_elec_params(self, subtree_sec_refs):
+    def insert_mechanisms(self, subtree_sec_refs):
         """
         Set passive parameters and insert mechanisms into equivalent sections.
 
-        @param  subtree_sec_refs : list(list(Cylinder))
+        @param  subtree_sec_refs : list(list(SectionRef))
                 For each collapsed subtree: list of sequential equivalent Sections
-
-        WAYS TO SET GBAR
-        ----------------
-
-        TODO: let user choose to initialize with g_wavg or g_interp, make
-              argument gbar_init_method and gbar_scale_method
-
-        - set them to the area-weighted average gbar of all cylinders
-          that have been merged into the equivalent sequential section, with
-          no further scaling
-
-            + i.e. g_i = g_wavg = sum(g_j*S_j) / sum(S_j) where j are absorbed cylinders.
-
-            + => Gtot = sum(g_wavg * Snew_cyl)
-            
-            + this is likely to preserve the gradient/spatial profile since
-              gbar is the weighted average at each distance
-            
-            + this does NOT compensate for area reduction, so the total
-              integrated Gbar in an equivalent section will not be the same
-              as that in the original cylinders
-        
-        - initialize to area-weighted gbar, then multiply the gbar in each
-          equivalent section with the ration of original area over new area
-
-            + i.e. g_i = g_wavg * Sorig_cyl / Snew_cyl
-
-            + => Gtot = sum(g_wavg * Snew_cyl * Sorig_cyl / Snew_cyl)
-                      = sum(g_wavg * Sorig_cyl)
-                      ~= sum(Gorig_cyl)
-                      ~= Gorig_subtree
-
-            + since each cylinder has its own scaling factor, this will likely
-              NOT preserve the gradient/spatial profile
-
-            + this _approximately_ preserves Gbar in each cylinder and the
-              entire subtree
-
-        - initialize to area-weighted gbar, then multiply the gbar in each
-          equivalent section with the ratio of integrated Gbar over that
-          section vs over absorbed cylinders
-
-            + i.e. g_i = g_wavg * Gorig_cyl / Gnew_cyl
-
-            + => Gtot = sum(g_wavg * Snew_cyl * Gorig_cyl / Gnew_cyl)
-                      = sum(Gorig_cyl)
-                      = Gorig_subtree
-
-            + since each cylinder has its own scaling factor, this will likely
-              NOT preserve the gradient/spatial profile
-
-            + this _exactly_ preserves total Gbar in each cylinder AND over,
-              entire subtree so this has good area compensation
-
-        - initialize to area-weighted gbar, then multiply the gbar in each
-          equivalent section with the ratio of integrated Gbar over entire
-          subtree
-
-            + i.e. g_i = g_wavg * Gorig_subtree / Gnew_subtree
-
-            + => Gtot = sum(g_wavg * Snew_cyl * Gorig_subtree / Gnew_subtree)
-                      = Gorig_subtree / Gnew_subtree * sum(g_wavg * Snew_cyl)
-                      = Gorig_subtree
-
-            + this is likely to preserve the gradient/spatial profile since all
-              the g_wavg are multiplied by constant factor
-
-            + this preserves total Gbar over entire subtree, but NOT in each
-              cylinder individually, which is a form of area compensation
-        
         """
         
-        # Set passive electrical properties
         new_sec_refs = [ref for subtree in subtree_sec_refs for ref in subtree]
         for eqref in new_sec_refs:
             
             eqsec = eqref.sec
             orig = eqref.orig_props
             assert eqsec.nseg == 1
-
-            # Scaling of area-specific passive electrical properties
-            eq_area = sum(seg.area() for seg in eqsec)
-            # TODO: the scaling method here has to match that of conductances
-            #       in order to preserve proportionality in differential equations
-            eq_cm = orig.cmtot / eq_area # conserve cm _exactly_
-            eq_gleak = orig.gtot[self.gleak_name] / eq_area # conserve gleak _exactly_
-            logger.debug("Surface area ratio is %f" % (orig.area / eq_area))
-            eqsec.cm = eq_cm
-            setattr(eqsec, self.gleak_name, eq_gleak)
 
             # Copy section mechanisms and properties
             absorbed_secs = redutils.find_secprops(
@@ -386,17 +425,34 @@ class AdvancingFrontCollapse(object):
 
     def init_passive_wavg(self, subtree_sec_refs):
         """
-        TODO: see previous note, scaling method has to match that of conductances
+        Set initial values of specific passive electrical properties
+        to the area-weighted average of the values in absorbed cylinders.
+
+        @param  subtree_sec_refs : list(list(SectionRef))
+                For each collapsed subtree: list of sequential equivalent Sections
         """
-        pass
+        new_sec_refs = [ref for subtree in subtree_sec_refs for ref in subtree]
+        for eqref in new_sec_refs:
+
+            eqsec = eqref.sec
+            orig = eqref.orig_props
+
+            # Set specific capacitance and leak conductance in each section
+            eq_cm = orig.cmtot / orig.area
+            setattr(eqsec, 'cm', eq_cm)
+
+            eq_gleak = orig.gtot[self.gleak_name] / orig.area
+            setattr(eqsec, self.gleak_name, eq_gleak)
 
 
     def init_conductances_wavg(self, subtree_sec_refs):
         """
-        TODO: check what Bush & Marasco do, plot conductance profiles and 
-              responses for four scaling methods.
+        Set initial values of active membrane conductances
+        to the area-weighted average of the values in absorbed cylinders.
+        
+        @param  subtree_sec_refs : list(list(SectionRef))
+                For each collapsed subtree: list of sequential equivalent Sections
         """
-
         new_sec_refs = [ref for subtree in subtree_sec_refs for ref in subtree]
         for eqref in new_sec_refs:
 
@@ -404,22 +460,23 @@ class AdvancingFrontCollapse(object):
             orig = eqref.orig_props
 
             for gname in self.reduction.active_gbar_names:
+
                 eq_gbar = orig.gtot[gname] / orig.area
-                setattr(eqsec, gname, eq_gbar)
+
+                if hasattr(eqsec, gname):
+                    setattr(eqsec, gname, eq_gbar)
+                else:
+                    # if mechanism not inserted: assume that this is because none of the absorbed cylinders had the mechanism present
+                    assert isclose(eq_gbar, 0.0, rel_tol=1e-9)
 
 
     def init_conductances_interp(self, subtree_sec_refs):
         """
-        Set channel conductances by interpolating conductance values along
-        a path of sections in the original cell model.
+        Set initial values of active membrane conductances by interpolating 
+        conductance values along a path of sections in the original cell model.
 
-        This does not take into account the effect of a different surface area.
-
-        @param  subtree_sec_refs : list(list(Cylinder))
+        @param  subtree_sec_refs : list(list(SectionRef))
                 For each collapsed subtree: list of sequential equivalent Sections
-
-        @post   for each conductance in reduction.active_gbar_names, all segments
-                in the cluster are assigned a value true interpolation.
         """
         # Names of path-integrated properties stored on SectionRef
         path_prop_names = {
@@ -454,10 +511,10 @@ class AdvancingFrontCollapse(object):
                         continue
                     
                     # get interpolation function and use it to compute gbar
-                    if self.interp_method == 'linear_neighbors':
+                    if self.gbar_init_method == 'linear_neighbors':
                         gval = interp.interp_gbar_linear_neighbors(path_L, gname, bound_segs, bound_L)
                     else:
-                        match_method = re.search(r'^[a-z]+', self.interp_method)
+                        match_method = re.search(r'^[a-z]+', self.gbar_init_method)
                         method = match_method.group() # should be nearest, left, or right
                         gval = interp.interp_gbar_pick_neighbor(path_L, gname, 
                                             bound_segs[0], bound_L[0], method)
@@ -465,7 +522,7 @@ class AdvancingFrontCollapse(object):
                     setattr(seg, gname, gval)
 
 
-    def scale_conductances(self, subtree_sec_refs):
+    def scale_specific_elec_params(self, subtree_sec_refs):
         """
         After interpolation of specific conductance values, scale values
         so that total non-specific conductance integrated over cluster is the same.
@@ -473,55 +530,163 @@ class AdvancingFrontCollapse(object):
         @param  clusters_refs: dict(Cluster: SectionRef)
                 clusters representing collapsed branches and their equivalent section
 
-        @post   
         """
-        new_sec_refs = [ref for subtree in subtree_sec_refs for ref in subtree]
+        g_range_names = self.reduction.gbar_names + ['cm']
         
-        for eqref in new_sec_refs:
-            eqsec = eqref.sec
-            orig = eqref.orig_props
+        for subtree_refs in subtree_sec_refs:
 
-            # Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
-            for gname in self.reduction.active_gbar_names:
-                if not hasattr(eqsec, gname):
-                    continue
-                
-                # original and current total conductance
-                gtot_orig = orig.gtot[gname]
-                gtot_interp = sum(getattr(seg, gname, 0.0)*seg.area() for seg in eqsec)
-                if gtot_interp <= 0.:
-                    gtot_interp = 1.
-                
-                # TODO: check this calculation
-                for seg in eqsec:
-                    
-                    if self.gbar_scaling == 'area':
-                        # conserves ratio in each segment but not total original conductance
-                        scale = cluster.or_area/cluster.eq_area
-                    
-                    elif self.gbar_scaling == 'gbar_integral':
-                        # does not conserve ratio but conserves gtot_or since: sum(g_i*area_i * or_area/eq_area) = or_area/eq_area * sum(gi*area_i) ~= or_area/eq_area * g_avg*eq_area = or_area*g_avg
-                        scale = or_gtot/eq_gtot
-                    
-                    else:
-                        raise Exception("Unknown gbar scaling method'{}'.".format(self.gbar_scaling))
-                    
-                    # Set gbar
-                    gval = getattr(seg, gname) * scale
-                    setattr(seg, gname, gval)
+            # For scaling method C: look-ahead and calculate integrated conductance over entire subtree
+            subtree_gtot = {gname: 0.0 for gname in g_range_names}
+            if self.gbar_scale_method == 'gbar_integrated_subtree_ratio':
+                for eqref in subtree_refs:
+                    for gname in g_range_names:
+                        subtree_gtot[gname] += sum(getattr(seg, gname, 0.0)*seg.area() for seg in eqref.sec)
 
-            # Debugging info:
-            logger.anal("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
-                         "\n\t%.3f\t%.3f\t%.3f\t%.3f\t%d\n", cluster.label, 
-                         eqsec.L, eqsec.diam, eqsec.cm, eqsec.Ra, eqsec.nseg)
+            for eqref in subtree_refs:
 
+                eqsec = eqref.sec
+                assert eqsec.nseg == 1
+                orig = eqref.orig_props
+                orig.gtot['cm'] = orig.cmtot
+
+                # Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
+                for gname in g_range_names:
+
+                    if not hasattr(eqsec, gname):
+                        continue
+
+                    if (self.gbar_scale_method is None) or (self.gbar_scale_method in 
+                        ['None', 'none']):
+                        continue
+
+                    elif self.gbar_scale_method == 'surface_area_ratio':
+                        
+                        eq_area = sum(seg.area() for seg in eqsec)
+                        logger.debug("Surface area ratio is %f" % (orig.area / eq_area))
+
+                        g_init = getattr(eqsec(0.5), gname)
+                        g_scaled = g_init * orig.area / eq_area
+                        setattr(eqsec, gname, g_scaled)
+
+                    elif self.gbar_scale_method == 'gbar_integrated_cylinder_ratio':
+                        
+                        g_init = getattr(eqsec(0.5), gname)
+                        g_cyl_interp = sum(getattr(seg, gname, 0.0)*seg.area() for seg in eqsec)
+                        g_orig_interp = orig.gtot[gname]
+                        g_scaled = g_init * g_orig_interp / g_cyl_interp
+                        setattr(eqsec, gname, g_scaled)
+
+                    elif self.gbar_scale_method != 'gbar_integrated_subtree_ratio':
+                        raise ValueError("Unknown scaling method '{}'".format(self.gbar_scale_method))
+
+
+    def measure_input_impedance(self):
+        """
+        Measure input impedance of each subtree individually.
+
+        @post   each SectionRef in self.fold_roots will have the attribute
+                'subtree_Zin' set on its 'orig_props' object.
+        """
+        for root_ref in self.fold_roots:
+
+            # First disconnect it
+            root_sec = root_ref.sec
+            parent_seg = root_sec.parentseg()
+            h.disconnect(sec=root_sec)
+
+            # Measure Zin at DC
+            probe = h.Impedance()
+            probe.loc(0.0, sec=root_sec) # injection site
+            probe.compute(0.0, int(self.impedance_linearize_gating))
+            subtree_Zin_DC = probe.input(0.0, sec=root_sec)
+            root_ref.orig_props.subtree_Zin_DC = subtree_Zin_DC
+
+            # Reconnect
+            root_sec.connect(parent_seg)
+
+                    
+    def fit_passive_params(self, subtree_sec_refs):
+        """
+        Fit passive params using measurement of input resistance in each
+        subtree individually.
+
+        Leak conductance is set so input resistance at DC matches original 
+        subtree, and membrane capacitance is set to preserve time constant in 
+        each cylinder (algorithm by Bush & Sejnowski, 1993), i.e.
+
+            + Zin_orig_subtree(f=DC) == Zin_equiv_subtree(f=DC)
+            
+            + for cylinder in subtree:
+                 Cm_old * Rm_old == Cm_new * Rm_new
+        
+        @post   for each collapsed subtree, sec.cm and sec.gleak are adjusted
+                so that Zin measured at 0-end of subtree root is equal to
+                value before reduction, within tolerance of 1e-6.
+        """
+        for i_root, subtree_refs in enumerate(subtree_sec_refs):
+
+            # Get folding root and its first child section
+            root_ref = self.fold_roots[i_root]
+            root_sec = root_ref.sec
+            first_eq_ref = subtree_refs[0]
+            first_eq_sec = first_eq_ref.sec
+            assert first_eq_sec.parentseg().sec == root_sec
+
+            # Initialize optimization
+            for ref in subtree_refs:
+                assert ref.sec.nseg == 1
+                ref.gleak_init = getattr(ref.sec, self.gleak_name)
+                ref.cm_init = getattr(ref.sec, 'cm')
+            
+            probe = h.Impedance()
+            probe.loc(0.0, sec=root_sec) # injection site
+
+            # Cost function for optimization
+            target_Zin = root_ref.orig_props.subtree_Zin_DC
+            def cost_fun(param_hvec):
+                """ Cost function/error to minimize """
+                # Adjust leak conducance
+                scale_factor = param_hvec.x[0]
+                for ref in subtree_refs:
+                    new_gleak = ref.gleak_init * scale_factor
+                    new_cm = ref.cm_init * scale_factor # preserve time constant R*C
+                    setattr(ref.sec, self.gleak_name, new_gleak)
+                    setattr(ref.sec, 'cm', new_cm)
+
+                # Measure input inpedance
+                probe.compute(0.0, int(self.impedance_linearize_gating))
+                this_Zin = probe.input(0.0, sec=root_sec)
+                return (this_Zin - target_Zin)**2
+
+            # Parameters for optimization
+            Zin_tolerance = 1e-6
+            step_size = .01
+            praxis_verbosity = 2
+            h.attr_praxis(Zin_tolerance, step_size, praxis_verbosity)
+            
+            # Optimize
+            scale_init = 1.0
+            param_vec = h.Vector([scale_init])
+            Zin_err_sqrd = h.fit_praxis(cost_fun, param_vec)
+
+            # Report results
+            Zin_final = probe.input(0.0, sec=root_sec)
+            Zin_error = math.sqrt(Zin_err_sqrd)
+            scale_fitted = param_vec.x[0]
+
+            print("""\
+Optimization finished:
+    scale_fitted = {}
+    Zin_orig     = {}
+    Zin_final    = {}
+    Zin error    = {}""".format(scale_fitted, target_Zin, Zin_final, Zin_error))
 
 
     def disconnect_substituted_secs(self, delete=True):
         """
         Disconnect substituted sections and delete them if requested.
         """
-        def should_delete(sec_ref):
+        def section_is_substituted(sec_ref):
             """ Check if Section was substituted and should be deleted. """
             return sec_ref.is_original and sec_ref.absorbed
 
@@ -529,5 +694,5 @@ class AdvancingFrontCollapse(object):
             treeedit.disconnect_subtree(
                         root_ref,
                         self.reduction.all_sec_refs,
-                        should_disconnect=should_delete,
+                        should_disconnect=section_is_substituted,
                         delete=True)

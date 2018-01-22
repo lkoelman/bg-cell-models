@@ -206,6 +206,62 @@ def subtree_topology(sub_root, max_depth=1e9):
 	return buff_string
 
 
+def check_tree_constraints(sections):
+	"""
+	Check unbranched cable assumption and orientation constrained.
+
+	@return		tuple(bool, bool, list(Section), list(Section)) with following 
+				entries:
+
+				bool: all Sections are unbranched
+				bool: all sections are correctly oriented, i.e. the 0-end is
+				 	  connected to the 1-end of the parent, except if the parent
+				 	  is the root section in which case a connection to the 0-end
+				 	  is permitted.
+				list: all branched sections
+				list: all misoriented sections
+	"""
+	# check both connect(child(x), parent(y))
+	# parent_y: for all sections in whole tree: sec.parentseg().x must be 1.0
+	# 			EXCEPT for sections connected to root
+	# child_x:  for all sections in whole tree: sec.orientation() (h.section_orientation(sec=sec)) must 0.0
+
+	is_unbranched = True
+	is_oriented = True
+	branched = set()
+	misoriented = set()
+
+	first_ref = h.SectionRef(sec=sections[0])
+	tree_root = first_ref.root; h.pop_section() # pushes CAS
+
+	for sec in sections:
+
+		parent_sec = sec.parentseg().sec
+		parent_y = sec.parentseg().x
+		orient_parent_ok = parent_y==1.0 or (parent_y==0.0 and parent_sec.same(tree_root))
+		branch_parent_ok = parent_y==1.0 or parent_y==0.0
+
+		self_x = sec.orientation()
+		orient_self_ok = self_x==0.0
+		branch_self_ok = self_x==0.0 or self_x==1.0
+
+		is_unbranched = is_unbranched and branch_parent_ok and branch_self_ok
+		is_oriented = is_oriented and orient_parent_ok and orient_self_ok
+
+
+		if not orient_parent_ok:
+			misoriented.update(parent_sec)
+		if not orient_self_ok:
+			misoriented.update(sec)
+		
+		if not branch_parent_ok:
+			branched.update(parent_sec)
+		if not branch_self_ok:
+			branched.update(sec)
+
+	return is_unbranched, is_oriented, list(branched), list(misoriented)
+
+
 
 # seg_builtin_attrs = ['area', 'cm', 'diam', 'hh', 'na_ion', 'k_ion', 'ca_ion', 'next', 'node_index', 'point_processes', 'ri', 'sec', 'v', 'x']
 
