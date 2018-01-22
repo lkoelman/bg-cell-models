@@ -13,7 +13,7 @@ from copy import deepcopy
 # Our modules
 from common.treeutils import next_segs
 from common.nrnutil import seg_xmin, seg_xmax, getsecref
-from common.electrotonic import seg_lambda
+from common.electrotonic import seg_lambda, lambda_AC
 from numpy import interp
 
 ################################################################################
@@ -141,7 +141,7 @@ class Cylinder(object):
 
         # Calculate area, capacitance, conductances
         pmerge.area = self.area
-        pmerge.cmtot = seg.cm * self.area()
+        pmerge.cmtot = seg.cm * self.area
         pmerge.gtot = dict((gname, 0.0) for gname in glist)
         for gname in glist:
             try:
@@ -258,7 +258,13 @@ def merge_cylinders_parallel(cyls):
     return merged_cyl
 
 
-def merge_until_distance(start_seg, stop_dist, distance_func, all_refs, gbar_list):
+def merge_until_distance(
+        start_seg,
+        stop_dist,
+        distance_func,
+        all_refs,
+        gbar_list,
+        lookahead=False):
     """
     Keep merging cylindrical compartments in subtree starting at start_seg until
     distance_func(end_seg) is equal to the desired stopping distance.
@@ -271,9 +277,13 @@ def merge_until_distance(start_seg, stop_dist, distance_func, all_refs, gbar_lis
             Function that measures distance of a NEURON segment with an
             associated x-value, e.g. from the root of the tree
 
-    @param  stop_dist: float
+    @param  stop_dist : float
             The distance at which merging should be stopped, measured using
             distance_func
+
+    @param  lookahead : bool
+            If true, this is a look-ahead call, and the visited Sections will
+            not be marked as visited or absorbed
 
     @return tuple(Cylinder, list(nrn.Segment))
             Equivalent cylinder until stopping distance, and the list of
@@ -292,16 +302,17 @@ def merge_until_distance(start_seg, stop_dist, distance_func, all_refs, gbar_lis
     if stop_dist < X_end:
         # Interpolate distance values at start and end of segment
         x_interp = interp(
-                    [stop_dist], 
+                    stop_dist, 
                     [X_beg, X_end],
-                    [seg_xmin(start_seg), seg_xmax(start_seg, inside=True)])
+                    [start_seg.x, seg_xmax(start_seg, inside=True)])
         
         # Cut segment: Cylinder runs from segment.x to stopping distance
         start_cyl = Cylinder(nrn_seg=start_seg,
                              use_seg_x='x_min',
                              x_bound=x_interp)
         start_cyl.save_merged_properties(start_ref, gbar_list)
-        start_ref.visited = True
+        if not lookahead:
+            start_ref.visited = True
 
         term_seg = start_seg.sec(x_interp)
         return start_cyl, [term_seg]
@@ -310,8 +321,9 @@ def merge_until_distance(start_seg, stop_dist, distance_func, all_refs, gbar_lis
     # Cylinder runs from segment.x to right boundary of segment
     start_cyl = Cylinder(nrn_seg=start_seg, use_seg_x="x_min")
     start_cyl.save_merged_properties(start_ref, gbar_list)
-    start_ref.visited = True
-    start_ref.absorbed = True # fully absorbed when walked past end
+    if not lookahead:
+        start_ref.visited = True
+        start_ref.absorbed = True # fully absorbed when walked past end
 
     # Scenario 2.1: no child segments
     child_segments = next_segs(start_seg, x_loc="min")
@@ -325,7 +337,7 @@ def merge_until_distance(start_seg, stop_dist, distance_func, all_refs, gbar_lis
     for child_seg in child_segments:
         child_eq_cyl, child_x_term = merge_until_distance(
                                         child_seg, stop_dist, distance_func,
-                                        all_refs, gbar_list)
+                                        all_refs, gbar_list, lookahead=lookahead)
         parallel_cyls.append(child_eq_cyl)
         parallel_x_stop.extend(child_x_term)
 
@@ -337,6 +349,45 @@ def merge_until_distance(start_seg, stop_dist, distance_func, all_refs, gbar_lis
     subtree_eq_cyl = merge_cylinders_sequential(sequential_cyls)
 
     return subtree_eq_cyl, parallel_x_stop
+
+
+def next_splitpoints(start_seg, **kwargs):
+    """
+    Return next cable splitting points encountered when ascending
+    tree starting at given segment
+
+    @param  split_criterion : str
+    
+            How cylinder boundaries should be determined, one of following:
+            
+            - "next_seg_dlambda": merge until segment length constant has changed 
+              by given fraction of starting value. For keyword-arguments: see
+              next_splitpoints_seg_dlambda()
+
+            - "fixed_distance": merge until fixed increment in path length from 
+              root is reached. For keyword-arguments: see next_splitpoints_fixed_distance()
+
+            - (NOT IMPLEMENTED) "segment_ddiam"
+                - merge until diam has changed by given fraction of starting value
+
+            - (NOT IMPLEMENTED) "equivalent_lambda"
+                - merge approximately until the point where the equivalent cylinder
+                  has a length of 10% its electrotonic length
+
+            - (NOT IMPLEMENTED) "path_dlambda"
+                - merge until fixed increment in electrotonc path length is reached
+
+    """
+    split_criterion = kwargs.pop("split_criterion")
+    
+    if split_criterion == "next_seg_dlambda":
+        return next_splitpoints_seg_dlambda(start_seg, **kwargs)
+
+    elif split_criterion == "fixed_distance":
+        return next_splitpoints_fixed_distance(start_seg, **kwargs)
+
+    else:
+        raise NotImplementedError("Splitting criterion {} not implemented".format(split_criterion))
 
 
 def next_splitpoints_seg_dlambda(current_seg, lambda_start=None, fraction=0.1):
@@ -370,49 +421,52 @@ def next_splitpoints_seg_dlambda(current_seg, lambda_start=None, fraction=0.1):
     return child_splitpoints
 
 
-def next_splitpoints(start_seg, **kwargs):
+def next_splitpoints_fixed_distance(cur_seg, distance_func=None, dX=None, start_X=None):
     """
-    Return next cable splitting points encountered when ascending
-    tree starting at given segment
-
-    @param  split_criterion : str
-    
-            How cylinder boundaries should be determined, one of following:
-            
-            - "segment_dlambda"
-                - merge until segment length constant has changed by given
-                  fraction of starting value
-            
-            - (NOT IMPLEMENTED) "segment_ddiam"
-                - merge until diam has changed by given fraction of starting value
-
-            - (NOT IMPLEMENTED) "equivalent_lambda"
-                - merge approximately until the point where the equivalent cylinder
-                  has a length of 10% its electrotonic length
-
-            - (NOT IMPLEMENTED) "path_dL"
-                - merge until fixed increment in path length from root is reached
-
-            - (NOT IMPLEMENTED) "path_dlambda"
-                - merge until fixed increment in electrotonc path length is reached
-
     """
-    split_criterion = kwargs.pop["split_criterion"]
+    if start_X is None:
+        start_X = distance_func(cur_seg)
+    stop_X = start_X + dX
+
+    # Keep absorbing segments until the 1-end boundary is larger than distance
+    far_seg = cur_seg.sec(seg_xmax(cur_seg, inside=True))
+    X_beg = distance_func(cur_seg)
+    X_end = distance_func(far_seg)
+
+    # Scenario 0: prox boundary is already beyond stopping distance
+    if stop_X < X_beg:
+        raise ValueError("Start segment is already farther than stopping distance")
+
+    # Scenario 1: far boundary of starting segment is farther that stop_dist
+    if stop_X < X_end:
+        # Interpolate distance values at start and end of segment
+        x_interp = interp(
+                    stop_X, 
+                    [X_beg, X_end],
+                    [cur_seg.x, seg_xmax(cur_seg, inside=True)])
+        
+
+        term_seg = cur_seg.sec(x_interp)
+        return [term_seg]
     
-    if split_criterion == "segment_dlambda":
-        return next_splitpoints_seg_dlambda(start_seg, **kwargs)
+    # Scenario 2: stopping distance is beyond far boundary of segment
+    child_segments = next_segs(cur_seg, x_loc="min") # get left bound of child segments
 
-    else:
-        raise NotImplementedError("Splitting criterion {} not implemented".format(split_criterion))
+    # Scenario 2.1: no child segments
+    if not any(child_segments):
+        if cur_seg.x == 1.0: # this was the end of this branch
+            return []
+        else:
+            return [cur_seg.sec(1.0)] # last point returned on this branch
+
+    # Scenario 2.2: child segment present
+    child_splitpoints = []
+    for child_seg in child_segments:
+        child_splitpoints.extend(next_splitpoints_fixed_distance(
+                                    child_seg, distance_func, dX, start_X))
 
 
-def merge_cylinders_subtree(
-        node,
-        allsecrefs,
-        split_criterion,
-        distance_func,
-        gbar_list
-    ):
+def merge_cylinders_subtree(node, allsecrefs, **kwargs):
     """
     Merge all cylinders in subtree in one shot.
 
@@ -424,70 +478,101 @@ def merge_cylinders_subtree(
             Segment where children will be merged.
     
     @param  distance_func : callable(nrn.Segment) -> float
+
             Function that measures distance of a NEURON segment with an
-            associated x-value, e.g. from the root of the tree
+            associated x-value. E.g. use redutils.seg_path_L() for distance
+            from root of tree.
 
     @param  split_criterion : str
-            See same argument @ next_splitpoints()
+            Criterion for splitting cylinders. One of the following:
+            
+            'fixed_distance': split cylinders after walking a fixed step size
+            'split_dX' along each branch. Requires additional arguments: 'split_dX'
+            
+            'approx_electrotonic': split cylinders until the equivalent cylinder
+            has length equal to a fixed fraction of its electrotonic length constant
+            lambda. Requires additional arguments: 'lookahead_dX', 'lambda_fraction'
+            
+            'next_seg_dlambda': split cylinder when change in length constant is 
+            larger than fixed fraction of starting value. Requires additional
+            arguments: 'lambda_fraction'
 
-    TODO:   make variant where you step with a small step size, but merge
-            sequential equivalent cylinders until you get approx L/lambda = 0.1.
-            This can be done at the end as a postprocessing step.
-
-            Or you could make a heuristic where you first calculate lambda in
-            the next increment equivalent cylinder (step by small dL) and then
-            step by a true dL = 0.1*lambda_est, assuming that area ratio
-            will be approximately constant in that step. You can do this in 
-            adaptive step fashion: first make small step to calculate local
-            lambda, then add a step that would dL ~= 0.1*lambda, but then you
-            may have to backtrack.
-
-            Or take Stratford idea: walk 0.1*orig_lambda along each parallel branch,
-            and make sure that the equivalent cylinder also has L=0.1*new_lambda.
-            Problem is that the new lambda depends on new cm, which is scaled
-            depending on new L (recursive dependence). When you solve this equation
-            `L=0.1*new_lambda` for L, you obtain an expression for L which
-            should be `L = (0.1*d_eq)^2 / (f*cm*S_old*Ra)` where S_old is the total
-            surface of merge sections. However this is exclusive with the Bush
-            & Sejnowski principle because that sets dimensions to determine axial
-            resistance per unit length. For this approach you can make new functions
-            merge_cylinder_xxx() that preserve L/lambda rather than ra.
+    @param  gbar_list : list(str)
+            list of mechanism conductances
+    
+    @param  kwargs
+            Additional keyword arguments passed to next_splitpoints() function
     """
+    # Get arguments
+    split_criterion = kwargs.pop('split_criterion')
+    distance_func = kwargs.pop('distance_func')
+    gbar_list = kwargs.pop('gbar_list')
 
     # Initial cable splitting points
-    this_x_split = [sec(0.0) for sec in node.sec.children()]
+    current_splitpoints = [sec(0.0) for sec in node.sec.children()]
+    target_dist_X = distance_func(node.sec(1.0))
     sequential_cyls = []
 
     # Continue as long as there is any branch left where we haven't marched until terminal segment
-    while len(this_x_split) > 0:
+    while len(current_splitpoints) > 0:
     
-        # Look ahead: find next cable splitting points on each branch
-        candidate_x_split = []
-        for seg_x in this_x_split:
-            branch_x_split = next_splitpoints(this_x_split, split_criterion=split_criterion)
-            candidate_x_split.extend(branch_x_split)
+        # Look-ahead: find distance of next cable splitting points on each branch.
+        # Calculate actual walking distance based on the look-ahead.
+        if split_criterion == 'next_seg_dlambda':
+
+            # Find first point along each branch where change > tolerance occurs
+            candidate_x_split = []
+            for split_seg in current_splitpoints:
+                branch_x_split = next_splitpoints(
+                                    split_seg, 
+                                    split_criterion=split_criterion,
+                                    **kwargs)
+                candidate_x_split.extend(branch_x_split)
+
+            # Find closest point where change > tolerance occurs
+            candidate_dists = [distance_func(x_seg) for x_seg in candidate_x_split]
+            target_dist_X = min(candidate_dists)
         
-        candidate_dists = [distance_func(x_seg) for x_seg in candidate_x_split]
-        dist_x_split = min(candidate_dists)
+        elif split_criterion == 'fixed_distance':
+            # No lookahead
+            target_dist_X += kwargs['split_dX']
+        
+        elif split_criterion == 'approx_electrotonic':
+            
+            lookahead_X = target_dist_X + kwargs['lookahead_dX']
+            lookahead_cyls = []
+            for split_seg in current_splitpoints:
+                branch_eqcyl, _ = merge_until_distance(
+                                    split_seg, lookahead_X, distance_func,
+                                    allsecrefs, gbar_list, lookahead=True)
+                lookahead_cyls.append(branch_eqcyl)
+
+            # Approximate lambda in next cylinder
+            seq_cyl = merge_cylinders_parallel(lookahead_cyls)
+            # TODO FIXME: lambda_AC calculation depends on final cm, so need to pass parameter 'passive_scale_method' and adapt approx lambda calculation to this (put this in function 'approximate_lambda()')
+            target_dist_X += kwargs['lambda_fraction'] * lambda_AC(seq_cyl, 100.0)
 
         # On each sibling branch: march up tree until split distance,
         # and return the equivalent cylinder until that point, as well as 
-        # the new splitting points (at end of merge operation)
-        parallel_x_stop = []
+        # the new splitting points (end of merged cylinders)
+        parallel_splitpoints = []
         parallel_cyls = []
-        for seg_x in this_x_split:
-            branch_eq_cyl, branch_x_stop = merge_until_distance(
-                                                seg_x, dist_x_split, distance_func,
+        for split_seg in current_splitpoints:
+            # TODO: make sure it works with above functions. Specifically:
+            #       - recompute target_dist_X based on actual splitpoints?
+            #       - end of segment?
+            branch_eqcyl, branch_stoppoints = merge_until_distance(
+                                                split_seg, target_dist_X, distance_func,
                                                 allsecrefs, gbar_list)
-            parallel_cyls.append(branch_eq_cyl) # always one cylinder
-            parallel_x_stop.extend(branch_x_stop) # split points only if end not reached
+            parallel_cyls.append(branch_eqcyl) # always one cylinder
+            parallel_splitpoints.extend(branch_stoppoints) # split points only if end not reached
 
         # Merge the equivalent cylinders in parallel
         seq_cyl = merge_cylinders_parallel(parallel_cyls)
         sequential_cyls.append(seq_cyl)
         
         # Update cable splitting points (new starting points)
-        this_x_split = parallel_x_stop
+        current_splitpoints = parallel_splitpoints
 
     # TODO: postprocess by merging sequential cylinders?
     return sequential_cyls

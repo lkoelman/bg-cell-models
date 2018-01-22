@@ -16,9 +16,9 @@ logger = logging.getLogger(logname) # create logger for this module
 
 from neuron import h
 
-from common.nrnutil import getsecref, seg_index, same_seg
+from common.nrnutil import getsecref, seg_index, same_seg, seg_xmin, seg_xmax
 from common.treeutils import subtreeroot
-from common.electrotonic import seg_lambda, sec_lambda
+from common.electrotonic import seg_lambda
 
 # Load NEURON function libraries
 h.load_file("stdlib.hoc") # Load the standard library
@@ -213,16 +213,18 @@ def seg_path_L_elec(endseg, f, gleak_name):
     raise Exception('End segment not reached')
 
 
-def seg_path_L(endseg, to_end):
+def seg_path_L(endseg, endpoint):
     """
     Calculate path length from center of root section to given segment
 
-    @param to_end   if True, return distance to end of segment, else
-                    return distance to start of segment
+    @param  endpoint: str
+            Valid values are one of:
+                'segment_start': measure distance to start of segment
+                'segment_end': measure distance to end of segment
+                'segment_x': measure distance to x-loc of segment
     """
     secref = h.SectionRef(sec=endseg.sec)
     rootsec = subtreeroot(secref)
-    j_endseg = seg_index(endseg)
     rootparent = rootsec.parentseg()
     if rootparent is None:
         return 0.0 # if we are soma/topmost root: path length is zero
@@ -242,16 +244,18 @@ def seg_path_L(endseg, to_end):
     path_secs = list(root_path)
     path_L = 0.0
     for isec, psec in enumerate(path_secs):
-        arrived = bool(psec.same(endseg.sec))
-        seg_L = psec.L/psec.nseg 
-        for j_seg, seg in enumerate(psec):
-            if arrived and j_seg==j_endseg:
-                # assert same_seg(seg, endseg)
-                if to_end:
-                    return path_L + seg_L
-                else:
-                    return path_L
-            path_L += seg_L
+        if not psec.same(endseg.sec):
+            path_L += psec.L # full length of Section
+        else:
+            assert isec == len(path_secs)-1
+            if endpoint == 'segment_start':
+                return path_L + seg_xmin(endseg)*psec.L
+            elif endpoint == 'segment_end':
+                return path_L + seg_xmax(endseg)*psec.L
+            elif endpoint == 'segment_x':
+                return path_L + endseg.x*psec.L
+            else:
+                raise ValueError(str(endpoint))
 
 
 class SecProps(object):

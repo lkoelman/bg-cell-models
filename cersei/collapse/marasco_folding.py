@@ -58,12 +58,14 @@ class MarascoFolder(FoldingAlgorithm):
 
     impl_algorithm = ReductionMethod.Marasco
 
-    def __init__(self):
+    def __init__(self, algorithm):
         """
         @note   FoldReduction class is responsible for maintaining
                 bi-directional association
         """
         self.reduction = None
+        if algorithm != self.impl_algorithm:
+            raise ValueError("MarascoFolder has no implementation for folding algorithm {}".format(algorithm))
 
 
     def preprocess_reduction(self):

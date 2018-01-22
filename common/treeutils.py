@@ -210,8 +210,9 @@ def check_tree_constraints(sections):
 	"""
 	Check unbranched cable assumption and orientation constrained.
 
-	@return		tuple(bool, bool, list(Section), list(Section)) with following 
-				entries:
+	@return		a tuple (unbranched, oriented, branched, misoriented) of type 
+				tuple(bool, bool, list(Section), list(Section)) 
+				with following entries:
 
 				bool: all Sections are unbranched
 				bool: all sections are correctly oriented, i.e. the 0-end is
@@ -241,7 +242,7 @@ def check_tree_constraints(sections):
 		orient_parent_ok = parent_y==1.0 or (parent_y==0.0 and parent_sec.same(tree_root))
 		branch_parent_ok = parent_y==1.0 or parent_y==0.0
 
-		self_x = sec.orientation()
+		self_x = sec.orientation() # see h.section_orientation()
 		orient_self_ok = self_x==0.0
 		branch_self_ok = self_x==0.0 or self_x==1.0
 

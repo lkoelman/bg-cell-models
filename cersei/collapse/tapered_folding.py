@@ -21,8 +21,9 @@ from common.treeutils import subtree_topology
 from common.nrnutil import ExtSecRef, getsecref
 from common.stdutil import isclose
 
+import cluster
 import redutils
-import tree_edit as treeedit
+import tree_edit
 import interpolation as interp
 from fold_algorithm import FoldingAlgorithm
 import tapered_merging as taper
@@ -55,8 +56,7 @@ class TaperedFolder(FoldingAlgorithm):
         """
         Preprocess cell for reduction.
         """
-        # NOTE: all required peprocessing steps are done in FoldReduction.preprocess_cell()
-        pass
+        cluster.assign_topology_attrs(self.reduction._root_ref, self.reduction.all_sec_refs)
 
 
     def fold_one_pass(self, i_pass, Y_criterion="exact_level"):
@@ -64,17 +64,18 @@ class TaperedFolder(FoldingAlgorithm):
         Collapse branches at branch points identified by given criterion.
         """
         # Find collapsable branch points
-        target_Y_secs = treeedit.find_collapsable(
+        target_Y_secs = tree_edit.find_collapsable(
                                 self.reduction.all_sec_refs, 
                                 i_pass, Y_criterion, level=2)
 
-        fold_pass = AdvancingFrontCollapse(
+        collapser = AdvancingFrontCollapse(
                         self.reduction, 
                         fold_roots=target_Y_secs,
                         gbar_init_method='linear_neighbors',
-                        gbar_scale_method='area')
+                        gbar_scale_method='surface_area_ratio',
+                        passive_scale_method='surface_area_ratio')
         
-        new_refs = fold_pass.do_folds() # do collapse operation at each branch points
+        new_refs = collapser.collapse() # do collapse operation at each branch points
 
         return new_refs
 
@@ -109,16 +110,17 @@ class AdvancingFrontCollapse(object):
 
     @param      gbar_scale_method : str
 
-                Method to scale specific membrane conductances. Valid values
-                are listed in section 'WAYS TO SET GBAR'
+                Method to scale specific membrane conductances. Valid values are:
+                    - None/'None'
+                    - 'surface_area_ratio'
+                    - 'gbar_integrated_cylinder_ratio'
+                    - 'gbar_integrated_subtree_ratio'
 
     @param      passive_scale_method : str
-                
+
                 Method to scale specific passive electrical parameters: membrane
                 capacitance (sec.cm) and leak conductance (sec.gleak).
-
-                Valid values are one of the valid inputs for gbar_scale_method
-                or 'match_input_impedance'
+                Valid values: 'match_input_impedance' or see values gbar_scale_method
 
 
     WAYS TO SET GBAR
@@ -209,12 +211,14 @@ class AdvancingFrontCollapse(object):
         self.reduction = reduction
         self.fold_roots = fold_roots
 
+        # Settings for scaling of electrical parameters
         self.gbar_init_method = kwargs['gbar_init_method']
         self.gbar_scale_method = kwargs['gbar_scale_method']
         self.passive_scale_method = kwargs['passive_scale_method']
-        self.interp_prop = kwargs.get('interp_prop', None)
-        self.match_input_impedance = kwargs['match_input_impedance']
-        self.impedance_linearize_gating = kwargs.get('impedance_linearize_gating', True)
+        if self.gbar_init_method.startswith('interp'):
+            self.interp_prop = kwargs['interp_prop']
+        if self.passive_scale_method == 'match_input_impedance':
+            self.impedance_linearize_gating = kwargs['impedance_linearize_gating']
 
         self.f_lambda = self.reduction.get_reduction_param('f_lambda')
         self.gleak_name = self.reduction.gleak_name
@@ -238,7 +242,8 @@ class AdvancingFrontCollapse(object):
                 secref.visited = [False] * secref.sec.nseg
 
         # Measure input impedance first
-        self.measure_input_impedance()
+        if self.passive_scale_method == 'match_input_impedance':
+            self.measure_input_impedance()
 
         logger.info("\n###############################################################"
                     "\nCollapsing subtrees ..."
@@ -314,12 +319,19 @@ class AdvancingFrontCollapse(object):
 
         logger.debug("Topology at folding root {0}:\n".format(par_sec.name()) + 
                         subtree_topology(par_sec, max_depth=2))
+
+        # Settings for tapered collapse algorithm
+        def path_distance_micron(segment):
+            return redutils.seg_path_L(segment, endpoint='segment_x')
         
         # Collapse operation: calculate cylinders
         seq_cyls = taper.merge_cylinders_subtree(
                             par_sec(1.0), allsecrefs,
-                            self.split_criterion,
-                            self.distance_func)
+                            gbar_list=self.reduction.gbar_names,
+                            distance_func=path_distance_micron,
+                            split_criterion='approx_electrotonic',
+                            lookahead_dX=5.0,
+                            lambda_fraction=0.1)
 
         # Label this collapse operation
         zip_id = 1000 + i_collapse # usable as gid
@@ -555,11 +567,16 @@ class AdvancingFrontCollapse(object):
                     if not hasattr(eqsec, gname):
                         continue
 
-                    if (self.gbar_scale_method is None) or (self.gbar_scale_method in 
+                    if gname in ['cm', self.gleak_name]:
+                        requested_scale_method = self.passive_scale_method
+                    else:
+                        requested_scale_method = self.gbar_scale_method
+
+                    if (requested_scale_method is None) or (requested_scale_method in 
                         ['None', 'none']):
                         continue
 
-                    elif self.gbar_scale_method == 'surface_area_ratio':
+                    elif requested_scale_method == 'surface_area_ratio':
                         
                         eq_area = sum(seg.area() for seg in eqsec)
                         logger.debug("Surface area ratio is %f" % (orig.area / eq_area))
@@ -568,7 +585,7 @@ class AdvancingFrontCollapse(object):
                         g_scaled = g_init * orig.area / eq_area
                         setattr(eqsec, gname, g_scaled)
 
-                    elif self.gbar_scale_method == 'gbar_integrated_cylinder_ratio':
+                    elif self.requested_scale_method == 'gbar_integrated_cylinder_ratio':
                         
                         g_init = getattr(eqsec(0.5), gname)
                         g_cyl_interp = sum(getattr(seg, gname, 0.0)*seg.area() for seg in eqsec)
@@ -576,7 +593,8 @@ class AdvancingFrontCollapse(object):
                         g_scaled = g_init * g_orig_interp / g_cyl_interp
                         setattr(eqsec, gname, g_scaled)
 
-                    elif self.gbar_scale_method != 'gbar_integrated_subtree_ratio':
+                    elif requested_scale_method not in ['gbar_integrated_subtree_ratio', 
+                                                        'match_input_impedance']:
                         raise ValueError("Unknown scaling method '{}'".format(self.gbar_scale_method))
 
 
@@ -587,6 +605,8 @@ class AdvancingFrontCollapse(object):
         @post   each SectionRef in self.fold_roots will have the attribute
                 'subtree_Zin' set on its 'orig_props' object.
         """
+        self.reduction.init_cell_steadystate()
+
         for root_ref in self.fold_roots:
 
             # First disconnect it
@@ -623,6 +643,8 @@ class AdvancingFrontCollapse(object):
                 so that Zin measured at 0-end of subtree root is equal to
                 value before reduction, within tolerance of 1e-6.
         """
+        self.reduction.init_cell_steadystate()
+
         for i_root, subtree_refs in enumerate(subtree_sec_refs):
 
             # Get folding root and its first child section
@@ -691,7 +713,7 @@ Optimization finished:
             return sec_ref.is_original and sec_ref.absorbed
 
         for root_ref in self.fold_roots:
-            treeedit.disconnect_subtree(
+            tree_edit.disconnect_subtree(
                         root_ref,
                         self.reduction.all_sec_refs,
                         should_disconnect=section_is_substituted,

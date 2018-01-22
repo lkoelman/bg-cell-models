@@ -8,10 +8,12 @@ Object-oriented interface for various compartmental cell reduction methods.
 from abc import abstractmethod, ABCMeta
 
 from common.nrnutil import ExtSecRef, getsecref
+from common.treeutils import check_tree_constraints
 from neuron import h
 
 from fold_algorithm import ReductionMethod
 import marasco_folding as marasco
+import tapered_folding as taper
 import mapsyn, redutils, interpolation as interp
 
 # logging of DEBUG/INFO/WARNING messages
@@ -35,7 +37,8 @@ class FoldReduction(object):
     __metaclass__ = ABCMeta # Python2 way
 
     _FOLDER_CLASSES = {
-        ReductionMethod.Marasco: marasco.MarascoFolder
+        ReductionMethod.Marasco: marasco.MarascoFolder,
+        ReductionMethod.BushSejnowski: taper.TaperedFolder
     }
 
 
@@ -69,8 +72,17 @@ class FoldReduction(object):
         # Reduction algorithm
         self.active_method = method
         FolderClass = self._FOLDER_CLASSES[method]
-        self.folder = FolderClass()
+        self.folder = FolderClass(method)
         self.folder.reduction = self # bidirectional association
+
+        # Check orientation & unbranched cable constraint
+        unbranched, oriented, branched, misoriented = check_tree_constraints(dend_secs)
+        if not (unbranched and oriented):
+            raise ValueError(
+                    "Dendritic tree Sections must be unbranched and oriented from "
+                    "0-end to 1-end. Found {} branched sections:\n{} and "
+                    "{} misoriented sections:\n{}".format(len(branched), 
+                    branched, len(misoriented), misoriented))
 
         # Model mechanisms
         self.gleak_name = gleak_name

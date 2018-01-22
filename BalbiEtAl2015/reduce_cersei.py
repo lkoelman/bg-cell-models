@@ -11,6 +11,7 @@ sys.path.append(pkg_root)
 import cersei.collapse.redutils as redutils
 import cersei.collapse.cluster as cluster
 import common.logutils as logutils
+import common.treeutils as treeutils
 from common.nrnutil import ExtSecRef, getsecref
 from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
 
@@ -47,33 +48,39 @@ class BalbiFoldReduction(FoldReduction):
         # Axonic sections are first subtree (trunk = AH)
         axonic = sum((list(named_secs[name]) for 
                         name in ('AH', 'IS', 'node', 'MYSA', 'FLUT', 'STIN')), [])
-        # Whole cell
-        wholecell = sum(named_secs.values(), [])
         
         nonsomatic = axonic + dendritic
         kwargs['soma_secs'] = somatic
         kwargs['dend_secs'] = nonsomatic
 
-        # Get the folding branchpoints for the dendritic subtrees
-        all_refs = [ExtSecRef(sec=sec) for sec in wholecell]
-        dend_refs = [getsecref(sec, all_refs) for sec in dendritic]
-        root_sec = dend_refs[0].root; h.pop_section() # true root, pushes CAS
-        root_ref = ExtSecRef(sec=root_sec)
-
-        # Choose root sections for folding operations
-        cluster.assign_topology_attrs(root_ref, all_refs)
-        trunk_refs = redutils.find_roots_at_level(2, root_ref, dend_refs) # level 2 roots
-        
-        # At which nodes should tree be folded?
-        fold_roots = [named_secs['AH'][0]]
-        fold_roots.extend([ref.sec for ref in trunk_refs])
-        kwargs['fold_root_secs'] = fold_roots
+        # Whole cell
+        wholecell = treeutils.wholetree_secs(somatic[0]) # sum(named_secs.values(), [])
+        kwargs['fold_root_secs'] = self._get_fold_roots(named_secs, wholecell)
 
         # Set all parameters
         kwargs['gleak_name'] = balbi_model.gleak_name
         kwargs['mechs_gbars_dict'] = balbi_model.gbar_dict
         kwargs['mechs_params_nogbar'] = balbi_model.mechs_params_nogbar
         super(BalbiFoldReduction, self).__init__(**kwargs)
+
+
+    def _get_fold_roots(reduction, named_secs, all_secs):
+        """
+        Get folding roots.
+        """
+        # Get the folding branchpoints for the dendritic subtrees
+        all_refs = [ExtSecRef(sec=sec) for sec in all_secs]
+        root_sec = all_refs[0].root; h.pop_section() # true root, pushes CAS
+        root_ref = getsecref(root_sec, all_refs)
+
+        # Choose root sections for folding operations
+        cluster.assign_topology_attrs(root_ref, all_refs)
+        trunk_refs = redutils.find_roots_at_level(2, all_refs) # level 2 roots
+        
+        # At which nodes should tree be folded?
+        fold_roots = [named_secs['AH'][0]]
+        fold_roots.extend([ref.sec for ref in trunk_refs])
+        return fold_roots
 
 
     def assign_initial_sec_gids(reduction):
@@ -149,7 +156,7 @@ class BalbiFoldReduction(FoldReduction):
 
 
     @staticmethod
-    def init_cell_steadystate(self):
+    def init_cell_steadystate():
         """
         Initialize cell for analyzing electrical properties.
         
@@ -191,7 +198,7 @@ def make_fold_reduction():
     
 
     # Reduce model
-    reduction = BalbiFoldReduction(method=ReductionMethod.Marasco,
+    reduction = BalbiFoldReduction(method=ReductionMethod.BushSejnowski,
                                    balbi_motocell_id=BALBI_CELL_ID)
 
     # Extra Reduction parameters

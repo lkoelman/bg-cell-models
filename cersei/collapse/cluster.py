@@ -97,20 +97,18 @@ def assign_topology_attrs(
     @param  cur_ref     SectionRef to current node
 
 
-    @param  all_refs        list(SectionRef) to all sections in the cell
+    @param  all_refs    list(SectionRef) to all sections in the cell
 
 
     @param  par_order   order of parent sections (distance in #sections from soma)
     
     """
-    if cur_ref is None: return
+    if cur_ref is None:
+        logger.debug("Node not found in SectionRef list")
+        return
 
     # assign order and level
-    if root_order is not None: # override first level & order
-        cur_ref.order = root_order
-        cur_ref.level = root_order
-    
-    elif par_ref is None: # start from beginning
+    if par_ref is None: # start from beginning
         cur_ref.order = 1
         cur_ref.level = 1
     
@@ -123,6 +121,11 @@ def assign_topology_attrs(
             cur_ref.level = par_ref.level + 1
         else:
             cur_ref.level = par_ref.level
+
+    # User override of inital order
+    if root_order is not None:
+        cur_ref.order = root_order
+        cur_ref.level = root_order
 
     childsecs = cur_ref.sec.children()
     childrefs = [getsecref(sec, all_refs) for sec in childsecs]
@@ -205,7 +208,7 @@ def label_from_custom_regions(noderef, label_seg=True, labelsuffix='', marker_me
 
     for iseg, seg in enumerate(noderef.sec):
         # Compute path length
-        path_L = redtools.seg_path_L(seg, to_end=True)
+        path_L = redtools.seg_path_L(seg, endpoint='segment_end')
 
         # Determine label from threshold (see gbar plot)
         if path_L > 220.:
