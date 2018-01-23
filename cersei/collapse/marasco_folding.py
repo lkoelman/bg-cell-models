@@ -290,18 +290,18 @@ class FoldingPass(object):
         zip_id = 1000*self.i_pass + j_zip
 
         # Function for processing zipped SectionRefs
-        zipped_sec_gids = set()
-        zipped_region_labels = set()
+        merged_sec_gids = set()
+        merged_region_labels = set()
         def process_zipped_seg(seg, jseg, ref):
             # Tag segment with label of current zip operation
             ref.zip_labels[jseg] = zip_label
             # Save GIDs of original sections that are zipped/absorbed into equivalent section
             if ref.is_original:
-                zipped_sec_gids.add(ref.gid)
-                zipped_region_labels.add(ref.region_label)
+                merged_sec_gids.add(ref.gid)
+                merged_region_labels.add(ref.region_label)
             else:
-                zipped_sec_gids.update(ref.zipped_sec_gids)
-                zipped_region_labels.update(ref.zipped_region_labels)
+                merged_sec_gids.update(ref.merged_sec_gids)
+                merged_region_labels.update(ref.merged_region_labels)
         
         # Perform 'zip' operation
         far_bound_segs = [] # last (furthest) segments that are zipped
@@ -319,8 +319,8 @@ class FoldingPass(object):
         cluster.eqdiam = eq_br.diam_eq
         cluster.eq_area_sum = eq_br.L_eq * PI * eq_br.diam_eq
         cluster.eqri = eq_br.Ri_eq
-        cluster.zipped_sec_gids = zipped_sec_gids
-        cluster.zipped_region_labels = zipped_region_labels
+        cluster.merged_sec_gids = merged_sec_gids
+        cluster.merged_region_labels = merged_region_labels
         cluster.zip_id = zip_id
         cluster.parent_seg = par_sec(1.0)
         cluster.bound_segs = far_bound_segs # Save boundaries (for substitution)
@@ -435,7 +435,7 @@ class FoldingPass(object):
             eqsec.connect(cluster.parent_seg, 0.0) # see help(sec.connect)
 
             # Save metadata
-            for prop in ['zip_id', 'or_area', 'zipped_sec_gids', 'zipped_region_labels']:
+            for prop in ['zip_id', 'or_area', 'merged_sec_gids', 'merged_region_labels']:
                 setattr(eqref, prop, getattr(cluster, prop)) # copy some useful attributes
             eqref.is_original = False
 
@@ -476,7 +476,7 @@ class FoldingPass(object):
             # Copy section mechanisms and properties
             absorbed_secs = redutils.find_secprops(
                                     self.reduction.orig_tree_props,
-                                    lambda sec: sec.gid in eqref.zipped_sec_gids)
+                                    lambda sec: sec.gid in eqref.merged_sec_gids)
             
             redutils.merge_sec_properties(
                             absorbed_secs, eqsec, 

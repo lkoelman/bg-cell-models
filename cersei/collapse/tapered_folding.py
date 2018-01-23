@@ -215,8 +215,10 @@ class AdvancingFrontCollapse(object):
         self.gbar_init_method = kwargs['gbar_init_method']
         self.gbar_scale_method = kwargs['gbar_scale_method']
         self.passive_scale_method = kwargs['passive_scale_method']
+        
         if self.gbar_init_method.startswith('interp'):
             self.interp_prop = kwargs['interp_prop']
+        
         if self.passive_scale_method == 'match_input_impedance':
             self.impedance_linearize_gating = kwargs['impedance_linearize_gating']
 
@@ -282,6 +284,11 @@ class AdvancingFrontCollapse(object):
 
         self.disconnect_substituted_secs(delete=True)
 
+        # Debug info
+        for root in self.fold_roots:
+            logger.debug("Topology at root {0} after collapse:\n".format(
+                        root.sec.name()) + subtree_topology(root.sec, max_depth=2))
+
         # Fit input impedance if requested
         if self.passive_scale_method == 'match_input_impedance':
             self.fit_passive_params(subtree_sec_refs)
@@ -290,7 +297,7 @@ class AdvancingFrontCollapse(object):
         return new_sec_refs
 
 
-    def int_to_alphabet(i):
+    def int_to_alphabet(self, i):
         """
         Convert integer to alphabetic character.
         """
@@ -298,7 +305,7 @@ class AdvancingFrontCollapse(object):
         num_char = 90-65+1
         q, r = divmod(i, num_char)
         letter = chr(65+r)
-        return q*letter
+        return (q+1)*letter
 
 
     def collapse_subtree(self, par_ref, i_collapse):
@@ -325,13 +332,17 @@ class AdvancingFrontCollapse(object):
             return redutils.seg_path_L(segment, endpoint='segment_x')
         
         # Collapse operation: calculate cylinders
-        seq_cyls = taper.merge_cylinders_subtree(
+        merge_walk = taper.MergingWalk(
                             par_sec(1.0), allsecrefs,
                             gbar_list=self.reduction.gbar_names,
                             distance_func=path_distance_micron,
-                            split_criterion='approx_electrotonic',
-                            lookahead_dX=5.0,
-                            lambda_fraction=0.1)
+                            split_criterion='fixed_distance',
+                            split_dX=20.0)
+                            # split_criterion='approx_electrotonic',
+                            # lookahead_dX=5.0,
+                            # lambda_fraction=0.1)
+                            
+        seq_cyls = merge_walk.merge_cylinders_subtree()
 
         # Label this collapse operation
         zip_id = 1000 + i_collapse # usable as gid
@@ -579,7 +590,7 @@ class AdvancingFrontCollapse(object):
                     elif requested_scale_method == 'surface_area_ratio':
                         
                         eq_area = sum(seg.area() for seg in eqsec)
-                        logger.debug("Surface area ratio is %f" % (orig.area / eq_area))
+                        # logger.debug("Surface area ratio is %f" % (orig.area / eq_area))
 
                         g_init = getattr(eqsec(0.5), gname)
                         g_scaled = g_init * orig.area / eq_area
@@ -710,7 +721,7 @@ Optimization finished:
         """
         def section_is_substituted(sec_ref):
             """ Check if Section was substituted and should be deleted. """
-            return sec_ref.is_original and sec_ref.absorbed
+            return sec_ref.absorbed
 
         for root_ref in self.fold_roots:
             tree_edit.disconnect_subtree(

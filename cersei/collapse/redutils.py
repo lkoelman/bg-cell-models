@@ -419,11 +419,11 @@ def get_sec_props(sec, mechs_pars):
 
 
 def merge_sec_properties(
-    src_props,
-    tar_sec,
-    mechs_pars,
-    ion_styles=True,
-    check_uniform=True
+        src_props,
+        tar_sec,
+        mechs_pars,
+        ion_styles=True,
+        check_uniform=True
     ):
     """
     Merge section properties from multiple SecProps objects into target Section.
@@ -491,6 +491,9 @@ def merge_ion_styles(src_props, tar_sec, check_uniform=True):
     """
     Set correct ion styles for each Section.
 
+    @param          src_props : iterable(SecProps)
+                    Object containing Section properties
+
     @effect         By default, ion styles of merged Sections are looked up
                     in the saved original tree properties and copied to the
                     sections (if they are all the same). This method may be
@@ -503,7 +506,11 @@ def merge_ion_styles(src_props, tar_sec, check_uniform=True):
     final_styles = ionstyles_dicts[0]
     for styles_dict in ionstyles_dicts[1:]:
         for ion, style_flags in styles_dict.iteritems():
-            if final_styles[ion] != style_flags:
+            
+            if ion not in final_styles:
+                final_styles[ion] = style_flags
+            
+            elif final_styles[ion] != style_flags:
                 raise ValueError("Cannot merge Sections with distinct ion styles!")
 
     # Copy styles to target Section

@@ -78,8 +78,10 @@ class BalbiFoldReduction(FoldReduction):
         trunk_refs = redutils.find_roots_at_level(2, all_refs) # level 2 roots
         
         # At which nodes should tree be folded?
-        fold_roots = [named_secs['AH'][0]]
+        fold_roots = [] # [named_secs['AH'][0]]
         fold_roots.extend([ref.sec for ref in trunk_refs])
+        logger.debug("Folding roots:\n" + "\n".join((str(ref) for ref in fold_roots)))
+
         return fold_roots
 
 
@@ -128,8 +130,12 @@ class BalbiFoldReduction(FoldReduction):
                 secref.region_label = 'axonic'
             else:
                 raise Exception("Unrecognized original section {}".format(secref.sec))
-        else:
-            secref.region_label = '-'.join(sorted(secref.zipped_region_labels))
+        
+        elif hasattr(secref, 'merged_region_labels'):
+            secref.region_label = '-'.join(sorted(secref.merged_region_labels))
+
+        elif hasattr(secref, 'orig_props'):
+            secref.region_label = '-'.join(sorted(secref.orig_props.merged_region_labels))
 
 
     def fix_section_properties(self, new_sec_refs):
@@ -231,8 +237,7 @@ def reduce_model_folding(export_locals=True):
     logger.debug("Building model took {}".format(tstop-tstart))
     
     # Do reduction
-    # TODO: in Folder interface methods: remove gillies-specific code
-    reduction.reduce_model(num_passes=7)
+    reduction.reduce_model(num_passes=1) # SETPARAM: numbe of folding passes
     tstart, tstop = tstop, timer()
     logger.debug("Reducing model took {}".format(tstop-tstart))
 

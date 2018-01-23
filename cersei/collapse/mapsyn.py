@@ -330,8 +330,8 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False)
         # Function for checking that section maps to original synapse section
         mapsto_synsec = lambda ref: (ref.tree_index==syn_info.tree_index) and (
                                     ref.gid==syn_info.gid or (
-                                        hasattr(ref, 'zipped_sec_gids') and 
-                                        (syn_info.gid in ref.zipped_sec_gids)
+                                        hasattr(ref, 'merged_sec_gids') and 
+                                        (syn_info.gid in ref.merged_sec_gids)
                                         )
                                     )
         

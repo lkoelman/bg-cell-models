@@ -203,7 +203,7 @@ def sub_equivalent_Y_sec(
                 h.delete_section()
 
 
-def disconnect_subtree(parent_sec, all_refs, should_disconnect, delete=False):
+def disconnect_subtree(parent_ref, candidate_refs, should_disconnect, delete=False):
     """
     Disconnect substituted sections and delete them if requested.
 
@@ -213,12 +213,18 @@ def disconnect_subtree(parent_sec, all_refs, should_disconnect, delete=False):
     
     # Delete disconnected subtree if requested
     subtree_seclist = h.SectionList()
-    parent_sec.push()
+    parent_ref.sec.push()
     subtree_seclist.subtree()
     h.pop_section()
     
     for child_sec in subtree_seclist: # iterates CAS
-        child_ref = getsecref(child_sec, all_refs)
+        
+        if child_sec.same(parent_ref.sec):
+            continue
+        child_ref = getsecref(child_sec, candidate_refs)
+        if child_ref is None: # Section not in disconnectable candidates
+            continue
+        
         if should_disconnect(child_ref):
             h.disconnect(sec=child_sec)
             if delete:

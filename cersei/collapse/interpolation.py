@@ -12,7 +12,7 @@ h = neuron.h
 
 # Our own modules
 import redutils
-from common.nrnutil import ExtSecRef, getsecref, get_range_var
+from common.nrnutil import ExtSecRef, get_range_var
 
 # Enable logging
 import logging
@@ -115,9 +115,9 @@ def get_interpolation_path_sections(secref, tree_properties):
     @return             <list(Section)>
     """
 
-    # Return each Section/SecProps in secref.zipped_sec_gids
+    # Return each Section/SecProps in secref.merged_sec_gids
     absorbed = redutils.find_secprops(tree_properties,
-                            lambda sec: sec.gid in secref.zipped_sec_gids)
+                            lambda sec: sec.gid in secref.merged_sec_gids)
 
     # Find the farthest one (highest path length from soma)
     max_dist = max((sec.pathL1 for sec in absorbed))

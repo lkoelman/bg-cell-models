@@ -185,7 +185,9 @@ def subtree_topology(sub_root, max_depth=1e9):
 		buff.write(lead_char)
 		if dist == max_depth+1:
 			# truncate end sections
-			buff.write("-..")
+			num_child = len(subtree_secs(sec))
+			buff.write("-..       %s%s + %i children\n" % (sec.name(), direc, num_child))
+			return # end of recursion
 		else:
 			buff.write("-" * sec.nseg)
 		

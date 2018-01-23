@@ -76,11 +76,20 @@ def get_mod_name(hobj):
 
 def seg_index(tar_seg):
     """ Get index of given segment on Section """
-    # return next(i for i,seg in enumerate(tar_seg.sec) if seg.x==tar_seg.x) # DOES NOT WORK if you use a seg object obtained using sec(my_x)
+
+    # BELOW GIVES ROUNDING ERRORS
     seg_dx = 1.0/tar_seg.sec.nseg
     seg_id = int(tar_seg.x/seg_dx) # same as tar_seg.x // seg_dx
     return min(seg_id, tar_seg.sec.nseg-1)
 
+    # NOTE: == operator compares actual segments
+    # if tar_seg.x == 0.0: # start node
+    #     return 0
+    # elif tar_seg.x == 1.0: # end node
+    #     return tar_seg.sec.nseg-1
+    # else: # internal node
+    #     return next(i for i,seg in enumerate(tar_seg.sec) if seg==tar_seg)
+    
 
 def seg_at_index(sec, iseg):
     """
@@ -98,23 +107,27 @@ def seg_xmid(seg):
     x-value at segment midpoint
     """
     nseg = seg.sec.nseg
-    iseg = min(int(seg.x * nseg), nseg-1)
+    iseg = seg_index(seg)
     xmid = (2.*(iseg+1)-1.)/(2.*nseg) # See NEURON book p. 8
     return xmid
 
 
-def seg_xleft(seg):
+def seg_xleft(seg, inside=True):
     """
     x-value at left boundary of segment (towards 0-end)
     """
     nseg = seg.sec.nseg
-    iseg = min(int(seg.x * nseg), nseg-1)
-    return (1.0/nseg) * iseg
+    iseg = seg_index(seg)
+    x_lo = (1.0/nseg) * iseg
+    if inside:
+        return x_lo + 1e-12
+    else:
+        return x_lo - 1e-12
 
 seg_xmin = seg_xleft
 
 
-def seg_xright(seg, inside=False):
+def seg_xright(seg, inside=True):
     """
     x-value at right boundary of segment (towards 1-end)
 
@@ -124,13 +137,12 @@ def seg_xright(seg, inside=False):
             addressing the Section
     """
     nseg = seg.sec.nseg
-    iseg = min(int(seg.x * nseg), nseg-1)
-    x_max = (1.0/nseg) * (iseg + 1)
-    
+    iseg = seg_index(seg)
+    x_hi = (1.0/nseg) * (iseg + 1)
     if inside:
-        return x_max - 1e-12
+        return x_hi - 1e-12
     else:
-        return x_max
+        return x_hi + 1e-12
 
 seg_xmax = seg_xright
 
@@ -142,9 +154,8 @@ def same_seg(seg_a, seg_b):
     """
     if not(seg_a.sec.same(seg_b.sec)):
         return False
-    seg_dx = 1.0/seg_a.sec.nseg
     # check if x locs map to same section
-    return int(seg_a.x/seg_dx) == int(seg_b.x/seg_dx)
+    return seg_index(seg_a) == seg_index(seg_b)
 
 
 def get_range_var(seg, varname, default=0.0):
@@ -156,3 +167,59 @@ def get_range_var(seg, varname, default=0.0):
         return getattr(seg, varname, default)
     except NameError: # mechanisms is known but not inserted
         return default
+
+
+def test_segment_boundaries():
+    """
+    Test functions related to segment x-values
+    """
+    from stdutil import isclose
+
+    for nseg in range(1,11):
+        sec = h.Section()
+        sec.nseg = nseg
+        dx = 1.0 / nseg
+
+        # Assign true index to segment property
+        sec.insert('hh')
+        for i, seg in enumerate(sec):
+            seg.gnabar_hh = float(i)
+
+        # Test each segment
+        for i, seg in enumerate(sec):
+
+            # test midpoint of segment
+            x_mid = seg_xmid(seg)
+            assert isclose(seg.x, x_mid, abs_tol=1e-9)
+            assert seg_index(seg) == i
+
+            # test low boundary of segment
+            x_min = seg_xmin(seg, inside=True)
+            lo_seg = sec(x_min)
+            assert seg_index(lo_seg) == i
+            assert lo_seg.gnabar_hh == float(i)
+            assert isclose(x_min, x_mid-dx/2, abs_tol=1e-9)
+
+            if i != 0:
+                x_min = seg_xmin(seg, inside=False)
+                prev_seg = sec(x_min)
+                assert seg_index(prev_seg) == i-1
+                assert prev_seg.gnabar_hh == float(i-1)
+                assert isclose(x_min, x_mid-dx/2, abs_tol=1e-9)
+
+            # test high boundary of segment
+            x_max = seg_xmax(seg, inside=True)
+            hi_seg = sec(x_max)
+            assert seg_index(hi_seg) == i
+            assert hi_seg.gnabar_hh == float(i)
+            assert isclose(x_max, x_mid+dx/2, abs_tol=1e-9)
+
+            if i != nseg-1:
+                x_max = seg_xmax(seg, inside=False)
+                next_seg = sec(x_max)
+                assert seg_index(next_seg) == i+1
+                assert next_seg.gnabar_hh == float(i+1)
+                assert isclose(x_max, x_mid+dx/2, abs_tol=1e-9)
+
+
+    print("Test 'test_segment_boundaries' passed.")
