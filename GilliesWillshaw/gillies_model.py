@@ -14,7 +14,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 
 import matplotlib.pyplot as plt
 
-from common.treeutils import ExtSecRef, getsecref
+from common.nrnutil import ExtSecRef, getsecref
 from reducemodel import redutils
 
 # Load NEURON mechanisms
@@ -23,7 +23,7 @@ scriptdir, scriptfile = os.path.split(__file__)
 NRN_MECH_PATH = os.path.normpath(os.path.join(scriptdir, 'nrn_mechs'))
 neuron.load_mechanisms(NRN_MECH_PATH)
 
-# Global variables
+# Map of channel mechanisms to max conductance parameters (key = suffix of mod mechanism)
 gillies_gdict = {
 	'STh':	['gpas'], 								# passive/leak channel
 	'Na':	['gna'], 'NaL':['gna'],					# Na channels
@@ -32,9 +32,39 @@ gillies_gdict = {
 	'CaT':	['gcaT'], 'HVA':['gcaL', 'gcaN'], 		# Ca channels
 	'Cacum': [],									# No channels
 }
-gillies_mechs = list(gillies_gdict.keys()) # all mechanisms
-gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
+gbar_dict = gillies_gdict
 gleak_name = 'gpas_STh'
+
+# Mechanism parameters that are changed from default values in original model code
+mechs_params_dict = {
+    'STh':	['gpas'],
+	'Na':	['gna'],
+	'NaL':	['gna'],
+	'KDR':	['gk'],
+	'Kv31':	['gk'],
+	'sKCa':	['gk'],
+	'Ih':	['gk'],
+	'CaT':	['gcaT'],
+	'HVA':	['gcaL', 'gcaN'],
+	'Cacum':[],
+}
+
+# All mechanism parameters that are not conductances
+mechs_params_nogbar = dict(mechs_params_dict)
+for mech, params in mechs_params_nogbar.iteritems():
+    for gbar_param in gbar_dict.get(mech, []):
+        try:
+            params.remove(gbar_param)
+        except ValueError:
+            pass
+
+# All mechanism names
+gillies_mechs = list(gillies_gdict.keys()) # all mechanisms
+mechs_list = gillies_mechs
+
+# All gbar (max conductance) names
+gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
+gbar_list = gillies_glist
 active_gbar_names = [gname for gname in gillies_glist if gname != gleak_name]
 
 

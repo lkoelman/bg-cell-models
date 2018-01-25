@@ -75,9 +75,9 @@ def get_mod_name(hobj):
 
 
 def seg_index(tar_seg):
-    """ Get index of given segment on Section """
-
-    # BELOW GIVES ROUNDING ERRORS
+    """
+    Get index of given segment on Section
+    """
     seg_dx = 1.0/tar_seg.sec.nseg
     seg_id = int(tar_seg.x/seg_dx) # same as tar_seg.x // seg_dx
     return min(seg_id, tar_seg.sec.nseg-1)
@@ -112,39 +112,62 @@ def seg_xmid(seg):
     return xmid
 
 
-def seg_xleft(seg, inside=True):
+def seg_xmin(seg, side=None):
     """
     x-value at left boundary of segment (towards 0-end)
+
+    @param  side : str
+            Relative location of return x-value to the exact segment boundary
+                - 'inside' : inside given segment
+                - 'outside': in previous segment or 0-end node
+                - 'boundary' or None: exactly on segment boundary, no guarantee 
+                   whether this is inside or outside given segment
     """
     nseg = seg.sec.nseg
     iseg = seg_index(seg)
     x_lo = (1.0/nseg) * iseg
-    if inside:
-        return x_lo + 1e-12
+
+    if side=='inside':
+        x_lo += 1e-12
+    elif side=='outside':
+        x_lo -= 1e-12
+    elif (side=='boundary') or (side is None):
+        return x_lo
     else:
-        return x_lo - 1e-12
+        raise ValueError(side)
 
-seg_xmin = seg_xleft
+    return max(0.0, x_lo)
+
+seg_xleft = seg_xmin
 
 
-def seg_xright(seg, inside=True):
+def seg_xmax(seg, side=None):
     """
     x-value at right boundary of segment (towards 1-end)
 
-    @param  inside: bool
-            if True: x-location will be inside same segment, i.e. not true
-            boundary since this will yield the next segment if used for 
-            addressing the Section
+    @param  side : str
+            Relative location of return x-value to the exact segment boundary
+                - 'inside' : inside given segment
+                - 'outside': in previous segment or 0-end node
+                - 'boundary' or None: exactly on segment boundary, no guarantee 
+                   whether this is inside or outside given segment
     """
     nseg = seg.sec.nseg
     iseg = seg_index(seg)
     x_hi = (1.0/nseg) * (iseg + 1)
-    if inside:
-        return x_hi - 1e-12
-    else:
-        return x_hi + 1e-12
 
-seg_xmax = seg_xright
+    if side=='inside':
+        x_hi -= 1e-12
+    elif side=='outside':
+        x_hi += 1e-12
+    elif (side=='boundary') or (side is None):
+        return x_hi
+    else:
+        raise ValueError(side)
+
+    return min(1.0, x_hi)
+
+seg_xright = seg_xmax
 
 
 def same_seg(seg_a, seg_b):
@@ -194,28 +217,28 @@ def test_segment_boundaries():
             assert seg_index(seg) == i
 
             # test low boundary of segment
-            x_min = seg_xmin(seg, inside=True)
+            x_min = seg_xmin(seg, side='inside')
             lo_seg = sec(x_min)
             assert seg_index(lo_seg) == i
             assert lo_seg.gnabar_hh == float(i)
             assert isclose(x_min, x_mid-dx/2, abs_tol=1e-9)
 
             if i != 0:
-                x_min = seg_xmin(seg, inside=False)
+                x_min = seg_xmin(seg, side='outside')
                 prev_seg = sec(x_min)
                 assert seg_index(prev_seg) == i-1
                 assert prev_seg.gnabar_hh == float(i-1)
                 assert isclose(x_min, x_mid-dx/2, abs_tol=1e-9)
 
             # test high boundary of segment
-            x_max = seg_xmax(seg, inside=True)
+            x_max = seg_xmax(seg, side='inside')
             hi_seg = sec(x_max)
             assert seg_index(hi_seg) == i
             assert hi_seg.gnabar_hh == float(i)
             assert isclose(x_max, x_mid+dx/2, abs_tol=1e-9)
 
             if i != nseg-1:
-                x_max = seg_xmax(seg, inside=False)
+                x_max = seg_xmax(seg, side='outside')
                 next_seg = sec(x_max)
                 assert seg_index(next_seg) == i+1
                 assert next_seg.gnabar_hh == float(i+1)

@@ -2,108 +2,130 @@
 Test suite for reduce_cell.py : reductions of specific cell models.
 """
 
-from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction, logger
-from common.treeutils import getsecref
+import re
+import sys
 
+pkg_root = ".." # root dir for our packages
+sys.path.append(pkg_root)
+
+from common.nrnutil import getsecref
+from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
+
+import gillies_model
 from neuron import h
 
-# Make Gillies model files findable
-gillies_model_dir = "../GilliesWillshaw"
-import sys
-sys.path.append(gillies_model_dir)
+import logging, common.logutils
+logger = logging.getLogger('gillies')
+common.logutils.setLogLevel('verbose', ['gillies', 'marasco', 'folding'])
 
 ################################################################################
 # Cell model-specific implementations of reduction functions
 ################################################################################
 
-def assign_new_sec_gids(node_ref, all_refs, par_ref=None):
-	"""
-	Assign identifiers to newly created Sections
+class StnCellReduction(FoldReduction):
+    """
+    Model-specific functions for folding reduction of Gillies & Willshaw (2005)
+    STN cell model.
+    """
 
-	@note	assigned to key 'assign_new_identifiers_func'
-	"""
-	if not hasattr(node_ref, 'tree_index'):
-		node_ref.tree_index = par_ref.tree_index
-	
-	if not hasattr(node_ref, 'table_index'):
-		node_ref.table_index = -1 # unassigned
+    def __init__(self, **kwargs):
+        """
+        Make new Gillies model reduction.
 
-	# assign a unique cell GID
-	if not hasattr(node_ref, 'gid'):
-		if node_ref.table_index >= 0:
-			node_ref.gid = min(0,node_ref.tree_index)*100 + node_ref.table_index
-		else:
-			node_ref.gid = node_ref.zip_id
+        @param  balbi_motocell_id   (int) morphology file identifier
+        """
 
-	childsecs = node_ref.sec.children()
-	childrefs = [getsecref(sec, all_refs) for sec in childsecs]
-	for childref in childrefs:
-		assign_new_sec_gids(childref, all_refs, parref=node_ref)
+        gillies_model.stn_cell_gillies()
 
+        # Make sections accesible by name and index
+        soma = h.SThcell[0].soma
+        somatic = [soma]
 
-def assign_initial_sec_gids(reduction):
-	"""
-	Assign identifiers to Sections.
+        dendL = list(h.SThcell[0].dend0) # 0 is left tree
+        dendR = list(h.SThcell[0].dend1) # 1 is right tree
+        dendritic = dendL + dendR
 
-	@note	assigned to key 'assign_initial_identifiers_func'
+        # Get references to root sections of the 3 identical trees
+        dendR_root          = h.SThcell[0].dend1[0]
+        dendL_upper_root    = h.SThcell[0].dend0[1] # root section of upper left dendrite
+        dendL_lower_root    = h.SThcell[0].dend0[2] # root section of lower left dendrite
+        fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
 
-	@post	all SectionRef.gid attributes are set
-	"""
+        # Set reduction parameters
+        kwargs['soma_secs'] = somatic
+        kwargs['dend_secs'] = dendritic
+        kwargs['fold_root_secs'] = fold_roots
 
-	allsecrefs = reduction.all_sec_refs
-
-	dendL_secs = list(h.SThcell[0].dend0)
-	dendR_secs = list(h.SThcell[0].dend1)
-	dend_lists = [dendL_secs, dendR_secs]
-
-	# Assign indices used in Gillies code (sth-data folder)
-	def assign_original_indices(reduction):
-		"""
-		Assign 'STh indices' used in tables to look up section properties.
-		"""
-		for somaref in reduction._soma_refs:
-			somaref.tree_index = -1
-			somaref.table_index = 0
-
-		for secref in reduction._dend_refs:
-			for i_dend, dendlist in enumerate(dend_lists):
-				if any([sec.same(secref.sec) for sec in dendlist]):
-					secref.tree_index = i_dend
-					secref.table_index= next((i+1 for i,sec in enumerate(dendlist) if sec.same(secref.sec)))
-		
-	# Assign unique GID to each Section
-	assign_original_indices(reduction)
-	assign_new_sec_gids(reduction._root_ref, allsecrefs)
+        # Set all parameters
+        kwargs['gleak_name'] = gillies_model.gleak_name
+        kwargs['mechs_gbars_dict'] = gillies_model.gbar_dict
+        kwargs['mechs_params_nogbar'] = gillies_model.mechs_params_nogbar
+        
+        super(StnCellReduction, self).__init__(**kwargs)
 
 
-def get_interpolation_path_sections(reduction):
-	"""
-	Return sections along path from soma to distal end of dendrites used
-	for interpolating dendritic properties.
+    def assign_region_label(reduction, secref):
+        """
+        Assign region labels to sections.
+        """
+        arrayname = re.sub(r"\[?\d+\]?", "", secref.sec.name())
 
-	@note	assigned to key 'interpolation_path_func'
-	"""
-	# Choose stereotypical path for interpolation
-	interp_tree_id = 1
-	interp_table_ids = (1,3,8)
-	path_secs = [secref for secref in reduction.all_sec_refs if (
-					secref.tree_index == interp_tree_id and 
-					secref.table_index in interp_table_ids)]
-	return path_secs
+        # Original sections
+        if secref.is_original:
+            if arrayname.endswith('soma'):
+                secref.region_label = 'somatic'
+            elif arrayname.endswith('dend'):
+                secref.region_label = 'dendritic'
+            else:
+                raise Exception("Unrecognized original section {}".format(secref.sec))
+        
+        # Substituted / equivalent sections
+        elif hasattr(secref, 'merged_region_labels'):
+            secref.region_label = '-'.join(sorted(secref.merged_region_labels))
+
+        elif hasattr(secref, 'orig_props'):
+            secref.region_label = '-'.join(sorted(secref.orig_props.merged_region_labels))
 
 
-def set_ion_styles(reduction, secref):
-	"""
-	Set correct ion styles for each Section.
+    def fix_section_properties(self, new_sec_refs):
+        """
+        Fix properties of newly created sections.
 
-	@note	assigned to key 'set_ion_styles_func'
-	"""
-	# Set ion styles
-	secref.sec.push()
-	h.ion_style("na_ion",1,2,1,0,1)
-	h.ion_style("k_ion",1,2,1,0,1)
-	h.ion_style("ca_ion",3,2,1,1,1)
-	h.pop_section()
+        @override   abstract method FoldReduction.fix_section_properties
+        """
+        pass
+
+
+    @staticmethod
+    def init_cell_steadystate():
+        """
+        Initialize cell for analyzing electrical properties.
+        
+        @note   Ideally, we should restore the following, like SaveState.restore():
+                - all mechanism STATE variables
+                - voltage for all segments (seg.v)
+                - ion concentrations (nao,nai,ko,ki, ...)
+                - reversal potentials (ena,ek, ...)
+        """
+        h.celsius = 35
+        h.v_init = -68.0
+        h.set_aCSF(4)
+        h.init()
+
+
+    @staticmethod
+    def set_ion_styles(secref):
+        """
+        Set correct ion styles for each Section.
+
+        @note   assigned to key 'set_ion_styles_func'
+        """
+        # Set ion styles
+        secref.sec.push()
+        h.ion_style("na_ion",1,2,1,0,1)
+        h.ion_style("k_ion",1,2,1,0,1)
+        h.ion_style("ca_ion",3,2,1,1,1)
+        h.pop_section()
 
 
 ################################################################################
@@ -111,26 +133,26 @@ def set_ion_styles(reduction, secref):
 ################################################################################
 
 def adjust_gbar_spontaneous(reduction):
-	"""
-	Adjust gbar (NaL) to fix spontaneous firing rate.
+    """
+    Adjust gbar (NaL) to fix spontaneous firing rate.
 
-	@note	put in list assigned to key 'post_tweak_funcs'
+    @note   put in list assigned to key 'post_tweak_funcs'
 
-	@note	this is a manual model parameter tweak and should not be considered 
-			part of the reduction
-	"""
-	# Apply correction (TODO: remove this after fixing reduction)
-	for ref in reduction.all_sec_refs:
-		sec = ref.sec
-		
-		if sec.name().endswith('soma'):
-			print("Skipping soma")
-			continue
-		
-		logger.anal("Scaled gna_NaL in section {}".format(sec))
-		for seg in sec:
-			# seg.gna_NaL = 1.075 * seg.gna_NaL
-			seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
+    @note   this is a manual model parameter tweak and should not be considered 
+            part of the reduction
+    """
+    # Apply correction (TODO: remove this after fixing reduction)
+    for ref in reduction.all_sec_refs:
+        sec = ref.sec
+        
+        if sec.name().endswith('soma'):
+            print("Skipping soma")
+            continue
+        
+        logger.anal("Scaled gna_NaL in section {}".format(sec))
+        for seg in sec:
+            # seg.gna_NaL = 1.075 * seg.gna_NaL
+            seg.gna_NaL = 8e-6 * 1.3 # full model value = uniform 8e-6
 
 
 ################################################################################
@@ -138,79 +160,94 @@ def adjust_gbar_spontaneous(reduction):
 ################################################################################
 
 
-def gillies_marasco_reduction(tweak=True):
-	"""
-	Make FoldReduction object with Marasco method.
-	"""
+def make_reduction(method, tweak=False):
+    """
+    Make FoldReduction object using given collasping method
 
-	import gillies_model
-	if not hasattr(h, 'SThcell'):
-		gillies_model.stn_cell_gillies()
+    @param  method : ReductionMethod
+            Accepted values are BushSejnowski and Marasco
+    """
 
-	# Make sections accesible by name and index
-	soma = h.SThcell[0].soma
-	dendL = list(h.SThcell[0].dend0) # 0 is left tree
-	dendR = list(h.SThcell[0].dend1) # 1 is right tree
-	dends = dendL + dendR
+    reduction = StnCellReduction(method=method)
 
-	# Get references to root sections of the 3 identical trees
-	dendR_root			= h.SThcell[0].dend1[0]
-	dendL_upper_root	= h.SThcell[0].dend0[1] # root section of upper left dendrite
-	dendL_lower_root	= h.SThcell[0].dend0[2] # root section of lower left dendrite
-	fold_roots = [dendR_root, dendL_upper_root, dendL_lower_root]
+    # Common reduction parameters
+    reduction.set_reduction_params({
+            'Z_freq' :              25.,
+            'Z_init_func' :         reduction.init_cell_steadystate,
+            'Z_linearize_gating' :  False,
+            'f_lambda':             100.0,
+            'syn_map_method' :      'Ztransfer'
+            })
 
-	# Parameters for reduction
-	def stn_setstate():
-		# Initialize cell for analyzing electrical properties
-		h.celsius = 35
-		h.v_init = -68.0
-		h.set_aCSF(4)
-		h.init()
+    # Method-specific parameters
+    if method == ReductionMethod.BushSejnowski:
+        reduction.set_reduction_params({
+            'gbar_init_method':     'area_weighted_average',
+            'gbar_scale_method':    'surface_area_ratio',
+            'passive_scale_method': 'surface_area_ratio',
+            # Splitting cylinders based on L/lambda
+            'split_criterion':      'electrotonic_distance',
+            'split_dX':             3.0,
+            'lookahead_dX':         3.0,
+            # Splitting cylinders based on dL in micron
+            # 'split_criterion':      'micron_distance',
+            # 'split_dX':             30.0,
+        })
+    
+    elif method == ReductionMethod.Marasco:
+        reduction.set_reduction_params({
+            'gbar_scaling' :        'area',
+            'set_ion_styles_func':  reduction.set_ion_styles,
+            'post_tweak_funcs' :    [adjust_gbar_spontaneous] if tweak else [],
+        })
+    
+    else:
+        raise ValueError("Reduction method {} not supported".format(method))
 
-	# Reduce model
-	red_method = ReductionMethod.Marasco
-	reduction = FoldReduction([soma], dends, fold_roots, red_method)
-
-	# Reduction parameters
-	reduction.gleak_name = gillies_model.gleak_name
-	reduction.mechs_gbars_dict = gillies_model.gillies_gdict
-	reduction.set_reduction_params(red_method, {
-		'Z_freq' :				25.,
-		'Z_linearize_gating' :	False,
-		'gbar_scaling' :		'area',
-		'syn_map_method' :		'Ztransfer',
-		# CUSTOM FUNCTIONS #####################################################
-		'Z_init_func' :						stn_setstate,
-		'assign_initial_identifiers_func':	assign_initial_identifiers,
-		'assign_new_identifiers_func':		assign_new_identifiers,
-		'interpolation_path_func':			get_interpolation_path_sections,
-		'set_ion_styles_func':			set_ion_styles,
-		'fix_topology_func':			fix_topology_below_roots,
-		'post_tweak_funcs' :			[adjust_gbar_spontaneous] if tweak else [],
-	})
-
-	return reduction
+    return reduction
 
 
-def fold_gillies_marasco(export_locals=True):
-	"""
-	Fold Gillies STN model using given reduction method
-	
-	@param	export_locals		if True, local variables will be exported to the global
-								namespace for easy inspection
-	"""
-	# Make reduction object
-	reduction = gillies_marasco_reduction()
-	
-	# Do reduction
-	reduction.reduce_model(num_passes=7)
-	reduction.update_refs()
+def fold_bush(export_locals=True):
+    """
+    Fold Gillies STN model using Bush & Sejnowski method
+    
+    @param  export_locals : bool
 
-	if export_locals:
-		globals().update(locals())
+            if True, local variables will be exported to the global
+            namespace for easy inspection
+    """
+    # Make reduction object
+    reduction = make_reduction(method=ReductionMethod.BushSejnowski)
+    
+    # Do reduction
+    reduction.reduce_model(num_passes=1)
 
-	return reduction._soma_refs, reduction._dend_refs
+    if export_locals:
+        globals().update(locals())
+    return reduction._soma_refs, reduction._dend_refs
+
+
+def fold_marasco(export_locals=True):
+    """
+    Fold Gillies STN model using Marasco method
+    
+    @param  export_locals : bool
+    
+            if True, local variables will be exported to the global
+            namespace for easy inspection
+    """
+    # Make reduction object
+    reduction = make_reduction(
+                    method=ReductionMethod.Marasco,
+                    tweak=True)
+    
+    # Do reduction
+    reduction.reduce_model(num_passes=7)
+
+    if export_locals:
+        globals().update(locals())
+    return reduction._soma_refs, reduction._dend_refs
 
 
 if __name__ == '__main__':
-	fold_gillies_marasco()
+    fold_bush()

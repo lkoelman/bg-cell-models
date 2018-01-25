@@ -1,13 +1,36 @@
 
-# Physiological & Experimental Parameters
+# Cell models
 
-See notes in `notes/BG_observations_experiments.md`
-
-
-# Overview of BG cell & network models
+## Overview of BG cell models & network models
 
 See notes in `notes/BG_modelling_studies.md`
 
+## Included cell models
+
+- `./Otsuka/` Otsuka (2004) STN cell model
+
+
+- `./GilliewWillshaw/` Gillies & Willshaw (2005) STN cell model
+	
+	+ [original model in NEURON, simplified morphology](https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=74298)
+
+	+ [same channel mechanisms in morphological reconstruction of STN neuron](https://senselab.med.yale.edu/ModelDB/ShowModel.cshtml?model=151460)
+
+
+- `./Gunay/` Gunay et al. (2008) GPe cell model
+
+	+ [original model in GENESIS](https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=114639)
+
+	+ [adapted model used in subsequent papers](https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=136315)
+
+	+ [NEURON port of channel mechanisms for use in single-compartment model](https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=143100)
+
+
+## Choice of model parameters
+
+See notes in `notes/BG_observations_experiments.md`
+
+--------------------------------------------------------------------------------
 
 # Installation
 
@@ -56,3 +79,4 @@ jupyter nbextensions_configurator enable --user
 ```
 
 Now extensions can be enabled via Jupyter extensions tab
+

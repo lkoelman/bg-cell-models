@@ -90,6 +90,16 @@ class FoldReduction(object):
             raise ValueError("Must provide mechanisms to conductances map!")
         self.set_mechs_params(mechs_gbars_dict, mechs_params_nogbar)
 
+        # Update reduction parameters
+        self.set_reduction_params({k: getattr(self, k) for k in [
+                        'gleak_name',
+                        'gbar_names',
+                        'active_gbar_names'
+                        'mechs_gbars_dict',
+                        'mechs_params_nogbar'
+                    ]
+            })
+
         # Find true root section
         first_root_ref = ExtSecRef(sec=soma_secs[0])
         root_sec = first_root_ref.root; h.pop_section() # pushes CAS
@@ -196,11 +206,11 @@ class FoldReduction(object):
 
     def set_reduction_params(self, params, method=None):
         """
-        Set entire parameters dict for reduction
+        Set given reduction parameters
         """
         if method is None:
             method = self.active_method
-        self._REDUCTION_PARAMS[method] = params
+        self._REDUCTION_PARAMS[method].update(params)
 
 
     def set_reduction_param(self, method, pname, pval):
@@ -219,6 +229,17 @@ class FoldReduction(object):
         
         return self._REDUCTION_PARAMS[method][param]
 
+
+    @property
+    def reduction_params(self):
+        """
+        Return reduction parameters dict for active reduction method
+
+        @return     params : dict<str,object>
+                    Reduction parameters for active reduction method
+        """
+        return self._REDUCTION_PARAMS[self.active_method]
+    
 
     def destroy(self):
         """
@@ -385,28 +406,36 @@ class FoldReduction(object):
     # Cell model-specific / virtual methods
     ############################################################################
 
-    @abstractmethod
+
     def assign_initial_sec_gids(self):
         """
         Assign identifiers to Sections.
 
         @post   all SectionRef.gid attributes are set
         """
-        raise NotImplementedError(
-                "This function is model-specific and must be implemented for "
-                "each cell model individually.")
+        start_id = 0
+        redutils.subtree_assign_gids_dfs(
+                    self._root_ref,
+                    self.all_sec_refs,
+                    parent_id=start_id)
 
 
-    @abstractmethod
     def assign_new_sec_gids(self, node_ref, all_refs, par_ref=None):
         """
         Assign identifiers to newly created Sections
 
         @post   all SectionRef.gid attributes are set for newly created Sections
         """
-        raise NotImplementedError(
-                "This function is model-specific and must be implemented for "
-                "each cell model individually.")
+        # assign a unique cell GID
+        if not hasattr(node_ref, 'gid'):
+            # Assume that only collapsed sections have no gid
+            node_ref.gid = node_ref.zip_id
+
+        # Process children recursively
+        childsecs = node_ref.sec.children()
+        childrefs = [getsecref(sec, all_refs) for sec in childsecs]
+        for childref in childrefs:
+            self.assign_new_sec_gids(childref, all_refs, par_ref=node_ref)
 
 
     @abstractmethod

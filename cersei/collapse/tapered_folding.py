@@ -59,21 +59,23 @@ class TaperedFolder(FoldingAlgorithm):
         cluster.assign_topology_attrs(self.reduction._root_ref, self.reduction.all_sec_refs)
 
 
-    def fold_one_pass(self, i_pass, Y_criterion="exact_level"):
+    def fold_one_pass(self, i_pass, Y_criterion='use_fold_roots'):
         """
         Collapse branches at branch points identified by given criterion.
         """
-        # Find collapsable branch points
-        target_Y_secs = tree_edit.find_collapsable(
-                                self.reduction.all_sec_refs, 
-                                i_pass, Y_criterion, level=2)
+        # Use user-provided folding roots, don't look for forks ourselves
+        if Y_criterion != 'use_fold_roots':
+            raise ValueError(Y_criterion)
+        target_Y_secs = self.reduction._fold_root_refs
+
+        settings = self.reduction.reduction_params
 
         collapser = AdvancingFrontCollapse(
                         self.reduction, 
                         fold_roots=target_Y_secs,
-                        gbar_init_method='linear_neighbors',
-                        gbar_scale_method='surface_area_ratio',
-                        passive_scale_method='surface_area_ratio')
+                        gbar_init_method=settings['gbar_init_method'],
+                        gbar_scale_method=settings['gbar_scale_method'],
+                        passive_scale_method=settings['passive_scale_method'])
         
         new_refs = collapser.collapse() # do collapse operation at each branch points
 
@@ -327,20 +329,14 @@ class AdvancingFrontCollapse(object):
         logger.debug("Topology at folding root {0}:\n".format(par_sec.name()) + 
                         subtree_topology(par_sec, max_depth=2))
 
-        # Settings for tapered collapse algorithm
-        def path_distance_micron(segment):
-            return redutils.seg_path_L(segment, endpoint='segment_x')
+        # TODO: check in this file and make everything compatible with nseg > 1
+        # TODO: - determine nseg based on split_criterion and split_dX 
+        #       - or based on actual lambda, but prevent increase in nseg through rounding
         
         # Collapse operation: calculate cylinders
         merge_walk = taper.MergingWalk(
                             par_sec(1.0), allsecrefs,
-                            gbar_list=self.reduction.gbar_names,
-                            distance_func=path_distance_micron,
-                            split_criterion='fixed_distance',
-                            split_dX=20.0)
-                            # split_criterion='approx_electrotonic',
-                            # lookahead_dX=5.0,
-                            # lambda_fraction=0.1)
+                            **self.reduction.reduction_params)
                             
         seq_cyls = merge_walk.merge_cylinders_subtree()
 

@@ -14,6 +14,7 @@ logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(l
 logname = "redops" # __name__
 logger = logging.getLogger(logname) # create logger for this module
 
+import numpy as np
 from neuron import h
 
 from common.nrnutil import getsecref, seg_index, same_seg, seg_xmin, seg_xmax
@@ -166,7 +167,7 @@ def sec_path_props(secref, f, gleak_name, linearize_gating=False, init_cell=None
                     secref.pathri1 = path_ri
 
 
-def seg_path_L_elec(endseg, f, gleak_name):
+def seg_path_L_elec(endseg, f, gleak_name, endpoint):
     """ 
     Calculate electrotonic path length from after root section up to
     start of given segment.
@@ -174,6 +175,12 @@ def seg_path_L_elec(endseg, f, gleak_name):
     ALGORITHM
     - walk each segment from root section (child of top root) to the given
       segment and sum L/lambda for each segment
+
+    @param  endpoint: str
+            Path endpoint on given segment. Valid values are:
+                'segment_start': measure distance to start of segment
+                'segment_end': measure distance to end of segment
+                'segment_x': measure distance to x-loc of segment
 
     @return     electrotonic path length
     """
@@ -195,20 +202,42 @@ def seg_path_L_elec(endseg, f, gleak_name):
     h.pop_section()
     h.pop_section()
 
-    # Compute electrotonic path length
+    # Initialize path walk
     path_L_elec = 0.0
     path_secs = list(root_path)
     assert(endseg.sec in path_secs)
-    for i, psec in enumerate(path_secs):
+
+    # Compute electrotonic path length
+    for psec in path_secs:
         L_seg = psec.L/psec.nseg # segment length
+
         for j_seg, seg in enumerate(psec):
-            # Check if we have reached our target segment
-            if seg.sec.same(endseg.sec) and j_seg==j_endseg:
-                assert same_seg(seg, endseg)
-                return path_L_elec
+            # Compute L/lambda for this segment
             lamb_seg = seg_lambda(seg, gleak_name, f)
-            L_elec = L_seg/lamb_seg
-            path_L_elec += L_elec
+            seg_L_elec = L_seg/lamb_seg
+
+            # Check if we have reached target segment
+            if seg.sec.same(endseg.sec) and j_seg==j_endseg:
+
+                if endpoint == 'segment_start':
+                    return path_L_elec
+                
+                elif endpoint == 'segment_end':
+                    return path_L_elec + seg_L_elec
+                
+                elif endpoint == 'segment_x':
+                    partial_L_elec = np.interp(endseg.x,
+                        [seg_xmin(endseg, side=None), seg_xmax(endseg, side=None)]
+                        [0.0, seg_L_elec])
+                    return path_L_elec + partial_L_elec
+                else:
+                    raise ValueError(endpoint)
+                
+                return path_L_elec
+            
+            else:
+                path_L_elec += seg_L_elec
+
 
     raise Exception('End segment not reached')
 
@@ -218,7 +247,7 @@ def seg_path_L(endseg, endpoint):
     Calculate path length from center of root section to given segment
 
     @param  endpoint: str
-            Valid values are one of:
+            Path endpoint on given segment. Valid values are:
                 'segment_start': measure distance to start of segment
                 'segment_end': measure distance to end of segment
                 'segment_x': measure distance to x-loc of segment
@@ -249,13 +278,13 @@ def seg_path_L(endseg, endpoint):
         else:
             assert isec == len(path_secs)-1
             if endpoint == 'segment_start':
-                return path_L + seg_xmin(endseg)*psec.L
+                return path_L + seg_xmin(endseg, side=None)*psec.L
             elif endpoint == 'segment_end':
-                return path_L + seg_xmax(endseg)*psec.L
+                return path_L + seg_xmax(endseg, side=None)*psec.L
             elif endpoint == 'segment_x':
                 return path_L + endseg.x*psec.L
             else:
-                raise ValueError(str(endpoint))
+                raise ValueError(endpoint)
 
 
 class SecProps(object):

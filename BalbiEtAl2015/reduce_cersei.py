@@ -85,37 +85,6 @@ class BalbiFoldReduction(FoldReduction):
         return fold_roots
 
 
-    def assign_initial_sec_gids(reduction):
-        """
-        Assign identifiers to Sections.
-
-        @effect     numbers all sections with a 'gid' attribute
-        """
-        start_id = 0
-        redutils.subtree_assign_gids_dfs(
-                    reduction._root_ref,
-                    reduction.all_sec_refs,
-                    parent_id=start_id)
-
-
-    def assign_new_sec_gids(reduction, node_ref, all_refs, par_ref=None):
-        """
-        Assign identifiers to newly created Sections.
-
-        @effect     assigns folded sections' 'zip_id' to their gid
-        """
-
-        # assign a unique cell GID
-        if not hasattr(node_ref, 'gid'):
-            # Assume that only collapsed sections have no gid
-            node_ref.gid = node_ref.zip_id
-
-        childsecs = node_ref.sec.children()
-        childrefs = [getsecref(sec, all_refs) for sec in childsecs]
-        for childref in childrefs:
-            reduction.assign_new_sec_gids(childref, all_refs, par_ref=node_ref)
-
-
     def assign_region_label(reduction, secref):
         """
         Assign region labels to sections.

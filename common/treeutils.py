@@ -44,9 +44,9 @@ def next_segs(curseg, x_loc='mid'):
 
 	# Adjust x-loc if required
 	if x_loc == 'min':
-		child_segs = [seg.sec(seg_xmin(seg)) for seg in child_segs]
+		child_segs = [seg.sec(seg_xmin(seg, side='inside')) for seg in child_segs]
 	elif x_loc == 'max':
-		child_segs = [seg.sec(seg_xmax(seg, inside=True)) for seg in child_segs]
+		child_segs = [seg.sec(seg_xmax(seg, side='inside')) for seg in child_segs]
 	elif x_loc != 'mid':
 		raise ValueError("Invalid value {} for argument 'x-loc'".format(x_loc))
 	
