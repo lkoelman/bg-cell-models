@@ -94,7 +94,7 @@ class FoldReduction(object):
         self.set_reduction_params({k: getattr(self, k) for k in [
                         'gleak_name',
                         'gbar_names',
-                        'active_gbar_names'
+                        'active_gbar_names',
                         'mechs_gbars_dict',
                         'mechs_params_nogbar'
                     ]

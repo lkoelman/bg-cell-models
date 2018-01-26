@@ -93,7 +93,8 @@ class StnCellReduction(FoldReduction):
 
         @override   abstract method FoldReduction.fix_section_properties
         """
-        pass
+        for ref in new_sec_refs:
+            StnCellReduction.set_ion_styles(ref)
 
 
     @staticmethod
@@ -122,6 +123,7 @@ class StnCellReduction(FoldReduction):
         """
         # Set ion styles
         secref.sec.push()
+        # NOTE: h.ion_style(ion, c_style, e_style, einit, eadvance, cinit)
         h.ion_style("na_ion",1,2,1,0,1)
         h.ion_style("k_ion",1,2,1,0,1)
         h.ion_style("ca_ion",3,2,1,1,1)
@@ -185,13 +187,14 @@ def make_reduction(method, tweak=False):
             'gbar_init_method':     'area_weighted_average',
             'gbar_scale_method':    'surface_area_ratio',
             'passive_scale_method': 'surface_area_ratio',
-            # Splitting cylinders based on L/lambda
-            'split_criterion':      'electrotonic_distance',
-            'split_dX':             3.0,
-            'lookahead_dX':         3.0,
-            # Splitting cylinders based on dL in micron
-            # 'split_criterion':      'micron_distance',
-            # 'split_dX':             30.0,
+            ### Splitting cylinders based on L/lambda ##########################
+            # 'split_criterion':      'eq_electrotonic_distance',
+            # 'split_dX':             3.0,
+            # 'lookahead_units':      'lambda',
+            # 'lookahead_dX':         3.0,
+            ### Splitting cylinders based on dL in micron ######################
+            'split_criterion':      'micron_distance',
+            'split_dX':             50.0,
         })
     
     elif method == ReductionMethod.Marasco:

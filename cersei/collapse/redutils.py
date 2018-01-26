@@ -650,6 +650,28 @@ def set_ion_styles(tar_sec, **kwargs):
     h.pop_section()
 
 
+def ion_styles_bits_to_dict(style):
+    """
+    Convert a float representing the styles of one ion to a dictionary
+    containing values for all the style flags.
+
+    @param  style : float
+            Result of call to h.ion_style(ion) for the CAS
+
+    @return styles: dict
+            Names of styles flags and their values
+    """
+    # Decompose int into bit flags
+    styles = {}
+    styles['c_style'] = int(style) & (1+2)
+    styles['cinit'] = (int(style) & 4) >> 2
+    styles['e_style'] = (int(style) & (8+16)) >> 3
+    styles['einit'] = (int(style) & 32) >> 5
+    styles['eadvance'] = (int(style) & 64) >> 6
+
+    return styles
+
+
 def save_tree_properties(node_sec, mechs_pars):
     """
     Save properties of all Sections in subtree of given Section

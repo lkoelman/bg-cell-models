@@ -20,6 +20,7 @@ h.load_file("stdlib.hoc") # Load the standard library
 from common.treeutils import subtree_topology
 from common.nrnutil import ExtSecRef, getsecref
 from common.stdutil import isclose
+from common.electrotonic import calc_min_nseg_hines
 
 import cluster
 import redutils
@@ -374,6 +375,7 @@ class AdvancingFrontCollapse(object):
         subtree_sec_refs = []
         for eq_cyls in subtree_eq_cyls:
             
+            # Process all sequential cylinders of one collapsed subtree
             sequential_refs = []
             for cyl in eq_cyls:
 
@@ -389,7 +391,7 @@ class AdvancingFrontCollapse(object):
                 eqref = ExtSecRef(sec=eqsec)
                 eqref.label = cyl.label
 
-                # Set passive properties
+                # Set passive properties (nseg determined after cm)
                 eqsec.L = cyl.L
                 eqsec.diam = cyl.diam
                 eqsec.Ra = cyl.Ra
@@ -407,9 +409,9 @@ class AdvancingFrontCollapse(object):
                 sequential_refs.append(eqref)
 
                 # Debugging info
-                logger.anal("Created equivalent Section '%s' with \n\tL\tdiam\tcm\tRa\tnseg"
+                logger.anal("Created equivalent Section '%s' with \n\tL\tdiam\tRa"
                              "\n\t%.3f\t%.3f\t%.3f\t%d\n", eqsec.name(), 
-                             eqsec.L, eqsec.diam, eqsec.Ra, eqsec.nseg)
+                             eqsec.L, eqsec.diam, eqsec.Ra)
 
             subtree_sec_refs.append(sequential_refs)
 
@@ -429,7 +431,6 @@ class AdvancingFrontCollapse(object):
             
             eqsec = eqref.sec
             orig = eqref.orig_props
-            assert eqsec.nseg == 1
 
             # Copy section mechanisms and properties
             absorbed_secs = redutils.find_secprops(
@@ -442,7 +443,7 @@ class AdvancingFrontCollapse(object):
                             check_uniform=True)
 
 
-    def init_passive_wavg(self, subtree_sec_refs):
+    def init_passive_wavg(self, subtree_sec_refs, adjust_nseg=True):
         """
         Set initial values of specific passive electrical properties
         to the area-weighted average of the values in absorbed cylinders.
@@ -455,13 +456,21 @@ class AdvancingFrontCollapse(object):
 
             eqsec = eqref.sec
             orig = eqref.orig_props
+            assert all((seg.diam == eqsec(0.5).diam for seg in eqsec)) # assume uniform diameter
 
             # Set specific capacitance and leak conductance in each section
             eq_cm = orig.cmtot / orig.area
-            setattr(eqsec, 'cm', eq_cm)
-
             eq_gleak = orig.gtot[self.gleak_name] / orig.area
+
+            if adjust_nseg:
+                eqsec.nseg = calc_min_nseg_hines(
+                                    self.f_lambda, eqsec.L, eqsec.diam, 
+                                    eqsec.Ra, eq_cm, round_up=False)
+
+            # Set RANGE properties after nseg
+            setattr(eqsec, 'cm', eq_cm)
             setattr(eqsec, self.gleak_name, eq_gleak)
+            # TODO PROBLEM: cm and gbar are uniform across entire cylinder. One method to solve this would be to first make Cylinder objects with smaller step size, so you have orig_props with finer resolution, then merge these sequentially but keep orig_props for each segment cylinder (!for area ratios, would need to use area of new segment cylinders, not original segment cylinders!)
 
 
     def init_conductances_wavg(self, subtree_sec_refs):
@@ -478,11 +487,13 @@ class AdvancingFrontCollapse(object):
             eqsec = eqref.sec
             orig = eqref.orig_props
 
+            # All active membrane conductances: set uniform in cylinder
             for gname in self.reduction.active_gbar_names:
 
                 eq_gbar = orig.gtot[gname] / orig.area
 
                 if hasattr(eqsec, gname):
+                    # assign same value to all segments
                     setattr(eqsec, gname, eq_gbar)
                 else:
                     # if mechanism not inserted: assume that this is because none of the absorbed cylinders had the mechanism present
@@ -521,12 +532,12 @@ class AdvancingFrontCollapse(object):
             for j_seg, seg in enumerate(eqsec):
                 
                 # Get adjacent segments along interpolation path
-                path_L = getattr(eqref, seg_prop)[j_seg]
+                path_L = getattr(eqref, seg_prop)[j_seg] # value of interpolated property
                 bound_segs, bound_L = interp.find_adj_path_segs(self.interp_prop, path_L, path_secs)
 
                 # INTERPOLATE: Set conductances by interpolating neighbors
                 for gname in self.reduction.active_gbar_names:
-                    if not hasattr(eqsec, gname):
+                    if not hasattr(seg, gname):
                         continue
                     
                     # get interpolation function and use it to compute gbar
@@ -534,9 +545,11 @@ class AdvancingFrontCollapse(object):
                         gval = interp.interp_gbar_linear_neighbors(path_L, gname, bound_segs, bound_L)
                     else:
                         match_method = re.search(r'^[a-z]+', self.gbar_init_method)
-                        method = match_method.group() # should be nearest, left, or right
-                        gval = interp.interp_gbar_pick_neighbor(path_L, gname, 
-                                            bound_segs[0], bound_L[0], method)
+                        method = match_method.group() # should be 'nearest', 'left', or 'right'
+                        gval = interp.interp_gbar_pick_neighbor(
+                                            path_L, gname, 
+                                            bound_segs[0], bound_L[0],
+                                            method)
                     
                     setattr(seg, gname, gval)
 
@@ -568,41 +581,41 @@ class AdvancingFrontCollapse(object):
                 orig = eqref.orig_props
                 orig.gtot['cm'] = orig.cmtot
 
+                eq_area = sum(seg.area() for seg in eqsec)
+                # logger.debug("Surface area ratio is %f" % (orig.area / eq_area))
+
                 # Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
                 for gname in g_range_names:
-
-                    if not hasattr(eqsec, gname):
-                        continue
 
                     if gname in ['cm', self.gleak_name]:
                         requested_scale_method = self.passive_scale_method
                     else:
                         requested_scale_method = self.gbar_scale_method
-
-                    if (requested_scale_method is None) or (requested_scale_method in 
-                        ['None', 'none']):
+                    
+                    # Determine scale factor (uniform in Section, like diameter)
+                    if ((requested_scale_method is None) or 
+                        (requested_scale_method in ['None', 'none'])):
                         continue
-
                     elif requested_scale_method == 'surface_area_ratio':
-                        
-                        eq_area = sum(seg.area() for seg in eqsec)
-                        # logger.debug("Surface area ratio is %f" % (orig.area / eq_area))
-
-                        g_init = getattr(eqsec(0.5), gname)
-                        g_scaled = g_init * orig.area / eq_area
-                        setattr(eqsec, gname, g_scaled)
-
+                        scale_factor = orig.area / eq_area
                     elif self.requested_scale_method == 'gbar_integrated_cylinder_ratio':
-                        
-                        g_init = getattr(eqsec(0.5), gname)
-                        g_cyl_interp = sum(getattr(seg, gname, 0.0)*seg.area() for seg in eqsec)
-                        g_orig_interp = orig.gtot[gname]
-                        g_scaled = g_init * g_orig_interp / g_cyl_interp
-                        setattr(eqsec, gname, g_scaled)
+                        g_cyl_integr = sum(getattr(seg, gname, 0.0)*seg.area() 
+                                                for seg in eqsec)
+                        g_orig_integr = orig.gtot[gname]
+                        scale_factor = g_orig_integr / g_cyl_integr
+                    elif (requested_scale_method not in 
+                            ['gbar_integrated_subtree_ratio', 'match_input_impedance']):
+                        raise ValueError("Unknown scaling method '{}'".format(
+                                self.gbar_scale_method))
+                    
+                    # Set segment property
+                    for seg in eqsec:
+                        if not hasattr(seg, gname):
+                            continue
 
-                    elif requested_scale_method not in ['gbar_integrated_subtree_ratio', 
-                                                        'match_input_impedance']:
-                        raise ValueError("Unknown scaling method '{}'".format(self.gbar_scale_method))
+                        g_init = getattr(seg, gname)
+                        g_scaled = g_init * scale_factor
+                        setattr(seg, gname, g_scaled)
 
 
     def measure_input_impedance(self):

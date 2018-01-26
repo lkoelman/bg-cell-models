@@ -88,9 +88,13 @@ def min_nseg_marasco(sec):
 	return int((sec.L/(0.1*lambda_AC(sec,100.))+0.9)/2)*2 + 1  
 
 
-def calc_min_nseg_hines(f, L, diam, Ra, cm):
+def calc_min_nseg_hines(f, L, diam, Ra, cm, round_up=True):
 	lamb_AC = 1e5 * math.sqrt(diam/(4*math.pi*f*Ra*cm))
-	return int(L/(0.1*lamb_AC)) + 1
+	nseg_trunc = int(L/(0.1*lamb_AC)) # rounded down
+	if round_up:
+		return nseg_trunc + 1
+	else:
+		return max(nseg_trunc, 1)
 
 
 def inputresistance_inf(sec, gleak, f):

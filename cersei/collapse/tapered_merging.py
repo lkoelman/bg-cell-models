@@ -209,7 +209,8 @@ class Cylinder(object):
 
 def merge_cylinders_sequential(cyls):
     """
-    Merge sequential cylinders
+    Merge sequential cylinders sequentially using Bush & Sejnowski method,
+    i.e. preserving axial resistance (absolute & per unit length).
     
     @param      cyls: list(Cylinder)
                 Cilinders to merge sequentially
@@ -237,8 +238,8 @@ def merge_cylinders_sequential(cyls):
 
 def merge_cylinders_parallel(cyls):
     """
-    Merge cylinders that are connected in parallel, i.e. as siblings of the
-    same parant cylinder at a branch point.
+    Merge parallel cylinders, using Bush & Sejnowski method,
+    i.e. preserving axial resistance (absolute & per unit length).
 
     @param      cyls: list(Cylinder)
                 Cilinders to merge
@@ -358,45 +359,6 @@ def merge_until_distance(
         return subtree_eq_cyl, parallel_x_stop
 
 
-def next_splitpoints(start_seg, **kwargs):
-    """
-    Return next cable splitting points encountered when ascending
-    tree starting at given segment
-
-    @param  split_criterion : str
-    
-            How cylinder boundaries should be determined, one of following:
-            
-            - "next_seg_dlambda": merge until segment length constant has changed 
-              by given fraction of starting value. For keyword-arguments: see
-              next_splitpoints_seg_dlambda()
-
-            - "fixed_distance": merge until fixed increment in path length from 
-              root is reached. For keyword-arguments: see next_splitpoints_fixed_distance()
-
-            - (NOT IMPLEMENTED) "segment_ddiam"
-                - merge until diam has changed by given fraction of starting value
-
-            - (NOT IMPLEMENTED) "equivalent_lambda"
-                - merge approximately until the point where the equivalent cylinder
-                  has a length of 10% its electrotonic length
-
-            - (NOT IMPLEMENTED) "path_dlambda"
-                - merge until fixed increment in electrotonc path length is reached
-
-    """
-    split_criterion = kwargs.pop("split_criterion")
-    
-    if split_criterion == "next_seg_dlambda":
-        return next_splitpoints_seg_dlambda(start_seg, **kwargs)
-
-    elif split_criterion == "fixed_distance":
-        return next_splitpoints_fixed_distance(start_seg, **kwargs)
-
-    else:
-        raise NotImplementedError("Splitting criterion {} not implemented".format(split_criterion))
-
-
 def next_splitpoints_seg_dlambda(current_seg, lambda_start=None, fraction=0.1):
     """
     Ascend tree and return first segment along each path where lambda
@@ -430,6 +392,11 @@ def next_splitpoints_seg_dlambda(current_seg, lambda_start=None, fraction=0.1):
 
 def next_splitpoints_fixed_distance(cur_seg, distance_func=None, dX=None, start_X=None):
     """
+    Ascend tree and return first segment where distance_func(segment) is equal
+    to distance_func(start_segment) + dX.
+
+    @note       Algorithm is basically the same as merge_until_distance() except
+                this function is purely for the purpose of looking ahead.
     """
     if start_X is None:
         start_X = distance_func(cur_seg)
@@ -472,6 +439,8 @@ def next_splitpoints_fixed_distance(cur_seg, distance_func=None, dX=None, start_
             child_splitpoints.extend(next_splitpoints_fixed_distance(
                                         child_seg, distance_func, dX, start_X))
 
+        return child_splitpoints
+
 
 def approximate_lambda_AC(cylinder, freq):
     """
@@ -492,34 +461,6 @@ def approximate_lambda_AC(cylinder, freq):
     return calc_lambda_AC(freq, cylinder.diam, cylinder.Ra, cm_scaled)
 
 
-def make_distance_function(split_criterion, reduction_params):
-    """
-    Make a function for measuring distance to a segment.
-
-    @param      split_criterion : str
-
-    @param      reduction_params : dict
-                additional parameters needed to make distance function
-
-    @return     callable(nrn.Segment) -> float
-    """
-    if split_criterion == 'micron_distance':
-        # Path distance from root section to x-value of given segment (measured in microns).
-        return functools.partial(
-                    redutils.seg_path_L,
-                    endpoint='segment_x')
-    
-    elif split_criterion == 'electrotonic_distance':
-        # Path distance from root section to x-value of given segment (measured in L/lambda).
-        return functools.partial(
-                    redutils.seg_path_L_elec,
-                    f=reduction_params['f_lambda'],
-                    gleak=reduction_params['gleak_name'],
-                    endpoint='segment_x')
-    else:
-        raise ValueError(split_criterion)
-
-
 class MergingWalk(object):
 
     def __init__(
@@ -531,17 +472,12 @@ class MergingWalk(object):
         """
         @param  start_node : nrn.Segment
                 Segment where children will be merged.
-    
-        @param  distance_func : callable(nrn.Segment) -> float
 
-                Function that measures distance of a NEURON segment with an
-                associated x-value. E.g. use redutils.seg_path_L() for distance
-                from root of tree.
-
-        @param  (optional, keyword) split_dX: float
-                The step size in units measured by function 'distance_func'.
-                This argument is required if the 'split_criterion' argument is
-                'micron_distance' or 'electrotonic_distance'
+        @param  merge_method: str
+                TODO: currently the merge method is always Bush & Sejnowski method.
+                Adapt this to allow using Stratford & Larkman method. Also only
+                a restricted subset of 'split_criterion' should be allowed for 
+                any of those two methods.
 
         @param  split_criterion : str
                 
@@ -550,14 +486,32 @@ class MergingWalk(object):
                     - 'micron_distance': split cylinders after walking 
                       'split_dX' microns along each branch.
                     
-                    - 'electrotonic_distance': walk along branch until the change
-                      in L/lambda satisfies d(L/lambda) == split_dX. Requires 
-                      additional argument: 'lookahead_dX', which is the lookahead
-                      distance for approximating lambda
+                    - 'eq_electrotonic_distance': walk along branch until the 
+                      approximate change in L/lambda in the equivalent cylinder
+                      satisfies d(L/lambda) == split_dX. Requires:
+
+                        + additional argument: 'lookahead_units', determining the
+                          distance function and units used to interpret 'lookahead_dX'.
+                          Either 'micron' or 'lambda'
+                        
+                        + additional argument: 'lookahead_dX', which is the lookahead
+                          distance for approximating lambda
                     
                     - 'next_seg_dlambda': split cylinder when change in length constant is 
                       larger than fixed fraction of starting value. Requires additional
                       arguments: 'lambda_fraction'
+
+                    - (NOT IMPLEMENTED) "next_seg_ddiam": merge until diam has changed 
+                      by given fraction of starting value
+
+                    - (NOT IMPLEMENTED) "branch_electrotonic_distance": walk along
+                      each branch for fixed step size measures in local branch
+                      d(L/lambda)
+
+        @param  (optional, keyword) split_dX: float
+                The step size in units determined by argument 'split_criterion'.
+                This argument is only required if the 'split_criterion' argument is
+                'micron_distance' or 'electrotonic_distance'
 
         @param  gbar_names : list(str)
                 list of mechanism conductances
@@ -568,10 +522,20 @@ class MergingWalk(object):
         self.start_node = start_node
         self.allsecrefs = allsecrefs
 
-        self.split_criterion = kwargs.pop('split_criterion')
-        self.distance_func = make_distance_function(self.split_criterion, kwargs)
-        self.gbar_names = kwargs.pop('gbar_names')
+        # Set distance functions
+        self.micron_distance_func = functools.partial(redutils.seg_path_L,
+                                                      endpoint='segment_x')
 
+        self.elec_distance_func = functools.partial(
+                                        redutils.seg_path_L_elec,
+                                        f=kwargs['f_lambda'],
+                                        gleak=kwargs['gleak_name'],
+                                        endpoint='segment_x')
+
+        self.walking_distance_func = self.micron_distance_func
+        self.split_criterion = kwargs.pop('split_criterion')
+        
+        self.gbar_names = kwargs.pop('gbar_names')
         self.split_params = kwargs
 
 
@@ -586,7 +550,7 @@ class MergingWalk(object):
 
         # Initial cable splitting points
         current_splitpoints = [sec(0.0) for sec in self.start_node.sec.children()]
-        target_dist_X = self.distance_func(self.start_node.sec(1.0))
+        target_dist_X = self.walking_distance_func(self.start_node.sec(1.0))
         sequential_cyls = []
 
         # Continue as long as there is any branch left where we haven't marched until terminal segment
@@ -594,7 +558,7 @@ class MergingWalk(object):
         
             # Look-ahead: find distance of next cable splitting points on each branch.
             # Calculate actual walking distance based on the look-ahead.
-            target_dist_X = self.lookahead_walking_distance(
+            target_dist_X = self.get_walking_distance_lookahead(
                                     current_splitpoints,
                                     target_dist_X)
 
@@ -610,7 +574,7 @@ class MergingWalk(object):
                 #       - end of segment?
                 merged_data = merge_until_distance(
                                 split_seg, target_dist_X, 
-                                self.distance_func,
+                                self.walking_distance_func,
                                 self.allsecrefs,
                                 self.gbar_names)
                 
@@ -629,46 +593,68 @@ class MergingWalk(object):
         return sequential_cyls
 
 
-    def lookahead_walking_distance(
+    def get_walking_distance_lookahead(
             self,
             current_splitpoints,
-            last_distance,
+            last_walk_distance,
         ):
         """
-        Look ahead and determine walking distance.
+        Look ahead and determine walking distance from last stop to next
+        splitting points.
+
+        @param      last_walk_distance : float
+                    Walking distance to last stop, measured in units of 
+                    self.walking_distance_func
+
+        @return     next_walk_distance : float
+                    Walking distance to next stop, measured in units of 
+                    self.walking_distance_func
         """
         
         if self.split_criterion == 'micron_distance':
             # No lookahead: step with fixed step size
-            return last_distance + self.split_params['split_dX']
+            return last_walk_distance + self.split_params['split_dX']
         
-        elif self.split_criterion == 'electrotonic_distance':
-            # First calculate the equivalent cylinder up to 'lookahead_dX' in order to approximate lambda in the equivalent cylinder
-            lookahead_X = last_distance + self.split_params['lookahead_dX']
+        elif self.split_criterion == 'eq_electrotonic_distance':
+
+            lookahead_dX = self.split_params['lookahead_dX']
+            lookahead_units = self.split_params['lookahead_units']
             lookahead_cyls = []
+
+            # calculate the equivalent cylinder up to 'lookahead_dX'
             for split_seg in current_splitpoints:
+
+                if lookahead_units == 'micron':
+                    target_X = last_walk_distance + lookahead_dX
+                elif lookahead_units == 'lambda':
+                    target_X = self.elec_distance_func(split_seg) + lookahead_dX
+                
                 branch_eqcyl, _ = merge_until_distance(
-                                    split_seg, lookahead_X, self.distance_func,
+                                    split_seg, target_X, self.elec_distance_func,
                                     self.allsecrefs, self.gbar_names, lookahead=True)
                 lookahead_cyls.append(branch_eqcyl)
 
-            # Estimate lambda in next cylinder
+            # Estimate lambda in next equivalent cylinder
             seq_cyl = merge_cylinders_parallel(lookahead_cyls)
             seq_lambda_est = approximate_lambda_AC(seq_cyl, 100.0)
-            return last_distance + self.split_params['split_dX'] * seq_lambda_est
+
+            # split_dX is in units L/lambda -> convert to estimated dL
+            return last_walk_distance + self.split_params['split_dX'] * seq_lambda_est
 
         elif self.split_criterion == 'next_seg_dlambda':
 
             # Find first point along each branch where change > tolerance occurs
             candidate_x_split = []
             for split_seg in current_splitpoints:
-                branch_x_split = next_splitpoints(
-                                    split_seg, 
-                                    split_criterion=self.split_criterion,
-                                    **self.split_params)
+                branch_x_split = next_splitpoints_seg_dlambda(
+                                    split_seg,
+                                    fraction=self.split_params['split_dX'])
                 candidate_x_split.extend(branch_x_split)
 
             # Find closest point where change > tolerance occurs
-            candidate_dists = [self.distance_func(x_seg) for x_seg in candidate_x_split]
+            candidate_dists = [self.walking_distance_func(x_seg) for x_seg in candidate_x_split]
             return min(candidate_dists)
+
+        else:
+            raise ValueError(self.split_criterion)
 
