@@ -303,6 +303,7 @@ class StnModelEvaluator(object):
 		logger.debug("Starting model reduction...")
 		
 		# Create reduced cell
+		# TODO: replace these by CERSEI reduction code, with option to use legacy code
 		if model in (StnModel.Gillies_FoldMarasco, StnModel.Gillies_BranchZip):
 			# Bush/Marasco folding
 			reduction = reduce_cell.gillies_marasco_reduction()

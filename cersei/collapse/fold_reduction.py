@@ -38,7 +38,7 @@ class FoldReduction(object):
 
     _FOLDER_CLASSES = {
         ReductionMethod.Marasco: marasco.MarascoFolder,
-        ReductionMethod.BushSejnowski: taper.TaperedFolder
+        ReductionMethod.BushSejnowski: taper.TaperedFolder,
     }
 
 
@@ -70,6 +70,8 @@ class FoldReduction(object):
         self._REDUCTION_PARAMS = {method: {} for method in list(ReductionMethod)}
 
         # Reduction algorithm
+        if not isinstance(method, ReductionMethod):
+            method = ReductionMethod.from_str(str(method))
         self.active_method = method
         FolderClass = self._FOLDER_CLASSES[method]
         self.folder = FolderClass(method)
@@ -313,7 +315,7 @@ class FoldReduction(object):
             linearize_gating = self.get_reduction_param('Z_linearize_gating', method)
 
             # Compute mapping data
-            syn_info = mapsyn.get_syn_info(
+            syn_info = mapsyn.get_syn_mapping_info(
                                 self.soma_refs[0].sec,
                                 self.all_sec_refs,
                                 syn_tomap=self._syns_tomap,
@@ -361,12 +363,13 @@ class FoldReduction(object):
             Z_freq          = self.get_reduction_param('Z_freq', method)
             init_func       = self.get_reduction_param('Z_init_func', method)
             linearize       = self.get_reduction_param('Z_linearize_gating', method)
-            map_method      = self.get_reduction_param('syn_map_method', method)
+            map_method      = self.get_reduction_param('syn_scale_method', method)
+            pos_method      = self.get_reduction_param('syn_position_method', method)
 
             # Map synapses (this modifies syn_info objects)
             mapsyn.map_synapses(self.soma_refs[0], self.all_sec_refs, self._map_syn_info,
                                 init_func, Z_freq, linearize_gating=linearize,
-                                method=map_method)
+                                method=map_method, pos_method=pos_method)
         else:
             logger.debug("No synapse data available for mapping.")
 

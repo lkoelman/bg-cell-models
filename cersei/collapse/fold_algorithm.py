@@ -16,6 +16,20 @@ class ReductionMethod(Enum):
     BushSejnowski = 2       # Bush, P. C. & Sejnowski, T. J. Reduced compartmental models of neocortical pyramidal cells. Journal of Neuroscience Methods 46, 159-166 (1993).
     Marasco = 3             # Marasco, A., Limongiello, A. & Migliore, M. Fast and accurate low-dimensional reduction of biophysically detailed neuron models. Scientific Reports 2, (2012).
 
+    @classmethod
+    def from_str(cls, descr):
+        method_str = descr.lower()
+        if method_str in ['rall']:
+            return ReductionMethod.Rall
+        elif method_str in ['stratford', 'stratfordmason', 'stratfordmasonlarkman']:
+            return ReductionMethod.Stratford
+        elif method_str in ['bush', 'bushsejnowski']:
+            return ReductionMethod.BushSejnowski
+        elif method_str in ['marasco', 'marascolimongiello', 'marascolimongiellomigliore']:
+            return ReductionMethod.Marasco
+        else:
+            return ValueError('Unrecognized reduction method {}'.format(descr))
+
 
 class FoldingAlgorithm(object):
     """

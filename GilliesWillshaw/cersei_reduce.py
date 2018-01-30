@@ -8,7 +8,6 @@ import sys
 pkg_root = ".." # root dir for our packages
 sys.path.append(pkg_root)
 
-from common.nrnutil import getsecref
 from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
 
 import gillies_model
@@ -162,14 +161,14 @@ def adjust_gbar_spontaneous(reduction):
 ################################################################################
 
 
-def make_reduction(method, tweak=False):
+def make_reduction(method, reduction_params=None, tweak=False):
     """
     Make FoldReduction object using given collasping method
 
     @param  method : ReductionMethod
             Accepted values are BushSejnowski and Marasco
     """
-
+    method = ReductionMethod.from_str(method)
     reduction = StnCellReduction(method=method)
 
     # Common reduction parameters
@@ -178,7 +177,8 @@ def make_reduction(method, tweak=False):
             'Z_init_func' :         reduction.init_cell_steadystate,
             'Z_linearize_gating' :  False,
             'f_lambda':             100.0,
-            'syn_map_method' :      'Ztransfer'
+            'syn_scale_method' :    'Ztransfer',
+            'syn_position_method':  'root_distance_micron',
             })
 
     # Method-specific parameters
@@ -206,6 +206,10 @@ def make_reduction(method, tweak=False):
     
     else:
         raise ValueError("Reduction method {} not supported".format(method))
+
+    # Apply addition parameters (override)
+    if reduction_params is not None:
+        reduction.set_reduction_params(reduction_params)
 
     return reduction
 

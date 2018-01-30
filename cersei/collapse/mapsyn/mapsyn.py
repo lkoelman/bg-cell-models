@@ -4,7 +4,7 @@ to reduced morphology model.
 """
 
 import re
-from textwrap import dedent
+import functools
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger('redops') # create logger for this module
@@ -13,9 +13,15 @@ from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
-import redutils
+from .. import redutils
 from common import conutils
 from common.nrnutil import getsecref, seg_index
+from common.treeutils import subtree_has_node
+from common.stdutil import isclose
+from common.electrotonic import (
+    measure_voltage_transfer, measure_current_transfer, 
+    measure_transfer_impedance, measure_input_impedance
+)
 
 class SynInfo(object):
     """
@@ -59,7 +65,7 @@ class SynInfo(object):
         Zin                 float
                             Zinput, i.e. v(x)/i(x) measured at synapse
 
-        k_syn_soma          float
+        Av_syn_to_soma          float
                             voltage transfer ratio, i.e. |v(soma)/v(syn|
 
         mapped_syn          HocObject
@@ -71,23 +77,6 @@ class SynInfo(object):
     # def __repr__(self):
     #   return "{} at {}({})".format(self.mod_name, self.sec_hname, self.sec_loc)
 
-
-def subtree_has_node(crit_func, noderef, allsecrefs):
-    """
-    Check if the given function applies to (returns True) any node
-    in subtree of given node
-    """
-    if noderef is None:
-        return False
-    elif crit_func(noderef):
-        return True
-    else:
-        childsecs = noderef.sec.children()
-        childrefs = [getsecref(sec, allsecrefs) for sec in childsecs]
-        for childref in childrefs:
-            if subtree_has_node(crit_func, childref, allsecrefs):
-                return True
-        return False
 
 # Parameter names for synaptic mechanisms in .MOD files
 synmech_parnames = {
@@ -105,19 +94,46 @@ synmech_parnames = {
                 'gmax_AMPA', 'gmax_NMDA', 'tau_rec', 'tau_facil', 'U1', 'e'],
 }
 
-def get_syn_info(
-    rootsec,
-    allsecrefs,
-    syn_mod_pars=None,
-    Z_freq=25.,
-    gleak_name=None,
-    linearize_gating=False,
-    init_cell=None,
-    save_ref_attrs=None,
-    sever_netcons=True,
-    attr_mappers=None,
-    nc_tomap=None,
-    syn_tomap=None
+
+
+
+def measure_root_distance_micron(
+        source=None,
+        target=None,
+        imp=None,
+        freq=None,
+        linearize_gating=None,
+        precompute=False
+    ):
+    """
+    Measure path distance to the root Section in units of micron [m*1e-6].
+    """
+    return redutils.seg_path_L(source, endpoint='segment_x')
+
+
+electrotonic_measurement_funcs = {
+    'Av_syn_to_soma' : measure_voltage_transfer,
+    'Ai_syn_to_soma' : measure_current_transfer,
+    'Ztransfer' : measure_transfer_impedance,
+    'Zc' : measure_transfer_impedance,
+    'root_distance_micron' : measure_root_distance_micron,
+}
+
+
+def get_syn_mapping_info(
+        rootsec,
+        allsecrefs,
+        syn_mod_pars=None,
+        Z_freq=25.,
+        gleak_name=None,
+        linearize_gating=False,
+        init_cell=None,
+        save_ref_attrs=None,
+        sever_netcons=True,
+        attr_mappers=None,
+        nc_tomap=None,
+        syn_tomap=None,
+        electrotonic_measures=None,
     ):
     """
     For each synapse on the neuron, calculate and save information for placing an equivalent
@@ -167,13 +183,6 @@ def get_syn_info(
     init_cell()
     
     imp = h.Impedance() # imp = h.zz # previously created
-    imp.loc(0.5, sec=rootsec) # injection site
-
-    # NOTE: linearize_gating corresponds to checkbox 'include dstate/dt contribution' in NEURON GUI Impedance Tool
-    #       - (see equations in Impedance doc) 
-    #       - 0 = calculation with current values of gating vars
-    #       - 1 = linearize gating vars around V
-    # imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
     last_freq = None
 
 
@@ -202,22 +211,15 @@ def get_syn_info(
             syn.PSP_median_frequency = Z_freq
             syn.afferent_netcons = [nc for nc in cell_ncs if nc.syn().same(syn.orig_syn)]
 
-
     if len(cell_syns) == 0:
         logger.warn("No synapses found on tree of Section {}".format(rootsec))
 
-
     # Save synapse properties
     logger.debug("Getting synapse properties...")
-    for syn_info in sorted(cell_syns, key=lambda syn: syn.PSP_median_frequency):
+    for syn_info in cell_syns:
 
         # get synapse HocObject
         syn = syn_info.orig_syn
-
-        # Compute transfer function at representative frequency
-        syn_freq = syn_info.PSP_median_frequency
-        if (last_freq is None) or (syn_freq != last_freq):
-            imp.compute(syn_freq, int(linearize_gating))
         
         # Get synaptic mechanism name
         match_mechname = re.search(r'^[a-zA-Z0-9]+', syn.hname())
@@ -249,7 +251,8 @@ def get_syn_info(
         # Save requested properties of synapse SectionRef
         syn_info.saved_ref_attrs = save_ref_attrs
         for attr in save_ref_attrs:
-            setattr(syn_info, attr, getattr(syn_secref, attr))
+            if hasattr(syn_secref, attr):
+                setattr(syn_info, attr, getattr(syn_secref, attr))
 
         # Save other computed properties
         for attr, mapper in attr_mappers.iteritems():
@@ -260,10 +263,25 @@ def get_syn_info(
         syn_info.max_path_ri = max(syn_secref.pathri_seg) # max path resistance in Section
         syn_info.min_path_ri = min(syn_secref.pathri_seg) # min path resistance in Section
 
-        # Get transfer impedances
+        # Get electrotonic measures
+
+        ## Get measures for sec.x (synapse) -> impedance.loc (soma)
+        imp.loc(0.5, sec=rootsec) # injection site
+        syn_freq = syn_info.PSP_median_frequency
+        if (last_freq is None) or (syn_freq != last_freq):
+            imp.compute(syn_freq, int(linearize_gating))
+
         syn_info.Zc = imp.transfer(syn_loc, sec=syn_sec) # query transfer impedanc,e i.e.  |v(loc)/i(x)| or |v(x)/i(loc)|
+        syn_info.Ztransfer = syn_info.Zc
         syn_info.Zin = imp.input(syn_loc, sec=syn_sec) # query input impedance, i.e. v(x)/i(x)
-        syn_info.k_syn_soma = imp.ratio(syn_loc, sec=syn_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
+        syn_info.A_V_syn_soma = imp.ratio(syn_loc, sec=syn_sec) # A_{V,syn->soma} = |v(impedance.loc)/v(sec_x)|
+        syn_info.A_I_soma_syn = syn_info.A_V_syn_soma # A_{I,soma->syn}
+
+        ## Get measures for impedance.loc (soma) -> sec.x (synapse)
+        imp.loc(syn_loc, sec=syn_sec) # injection site
+        imp.compute(syn_freq, int(linearize_gating))
+        syn_info.A_V_soma_syn = imp.ratio(0.5, sec=rootsec) # A_{V,soma->syn}
+        syn_info.A_I_syn_soma = syn_info.A_V_soma_syn # A_{I,syn->oma}
 
         # Point all afferent NetCon connections to nothing
         if sever_netcons:
@@ -276,44 +294,59 @@ def get_syn_info(
     return cell_syns
 
 
-
-def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False):
+def syn_was_in_absorbed(syn_info, secref):
     """
-    Map synapse to a section in subtree of noderef
+    Check if the synapse represented by SynInfo object was in one of the Sections
+    that was absrbed into the given SectionRef.
+    """
+    return ((secref.gid==syn_info.gid)
+              or (hasattr(secref, 'merged_sec_gids') and (syn_info.gid in secref.merged_sec_gids))
+              or (hasattr(secref, 'orig_props') and (syn_info.gid in secref.orig_props.merged_sec_gids)))
+
+def map_syn_to_loc(
+        noderef,
+        allsecrefs,
+        syn_info,
+        distance_func,
+        distance_attr,
+        did_ascend_original=False
+    ):
+    """
+    Find an equivalent location for the synapse in the subtree of the given
+    Section, using the measure of electrotonic attenuation dependent on 'method'.
+
+    @param  method : str
+            Measure of electrotonic attenuation to use for finding equivalent location.
+
+    @param  imp : Hoc.Impedance
+            Probe for measuring electrotonic attenuation
     """
     cur_sec = noderef.sec
+    freq = syn_info.PSP_median_frequency
 
-    if method == 'Ztransfer':
-        Zc = syn_info.Zc
-        elec_fun = imp.transfer
-    
-    elif method == 'Vratio':
-        Zc = syn_info.k_syn_soma
-        elec_fun = imp.ratio
-    
-    else:
-        raise Exception("Unknown synapse placement method '{}'".format(method))
+    Asyn = getattr(syn_info, distance_attr)
+    A_0 = distance_func(source=cur_sec(0.0), freq=freq)
+    A_1 = distance_func(source=cur_sec(1.0), freq=freq)
 
-    Zc_0 = elec_fun(0.0, sec=cur_sec)
-    Zc_1 = elec_fun(1.0, sec=cur_sec)
+    logger.anal("Entering section with A(0.0)={} , A(1.0)={} (target A={})".format(A_0, A_1, Asyn))
 
-    logger.anal("Entering section with Zc(0.0)={} , Zc(1.0)={} (target Zc={})".format(Zc_0, Zc_1, Zc))
+    # Assume monotonically decreasing A away from root section
+    if (A_0 <= Asyn <= A_1) or (A_1 <= Asyn <= A_0):
 
-    # Assume monotonically decreasing Zc away from root section
-    if (Zc_0 <= Zc <= Zc_1) or (Zc_1 <= Zc <= Zc_0) or (Zc >= Zc_0 and Zc >= Zc_1):
+        # Calculate A at midpoint of each internal segment
+        locs_As = [(seg.x, distance_func(source=seg, freq=freq)) for seg in cur_sec]
+        A_diffs = [abs(Asyn-pts[1]) for pts in locs_As]
 
-        # Calculate Zc at midpoint of each internal segment
-        locs_Zc = [(seg.x, elec_fun(seg.x, sec=cur_sec)) for seg in cur_sec]
-        Zc_diffs = [abs(Zc-pts[1]) for pts in locs_Zc]
+        # Map synapse with closest A at midpoint
+        seg_index = A_diffs.index(min(A_diffs))
+        x_map, A_map = locs_As[seg_index]
 
-        # Map synapse with closest Zc at midpoint
-        seg_index = Zc_diffs.index(min(Zc_diffs))
-        x_map = locs_Zc[seg_index][0]
-
-        err_Zc = (locs_Zc[seg_index][1] - Zc) / Zc
-        logger.debug("Arrived: Zc relative error is {:.2f} %".format(err_Zc))
+        err_A = (A_map - Asyn) / Asyn
+        if not isclose(A_map, Asyn, rel_tol=.1):
+            logger.warning("Warning: error in electrotonic distance measure {} "
+                            "is > 10\%: error = {}".format(distance_attr, err_A))
         
-        return noderef, x_map   
+        return cur_sec(x_map), A_map
 
     else:
         logger.anal("No map: descending further...")
@@ -321,103 +354,129 @@ def map_synapse(noderef, allsecrefs, syn_info, imp, method, passed_synsec=False)
         # Get child branches
         childrefs = [getsecref(sec, allsecrefs) for sec in noderef.sec.children()]
 
-        # If we are in correct tree but Zc smaller than endpoints, return endpoint
+        # If we are in correct tree but A smaller than endpoints, return endpoint
         if not any(childrefs):
-            assert Zc < Zc_0 and Zc < Zc_1
-            return noderef, 1.0
+            logger.warning("Arrived at branch terminal without encountering segment with matching value of electrotonic measure")
+            return cur_sec(1.0), A_1
 
         # Else, recursively search child nodes
-        # Function for checking that section maps to original synapse section
-        mapsto_synsec = lambda ref: (ref.tree_index==syn_info.tree_index) and (
-                                    ref.gid==syn_info.gid or (
-                                        hasattr(ref, 'merged_sec_gids') and 
-                                        (syn_info.gid in ref.merged_sec_gids)
-                                        )
-                                    )
-        
+        did_contain_syn = functools.partial(syn_was_in_absorbed, syn_info)
+
         # Did we pass the synapse's original section?
-        passed_synsec = passed_synsec or mapsto_synsec(noderef)
+        did_ascend_original = did_ascend_original or syn_was_in_absorbed(syn_info, noderef)
         
         # child_mapsto_synsec = [subtree_has_node(mapsto_synsec, ref, allsecrefs) for ref in childrefs]
-        # passed_synsec = not any(child_mapsto_synsec)
-        # if passed_synsec:
+        # did_ascend_original = not any(child_mapsto_synsec)
+        # if did_ascend_original:
         #   assert mapsto_synsec(noderef) # assume that synapse was positioned on this Section
 
         for childref in childrefs:
 
-            # Only descend if original synapse section already passed, or in subtree
-            if passed_synsec or subtree_has_node(mapsto_synsec, childref, allsecrefs):
-                return map_synapse(childref, allsecrefs, syn_info, imp, method, passed_synsec)
+            # Only descend subtree if original synapse section already passed, or in subtree
+            if did_ascend_original or subtree_has_node(did_contain_syn, childref, allsecrefs):
+                return map_syn_to_loc(
+                        childref, allsecrefs, syn_info, 
+                        distance_func, distance_attr, did_ascend_original)
         
+        # TODO: plot A_V_soma_syn before and after reduction, give option to position synapses based on path length rather than 'equivalent' location. This is more logical since equivalent location may not exist, and may change after optimization of parameters.
+        assert did_ascend_original
         raise Exception("The synapse did not map onto any segment in this subtree.")
 
 
 
-def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq, 
-                    syn_mod_pars=None, method='Ztransfer', linearize_gating=False):
+def map_synapses(
+        rootref,
+        allsecrefs,
+        orig_syn_info,
+        init_cell,
+        Z_freq, 
+        syn_mod_pars=None,
+        method=None,
+        pos_method=None,
+        pos_attr=None,
+        linearize_gating=False):
     """
     Map synapses to equivalent synaptic inputs on given morphologically
     reduced cell.
 
-    @param rootsec          root section of reduced cell
+    @param  rootref : SectionRef
+            root section of reduced cell
 
-    @param orig_syn_info    SynInfo for each synapse on original cell
+    @param  orig_syn_info : SynInfo
+            Synapse info for each synapse on original cell
 
-    @param method           Method for positioning synapses and scaling
-                            synaptic conductances:
+    @param  method : str
 
-                            'Ztransfer' positions synapses at loc with 
-                                        ~= transfer impedance
+            Method for positioning synapses and scaling synaptic conductances,
+            specified as a measure of electrotonic extent:
 
-                            'Vratio' positions them at loc with 
-                                        ~= Voltage attenuation
+                - 'Ztransfer' positions synapses at loc with ~= transfer impedance
 
-    @effect                 Create one synapse for each original synapse in 
-                            orig_syn_info. A reference to this synapse is saved 
-                            as as attribute 'mapped_syn' on the SynInfo object.
+                - 'Ai_syn_to_soma': place synapse at location with approx. 
+                  the same current attenuation A_{I,syn->soma}
+
+                - 'Av_syn_to_soma': place synapse at location with approx. 
+                  the same voltage attenuation A_{V,syn->soma}
+
+    @param  pos_method : str
+            
+            Optional method for measuring distance used to position synapses
+            at an equivalent location. If given, synapses will be placed in a 
+            segment where distance_func(segment) ~= syn_info.distance_attr. 
+            Accepted values are the same as for argument 'method', as well as
+            'root_distance_micron'. If not given, the measure of electrotonic 
+            extent given in 'method' will be used.
+
+    @param  pos_attr : str
+            See argument 'distance_func' for meaning.
+
+    @effect Create one synapse for each original synapse in 
+            orig_syn_info. A reference to this synapse is saved 
+            as as attribute 'mapped_syn' on the SynInfo object.
     """
     # Synaptic mechanisms
     if syn_mod_pars is None:
         syn_mod_pars = synmech_parnames
 
-    # Compute transfer impedances
+    # Ready cell and make Impedance probe
     logger.debug("Initializing cell for electrotonic measurements...")
     init_cell()
     logger.debug("Placing impedance measuring electrode...")
-    
     imp = h.Impedance() # imp = h.zz # previously created
-    imp.loc(0.5, sec=rootref.sec) # injection site
 
-    # NOTE: linearize_gating corresponds to checkbox 'include dstate/dt contribution' in NEURON GUI Impedance Tool
-    #       - (see equations in Impedance doc) 
-    #       - 0 = calculation with current values of gating vars
-    #       - 1 = linearize gating vars around V
-    # imp.compute(Z_freq, int(linearize_gating)) # compute A(x->loc) for all x where A is Vratio/Zin/Ztransfer
-    last_freq = None
+    # Get measurement frequency
     for syn in orig_syn_info:
         if not hasattr(syn, 'PSP_median_frequency'):
             syn.PSP_median_frequency = Z_freq
 
+    # Make electrotonic distance measurement function
+    if pos_attr is None:
+        pos_attr = method
+    if pos_method is None:
+        pos_method = method
+    distance_func = functools.partial(
+                            electrotonic_measurement_funcs[pos_method],
+                            target=rootref.sec(0.5),
+                            imp=imp,
+                            linearize_gating=int(linearize_gating),
+                            precompute=False)
+
     # Loop over all synapses
     logger.debug("Mapping synapses to reduced cell...")
-    for syn_info in sorted(orig_syn_info, key=lambda syn: syn.PSP_median_frequency):
+    for syn_info in orig_syn_info:
 
-        # Compute transfer function at representative frequency
-        syn_freq = syn_info.PSP_median_frequency
-        if (last_freq is None) or (syn_freq != last_freq):
-            imp.compute(syn_freq, int(linearize_gating))
+        # Find the segment with closest match in electrotonic measure
+        map_seg, map_pos = map_syn_to_loc(
+                            rootref, allsecrefs, syn_info, 
+                            distance_func, pos_attr)
 
-
-        # Find the segment with same tree index and closest Ztransfer match,
-        map_ref, map_x = map_synapse(rootref, allsecrefs, syn_info, imp, method)
-        map_sec = map_ref.sec
         logger.anal("Synapse was in {}({}) -> mapped to {}\n".format(
-                        syn_info.sec_name, syn_info.sec_loc, map_sec(map_x)))
+                        syn_info.sec_name, syn_info.sec_loc, map_seg))
 
         # Make the synapse
         syn_mod = syn_info.mod_name
         synmech_ctor = getattr(h, syn_mod) # constructor function for synaptic mechanism
-        mapped_syn = synmech_ctor(map_sec(map_x))
+        mapped_syn = synmech_ctor(map_seg)
         syn_info.mapped_syn = mapped_syn
 
         # Copy synapse properties
@@ -431,21 +490,8 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
             aff_nc.setpost(mapped_syn)
             aff_nc.active(1) # NetCons are turned off if target was set to None!
 
-        # Measure electrotonic properties for scaling synapses
-        map_Zc = imp.transfer(map_x, sec=map_sec) # query transfer impedanc,e i.e.  |v(loc)/i(x)| or |v(x)/i(loc)|
-        map_Zin = imp.input(map_x, sec=map_sec) # query input impedance, i.e. v(x)/i(x)
-        map_k = imp.ratio(map_x, sec=map_sec) # query voltage transfer ratio, i.e. |v(loc)/v(x)|
-
         # Ensure synaptic conductances scaled correctly to produce same effect at soma
         # using relationship `Vsoma = Zc*gsyn*(V-Esyn) = k_{syn->soma}*Zin*gsyn*(V-Esyn)`
-
-        # Report discrepancy
-        logger.anal(dedent("""
-            Original synapse:\nZc={}\tk={}\tZin={}
-            Mapped synapse:\nZc={}\tk={}\tZin={}
-            Discrepancy: Zc_old/Zc_new={} = scale factor for gmax
-        """.format(syn_info.Zc, syn_info.k_syn_soma, syn_info.Zin,
-                    map_Zc, map_k, map_Zin, syn_info.Zc/map_Zc)))
 
         # Calculate scale factor
         #   `Vsoma = k_{syn->soma} * Vsyn`          (Vsyn is local EPSP)
@@ -458,15 +504,44 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
             #           - place at x with +/- same Zc 
             #           - ensure Isyn is the same
             #               - correct gsyn using exact Zc measurement (see below)
+
+            # Vsoma = Zc(new) * gsyn * (V-Esyn)
+            # ... but we want:
+            # Vsoma = Zc(old) * gsyn * (V-Esyn)
+            map_Zc = measure_transfer_impedance(
+                            source=map_seg,
+                            target=rootref.sec(0.5),
+                            imp=imp,
+                            freq=syn_info.PSP_median_frequency,
+                            linearize_gating=int(linearize_gating),
+                            precompute=False)
             scale_g = syn_info.Zc/map_Zc
         
-        elif method == 'Vratio':
-            # Method 2: (conserve local Vsyn):
-            #           - place at x with +/- same k_{syn->soma}
-            #           - ensure that Vsyn is the same (EPSP, local depolarization)
-            #               - to maintain Vsyn = Zin * gsyn * (V-Esyn) : scale gsyn
-            #                 to compensate for discrepancy in Zin
+        elif method == 'Av_syn_to_soma':
+            # Vsyn = Zin(new) * gsyn * (V-Esyn)
+            # ... but we want:
+            # Vsyn = Zin(old) * gsyn * (V-Esyn)
+            map_Zin = measure_input_impedance(
+                            source=map_seg,
+                            target=None,
+                            imp=imp,
+                            freq=syn_info.PSP_median_frequency,
+                            linearize_gating=int(linearize_gating),
+                            precompute=False)
             scale_g = syn_info.Zin/map_Zin
+
+        elif method == 'Ai_syn_to_soma':
+            # Isoma = Ai(map_x) * gsyn * (V-Esyn)
+            # ... but we want:
+            # Isoma = Ai(orig_x) * gsyn * (V-Esyn)
+            map_Ai = measure_current_transfer(
+                            source=map_seg,
+                            target=rootref.sec(0.5),
+                            imp=imp,
+                            freq=syn_info.PSP_median_frequency,
+                            linearize_gating=int(linearize_gating),
+                            precompute=False)
+            scale_g = syn_info.Ai_syn_to_soma / map_Ai
         
         else:
             raise Exception("Unknown synapse placement method '{}'".format(method))
@@ -474,6 +549,7 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
         # Scale conductances (weights) of all incoming connections
         scale_netcon_weights = False
 
+        # Scale parameter of synaptic mechanism
         if len(getattr(syn_info, 'gbar_param_specs', [])) > 0:
             for gbar_spec in syn_info.gbar_param_specs:
 
@@ -494,7 +570,7 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
         else:
             scale_netcon_weights = True
                     
-
+        # Scale weights of associated NetCon
         if scale_netcon_weights:
             # Default action: scale NetCon weights
             for i_nc, nc in enumerate(syn_info.afferent_netcons):

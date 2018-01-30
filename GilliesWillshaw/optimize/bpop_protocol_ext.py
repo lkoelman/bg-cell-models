@@ -167,52 +167,52 @@ class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 				sim.run()
 		"""
 
+		# try:
+
+		# Fixes each param.value to individual's 'genes'
+		cell_model.freeze(param_values)
+
+		# Pass functions and parameters to cell_model before instantiation
+		self.pre_model_instantiate(cell_model=cell_model, sim=sim)
+		
+		# Make final cell model
+		cell_model.instantiate(sim=sim)
+		
+		# Instatiate things that need final cell model (original instantiate())
+		self.post_model_instantiate(cell_model=cell_model, sim=sim)
+
 		try:
-
-			# Fixes each param.value to individual's 'genes'
-			cell_model.freeze(param_values)
-
-			# Pass functions and parameters to cell_model before instantiation
-			self.pre_model_instantiate(cell_model=cell_model, sim=sim)
+			sim.run(self.total_duration, cvode_active=self.cvode_active)
+		
+		except (RuntimeError, ephys.simulators.NrnSimulatorException):
 			
-			# Make final cell model
-			cell_model.instantiate(sim=sim)
+			logger.debug(
+				'SelfContainedProtocol: Running of parameter set {%s} generated '
+				'an exception, returning None in responses',
+				str(param_values))
 			
-			# Instatiate things that need final cell model (original instantiate())
-			self.post_model_instantiate(cell_model=cell_model, sim=sim)
+			responses = {recording.name: None 
+							for recording in self.recordings}
+		else:
+			responses = {recording.name: recording.response
+							for recording in self.recordings}
 
-			try:
-				sim.run(self.total_duration, cvode_active=self.cvode_active)
-			
-			except (RuntimeError, ephys.simulators.NrnSimulatorException):
-				
-				logger.debug(
-					'SelfContainedProtocol: Running of parameter set {%s} generated '
-					'an exception, returning None in responses',
-					str(param_values))
-				
-				responses = {recording.name: None 
-								for recording in self.recordings}
-			else:
-				responses = {recording.name: recording.response
-								for recording in self.recordings}
+		# Cleanup functions before model & protocol destruction
+		self.post_run(cell_model=cell_model, sim=sim)
 
-			# Cleanup functions before model & protocol destruction
-			self.post_run(cell_model=cell_model, sim=sim)
+		# NOTE: all protocol and model data is released here!
+		self.destroy(sim=sim)
+		cell_model.destroy(sim=sim)
 
-			# NOTE: all protocol and model data is released here!
-			self.destroy(sim=sim)
-			cell_model.destroy(sim=sim)
+		cell_model.unfreeze(param_values.keys())
 
-			cell_model.unfreeze(param_values.keys())
+		return responses, self.recorded_trace_vectors
 
-			return responses, self.recorded_trace_vectors
-
-		except:
-			import sys
-			import traceback
-			raise Exception(
-				"".join(traceback.format_exception(*sys.exc_info())))
+		# except:
+		# 	import sys
+		# 	import traceback
+		# 	raise Exception(
+		# 		"".join(traceback.format_exception(*sys.exc_info())))
 
 
 	def pre_model_instantiate(self, cell_model=None, sim=None):

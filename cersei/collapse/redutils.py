@@ -17,8 +17,8 @@ logger = logging.getLogger(logname) # create logger for this module
 import numpy as np
 from neuron import h
 
-from common.nrnutil import getsecref, seg_index, same_seg, seg_xmin, seg_xmax
-from common.treeutils import subtreeroot
+from common.nrnutil import getsecref, seg_index, seg_xmin, seg_xmax
+from common.treeutils import subtreeroot, dfs_iter_tree_stack
 from common.electrotonic import seg_lambda
 
 # Load NEURON function libraries
@@ -772,33 +772,6 @@ def subtree_assign_gids_dfs(node_ref, all_refs, parent_id=0):
         highest = subtree_assign_gids_dfs(childref, all_refs, highest)
 
     return highest
-
-
-def dfs_iter_tree_recursive(node):
-    """
-    Return generator that does depth-first tree traversal starting at given node.
-
-    @note   makes new generator for each child, not as elegant
-    """
-    yield node
-
-    for child_node in getattr(node, 'children', []):
-        for cn in dfs_iter_tree_recursive(child_node):
-            yield cn
-
-
-def dfs_iter_tree_stack(start_node):
-    """
-    Return generator that does depth-first tree traversal starting at given node.
-
-    @note   non-recusrive, avoids making a new generator per descent
-    """
-    stack = [start_node]
-    while stack:
-        node = stack.pop()
-        yield node
-        for child in getattr(node, 'children', []):
-            stack.append(child)
 
 
 def find_secprops(node, filter_fun, find_all=True):

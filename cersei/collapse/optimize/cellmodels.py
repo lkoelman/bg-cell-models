@@ -26,16 +26,7 @@ Different approaches to creating a cell model
 """
 
 import collections
-
 import bluepyopt.ephys as ephys
-
-import gillies_model
-from reducemodel import redutils, reduce_cell
-from evalmodel import cellpopdata as cpd
-
-
-import logging
-logger = logging.getLogger('bpop_ext')
 
 
 class Cell(object):
@@ -59,7 +50,7 @@ class Cell(object):
         self._all_refs = None
 
 
-class StnBaseModel(ephys.models.Model):
+class CollapsableCell(ephys.models.Model):
     '''
     Wraps the Gillies & Willshaw model so it can be used by BluePyOpt.
 
@@ -88,7 +79,7 @@ class StnBaseModel(ephys.models.Model):
                 Parameters of the cell model
         """
 
-        super(StnBaseModel, self).__init__(name)
+        super(CollapsableCell, self).__init__(name)
 
         # BluePyOpt variables
         self.mechanisms = [] if (mechs is None) else mechs
@@ -197,7 +188,7 @@ class StnBaseModel(ephys.models.Model):
                     all         Hoc.SectionList()
         """
 
-        # instantiation across optimization procedure:
+        # Location of instantiate() in call graph during optimization:
         #       - see ephys.protocols.SweepProtocol._run_func
         #       - operations: model.freeze(params) > model.instantiate() > proto.instantiate() > sim.run () > model.unfreeze()
         #           - model.freeze()
@@ -237,7 +228,9 @@ class StnBaseModel(ephys.models.Model):
 
 
     def destroy(self, sim=None):
-        """Destroy cell from simulator"""
+        """
+        Destroy cell from simulator
+        """
 
         # FIXME: uncommenting below causes crash/hang
         # self.proto_setup_kwargs = None
@@ -250,189 +243,3 @@ class StnBaseModel(ephys.models.Model):
         
         for param in self.params.values():
             param.destroy(sim=sim)
-
-
-class StnFullModel(StnBaseModel):
-    
-    def __init__(self, 
-            name=None,
-            mechs=None,
-            params=None,
-            gid=0):
-        """
-        Constructor
-
-        Args: see StnBaseModel
-        """
-
-        super(StnFullModel, self).__init__(name, mechs, params, gid)
-        self._persistent_refs = None
-
-
-    def instantiate(self, sim=None):
-        """
-        Instantiate cell in simulator
-        """
-
-        # Create a cell
-        self.icell = Cell()
-        self.icell.gid = self.gid
-        
-        # Make sure original STN cell is built
-        h = sim.neuron.h
-        stn_exists = hasattr(h, 'SThcell')
-        if (not stn_exists) or (self._persistent_refs is None):
-            
-            # Create Gillies & Willshaw STN model or get refs to existing
-            soma, dendL, dendR = gillies_model.get_stn_refs()
-
-            # If existed: reset variables
-            if stn_exists:
-                h.set_gbar_stn() # see createcell.hoc
-
-            self.icell._soma_refs = [soma]
-            self.icell._dend_refs = dendL + dendR
-            self.icell._all_refs = self.icell._soma_refs + self.icell._dend_refs
-
-            # save SectionRef across model instantiation (icell will be destroyed)
-            self._persistent_refs = self.icell._all_refs
-
-            # Save initial cell parameters
-            for ref in self.icell._all_refs:
-                redutils.store_seg_props(ref, gillies_model.gillies_gdict, attr_name='initial_params')
-
-        else:
-            # Restore persistent SectionRef
-            self.icell._all_refs = self._persistent_refs
-            self.icell._soma_refs = gillies_model.get_soma_refs(self._persistent_refs)
-            self.icell._dend_refs = [ref for ref in self._persistent_refs if ref not in self.icell._soma_refs]
-
-            # Reset cell parameters
-            for ref in self.icell._all_refs:
-                # Restore parameter dict stored on SectionRef
-                redutils.set_range_props(ref, ref.initial_params)
-
-        # Call base class method
-        icell = super(StnFullModel, self).instantiate(sim)
-
-        # Call protocol setup functions if any
-        self.exec_proto_setup_funcs(icell=icell)
-
-        return icell
-
-
-class StnReducedModel(StnBaseModel):
-    
-    def __init__(self, 
-            name=None,
-            fold_method=None,
-            num_passes=1,
-            mechs=None,
-            params=None,
-            gid=0):
-        """
-        Constructor
-
-        Args: see StnBaseModel
-        """
-
-        super(StnReducedModel, self).__init__(name, mechs, params, gid)
-
-        # Reduction variables
-        self._fold_method = fold_method
-        self._num_passes = num_passes
-
-        self._persistent_refs = None
-
-
-    def first_instantiate(self, sim=None):
-        """
-        First instantiation of the cell model.
-        """
-
-        # Create Reduction object (creates full model)
-        if self._fold_method == 'marasco':
-            reduction = reduce_cell.gillies_marasco_reduction(tweak=False)
-        elif self._fold_method == 'stratford':
-            reduction = reduce_cell.gillies_stratford_reduction()
-
-        # Apply pre-reduction protocol setup functions
-        full_cell = Cell() # dummy cell
-        full_cell.dendritic = [ref.sec for ref in reduction.dend_refs]
-        self.exec_proto_setup_funcs(icell=full_cell)
-
-        # Prepare synapse mapping
-        if 'do_map_synapses' in self.proto_setup_kwargs:
-            # Get synapses on full model
-            syns_tomap = cpd.get_synapse_data(
-                                self.proto_setup_kwargs['connector'],
-                                self.proto_setup_kwargs['stim_data']['synapses'],
-                                self.proto_setup_kwargs['stim_data']['syn_NetCons'])
-            reduction.set_syns_tomap(syns_tomap)
-
-        
-        # Do reduction
-        reduction.reduce_model(num_passes=self._num_passes, map_synapses=False)
-        
-        # Set all Sections on instantiated cell
-        self.icell._soma_refs = reduction._soma_refs
-        self.icell._dend_refs = reduction._dend_refs
-        self.icell._all_refs = self.icell._soma_refs + self.icell._dend_refs
-        # save SectionRef across model instantiation (icell will be destroyed)
-        self._persistent_refs = self.icell._all_refs
-
-        # Apply parameters _before mapping_ (mapping measures electrotonic properties)
-        icell = super(StnReducedModel, self).instantiate(sim)
-
-        # Do synapse mapping
-        if 'do_map_synapses' in self.proto_setup_kwargs:
-
-            reduction.map_synapses()
-
-            # Update stim data
-            self.proto_setup_kwargs['stim_data']['synapses'] = [s.mapped_syn for s in reduction.map_syn_info]
-            self.proto_setup_kwargs['stim_data']['syn_NetCons'] = sum((s.afferent_netcons for s in reduction.map_syn_info), [])
-
-        # Save initial cell parameters
-        for ref in self.icell._all_refs:
-            redutils.store_seg_props(ref, gillies_model.gillies_gdict, attr_name='initial_params')
-
-        return icell
-
-
-    def instantiate(self, sim=None):
-        """
-        Instantiate cell in simulator
-        """
-
-        # Create a cell
-        self.icell = Cell()
-        self.icell.gid = self.gid
-        
-
-        # Make sure original STN cell is built
-        if self._persistent_refs is None:
-            # first instantiation does cell reduction
-            return self.first_instantiate(sim=sim)
-
-        else:
-            # Restore persistent SectionRef
-            self.icell._all_refs = self._persistent_refs
-            self.icell._soma_refs = gillies_model.get_soma_refs(self._persistent_refs)
-            self.icell._dend_refs = [ref for ref in self._persistent_refs if ref not in self.icell._soma_refs]
-
-            # Reset cell parameters to initial values after reduction
-            for ref in self.icell._all_refs:
-                redutils.set_range_props(ref, ref.initial_params)
-
-            # Call base class method
-            return super(StnReducedModel, self).instantiate(sim)
-
-
-    def destroy(self, sim=None):
-        """
-        Destroy cell from simulator
-        """
-        logger.debug("Destroying Reduced cell model")
-        self._persistent_refs = None
-        return super(StnReducedModel, self).destroy(sim=sim)
