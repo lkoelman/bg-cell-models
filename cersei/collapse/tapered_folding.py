@@ -221,6 +221,7 @@ class AdvancingFrontCollapse(object):
         
         if self.passive_scale_method == 'match_input_impedance':
             self.impedance_linearize_gating = kwargs['Z_linearize_gating']
+            self.match_Zin_frequency = kwargs.get('match_input_impedance_frequency', 0.0)
 
         self.f_lambda = self.reduction.get_reduction_param('f_lambda')
         self.gleak_name = self.reduction.gleak_name
@@ -585,13 +586,15 @@ class AdvancingFrontCollapse(object):
                     continue
                 elif requested_scale_method == 'surface_area_ratio':
                     scale_factor = orig.area / eq_area
-                elif self.requested_scale_method == 'gbar_integrated_cylinder_ratio':
+                elif requested_scale_method == 'gbar_integrated_cylinder_ratio':
                     g_cyl_integr = sum(getattr(seg, gname, 0.0)*seg.area() 
                                             for seg in eqsec)
                     g_orig_integr = orig.gtot[gname]
                     scale_factor = g_orig_integr / g_cyl_integr
-                elif (requested_scale_method not in 
-                        ['gbar_integrated_subtree_ratio', 'match_input_impedance']):
+                elif requested_scale_method == 'match_input_impedance':
+                    # initialize using area ratio, fit later
+                    scale_factor = orig.area / eq_area
+                elif requested_scale_method != 'gbar_integrated_subtree_ratio':
                     raise ValueError("Unknown scaling method '{}'".format(
                             self.gbar_scale_method))
                 
@@ -624,9 +627,9 @@ class AdvancingFrontCollapse(object):
             # Measure Zin at DC
             probe = h.Impedance()
             probe.loc(0.0, sec=root_sec) # injection site
-            probe.compute(0.0, int(self.impedance_linearize_gating))
+            probe.compute(self.match_Zin_frequency, int(self.impedance_linearize_gating))
             subtree_Zin_DC = probe.input(0.0, sec=root_sec)
-            root_ref.orig_props.subtree_Zin_DC = subtree_Zin_DC
+            root_ref.subtree_Zin_DC = subtree_Zin_DC
 
             # Reconnect
             root_sec.connect(parent_seg)
@@ -661,35 +664,38 @@ class AdvancingFrontCollapse(object):
 
         # Initialize optimization
         for ref in subtree_sec_refs:
-            assert ref.sec.nseg == 1
-            ref.gleak_init = getattr(ref.sec, self.gleak_name)
-            ref.cm_init = getattr(ref.sec, 'cm')
+            segments = [seg for seg in ref.sec]
+            # save initial values of leak conductance and capacitance
+            ref.gleak_init = map(lambda seg: getattr(seg, self.gleak_name), segments)
+            ref.cm_init = map(lambda seg: getattr(seg, 'cm'), segments)
         
         probe = h.Impedance()
         probe.loc(0.0, sec=root_sec) # injection site
+        probe.compute(self.match_Zin_frequency, int(self.impedance_linearize_gating))
+        initial_Zin = probe.input(0.0, sec=root_sec)
 
         # Cost function for optimization
-        target_Zin = root_ref.orig_props.subtree_Zin_DC
-
+        target_Zin = root_ref.subtree_Zin_DC
         def cost_fun(param_hvec):
             """ Cost function/error to minimize """
             # Adjust leak conducance
             scale_factor = param_hvec.x[0]
             for ref in subtree_sec_refs:
-                new_gleak = ref.gleak_init * scale_factor
-                new_cm = ref.cm_init * scale_factor # preserve time constant R*C
-                setattr(ref.sec, self.gleak_name, new_gleak)
-                setattr(ref.sec, 'cm', new_cm)
+                for i, seg in enumerate(ref.sec):
+                    new_gleak = ref.gleak_init[i] * scale_factor
+                    new_cm = ref.cm_init[i] * scale_factor # preserve time constant R*C
+                    setattr(seg, self.gleak_name, new_gleak)
+                    setattr(seg, 'cm', new_cm)
 
             # Measure input inpedance
-            probe.compute(0.0, int(self.impedance_linearize_gating))
+            probe.compute(self.match_Zin_frequency, int(self.impedance_linearize_gating))
             this_Zin = probe.input(0.0, sec=root_sec)
-            return (this_Zin - target_Zin)**2
+            return (this_Zin - target_Zin)**2 + float(scale_factor < 0) * 1e9
 
         # Parameters for optimization
-        Zin_tolerance = 1e-6
+        Zin_tolerance = 1.0
         step_size = .01
-        praxis_verbosity = 2
+        praxis_verbosity = 1
         h.attr_praxis(Zin_tolerance, step_size, praxis_verbosity)
         
         # Optimize
@@ -701,13 +707,18 @@ class AdvancingFrontCollapse(object):
         Zin_final = probe.input(0.0, sec=root_sec)
         Zin_error = math.sqrt(Zin_err_sqrd)
         scale_fitted = param_vec.x[0]
+        if scale_fitted < 0.0:
+            raise Exception("Got negative scale factor!")
+        if Zin_err_sqrd**0.5 > Zin_tolerance:
+            logger.warning("Could not fit input impedance to within tolerance")
 
         print("""\
 Optimization finished:
 scale_fitted = {}
 Zin_orig     = {}
+Zin_initial  = {}
 Zin_final    = {}
-Zin error    = {}""".format(scale_fitted, target_Zin, Zin_final, Zin_error))
+Zin error    = {}""".format(scale_fitted, target_Zin, initial_Zin, Zin_final, Zin_error))
 
 
     def disconnect_substituted_secs(self, fold_root, delete=True):

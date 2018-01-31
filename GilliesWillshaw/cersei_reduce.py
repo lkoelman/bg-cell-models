@@ -168,7 +168,8 @@ def make_reduction(method, reduction_params=None, tweak=False):
     @param  method : ReductionMethod
             Accepted values are BushSejnowski and Marasco
     """
-    method = ReductionMethod.from_str(method)
+    if not isinstance(method, ReductionMethod):
+        method = ReductionMethod.from_str(str(method))
     reduction = StnCellReduction(method=method)
 
     # Common reduction parameters
@@ -177,7 +178,7 @@ def make_reduction(method, reduction_params=None, tweak=False):
             'Z_init_func' :         reduction.init_cell_steadystate,
             'Z_linearize_gating' :  False,
             'f_lambda':             100.0,
-            'syn_scale_method' :    'Ztransfer',
+            'syn_scale_method' :    'Ai_syn_to_soma',
             'syn_position_method':  'root_distance_micron',
             })
 
@@ -187,6 +188,7 @@ def make_reduction(method, reduction_params=None, tweak=False):
             'gbar_init_method':     'area_weighted_average',
             'gbar_scale_method':    'surface_area_ratio',
             'passive_scale_method': 'surface_area_ratio',
+            # 'passive_scale_method': 'match_input_impedance',
             ### Splitting cylinders based on L/lambda ##########################
             # 'split_criterion':      'eq_electrotonic_distance',
             # 'split_dX':             3.0,
@@ -214,7 +216,7 @@ def make_reduction(method, reduction_params=None, tweak=False):
     return reduction
 
 
-def fold_bush(export_locals=True):
+def fold_bush(export_locals=False):
     """
     Fold Gillies STN model using Bush & Sejnowski method
     
@@ -234,7 +236,7 @@ def fold_bush(export_locals=True):
     return reduction._soma_refs, reduction._dend_refs
 
 
-def fold_marasco(export_locals=True):
+def fold_marasco(export_locals=False):
     """
     Fold Gillies STN model using Marasco method
     
@@ -257,4 +259,4 @@ def fold_marasco(export_locals=True):
 
 
 if __name__ == '__main__':
-    fold_bush()
+    fold_bush(export_locals=True)

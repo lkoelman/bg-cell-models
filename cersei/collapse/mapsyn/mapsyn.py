@@ -262,6 +262,8 @@ def get_syn_mapping_info(
         syn_info.path_ri = syn_secref.pathri_seg[seg_index(syn_seg)] # summed seg.ri() up to synapse segment
         syn_info.max_path_ri = max(syn_secref.pathri_seg) # max path resistance in Section
         syn_info.min_path_ri = min(syn_secref.pathri_seg) # min path resistance in Section
+        syn_info.root_distance_micron = redutils.seg_path_L(syn_seg, endpoint='segment_x')
+        syn_info.path_L = syn_info.root_distance_micron
 
         # Get electrotonic measures
 
@@ -274,14 +276,14 @@ def get_syn_mapping_info(
         syn_info.Zc = imp.transfer(syn_loc, sec=syn_sec) # query transfer impedanc,e i.e.  |v(loc)/i(x)| or |v(x)/i(loc)|
         syn_info.Ztransfer = syn_info.Zc
         syn_info.Zin = imp.input(syn_loc, sec=syn_sec) # query input impedance, i.e. v(x)/i(x)
-        syn_info.A_V_syn_soma = imp.ratio(syn_loc, sec=syn_sec) # A_{V,syn->soma} = |v(impedance.loc)/v(sec_x)|
-        syn_info.A_I_soma_syn = syn_info.A_V_syn_soma # A_{I,soma->syn}
+        syn_info.Av_syn_to_soma = imp.ratio(syn_loc, sec=syn_sec) # A_{V,syn->soma} = |v(impedance.loc)/v(sec_x)|
+        syn_info.Ai_soma_to_syn = syn_info.Av_syn_to_soma # A_{I,soma->syn}
 
         ## Get measures for impedance.loc (soma) -> sec.x (synapse)
         imp.loc(syn_loc, sec=syn_sec) # injection site
         imp.compute(syn_freq, int(linearize_gating))
-        syn_info.A_V_soma_syn = imp.ratio(0.5, sec=rootsec) # A_{V,soma->syn}
-        syn_info.A_I_syn_soma = syn_info.A_V_soma_syn # A_{I,syn->oma}
+        syn_info.Av_soma_to_syn = imp.ratio(0.5, sec=rootsec) # A_{V,soma->syn}
+        syn_info.Ai_syn_to_soma = syn_info.Av_soma_to_syn # A_{I,syn->oma}
 
         # Point all afferent NetCon connections to nothing
         if sever_netcons:
@@ -320,6 +322,10 @@ def map_syn_to_loc(
 
     @param  imp : Hoc.Impedance
             Probe for measuring electrotonic attenuation
+
+    @return map_loc_dist : tuple(nrn.Segment, float)
+            Tuple containing segment with associated x-value that synapse was
+            mapped to, and the value of the distance measure at that location.
     """
     cur_sec = noderef.sec
     freq = syn_info.PSP_median_frequency
@@ -340,6 +346,10 @@ def map_syn_to_loc(
         # Map synapse with closest A at midpoint
         seg_index = A_diffs.index(min(A_diffs))
         x_map, A_map = locs_As[seg_index]
+        # map_seg = cur_sec(x_map)
+        # seg_x0, seg_x1 = nrnutil.seg_xmin(map_seg), nrnutil.seg_xmax(map_seg)
+        # seg_A0, seg_A1 = distance_func(seg_x0), distance_func(seg_x1)
+        # x_map = interp(Asyn, [seg_A0, seg_A1], [seg_x0, seg_x1])
 
         err_A = (A_map - Asyn) / Asyn
         if not isclose(A_map, Asyn, rel_tol=.1):
@@ -378,7 +388,7 @@ def map_syn_to_loc(
                         childref, allsecrefs, syn_info, 
                         distance_func, distance_attr, did_ascend_original)
         
-        # TODO: plot A_V_soma_syn before and after reduction, give option to position synapses based on path length rather than 'equivalent' location. This is more logical since equivalent location may not exist, and may change after optimization of parameters.
+        # TODO: plot Av_soma_to_syn before and after reduction, give option to position synapses based on path length rather than 'equivalent' location. This is more logical since equivalent location may not exist, and may change after optimization of parameters.
         assert did_ascend_original
         raise Exception("The synapse did not map onto any segment in this subtree.")
 
@@ -450,10 +460,10 @@ def map_synapses(
             syn.PSP_median_frequency = Z_freq
 
     # Make electrotonic distance measurement function
-    if pos_attr is None:
-        pos_attr = method
     if pos_method is None:
         pos_method = method
+    if pos_attr is None:
+        pos_attr = pos_method
     distance_func = functools.partial(
                             electrotonic_measurement_funcs[pos_method],
                             target=rootref.sec(0.5),

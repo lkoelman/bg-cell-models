@@ -411,7 +411,7 @@ def make_background_inputs(**kwargs):
 
 	# Get target segments: distribute synapses over dendritic trees
 	dendritic_secs = icell.dendritic
-	target_segs = pick_random_segments(dendritic_secs, n_syn, is_target_seg, refs=False, rng=rng)
+	target_segs = pick_random_segments(dendritic_secs, n_syn, is_target_seg, rng=rng)
 
 	# Data for configuring inputs
 	tstart = 300

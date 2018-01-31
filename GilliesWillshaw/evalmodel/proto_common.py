@@ -6,7 +6,7 @@ from enum import Enum, unique
 import re
 
 import numpy as np
-import neuron
+import neuron, nrn
 h = neuron.h
 
 from common import analysis, logutils
@@ -72,21 +72,19 @@ def register_step(step, protocol):
 	return decorate_step
 
 
-def pick_random_segments(sections, n_segs, elig_func, rng=None, refs=True):
+def pick_random_segments(sections, n_segs, elig_func, rng=None):
 	"""
 	Pick random segments with spatially uniform distribution.
-
-	@param	refs	True if sections argument are SectionRef instead of Section
 	"""
 	# Get random number generator
 	if rng is None:
 		rng = np.random
 
 	# Gather segments that are eligible.
-	if refs:
-		elig_segs = [seg for ref in sections for seg in ref.sec if elig_func(seg)]
-	else:
+	if isinstance(sections[0], nrn.Section):
 		elig_segs = [seg for sec in sections for seg in sec if elig_func(seg)]
+	else:
+		elig_segs = [seg for ref in sections for seg in ref.sec if elig_func(seg)]
 	
 	logger.debug("Found {} eligible candidate segments".format(len(elig_segs)))
 

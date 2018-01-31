@@ -307,7 +307,7 @@ class FoldReduction(object):
         if any(self._syns_tomap):
 
             # Existing synapse attributes to save (SectionRef attributes)
-            save_ref_attrs = ['table_index', 'tree_index', 'gid']
+            save_ref_attrs = ['gid']
 
             # Mapping parameters
             Z_freq = self.get_reduction_param('Z_freq', method)
