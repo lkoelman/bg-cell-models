@@ -121,7 +121,9 @@ class AdvancingFrontCollapse(object):
 
                 Method to scale specific passive electrical parameters: membrane
                 capacitance (sec.cm) and leak conductance (sec.gleak).
-                Valid values: 'match_input_impedance' or see values gbar_scale_method
+                Valid values: 'match_input_impedance_soma',
+                'match_input_impedance_subtrees' or one of accepted values of
+                gbar_scale_method
 
 
     WAYS TO SET GBAR
@@ -219,7 +221,7 @@ class AdvancingFrontCollapse(object):
         if self.gbar_init_method.startswith('interp'):
             self.interp_prop = kwargs['interp_prop']
         
-        if self.passive_scale_method == 'match_input_impedance':
+        if self.passive_scale_method.startswith('match_input_impedance'):
             self.impedance_linearize_gating = kwargs['Z_linearize_gating']
             self.match_Zin_frequency = kwargs.get('match_input_impedance_frequency', 0.0)
 
@@ -245,7 +247,7 @@ class AdvancingFrontCollapse(object):
                 secref.visited = [False] * secref.sec.nseg
 
         # Measure input impedance first
-        if self.passive_scale_method == 'match_input_impedance':
+        if self.passive_scale_method.startswith('match_input_impedance'):
             self.measure_input_impedance()
 
         logger.info("\n###############################################################"
@@ -292,9 +294,13 @@ class AdvancingFrontCollapse(object):
             logger.debug("Topology at root {0} after collapse:\n".format(
                         root_ref.sec.name()) + subtree_topology(root_ref.sec, max_depth=2))
 
-            # Fit input impedance if requested
-            if self.passive_scale_method == 'match_input_impedance':
-                self.fit_passive_params(root_ref, sequential_refs)
+            # Fit input impedance after each subtree substitution
+            if self.passive_scale_method == 'match_input_impedance_subtrees':
+                self.fit_passive_params([root_ref], [sequential_refs])
+
+        # Fit input impedance if requested
+        if self.passive_scale_method == 'match_input_impedance_soma':
+            self.fit_passive_params(self.fold_roots, each_subtree_refs)
 
         new_sec_refs = [ref for subtree in each_subtree_refs for ref in subtree]
         return new_sec_refs
@@ -574,6 +580,8 @@ class AdvancingFrontCollapse(object):
 
             # Re-scale gbar distribution to yield same total gbar (sum(gbar*area))
             for gname in g_range_names:
+                if not hasattr(eqsec, gname):
+                    continue
 
                 if gname in ['cm', self.gleak_name]:
                     requested_scale_method = self.passive_scale_method
@@ -591,24 +599,21 @@ class AdvancingFrontCollapse(object):
                                             for seg in eqsec)
                     g_orig_integr = orig.gtot[gname]
                     scale_factor = g_orig_integr / g_cyl_integr
-                elif requested_scale_method == 'match_input_impedance':
-                    # initialize using area ratio, fit later
-                    scale_factor = orig.area / eq_area
-                elif requested_scale_method != 'gbar_integrated_subtree_ratio':
+                elif (requested_scale_method.startswith('match_input_impedance')
+                        or requested_scale_method=='gbar_integrated_subtree_ratio'):
+                    continue # do not scale now
+                else:
                     raise ValueError("Unknown scaling method '{}'".format(
                             self.gbar_scale_method))
                 
                 # Set segment property
                 for seg in eqsec:
-                    if not hasattr(seg, gname):
-                        continue
-
                     g_init = getattr(seg, gname)
                     g_scaled = g_init * scale_factor
                     setattr(seg, gname, g_scaled)
 
 
-    def measure_input_impedance(self):
+    def measure_input_impedance(self, disconnect=False):
         """
         Measure input impedance of each subtree individually.
 
@@ -617,12 +622,14 @@ class AdvancingFrontCollapse(object):
         """
         self.reduction.init_cell_steadystate()
 
-        for root_ref in self.fold_roots:
+        measure_points = [self.reduction._root_ref] + self.fold_roots
+        for root_ref in measure_points:
 
             # First disconnect it
             root_sec = root_ref.sec
             parent_seg = root_sec.parentseg()
-            h.disconnect(sec=root_sec)
+            if disconnect:
+                h.disconnect(sec=root_sec)
 
             # Measure Zin at DC
             probe = h.Impedance()
@@ -632,10 +639,11 @@ class AdvancingFrontCollapse(object):
             root_ref.subtree_Zin_DC = subtree_Zin_DC
 
             # Reconnect
-            root_sec.connect(parent_seg)
+            if disconnect:
+                root_sec.connect(parent_seg)
 
                     
-    def fit_passive_params(self, root_ref, subtree_sec_refs):
+    def fit_passive_params(self, root_refs, each_subtree_refs):
         """
         Fit passive params using measurement of input resistance in each
         subtree individually.
@@ -657,17 +665,15 @@ class AdvancingFrontCollapse(object):
 
 
         # Get folding root and its first child section
-        root_sec = root_ref.sec
-        first_eq_ref = subtree_sec_refs[0]
-        first_eq_sec = first_eq_ref.sec
-        assert first_eq_sec.parentseg().sec == root_sec
+        root_sec = self.reduction._root_ref.sec
+        subtree_sec_refs = [ref for subtree in each_subtree_refs for ref in subtree]
 
         # Initialize optimization
-        for ref in subtree_sec_refs:
-            segments = [seg for seg in ref.sec]
-            # save initial values of leak conductance and capacitance
-            ref.gleak_init = map(lambda seg: getattr(seg, self.gleak_name), segments)
-            ref.cm_init = map(lambda seg: getattr(seg, 'cm'), segments)
+        g_range_names = self.reduction.gbar_names + ['cm']
+        for ref in subtree_sec_refs: # save initial values of conductances and capacitance
+            for gname in g_range_names:
+                if hasattr(ref.sec, gname):
+                    setattr(ref, gname+'_init', [getattr(seg, gname) for seg in ref.sec])
         
         probe = h.Impedance()
         probe.loc(0.0, sec=root_sec) # injection site
@@ -675,17 +681,28 @@ class AdvancingFrontCollapse(object):
         initial_Zin = probe.input(0.0, sec=root_sec)
 
         # Cost function for optimization
-        target_Zin = root_ref.subtree_Zin_DC
+        target_Zin = self.reduction._root_ref.subtree_Zin_DC
         def cost_fun(param_hvec):
             """ Cost function/error to minimize """
             # Adjust leak conducance
             scale_factor = param_hvec.x[0]
             for ref in subtree_sec_refs:
-                for i, seg in enumerate(ref.sec):
-                    new_gleak = ref.gleak_init[i] * scale_factor
-                    new_cm = ref.cm_init[i] * scale_factor # preserve time constant R*C
-                    setattr(seg, self.gleak_name, new_gleak)
-                    setattr(seg, 'cm', new_cm)
+
+                # Only scale gleak and cm
+                # for i, seg in enumerate(ref.sec):
+                #     new_gleak = ref.gleak_init[i] * scale_factor
+                #     new_cm = ref.cm_init[i] * scale_factor # preserve time constant R*C
+                #     setattr(seg, self.gleak_name, new_gleak)
+                #     setattr(seg, 'cm', new_cm)
+
+                # Scale all conductances
+                for gname in g_range_names:
+                    if not hasattr(ref.sec, gname):
+                        continue
+                    for i, seg in enumerate(ref.sec):
+                        g_init = getattr(ref, gname+'_init')[i]
+                        g_scaled = g_init * scale_factor
+                        setattr(seg, gname, g_scaled)
 
             # Measure input inpedance
             probe.compute(self.match_Zin_frequency, int(self.impedance_linearize_gating))
@@ -693,10 +710,10 @@ class AdvancingFrontCollapse(object):
             return (this_Zin - target_Zin)**2 + float(scale_factor < 0) * 1e9
 
         # Parameters for optimization
-        Zin_tolerance = 1.0
-        step_size = .01
+        param_tolerance = 1e-3 # praxis attempt to return cost(x) such that if x0 is the true local minimum then norm(x-x0) < tolerance
+        max_step = 10.0 # maximum distance from initial scale factor to optimal one
         praxis_verbosity = 1
-        h.attr_praxis(Zin_tolerance, step_size, praxis_verbosity)
+        h.attr_praxis(param_tolerance, max_step, praxis_verbosity)
         
         # Optimize
         scale_init = 1.0
@@ -709,7 +726,7 @@ class AdvancingFrontCollapse(object):
         scale_fitted = param_vec.x[0]
         if scale_fitted < 0.0:
             raise Exception("Got negative scale factor!")
-        if Zin_err_sqrd**0.5 > Zin_tolerance:
+        if not isclose(Zin_final, target_Zin, rel_tol=.05):
             logger.warning("Could not fit input impedance to within tolerance")
 
         print("""\

@@ -186,9 +186,10 @@ def make_reduction(method, reduction_params=None, tweak=False):
     if method == ReductionMethod.BushSejnowski:
         reduction.set_reduction_params({
             'gbar_init_method':     'area_weighted_average',
-            'gbar_scale_method':    'surface_area_ratio',
-            'passive_scale_method': 'surface_area_ratio',
-            # 'passive_scale_method': 'match_input_impedance',
+            # 'gbar_scale_method':    'surface_area_ratio',
+            # 'passive_scale_method': 'surface_area_ratio',
+            'gbar_scale_method':    'match_input_impedance_subtrees',
+            'passive_scale_method': 'match_input_impedance_subtrees',
             ### Splitting cylinders based on L/lambda ##########################
             # 'split_criterion':      'eq_electrotonic_distance',
             # 'split_dX':             3.0,
