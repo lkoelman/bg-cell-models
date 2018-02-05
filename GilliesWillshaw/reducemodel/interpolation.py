@@ -19,7 +19,7 @@ import neuron
 h = neuron.h
 
 # Our own modules
-from redutils import ExtSecRef, getsecref # for convenience
+from common.nrnutil import ExtSecRef, getsecref # for convenience
 from gillies_model import gillies_gdict, gillies_glist
 
 mechs_chans = gillies_gdict

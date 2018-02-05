@@ -19,7 +19,7 @@ h.load_file("stdlib.hoc") # Load the standard library
 
 # Own modules
 import redutils as redtools
-from redutils import ExtSecRef, getsecref, seg_index # for convenience
+from common.nrnutil import ExtSecRef, getsecref, seg_index # for convenience
 import cluster as clutools
 from cluster import Cluster
 import interpolation as interp

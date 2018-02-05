@@ -58,9 +58,6 @@ import proto_passive_syn
 logging.getLogger('redops').setLevel(logging.WARNING)
 logging.getLogger('folding').setLevel(logging.WARNING)
 logging.getLogger('marasco').setLevel(logging.WARNING)
-# marasco.logger.setLevel(logging.WARNING)
-# mapsyn.logger.setLevel(logging.WARNING)
-# cpd.logger.setLevel(logging.WARNING)
 
 
 class StnModelEvaluator(object):

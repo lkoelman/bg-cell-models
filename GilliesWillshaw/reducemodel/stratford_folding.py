@@ -17,7 +17,6 @@ Reduce model by folding/collapsing branches according to algorithm described in 
 import re
 import math
 
-import folding
 import redutils
 import interpolation as interp
 
@@ -26,7 +25,7 @@ from cluster import Cluster, assign_topology_attrs
 
 from common import treeutils
 from common.treeutils import getsecref, seg_index, interp_seg, next_segs
-from common.electrotonic import calc_lambda, measure_Zin, segs_at_dX
+from common.electrotonic import calc_lambda, measure_transfer_impedance as measure_Zin, segs_at_dX
 
 from neuron import h
 
@@ -593,8 +592,9 @@ def preprocess_impl(reduction):
 	Z_freq				= reduction.get_reduction_param(method, 'Z_freq')
 	init_func			= reduction.get_reduction_param(method, 'Z_init_func')
 	linearize_gating	= reduction.get_reduction_param(method, 'Z_linearize_gating')
-	Zin_DC = measure_Zin(somaref.sec(0.5), 0.0, linearize_gating, init_func)
-	Zin_AC = measure_Zin(somaref.sec(0.5), Z_freq, linearize_gating, init_func)
+	init_func()
+	Zin_DC = measure_Zin(somaref.sec(0.5), freq=0.0, linearize_gating=linearize_gating)
+	Zin_AC = measure_Zin(somaref.sec(0.5), freq=Z_freq, linearize_gating=linearize_gating)
 	somaref.orig_Zin_DC = Zin_DC
 	somaref.orig_Zin_AC = Zin_AC
 		

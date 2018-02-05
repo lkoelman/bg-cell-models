@@ -7,7 +7,7 @@ Object-oriented interface for various compartmental cell reduction methods.
 
 from enum import Enum, unique
 
-from common.treeutils import ExtSecRef, getsecref
+from common.nrnutil import ExtSecRef, getsecref
 from neuron import h
 
 import marasco_foldbased as marasco

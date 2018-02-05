@@ -9,7 +9,8 @@ import math
 PI = math.pi
 
 # Our modules
-from redutils import EqProps, getsecref, lambda_AC, prev_seg, seg_index, same_seg
+from common.nrnutil import getsecref, seg_index
+from redutils import EqProps
 
 
 ################################################################################
