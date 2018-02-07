@@ -29,6 +29,8 @@ from cellpopdata import (
 from proto_common import (
 	StimProtocol, EvaluationStep, 
 	register_step, pick_random_segments,
+	rec_GABA_traces, rec_GLU_traces,
+	rec_Vm, rec_spikes
 )
 
 from common import logutils
@@ -318,6 +320,7 @@ def rec_traces(self, protocol, traceSpecs):
 		'stim_data': self.merged_inputs(['gpe','ctx'], model),
 		'trace_specs': traceSpecs,
 		'rec_hoc_objects': self.model_data[model]['rec_segs'][protocol],
+		'rec_pre_pop_spikes': [Pop.GPE.name, Pop.CTX.name],
 	}
 
 	# record synaptic traces
@@ -525,105 +528,4 @@ def make_background_inputs(**kwargs):
 
 
 
-def rec_GABA_traces(**kwargs):
-	"""
-	Record traces at GABA synapses
-
-	@param n_syn		number of synaptic traces to record
-	"""
-
-	n_syn = 3 # number of recorded synapses
-
-	# Get data
-	rec_segs = kwargs['rec_hoc_objects']
-	traceSpecs = kwargs['trace_specs']
-	stim_data = kwargs['stim_data']
-	nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()=='gpe']
-
-	
-	# Add synapse and segment containing it
-	for i_syn, nc in enumerate(nc_list):
-		if i_syn > n_syn-1:
-			break
-
-		syn_tag = 'GABAsyn%i' % i_syn
-		seg_tag = 'GABAseg%i' % i_syn
-
-		# Record from synapse POINT_PROCESS and postsynaptic segment
-		rec_segs[syn_tag] = nc.syn()
-		rec_segs[seg_tag] = nc.syn().get_segment()
-
-		# Record synaptic variables
-		traceSpecs['gA_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAA'}
-		traceSpecs['gB_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAB'}
-
-
-def rec_GLU_traces(**kwargs):
-	"""
-	Record traces at GLU synapses
-	"""
-
-	n_syn = 3 # number of recorded synapses
-
-	# Get data
-	rec_segs = kwargs['rec_hoc_objects']
-	traceSpecs = kwargs['trace_specs']
-	stim_data = kwargs['stim_data']
-	nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()=='ctx']
-	
-	# Add synapse and segment containing it
-	for i_syn, nc in enumerate(nc_list):
-		if i_syn > n_syn-1:
-			break
-
-		syn_tag = 'GLUsyn%i' % i_syn
-		seg_tag = 'GLUseg%i' % i_syn
-
-		# Record from synapse POINT_PROCESS and postsynaptic segment
-		rec_segs[syn_tag] = nc.syn()
-		rec_segs[seg_tag] = nc.syn().get_segment()
-
-		# Record synaptic variables
-		traceSpecs['gA_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_AMPA'}
-		traceSpecs['gN_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_NMDA'}
-
-
-def rec_Vm(**kwargs):
-	"""
-	Record membrane voltages in all recorded segments
-	"""
-	# Get data
-	rec_segs = kwargs['rec_hoc_objects']
-	traceSpecs = kwargs['trace_specs']
-	
-	for seclabel, seg in rec_segs.iteritems():
-		if isinstance(seg, neuron.nrn.Segment):
-			traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
-
-
-def rec_spikes(**kwargs):
-	"""
-	Record input spikes delivered to synapses.
-	"""
-	rec_pops = [Pop.GPE.name, Pop.CTX.name]
-
-	# Get data
-	traceSpecs = kwargs['trace_specs']
-	stim_data = kwargs['stim_data']
-	rec_hobjs = kwargs['rec_hoc_objects']
-	
-
-	for pre_pop in rec_pops:
-		nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()==pre_pop.lower()]
-		for i_syn, nc in enumerate(nc_list):
-
-			# Add NetCon to list of recorded objects
-			# match = re.search(r'\[[\d]+\]', nc.hname())
-			# suffix = match.group() if match else ('syn' + str(i_syn))
-			suffix = 'syn' + str(i_syn)
-			syn_tag = pre_pop + suffix
-			rec_hobjs[syn_tag] = nc
-
-			# Specify trace
-			traceSpecs['AP_'+syn_tag] = {'netcon':syn_tag}
 			

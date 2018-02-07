@@ -3,7 +3,7 @@ Functions for setting up STN experimental protocols.
 """
 
 from enum import Enum, unique
-import re
+import re, inspect
 
 import numpy as np
 import neuron, nrn
@@ -159,10 +159,17 @@ def plot_all_spikes(trace_vectors, **kwargs):
 	orderfun = index_or_name
 	
 	spikeData = analysis.match_traces(trace_vectors, trace_filter, orderfun) # OrderedDict
+	if len(spikeData) == 0:
+		logger.warning('No spike traces matched filter. No spikes will be plotted')
+		return None, None
 
 	
 	# Plot spikes in rastergram
-	fig, ax = analysis.plotRaster(spikeData, **kwargs)
+	args, varargs, varkw, defaults = inspect.getargspec(analysis.plotRaster)
+	kwarg_names = args[-len(defaults):] # only keyword arguments
+	fig, ax = analysis.plotRaster(
+						spikeData,
+						**{k:v for k,v in kwargs.iteritems() if k in kwarg_names})
 	return fig, ax
 
 
@@ -205,21 +212,30 @@ def plot_all_Vm(trace_vectors, **kwargs):
 	Plot all membrane voltages.
 	"""
 	fig_per = kwargs.get('fig_per', None)
-	recordStep = kwargs.get('recordStep', None)
+	recordStep = None
+	if 'recordStep' in kwargs:
+		recordStep = kwargs['recordStep']
+	if 'record_step' in kwargs:
+		recordStep = kwargs['record_step']
 
 	# Plot data
 	filterfun = lambda t: t.startswith('V_')
 	orderfun = index_or_name
 	recV = analysis.match_traces(trace_vectors, filterfun, orderfun)
+	if len(recV) == 0:
+		logger.warning("No traces matched filter 'V_*'. No data will be plotted")
+		return []
 
 	if fig_per == 'cell' and len(recV) > 5:
 		rot = 0
 	else:
 		rot = 90
 
-	figs = analysis.plotTraces(recV, recordStep, yRange=(-80,40), 
-								traceSharex=True, oneFigPer=fig_per, 
-								labelRotation=rot)
+	figs = analysis.plotTraces(recV, recordStep,
+						yRange=(-80,40), 
+						traceSharex=True,
+						oneFigPer=fig_per, 
+						labelRotation=rot)
 	return figs
 
 
@@ -227,7 +243,11 @@ def plot_GABA_traces(trace_vectors, **kwargs):
 	"""
 	Plot GABA synapse traces.
 	"""
-	recordStep = kwargs.get('recordStep', None)
+	recordStep = None
+	if 'recordStep' in kwargs:
+		recordStep = kwargs['recordStep']
+	if 'record_step' in kwargs:
+		recordStep = kwargs['record_step']
 
 	# Plot data
 	syn_traces = analysis.match_traces(trace_vectors, lambda t: re.search(r'GABAsyn', t))
@@ -244,7 +264,11 @@ def plot_GLU_traces(trace_vectors, **kwargs):
 	"""
 	Plot GABA synapse traces.
 	"""
-	recordStep = kwargs.get('recordStep', None)
+	recordStep = None
+	if 'recordStep' in kwargs:
+		recordStep = kwargs['recordStep']
+	if 'record_step' in kwargs:
+		recordStep = kwargs['record_step']
 
 	# Plot synaptic variables
 	syn_traces = analysis.match_traces(trace_vectors, lambda t: re.search(r'GLUsyn', t))
@@ -252,3 +276,106 @@ def plot_GLU_traces(trace_vectors, **kwargs):
 				traceSharex	= True,
 				title		= 'Synaptic variables',
 				oneFigPer	= kwargs.get('fig_per', None))
+
+
+def rec_GABA_traces(**kwargs):
+	"""
+	Record traces at GABA synapses
+
+	@param n_syn		number of synaptic traces to record
+	"""
+
+	n_syn = 3 # number of recorded synapses
+
+	# Get data
+	rec_segs = kwargs['rec_hoc_objects']
+	traceSpecs = kwargs['trace_specs']
+	stim_data = kwargs['stim_data']
+	nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()=='gpe']
+
+	
+	# Add synapse and segment containing it
+	for i_syn, nc in enumerate(nc_list):
+		if i_syn > n_syn-1:
+			break
+
+		syn_tag = 'GABAsyn%i' % i_syn
+		seg_tag = 'GABAseg%i' % i_syn
+
+		# Record from synapse POINT_PROCESS and postsynaptic segment
+		rec_segs[syn_tag] = nc.syn()
+		rec_segs[seg_tag] = nc.syn().get_segment()
+
+		# Record synaptic variables
+		traceSpecs['gA_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAA'}
+		traceSpecs['gB_GABAsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_GABAB'}
+
+
+def rec_GLU_traces(**kwargs):
+	"""
+	Record traces at GLU synapses
+	"""
+
+	n_syn = 3 # number of recorded synapses
+
+	# Get data
+	rec_segs = kwargs['rec_hoc_objects']
+	traceSpecs = kwargs['trace_specs']
+	stim_data = kwargs['stim_data']
+	nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()=='ctx']
+	
+	# Add synapse and segment containing it
+	for i_syn, nc in enumerate(nc_list):
+		if i_syn > n_syn-1:
+			break
+
+		syn_tag = 'GLUsyn%i' % i_syn
+		seg_tag = 'GLUseg%i' % i_syn
+
+		# Record from synapse POINT_PROCESS and postsynaptic segment
+		rec_segs[syn_tag] = nc.syn()
+		rec_segs[seg_tag] = nc.syn().get_segment()
+
+		# Record synaptic variables
+		traceSpecs['gA_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_AMPA'}
+		traceSpecs['gN_GLUsyn%i' % i_syn] = {'pointp':syn_tag, 'var':'g_NMDA'}
+
+
+def rec_Vm(**kwargs):
+	"""
+	Record membrane voltages in all recorded segments
+	"""
+	# Get data
+	rec_segs = kwargs['rec_hoc_objects']
+	traceSpecs = kwargs['trace_specs']
+	
+	for seclabel, seg in rec_segs.iteritems():
+		if isinstance(seg, neuron.nrn.Segment):
+			traceSpecs['V_'+seclabel] = {'sec':seclabel, 'loc':seg.x, 'var':'v'}
+
+
+def rec_spikes(**kwargs):
+	"""
+	Record input spikes delivered to synapses.
+	"""
+
+	# Get data
+	traceSpecs = kwargs['trace_specs']
+	stim_data = kwargs['stim_data']
+	rec_hobjs = kwargs['rec_hoc_objects']
+	rec_pops = kwargs['rec_pre_pop_spikes']
+	
+
+	for pre_pop in rec_pops:
+		nc_list = [nc for nc in stim_data['syn_NetCons'] if getattr(nc, 'pre_pop', 'none').lower()==pre_pop.lower()]
+		for i_syn, nc in enumerate(nc_list):
+
+			# Add NetCon to list of recorded objects
+			# match = re.search(r'\[[\d]+\]', nc.hname())
+			# suffix = match.group() if match else ('syn' + str(i_syn))
+			suffix = 'syn' + str(i_syn)
+			syn_tag = pre_pop + suffix
+			rec_hobjs[syn_tag] = nc
+
+			# Specify trace
+			traceSpecs['AP_'+syn_tag] = {'netcon':syn_tag}

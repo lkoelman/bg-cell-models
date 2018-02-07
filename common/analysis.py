@@ -342,8 +342,8 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 
 	# time range
 	first_trace = traceData[tracesList[0]]
-	if recordStep is None:
-		recordStep = first_trace[1] - first_trace[0]
+	# if recordStep is None:
+	# 	recordStep = first_trace[1] - first_trace[0]
 	if timeRange is None:
 		timeRange = [0, first_trace.size*recordStep]
 

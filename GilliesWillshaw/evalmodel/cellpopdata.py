@@ -91,6 +91,7 @@ class Populations(Enum):
     GPE = 2
     THA = 4
     PPN = 5
+    STR = 6
 
     def to_descr(self):
         return self.name.lower()
@@ -163,6 +164,7 @@ class ParameterSource(Enum):
     Mallet2016 = 9 # Mallet (2016), Neuron 89
     Nambu2014 = 10
     Bergman2015RetiCh3 = 11
+    Hendrickson2011 = 12 # Paper limitations of reduced compartmental models
 
 
 # Shorthands
@@ -570,21 +572,53 @@ class CellConnector(object):
 
         return fp_final
 
-    def getPhysioConParams(self, pre_pop, post_pop, use_sources, custom_params=None,
-                    adjust_gsyn_msr=None):
+    def getPhysioConParams(
+            self,
+            pre_pop,
+            post_pop,
+            use_sources,
+            custom_params=None,
+            adjust_gsyn_msr=None
+        ):
         """
         Get parameters for afferent connections onto given population,
         in given physiological state.
 
-        @param custom_params    custom parameters in the form of a dict
-                                {NTR_0: {params_0}, NTR_1: {params_1}} etc.
+        @param  custom_params : dict<NTR, dict<str, object>>
+
+                Custom parameters in the form of a dict
+                {
+                    NTR_0: {params...},
+                    NTR_1: {params...},
+                    ...
+                }
 
 
-        @param adjust_gsyn_msr      Number of synapses per axonal contact (int), 
-                                    and whether the synaptic condcutance for each synapse
-                                    should be scaled to take this into account.
-                                    If an int > 0 is given, each synaptic condcutance
-                                    is divided by this number.
+        @param  adjust_gsyn_msr : int
+
+                Number of synapses per axonal contact (int), 
+                and whether the synaptic condcutance for each synapse
+                should be scaled to take this into account.
+                If an int > 0 is given, each synaptic condcutance
+                is divided by this number.
+
+        @return params : dict<NTR, dict<str, object>>
+                
+                Dictionary containing synapse parameters for each neurotransmitter
+                involved in the given connection from pre to post-synaptic population.
+                The parameter dict for each key (NTReceptor) may contain following
+                entries:
+
+                    'Ipeak':        float
+                    'gbar':         float
+                    'tau_rise_g':   float
+                    'tau_decay_g':  float
+                    'Erev':         float
+                    'tau_rec_STD':  float
+                    'tau_rec_STP':  float
+                    'P_release_base':   float
+
+
         """
 
         physio_state = self._physio_state
@@ -595,6 +629,44 @@ class CellConnector(object):
 
         # Initialize parameters dict
         cp = {}
+
+        if post_pop == Pop.GPE:
+
+            # Inputs from Striatum
+            cp[Pop.STR] =  {
+                Rec.AMPA: {},
+                Rec.NMDA: {},
+            }
+
+            # Inputs from Subthalamic Nucleus
+            cp[Pop.STN] =  {
+                Rec.GABAA: {},
+                Rec.GABAB: {},
+            }
+
+            # ---------------------------------------------------------------------
+            # Parameters Hendrickson (2011) - Capabilities and Limitations ...
+
+            cp[Pop.STR][Rec.AMPA][Src.Hendrickson2011] = {
+                'gbar':         0.25,
+                'tau_rise_g':   1.0,
+                'tau_decay_g':  3.0,
+                'Erev':         0.0,
+            }
+
+            cp[Pop.STR][Rec.NMDA][Src.Hendrickson2011] = {
+                'gbar':         0.25,
+                'tau_rise_g':   10.0,
+                'tau_decay_g':  30.0,
+                'Erev':         0.0,
+            }
+
+            cp[Pop.STN][Rec.GABAA][Src.Hendrickson2011] = {
+                'gbar':         0.25,
+                'tau_rise_g':   1.0,
+                'tau_decay_g':  12.0,
+                'Erev':         -80.0,
+            }
 
         if post_pop == Pop.STN:
 
@@ -916,13 +988,15 @@ class CellConnector(object):
         Insert synapse POINT_PROCESS in given section.
 
 
-        USAGE:
+        USAGE
+        -----
 
         - either provide argument 'use_sources' to fetch connection parameters
           or provide them yourself in argument 'con_par_data'
 
         
-        ARGUMENTS:
+        ARGUMENTS
+        ---------
         
         @param pre_post_pop     tuple(str, str) containing keys for pre-synaptic
                                 and post-synaptic populations, e.g.
@@ -942,6 +1016,12 @@ class CellConnector(object):
         @param weight_scales    Scale factors for the weights in range (0,1). 
                                 This must be an iterable: NetCon.weight[i] is scaled by the i-th value. 
                                 If a vector is given, it is scaled and played into the weight.
+
+        @param  con_par_data : dict
+        
+                Either dict<NTReceptors, dict<str, object>> if multiple receptors
+                are used on the given synapse mechanism, or a dict<str, object>
+                with synapse parameters if only a single receptor is used.
 
         @effect                 creates an Exp2Syn with an incoming NetCon with
                                 weight equal to maximum synaptic conductance
@@ -985,10 +1065,17 @@ class CellConnector(object):
 
         # For each NT receptor, look up the physiological connection parameters,
         # and translate them to a parameter of the synaptic mechanism or NetCon
+        num_receptors = len(receptors)
         for rec in receptors:
             parname_map = syn_par_map[rec] # how each connection parameter is mapped to mechanism parameter
-            phys_params = con_par_data[rec] # physiological parameters from given sources
 
+            # Get dict with synapse param values
+            if num_receptors==1 and rec not in con_par_data.keys():
+                phys_params = con_par_data
+            else:
+                phys_params = con_par_data[rec] # physiological parameters from given sources
+
+            # Translate each param value to a mechanism parameter
             for phys_parname, mech_parspec in parname_map.iteritems():
 
                 # Check if parameters is available from given sources

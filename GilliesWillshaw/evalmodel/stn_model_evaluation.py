@@ -132,6 +132,28 @@ class StnModelEvaluator(object):
             'stream_indices': {},
         }
 
+        # Functions to set up stimulation protocols, with signature taking keyword arguments
+        # (for compatibility with Ephys SelfContainedProtocol)
+        self._iproto_data = {} # instantiated protocol
+        
+        # init_physio(sim, icell)
+        self._proto_init_funcs = [] # initialization of simulation, physiology
+        self._proto_rec_funcs = []
+        self._proto_plot_funcs = []
+
+        # Protocol setup functions applied to full model
+        self._proto_setup_funcs_pre = []
+        # Protocol setup functions applied to reduced model
+        self._proto_setup_funcs_post = []
+
+        # Common keyword arguments for all functions
+        self._proto_setup_kwargs_const = {}
+        self._proto_setup_kwargs_getters = collections.OrderedDict()
+        self._proto_setup_kwargs_setters = []
+
+        # Data used by protocol setup functions
+        self.recorded_trace_vectors = {}
+
 
     @property
     def physio_state(self):
@@ -1169,6 +1191,161 @@ class StnModelEvaluator(object):
 
         # Simulate
         self.run_sim()
+
+
+    def register_keyword_funcs(
+            self,
+            proto_init_funcs=None,
+            proto_setup_funcs_pre=None,
+            proto_setup_funcs_post=None,
+            proto_setup_kwargs_const=None,
+            proto_setup_kwargs_getters=None,
+            proto_setup_kwargs_setters=None,
+            proto_rec_funcs=None,
+            proto_plot_funcs=None,
+            reset=False
+        ):
+        """
+        Register functions that setup a stimulation protocol using functions
+        that accept only keyword arguments (for compatibility with Ephys
+        SelfContainedProtocol).
+        """
+        # Copy each container to avoid later modification of pass-by-reference containers
+        proto_init_funcs = [] if proto_init_funcs is None else list(proto_init_funcs)
+        proto_rec_funcs = [] if proto_rec_funcs is None else list(proto_rec_funcs)
+        proto_plot_funcs = [] if proto_plot_funcs is None else list(proto_plot_funcs)
+        
+        proto_setup_funcs_pre = [] if proto_setup_funcs_pre is None else list(proto_setup_funcs_pre)
+        proto_setup_funcs_post = [] if proto_setup_funcs_post is None else list(proto_setup_funcs_post)
+        
+        proto_setup_kwargs_const = {} if proto_setup_kwargs_const is None else dict(proto_setup_kwargs_const)
+        proto_setup_kwargs_getters = collections.OrderedDict() if proto_setup_kwargs_getters is None else collections.OrderedDict(proto_setup_kwargs_getters)
+        proto_setup_kwargs_setters = [] if proto_setup_kwargs_setters is None else list(proto_setup_kwargs_setters)
+
+        if reset:
+            self._proto_init_funcs = proto_init_funcs
+            self._proto_setup_funcs_pre = proto_setup_funcs_pre
+            self._proto_setup_funcs_post = proto_setup_funcs_post
+            self._proto_setup_kwargs_const = proto_setup_kwargs_const
+            self._proto_setup_kwargs_getters = proto_setup_kwargs_getters
+            self._proto_setup_kwargs_setters = proto_setup_kwargs_setters
+            self._proto_rec_funcs = proto_rec_funcs
+            self._proto_plot_funcs = proto_plot_funcs
+        else:
+            self._proto_init_funcs.extend(proto_init_funcs)
+            self._proto_setup_funcs_pre.extend(proto_setup_funcs_pre)
+            self._proto_setup_funcs_post.extend(proto_setup_funcs_post)
+            self._proto_setup_kwargs_const.update(proto_setup_kwargs_const)
+            self._proto_setup_kwargs_getters.update(proto_setup_kwargs_getters)
+            self._proto_setup_kwargs_setters.extend(proto_setup_kwargs_setters)
+            self._proto_rec_funcs.extend(proto_rec_funcs)
+            self._proto_plot_funcs.extend(proto_plot_funcs)
+
+
+    def setup_keyword_protocol(self, pre_model=None, post_model=None):
+        """
+        Set up stimulation protocols using all keyword functions registered
+        until now.
+
+        @note   call after self.build_cell()
+
+        @note   call self.run_sim() after this function
+
+        @note   if you want to run full model first, only provide pre_model.
+                Then after running you can call register_keyword_funcs(..., reset=True)
+                and call this function again with only post_model
+
+        @post   The dictionary with all shared data for protocol is stored
+                as self._iproto_data
+        """
+        if pre_model is not None:
+
+            # Prepare inputs
+            self.build_cell(pre_model)
+            model = pre_model
+            ICell = collections.namedtuple("ICell", ['dendritic', 'somatic'])
+            icell = ICell(
+                    dendritic=[ref.sec for ref in self.model_data[model]['dend_refs']],
+                    somatic=[ref.sec for ref in self.model_data[model]['soma_refs']])
+
+            # Create keyword arguments for protocol setup functions
+            kwargs_default = {
+                'nrnsim': h,
+                'stim_data':    {}, # synapses and netcons
+                'evaluator':    self,
+                'gid':          self.model_data[model]['gid'],
+                'icell':        icell,
+                'rng_info':     self.rng_info,
+            }
+
+            # Assemble all keyword arguments
+            logger.debug("Instantiating protocol setup kwargs...")
+            self._iproto_data = kwargs_default
+            self._iproto_data.update(self._proto_setup_kwargs_const)
+
+            for kwarg_name, kwarg_getter in self._proto_setup_kwargs_getters.iteritems():
+                self._iproto_data[kwarg_name] = kwarg_getter(self._iproto_data)
+            for kwarg_setter in self._proto_setup_kwargs_setters:
+                kwarg_setter(self._iproto_data)
+
+            # Set up stimulators, synaptic inputs
+            for setup_func in self._proto_setup_funcs_pre:
+                setup_func(**self._iproto_data)
+        
+        # POST MODEL (reduced) setup funcs
+        if post_model is not None:
+            self.build_cell(post_model)
+            model = post_model
+            post_icell = ICell(dendritic=[sec for sec in self.model_data[model]['dend_refs']])
+            self._iproto_data['icell'] = post_icell
+
+            for setup_func in self._proto_setup_funcs_post:
+                setup_func(**self._iproto_data)
+
+        # Prepare recording data containers
+        iproto_rec_data = {
+            'icell': icell,
+            'trace_specs': collections.OrderedDict(),
+            'trace_vectors': {},
+            'rec_hoc_markers': {},
+        }
+        self._iproto_data.update(iproto_rec_data)
+        # params that may have been set by kwarg getter
+        self._iproto_data.setdefault('rec_hoc_objects', {})
+        self._iproto_data.setdefault('record_step', 0.05)
+
+        # Custom recording functions
+        for rec_func in self._proto_rec_funcs:
+            rec_func(**self._iproto_data) # updates trace_specs
+            logger.debug("Executed recording function {}".format(rec_func))
+
+        # Create recording vectors
+        if not 't_global' in self._iproto_data['trace_specs']:
+            self._iproto_data['trace_specs']['t_global'] = {'var':'t'}
+        
+        recData, markers = analysis.recordTraces(
+                                self._iproto_data['rec_hoc_objects'], 
+                                self._iproto_data['trace_specs'],
+                                recordStep=self._iproto_data['record_step'])
+
+        self._iproto_data['trace_vectors'] = recData
+        self._iproto_data['rec_hoc_markers'] = markers
+
+        # Initialize physiological conditions
+        for init_func in self._proto_init_funcs:
+            init_func(**self._iproto_data)
+
+
+    def run_keyword_protocol(self, plot_traces=True):
+        """
+        Run stimulation protocols that was set up using keyword functions.
+        """
+        self.run_sim()
+        if plot_traces:
+            remaining_kwargs = dict(self._iproto_data)
+            trace_vecs = remaining_kwargs.pop('trace_vectors')
+            for plot_func in self._proto_plot_funcs:
+                plot_func(trace_vecs, **remaining_kwargs)
 
 
     def setup_run_protocol(self, protocol, model=None):

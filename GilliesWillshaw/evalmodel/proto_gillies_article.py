@@ -279,9 +279,11 @@ def plot_traces(self, model, protocol):
 
 
 if __name__ == '__main__':
-	print("""Run this protocol using stn_model_evaluation.py:
+	print(
+	"""
+	Run this protocol using stn_model_evaluation.py:
 
-		cd bgcellmodels/GilliesWillshaw
-		from evalmodel.stn_model_evaluation import *
-		run_protocol(StimProtocol.CLAMP_PLATEAU, StnModel.Gillies2005)
+	cd bgcellmodels/GilliesWillshaw
+	from evalmodel.stn_model_evaluation import *
+	run_protocol(StimProtocol.CLAMP_PLATEAU, StnModel.Gillies2005)
 	""")
