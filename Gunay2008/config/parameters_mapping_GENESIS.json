@@ -1,0 +1,215 @@
+// Mapping to original GENESIS variable names.
+// Model available at https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
+//
+// + main script in /articleCode/scripts/genesisScripts/GP1axonless_full_synaptic.g
+//   First it loads variables from following scripts:
+//     + /articleCode/commonGPFull/GP1_defaults.g
+//     + /articleCode/commonGPFull/simdefaults.g
+//     + /articleCode/commonGPFull/actpars.g
+//
+// + The variables are then used in following scripts, in braces: {varname}
+//   (GP1axonless_full*.g -> make_GP_libary.g -> ...)
+//     + /articleCode/commonGPFull/GP1_axonless.p
+//     + /articleCode/commonGPFull/GPchans.g
+//     + /articleCode/commonGPFull/GPcomps.g
+//
+// GENESIS uses SI units
+//   - Cm : F/m^2
+//   - Rm : Ohm*m^2
+//   - Ra : Ohm*m
+//   - gbar : S/m^2
+//   - E : V
+// NEURON uses units:
+//   - Cm : uF/cm^2  == 1e-6/1e-4 * F/m^2 == 1e-2 * F/m^2    => x 1e2
+//   - Rm : 1/gbar                                           => x 1e4
+//   - Ra : Ohm*cm   == 1e-2 * Ohm*m                         => x 1e2
+//   - gbar : S/cm^2 == 1/1e-4 * S/m^2 == 1e4 * S/m^2        => x 1e-4
+//   - E : mV == V*1e-3                                      => x 1e3
+//
+// VALUE SPECIFICATION:
+// - "value" must be evaluated using str.format(**genesis_params) must be a
+//   valid Python expression that can be evaluated safely with eval()
+[
+// #############################################################################
+// # Parameters from GP1_axonless.p
+// #############################################################################
+    {
+        "param_name": "Ra",
+        "sectionlist": "all",
+        "type": "section",
+        "dist_type": "uniform",
+        "value": "{RA}*1e2"
+    },
+    {
+        "param_name": "g_pas",
+        "sectionlist": "all",
+        "type": "section",
+        "dist_type": "uniform",
+        "value": "1.0/{RM_sd}*1e-4"
+    },
+    {
+        "param_name": "cm",
+        "sectionlist": "all",
+        "type": "section",
+        "dist_type": "uniform",
+        "value": "{CM}*1e2" // CM_my not used in axonless model
+    },
+    {
+        "param_name": "e_pas",
+        "sectionlist": "all",
+        "type": "section",
+        "dist_type": "uniform",
+        "value": "{ELEAK_sd}*1e3"
+    },
+// #############################################################################
+// # Parameters from GPchans.g
+// #############################################################################
+    {
+        "param_name": "ena",
+        "sectionlist": "all",
+        "type": "section",
+        "dist_type": "uniform",
+        "value": "{ENa}*1e3"
+    },
+    {
+        "param_name": "ek",
+        "sectionlist": "all",
+        "type": "section",
+        "dist_type": "uniform",
+        "value": "{EK}*1e3"
+    },
+// =============================================================================
+// CHANNEL NaF / Na_fast_GP
+    {
+        "param_name": "gmax_NaF",
+        "sectionlist": "all",
+        "mech": "NaF",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "value": "{G_NaF_soma}*1e3"
+    },
+// -----------------------------------------------------------------------------
+// m-gate parameters
+    {
+        "mech": "NaF",
+        "mech_param": "theta_m0",
+        "type": "global",
+        "value": "{Vhalfm_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "k_m",
+        "type": "global",
+        "value": "{Km_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "tau_m0",
+        "type": "global",
+        "value": "{taummin_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "tau_m1",
+        "type": "global",
+        "value": "{taummax_NaF}*1e3"
+    },
+// -----------------------------------------------------------------------------
+// h-gate parameters
+    {
+        "mech": "NaF",
+        "mech_param": "theta_h",
+        "type": "global",
+        "value": "{V0h_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "k_h",
+        "type": "global",
+        "value": "{Kh_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "tau_h0",
+        "type": "global",
+        "value": "{tauhmin_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "tau_h1",
+        "type": "global",
+        "value": "{tauhmax_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "phi_h",
+        "type": "global",
+        "value": "{tauhV0_NaF}*1e3"
+    },
+// -----------------------------------------------------------------------------
+// s-gate parameters
+    {
+        "mech": "NaF",
+        "mech_param": "s0",
+        "type": "global",
+        "value": "{mins_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "theta_s",
+        "type": "global",
+        "value": "{V0s_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "k_s",
+        "type": "global",
+        "value": "{Ks_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "tau_s0",
+        "type": "global",
+        "value": "{tausmin_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "tau_s1",
+        "type": "global",
+        "value": "{tausmax_NaF}*1e3"
+    },
+
+    {
+        "mech": "NaF",
+        "mech_param": "phi_s",
+        "type": "global",
+        "value": "{V0s_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "sigma_s0",
+        "type": "global",
+        "value": "{Ktaus1_NaF}*1e3"
+    },
+    {
+        "mech": "NaF",
+        "mech_param": "sigma_s1",
+        "type": "global",
+        "value": "{Ktaus2_NaF}*1e3"
+    },
+// =============================================================================
+// CHANNEL Nap / Na_SLOW_GP
+    {
+        "param_name": "gmax_NaF",
+        "sectionlist": "all",
+        "mech": "NaF",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "value": "{G_NaF_soma}*1e3"
+    },
+// #############################################################################
+// # Parameters from GPcomps.g
+// #############################################################################
+]
