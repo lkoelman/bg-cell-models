@@ -1,75 +1,92 @@
 TITLE calcium-dependent potassium (SK) channel for GPe neuron
 
 COMMENT
- modeled by Gunay et al., 2008
- implemented in NEURON by Kitano, 2011
+DESCRIPTION
+-----------
+
+SK channel from Volker Steuber's DCN neuron model, modified to reflect Hill fits
+in the following:
+
+    - Hirschberg et al, 1999: Biophys J. 77: 1905-13. 
+    - Keen et al, 1999: J. Neurosci 19: 8830-38.
+
+Tau-Ca equation made by Volker based on Hirschberg et al, 1998: JGP 111: 565-581.
+
+
+CREDITS
+-------
+
+modeled in GENESIS by J.R. Edgerton, 2004
+implemented in NEURON by Kitano, 2011
+modified in NEURON by Lucas Koelman, 2018 to reflect model Hendrickson et al., 2010
 ENDCOMMENT
 
 UNITS {
- (mV) = (millivolt)
- (mA) = (milliamp)
- (mM) = (milli/liter)
+    (mV) = (millivolt)
+    (mA) = (milliamp)
+    (mM) = (milli/liter)
 }
 
 NEURON {
- SUFFIX SK
- USEION ca READ cai
- USEION k READ ek WRITE ik
- RANGE gmax, iSK
+    SUFFIX SK
+    USEION ca READ cai
+    USEION k READ ek WRITE ik
+    RANGE gmax, iSK
 }
 
 PARAMETER {
- v (mV)
- dt (ms)
- gmax  = 0.001 (mho/cm2)
- iSK  = 0.0 (mA/cm2)
- cai (mM)
- ek (mV)
+    v (mV)
+    dt (ms)
+    gmax  = 0.005 (mho/cm2)
+    iSK  = 0.0 (mA/cm2)
+    cai (mM)
+    ek (mV)
 
- ECh = 0.00035 (mM)
- HCoeff = 4.6
- Ca_sat = 0.005 (mM)
- tau_m0 = 4.0 (ms)
- tau_m1 = 76.0 (ms)
+    ECh = 0.00035 (mM)
+    HCoeff = 4.6
+    Ca_sat = 0.005 (mM)
+    tau_m0 = 4.0 (ms)
+    tau_m1 = 76.0 (ms)
+    dQ10_SK = 2
 }
 
 STATE {
- m
+    m
 }
 
 ASSIGNED { 
- ik (mA/cm2)
- minf
- taum (ms)
+    ik (mA/cm2)
+    minf
+    taum (ms)
 }
 
 BREAKPOINT {
- SOLVE states METHOD cnexp
- ik  = gmax*m*(v-ek)
- iSK = ik
+    SOLVE states METHOD cnexp
+    ik  = gmax*m*(v-ek)
+    iSK = ik
 }
 
 UNITSOFF
 
 INITIAL {
- settables(cai)
- m = minf
+    settables(cai)
+    m = minf
 }
 
 DERIVATIVE states {  
- settables(cai)
- m' = (minf - m)/taum
+    settables(cai)
+    m' = (minf - m)/taum
 }
 
 PROCEDURE settables(cai) { LOCAL can, can0
-	can = pow(cai*1000, HCoeff)
-	can0 = pow(ECh*1000, HCoeff)
-	minf = can/(can + can0)
-	if(cai < Ca_sat){
-	 taum = tau_m1 - cai*(tau_m1 - tau_m0)/Ca_sat
-	} else {
-	 taum = tau_m0
-	}
+    can = pow(cai*1000, HCoeff)
+    can0 = pow(ECh*1000, HCoeff)
+    minf = can/(can + can0)
+    if(cai < Ca_sat){
+        taum = (tau_m1 - cai*(tau_m1 - tau_m0)/Ca_sat) / dQ10_SK
+    } else {
+        taum = tau_m0 / dQ10_SK
+    }
 }
 
 UNITSON

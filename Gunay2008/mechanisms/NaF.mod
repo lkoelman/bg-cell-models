@@ -19,7 +19,7 @@ CREDITS
 
 modeled in GENESIS by Gunay et al., 2008
 implemented in NEURON by Kitano, 2011
-modified in NEURON by Lucas Koelman, 2018
+modified in NEURON by Lucas Koelman, 2018 to reflect model Hendrickson et al., 2010
 ENDCOMMENT
 
 UNITS {
@@ -74,13 +74,16 @@ STATE {
 
 ASSIGNED { 
     ina (mA/cm2)
+
     minf
     taum (ms)
+    theta_m (mV)
+
     hinf
     tauh (ms)
+
     sinf
     taus (ms)
-    theta_m (mV)
 }
 
 BREAKPOINT {
@@ -92,7 +95,7 @@ BREAKPOINT {
 UNITSOFF
 
 INITIAL {
-    theta_m = theta_m0 + (k_m * (log ((1 / pow(0.5, 1/3)) - 1)))
+    theta_m = theta_m0 + (k_m * (log((1 / pow(0.5, 1/3)) - 1)))
     settables(v)
     m = minf
     h = hinf

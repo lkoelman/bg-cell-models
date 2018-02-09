@@ -7,7 +7,7 @@
     "somatic": [
         // One soma section mapped to this secarray.
         // See soma prototype in original GENESIS file.
-        "CaH", // Ca_HVA_GP
+        "CaHVA", // Ca_HVA_GP
         "SK", // K_ahp_GP
         "Calcium", // Ca_GP_nernst + Ca_GP_conc
         "NaF", // Na_fast_GP
@@ -18,11 +18,11 @@
         "Kv4s", // Kv4_slow_GP
         "KCNQ", // KCNQ_GP
         "HCN", // h_HCN_GP
-        "TODO_NOT_IMPLEMENTED" // h_HCN2_GP
+        "HCN2" // h_HCN2_GP
     ],
     "basal": [
         // all dendritic sections are mapped to this secarray
-        "CaH", // Ca_HVA_GP
+        "CaHVA", // Ca_HVA_GP
         "SK", // K_ahp_GP
         "Calcium", // Ca_GP_nernst + Ca_GP_conc
         "NaF", // Na_fast_GP
@@ -33,7 +33,7 @@
         "Kv4s", // Kv4_slow_GP
         "KCNQ", // KCNQ_GP
         "HCN", // h_HCN_GP
-        "TODO_NOT_IMPLEMENTED" // h_HCN2_GP
+        "HCN2" // h_HCN2_GP
     ],
     "apical": [
         // no sections are mapped to this secarray

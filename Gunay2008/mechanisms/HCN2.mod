@@ -6,7 +6,7 @@ DESCRIPTION
 
 H current  (Anomalous rectifier--mixed Na and K current)
 
-HCN1/HCN2 heteromeric channel, GP-specific Channel model from 
+HCN2 homomeric channel, GP-specific Channel model from 
 Chan et al (2004), J Neurosci 24: 9921-32.
 
 Original model from Siegelbaum lab. Wang et al (2002), Neuron 36:
@@ -27,7 +27,7 @@ UNITS {
 }
 
 NEURON {
-    SUFFIX HCN
+    SUFFIX HCN2
     NONSPECIFIC_CURRENT ih
     RANGE gmax, iHCN
 }
@@ -35,17 +35,17 @@ NEURON {
 PARAMETER {
     v (mV)
     dt (ms)
-    gmax  = 0.2e-4 (mho/cm2)
+    gmax  = 0.5e-4 (mho/cm2)
     iHCN  = 0.0 (mA/cm2)
     e (mV)
 
     : m-gate
-    theta_m = -76.4 (mV)
-    k_m = -3.3 (mV)
+    theta_m = -87.5 (mV)
+    k_m = -4.0 (mV)
     tau_m0 = 0.0 (ms)
-    tau_m1 = 14500 (ms)
-    sigma_m0 = 7.48 (mV)
-    sigma_m1 = 6.56 (mV)
+    tau_m1 = 25200 (ms)
+    sigma_m0 = 8.2 (mV)
+    sigma_m1 = 8.9 (mV)
     dQ10 = 4
 }
 

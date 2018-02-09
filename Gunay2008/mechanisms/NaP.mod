@@ -20,7 +20,7 @@ CREDITS
 
 modeled in GENESIS by Gunay et al., 2008
 implemented in NEURON by Kitano, 2011
-modified in NEURON by Lucas Koelman, 2018
+modified in NEURON by Lucas Koelman, 2018 to reflect model Hendrickson et al., 2010
 ENDCOMMENT
 
 UNITS {
@@ -41,23 +41,26 @@ PARAMETER {
     iNa  = 0.0 (mA/cm2)
     ena (mV)
 
-    theta_m = -57.7 (mV)
-    k_m = 5.7 (mV)
-    tau_m0 = 0.03 (ms)
-    tau_m1 = 0.146 (ms)
-    phi_m = -42.6 (mV)
-    sigma_m0 = 14.4 (mV)
-    sigma_m1 = -14.4 (mV)
+    activate_Q10 = 1
+    Q10 = 3
 
+    : Activation & Deactivation (m-gate)
+    theta_m0 = -50.0 (mV)
+    k_m = 5.7 (mV)
+    phi_m = -41.6 (mV)
+    sigma_m = 14.4 (mV)
+
+    : Slow Inactivation (s-gate)
     h0 = 0.154
     theta_h = -57.0 (mV)
     k_h = -4.0 (mV)
     tau_h0 = 10.0 (ms)
     tau_h1 = 17.0 (ms)
     phi_h = -34.0 (mV)
-    sigma_h0 = 26.0 (mV)
+    sigma_h0 = -26.0 (mV)
     sigma_h1 = -31.9 (mV)
 
+    : Slow Inactivation (s-gate)
     theta_s = -10.0 (mV)
     k_s = -4.9 (mV)
     Aa_s = -2.88e-6 (1/ms/mV)
@@ -74,10 +77,15 @@ STATE {
 
 ASSIGNED { 
     ina (mA/cm2)
+
     minf
     taum (ms)
+    theta_m (mV)
+    T_Q10
+    
     hinf
     tauh (ms)
+
     sinf
     alphas (1/ms)
     betas (1/ms)
@@ -94,7 +102,17 @@ BREAKPOINT {
 UNITSOFF
 
 INITIAL {
+    LOCAL ktemp,ktempb,ktemp1,ktemp2
+
+    if (activate_Q10>0) {
+        T_Q10 = Q10^((celsius-22)/10)
+    } else {
+        T_Q10 = 1.0
+    }
+
+    theta_m = theta_m0 + (k_m * (log((1 / pow(0.5, 1/3)) - 1)))
     settables(v)
+
     m = minf
     h = hinf
     s = sinf
@@ -108,20 +126,23 @@ DERIVATIVE states {
 }
 
 PROCEDURE settables(v) {
+    LOCAL alpham, betam
     TABLE minf, taum, hinf, tauh, sinf, alphas, betas, taus FROM -100 TO 100 WITH 400
 
     : Activation & Deactivation (m-gate)
     minf = 1.0 / (1.0 + exp((theta_m - v)/k_m))
-    taum = tau_m0 + (tau_m1 - tau_m0)/(exp((phi_m - v)/sigma_m0) + exp((phi_m - v)/sigma_m1))
+    alpham = alp0 * exp((v - phi_m) / sigma_m) * T_Q10
+    betam = bet0 * exp((phi_m - v) / sigma_m) * T_Q10
+    taum = 1.0 / (alpham + betam)
 
     : Fast / Intermediate Inactivation (h-gate)
     hinf = h0 + (1.0 - h0)/ (1.0 + exp((theta_h - v)/k_h))
-    tauh = tau_h0 + (tau_h1 - tau_h0)/(exp((phi_h - v)/sigma_h0) + exp((phi_h - v)/sigma_h1))
+    tauh = tau_h0 + (tau_h1 - tau_h0)/(exp((v - phi_h)/sigma_h0) + exp((phi_h - v)/sigma_h1))
 
     : Slow Inactivation (s-gate)
     sinf = 1.0 / (1.0 + exp((theta_s - v)/k_s))
-    alphas = (Aa_s * v + Ba_s)/(1.0 - exp((v + Ba_s/Aa_s)/Ka_s))
-    betas = (Ab_s * v + Bb_s)/(1.0 - exp((v + Bb_s/Ab_s)/Kb_s))
+    alphas = (Aa_s * v + Ba_s)/(1.0 - exp((v + Ba_s/Aa_s)/Ka_s)) * T_Q10
+    betas = (Ab_s * v + Bb_s)/(1.0 - exp((v + Bb_s/Ab_s)/Kb_s)) * T_Q10
     taus = 1.0 / (alphas + betas)
 }
 

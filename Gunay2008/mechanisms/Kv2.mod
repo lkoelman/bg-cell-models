@@ -1,79 +1,105 @@
 TITLE slowly activated potassium Kv2 (Kv2.1) channel for GPe neuron
 
 COMMENT
- modeled by Gunay et al., 2008
- implemented in NEURON by Kitano, 2011
+DESCRIPTION
+-----------
+
+Kdr Kv2 (Kv2.1) slow activating
+
+Created based on GP data:
+Baranuskas, Tkatch and Surmeier
+1999, J Neurosci 19(15):6394-6404
+
+
+CREDITS
+-------
+
+modeled in GENESIS by Gunay et al., 2008
+implemented in NEURON by Kitano, 2011
+modified in NEURON by Lucas Koelman, 2018 to reflect model Hendrickson et al., 2010
 ENDCOMMENT
 
 UNITS {
- (mV) = (millivolt)
- (mA) = (milliamp)
+    (mV) = (millivolt)
+    (mA) = (milliamp)
 }
 
 NEURON {
- SUFFIX Kv2
- USEION k READ ek WRITE ik
- RANGE gmax, iKv2
+    SUFFIX Kv2
+    USEION k READ ek WRITE ik
+    RANGE gmax, iKv2
 }
 
 PARAMETER {
- v (mV)
- dt (ms)
- gmax  = 0.001 (mho/cm2)
- iKv2  = 0.0 (mA/cm2)
- ek (mV)
+    v (mV)
+    dt (ms)
+    gmax  = 0.001 (mho/cm2)
+    iKv2  = 0.0 (mA/cm2)
+    ek (mV)
 
- theta_m = -33.2 (mV)
- k_m = 9.1 (mV)
- tau_m0 = 0.1 (ms)
- tau_m1 = 3.0 (ms)
- phi_m = -33.2 (mV)
- sigma_m0 = 21.7 (mV)
- sigma_m1 = -13.9 (mV)
+    theta_m0 = -18.0 (mV)
+    k_m = 9.1 (mV)
+    tau_m0 = 0.1 (ms)
+    tau_m1 = 3.0 (ms)
+    sigma_m0 = -13.91 (mV)
+    sigma_m1 = -21.74 (mV)
 
- h0 = 0.2
- theta_h = -20.0 (mV)
- k_h = -10.0 (mV)
- tauh = 3400.0 (ms)
+    h0 = 0.2
+    theta_h = -20.0 (mV)
+    k_h = 10.0 (mV)
+    phi_h = 0.0 (mV)
+    sigma_h = 10.0 (mV)
+    tau_h0 = 3400.0 (ms)
+    tau_h1 = 3400.0 (ms)
 }
 
 STATE {
- m h
+    m h
 }
 
 ASSIGNED { 
- ik (mA/cm2)
- minf
- taum (ms)
- hinf
+    ik (mA/cm2)
+
+    minf
+    taum (ms)
+    theta_m
+
+    hinf
+    tauh (ms)
 }
 
 BREAKPOINT {
- SOLVE states METHOD cnexp
- ik  = gmax*m*m*m*m*h*(v-ek)
- iKv2 = ik
+    SOLVE states METHOD cnexp
+    ik  = gmax*m*m*m*m*h*(v-ek)
+    iKv2 = ik
 }
 
 UNITSOFF
 
 INITIAL {
- settables(v)
- m = minf
- h = hinf
+    theta_m = theta_m0 + (k_m * (log((1 / pow(0.5, 1/4)) - 1)))
+    settables(v)
+
+    m = minf
+    h = hinf
 }
 
 DERIVATIVE states {  
- settables(v)
- m' = (minf - m)/taum
- h' = (hinf - h)/tauh
+    settables(v)
+    m' = (minf - m)/taum
+    h' = (hinf - h)/tauh
 }
 
 PROCEDURE settables(v) {
-        TABLE minf, taum, hinf FROM -100 TO 100 WITH 400
+    TABLE minf, taum, hinf, tauh FROM -100 TO 100 WITH 400
 
-	minf = 1.0 / (1.0 + exp((theta_m - v)/k_m))
-	taum = tau_m0 + (tau_m1 - tau_m0)/(exp((phi_m - v)/sigma_m0) + exp((phi_m - v)/sigma_m1))
-	hinf = h0 + (1.0 - h0) / (1.0 + exp((theta_h - v)/k_h))
+    : m-gate (also called n-gate)
+    minf = 1.0 / (1.0 + exp((theta_m - v)/k_m))
+    taum = tau_m0 + (tau_m1 - tau_m0)/(exp((theta_m - v)/sigma_m0) + exp(-(theta_m - v)/sigma_m1))
+
+    : h-gate
+    hinf = h0 + (1.0 - h0) / (1.0 + exp((v - theta_h)/k_h))
+    tauh = (tau_h1-tau_h0) / (1 + exp((v - phi_h) / sigma_h ))  + tau_h0
 }
 
 UNITSON
