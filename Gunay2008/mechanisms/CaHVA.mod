@@ -47,6 +47,8 @@ PARAMETER {
     : m-gate
     theta_m0 = -20.0 (mV)
     k_m = 7.0 (mV)
+    tau_m0 = 0.2 (ms) : estimated from traces Q10=2.5 adjusted
+    tau_m1 = 0.2 (ms)
 }
 
 STATE {

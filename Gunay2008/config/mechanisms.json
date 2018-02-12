@@ -1,5 +1,8 @@
+// Parameters from model https:#senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
+// See script /articleCode/commonGPFull/GPcomps.g to see which named compartments
+// defined in .p file get which mechanisms (prototypes copied into compartment).
+// Equivalent GENESIS mechanism names in trailing comment.
 {
-    // Equivalent GENESIS mechanism names in trailing comment.
     "all": [
         // leak conductance is built-in in GENESIS (no explicit mechanism)
         "pas"
@@ -47,6 +50,5 @@
         "Kv4f", // Kv4_fast_GP
         "Kv4s", // Kv4_slow_GP
         "KCNQ" // KCNQ_GP
-    ],
-    
+    ]
 }

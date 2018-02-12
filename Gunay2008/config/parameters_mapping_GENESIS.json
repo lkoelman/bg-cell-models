@@ -39,28 +39,32 @@
     //     "sectionlist": "all",
     //     "type": "section",
     //     "dist_type": "uniform",
-    //     "value": "{RA}*1e2"
+    //     "units": "Ohm*m",
+    //     "value": "{RA}"
     // },
     // {
     //     "param_name": "g_pas",
     //     "sectionlist": "all",
     //     "type": "section",
     //     "dist_type": "uniform",
-    //     "value": "1.0/{RM_sd}*1e-4"
+    //     "units": "S/m^2",
+    //     "value": "1.0/{RM_sd}"
     // },
     // {
     //     "param_name": "cm",
     //     "sectionlist": "all",
     //     "type": "section",
     //     "dist_type": "uniform",
-    //     "value": "{CM}*1e2" // CM_my not used in axonless model
+    //     "units": "F/m^2",
+    //     "value": "{CM}" // CM_my not used in axonless model
     // },
     // {
     //     "param_name": "e_pas",
     //     "sectionlist": "all",
     //     "type": "section",
     //     "dist_type": "uniform",
-    //     "value": "{ELEAK_sd}*1e3"
+    //     "units": "V",
+    //     "value": "{ELEAK_sd}"
     // },
 // #############################################################################
 // # Parameters from GPchans.g
@@ -75,21 +79,16 @@
         "sectionlist": "all",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{ENa}*1e3"
+        "units": "V",
+        "value": "{ENa}"
     },
     {
         "param_name": "ek",
         "sectionlist": "all",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{EK}*1e3"
-    },
-    {
-        "param_name": "eca",
-        "sectionlist": "all",
-        "type": "section",
-        "dist_type": "uniform",
-        "value": "{ECa}*1e3"
+        "units": "V",
+        "value": "{EK}"
     },
 // #############################################################################
 // # Parameters from GPcomps.g
@@ -102,28 +101,40 @@
         "sectionlist": "somatic",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{RA}*1e2"
+        "units": "Ohm*m",
+        "value": "{RA}"
     },
     {
         "param_name": "g_pas",
         "sectionlist": "somatic",
         "type": "section",
         "dist_type": "uniform",
-        "value": "1.0/{RM_sd}*1e-4"
+        "units": "S/m^2",
+        "value": "1.0/{RM_sd}"
     },
     {
         "param_name": "cm",
         "sectionlist": "somatic",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{CM}*1e2" // CM_my not used in axonless model
+        "units": "F/m^2",
+        "value": "{CM}" // CM_my not used in axonless model
     },
     {
         "param_name": "e_pas",
         "sectionlist": "somatic",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{ELEAK_sd}*1e3"
+        "units": "V",
+        "value": "{ELEAK_sd}"
+    },
+    {
+        "param_name": "eca",
+        "sectionlist": "somatic",
+        "type": "section",
+        "dist_type": "uniform",
+        "units": "V",
+        "value": "{ECa}"
     },
 // somatic conductances
     {
@@ -133,7 +144,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_NaF_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_NaF_soma}"
     },
     {
         "param_name": "gmax_NaP",
@@ -142,7 +154,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_NaP_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_NaP_soma}"
     },
     {
         "param_name": "gmax_Kv2",
@@ -151,7 +164,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv2_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv2_soma}"
     },
     {
         "param_name": "gmax_Kv3",
@@ -160,7 +174,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv3_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv3_soma}"
     },
     {
         "param_name": "gmax_Kv4f",
@@ -169,7 +184,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv4f_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv4f_soma}"
     },
     {
         "param_name": "gmax_Kv4s",
@@ -178,7 +194,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv4s_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv4s_soma}"
     },
     {
         "param_name": "gmax_KCNQ",
@@ -187,7 +204,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_KCNQ_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_KCNQ_soma}"
     },
     {
         "param_name": "gmax_CaHVA",
@@ -196,7 +214,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Ca_HVA_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_soma}"
     },
     {
         "param_name": "gmax_SK",
@@ -205,7 +224,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_SK_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_SK_soma}"
     },
     {
         "param_name": "gmax_HCN",
@@ -214,7 +234,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_h_HCN_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_h_HCN_soma}"
     },
     {
         "param_name": "gmax_HCN2",
@@ -223,7 +244,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_h_HCN2_soma}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_h_HCN2_soma}"
     },
 // =============================================================================
 // axonal compartment (SectionList "axonal")
@@ -233,28 +255,32 @@
         "sectionlist": "axonal",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{RA}*1e2"
+        "units": "Ohm*m",
+        "value": "{RA}"
     },
     {
         "param_name": "g_pas",
         "sectionlist": "axonal",
         "type": "section",
         "dist_type": "uniform",
-        "value": "1.0/{RM_sd}*1e-4"
+        "units": "S/m^2",
+        "value": "1.0/{RM_sd}"
     },
     {
         "param_name": "cm",
         "sectionlist": "axonal",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{CM}*1e2" // CM_my not used in axonless model
+        "units": "F/m^2",
+        "value": "{CM}" // CM_my not used in axonless model
     },
     {
         "param_name": "e_pas",
         "sectionlist": "axonal",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{ELEAK_sd}*1e3"
+        "units": "V",
+        "value": "{ELEAK_sd}"
     },
 // axonal conductances
     {
@@ -264,7 +290,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_NaF_axon}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_NaF_axon}"
     },
     {
         "param_name": "gmax_NaP",
@@ -273,7 +300,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_NaP_axon}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_NaP_axon}"
     },
     {
         "param_name": "gmax_Kv2",
@@ -282,7 +310,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv2_axon}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv2_axon}"
     },
     {
         "param_name": "gmax_Kv3",
@@ -291,7 +320,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv3_axon}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv3_axon}"
     },
     {
         "param_name": "gmax_Kv4f",
@@ -300,7 +330,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv4f_axon}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv4f_axon}"
     },
     {
         "param_name": "gmax_Kv4s",
@@ -309,7 +340,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv4s_axon}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv4s_axon}"
     },
     {
         "param_name": "gmax_KCNQ",
@@ -318,37 +350,50 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_KCNQ_axon}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_KCNQ_axon}"
     },
 // =============================================================================
 // dendritic compartments (SectionList "basal")
     {
         "param_name": "cm",
-        "sectionlist": "all",
-        "type": "basal",
+        "sectionlist": "basal",
+        "type": "section",
         "dist_type": "uniform",
-        "value": "{CM}*1e2" // CM_my not used in axonless model
+        "units": "F/m^2",
+        "value": "{CM}" // CM_my not used in axonless model
     },
     {
         "param_name": "Ra",
         "sectionlist": "basal",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{RA}*1e2"
+        "units": "Ohm*m",
+        "value": "{RA}"
     },
     {
         "param_name": "g_pas",
         "sectionlist": "basal",
         "type": "section",
         "dist_type": "uniform",
-        "value": "1.0/{RM_sd}*1e-4"
+        "units": "S/m^2",
+        "value": "1.0/{RM_sd}"
     },
     {
         "param_name": "e_pas",
         "sectionlist": "basal",
         "type": "section",
         "dist_type": "uniform",
-        "value": "{ELEAK_sd}*1e3"
+        "units": "V",
+        "value": "{ELEAK_sd}"
+    },
+    {
+        "param_name": "eca",
+        "sectionlist": "basal",
+        "type": "section",
+        "dist_type": "uniform",
+        "units": "V",
+        "value": "{ECa}"
     },
 // -----------------------------------------------------------------------------
 // dendritic conductances
@@ -359,7 +404,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_NaF_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_NaF_dend}"
     },
     {
         "param_name": "gmax_NaP",
@@ -368,7 +414,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_NaP_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_NaP_dend}"
     },
     {
         "param_name": "gmax_Kv2",
@@ -377,7 +424,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv2_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv2_dend}"
     },
     {
         "param_name": "gmax_Kv3",
@@ -386,7 +434,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv3_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv3_dend}"
     },
     {
         "param_name": "gmax_Kv4f",
@@ -395,7 +444,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv4f_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv4f_dend}"
     },
     {
         "param_name": "gmax_Kv4s",
@@ -404,7 +454,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Kv4s_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Kv4s_dend}"
     },
     {
         "param_name": "gmax_KCNQ",
@@ -413,7 +464,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_KCNQ_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_KCNQ_dend}"
     },
     {
         "param_name": "gmax_CaHVA",
@@ -422,7 +474,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_Ca_HVA_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_dend}"
     },
     {
         "param_name": "gmax_SK",
@@ -431,7 +484,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_SK_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_SK_dend}"
     },
     {
         "param_name": "gmax_HCN",
@@ -440,7 +494,8 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_h_HCN_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_h_HCN_dend}"
     },
     {
         "param_name": "gmax_HCN2",
@@ -449,6 +504,7 @@
         "mech_param": "gmax",
         "type": "range",
         "dist_type": "uniform",
-        "value": "{G_h_HCN2_dend}*1e-4"
+        "units": "S/m^2",
+        "value": "{G_h_HCN2_dend}"
     },
 ]

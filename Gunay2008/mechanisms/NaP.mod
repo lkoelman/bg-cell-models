@@ -49,6 +49,8 @@ PARAMETER {
     k_m = 5.7 (mV)
     phi_m = -41.6 (mV)
     sigma_m = 14.4 (mV)
+    alp0 = 2.130 (1/ms)
+    bet0 = 2.460 (1/ms)
 
     : Slow Inactivation (s-gate)
     h0 = 0.154

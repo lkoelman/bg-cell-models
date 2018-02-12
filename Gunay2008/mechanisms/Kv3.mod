@@ -105,7 +105,7 @@ PROCEDURE settables(v) {
 
     : h-gate
     hinf = h0 + (1.0 - h0) / (1.0 + exp((v - theta_h)/k_h))
-    tauh = tau_h0 + (tau_h1 - tau_h0)/(exp((v - phi_h)/sigma_h0) : + exp((phi_h - v)/sigma_h1))
+    tauh = tau_h0 + (tau_h1 - tau_h0)/(1 + exp((v - phi_h)/sigma_h0)) : + exp((phi_h - v)/sigma_h1))
 }
 
 UNITSON

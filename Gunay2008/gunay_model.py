@@ -23,10 +23,14 @@ Using channel mechanisms ported to NEURON by Kitano (2011)
 """
 
 import os
+import re
 import json
 
 import neuron
 import bluepyopt.ephys as ephys
+
+from common import units, fileutils
+h = neuron.h
 
 script_dir = os.path.dirname(__file__)
 NRN_MECH_PATH = os.path.join(script_dir, 'mechanisms')
@@ -91,6 +95,41 @@ global_params_list = [
 mechs_list = list(mechs_params_dict.keys()) # all mechanisms
 gbar_list = [gname+'_'+mech for mech,chans in gbar_dict.iteritems() for gname in chans]
 active_gbar_names = [gname for gname in gbar_list if gname != gleak_name]
+
+
+def parse_json_commented(json_file):
+    """
+    Parse json file with C-style comments in it.
+
+    JSON format does not allow comments in it, but you can strip them manually.
+    """
+    input_str = json_file.read()
+    input_str = re.sub(r"//.*$", "", input_str, flags=re.M)
+    return json.loads(input_str)
+
+
+def write_json_after_edit(filenames):
+    """
+    Rewrite JSON files after editing them, stripping comments and validating
+    against the JSON schema.
+
+    @note   This is a better alternative to writing our own parser
+            that strips comments, since it will also catch any syntax
+            errors
+    """
+    for filename in filenames:
+        full_filename = os.path.join(script_dir, filename)
+
+        with open(full_filename) as json_file:
+            invalid_json = json_file.read()
+            valid_json = fileutils.validate_minify_json(invalid_json)
+
+        write_json_filename = full_filename[:-5] + '.min.json'
+        with open(write_json_filename, 'w') as outfile:
+            outfile.write(valid_json)
+
+        print("Wrote parameters to json file {}".format(write_json_filename))
+
 
 
 def define_mechanisms(filename):
@@ -173,12 +212,12 @@ def define_parameters(genesis_params_file, params_mapping_file):
             spec = param_spec['value']
             if isinstance(spec, (float, int)):
                 value = spec
-            elif isinstance(spec, str):
+            elif isinstance(spec, (str, unicode)):
                 value = eval(spec.format(**genesis_params))
             else:
                 raise ValueError(
                     "Unexpected value {} for parameter '{}'".format(
-                        value, param_name))
+                        spec, param_name))
             bounds = None
 
         elif 'bounds' in param_spec:
@@ -190,6 +229,17 @@ def define_parameters(genesis_params_file, params_mapping_file):
             raise Exception(
                 'Parameter config has to have bounds or value: {}'.format(
                 param_spec))
+
+        # Correct units
+        if 'units' in param_spec:
+            if value is not None:
+                quantity = units.Quantity(value, param_spec['units'])
+                converted_quantity = units.to_nrn_units(h, param_name, quantity)
+                value = converted_quantity.magnitude
+            if bounds is not None:
+                quantity = units.Quantity(bounds, param_spec['units'])
+                converted_quantity = units.to_nrn_units(h, param_name, quantity)
+                bounds = converted_quantity.magnitude
 
         # Make Ephys description of parameter
         if param_spec['type'] == 'global':
@@ -426,32 +476,9 @@ def get_GENESIS_parameters(write_json_filename=None):
     return all_params
 
 
-def create_cell():
+def define_cell():
     """
     Create GPe cell model
-
-    NOTES
-    -----
-
-    cell.instantiate():
-        
-        -> cell.create_empty_cell(cell.name, cell.seclist_names, cell.secarray_names)
-            
-            -> cell.create_empty_template(...)
-                ; Creates new template in hoc using "begintemplate" that contains
-                ; a CellRef and a SectionArray + SectionList for each seclist/secarray
-        
-        -> cell.icell = hoc_template_function()
-        
-        -> cell.morphology.instantiate(cell.icell) :
-            ; Fills secarray/seclist of instantiated template with morphology Sections
-           
-            -> imorphology = h.Import3d_<fileformat>(file)
-            -> importer = h.Import3d_GUI(imorphology, 0)
-                ; see file /hoc/import3d/import3d_gui.hoc
-            -> importer.instantiate(cell.icell)
-                ; instantiates Sections defined by morphology and assigns them
-                ; to template's secarrays based on SWC types & seclist variables
     """
 
     cell = ephys.models.CellModel(
@@ -459,19 +486,14 @@ def create_cell():
                 morph=define_morphology(
                         'morphology/bg0121b_axonless_GENESIS_import.asc',
                         replace_axon=False),
-                mechs=define_mechanisms('config/mechanisms.json'),
+                mechs=define_mechanisms('config/mechanisms.min.json'),
                 params=define_parameters(
-                        'config/parameters_original_GENESIS.json',
-                        'config/parameters_mapping_GENESIS.json'))
+                        'config/parameters_original_GENESIS.min.json',
+                        'config/parameters_mapping_GENESIS.min.json'))
 
     # DONE: write mechanisms.json
-    #   - [x] see script /articleCode/commonGPFull/GPcomps.g to see which named compartments
-    #     defined in .p file get which mechanisms (prototypes copied into compartment)
-    #       => protoype is inserted into ALL dendritic sections
     #   - [x] find out how Ephys makes SectionLists
     #       => based on identified SWC types
-
-    # TODO: write parameters.json
 
     # For model at https:#senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
     # "Comparison of full and reduced globus pallidus models (Hendrickson 2010)"
@@ -505,23 +527,33 @@ def create_cell():
 
     return cell
 
+
+def create_cell():
+    """
+    Instantiate GPe cell in NEURON simulator.
+    """
+    cell = define_cell()
+    nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+    cell.instantiate(sim=nrnsim)
+    return cell
+
+
+def rewrite_config_files():
+    """
+    Clean up commented JSON files
+    """
+    commented_json = [
+        'config/mechanisms.json',
+        'config/parameters_original_GENESIS.json',
+        'config/parameters_mapping_GENESIS.json'
+    ]
+    write_json_after_edit(commented_json)
+
+
 if __name__ == '__main__':
     # Make GPe cell
-    # gpe_cell = create_cell()
-    # gpe_cell.instantiate(sim=neuron.h)
+    cell = create_cell()
 
     # Write GENESIS parameters to json
     # outfile = os.path.join(script_dir, 'config/GENESIS_parameters.json')
     # get_GENESIS_parameters(write_json_filename=outfile)
-
-    # Test
-    cell = ephys.models.CellModel(
-                'GPe',
-                morph=define_morphology(
-                        'morphology/bg0121b_axonless_GENESIS_import.swc',
-                        replace_axon=False),
-                mechs=[],
-                params=[])
-
-    nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
-    cell.instantiate(sim=nrnsim)
