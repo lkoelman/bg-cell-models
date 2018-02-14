@@ -15,8 +15,9 @@ NOTES
 import collections
 
 import bluepyopt.ephys as ephys
-from bpop_extensions import PhysioProtocol, NrnSpaceClamp
-from bpop_protocol_ext import SelfContainedProtocol
+
+from extensions.bluepyopt.bpop_extensions import PhysioProtocol, NrnSpaceClamp
+from extensions.bluepyopt.bpop_protocol_ext import SelfContainedProtocol
 
 from evalmodel import (
 	cellpopdata as cpd,
