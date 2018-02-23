@@ -95,8 +95,7 @@ ASSIGNED {
 }
 
 BREAKPOINT {
-    : SOLVE states METHOD cnexp
-    SOLVE states
+    SOLVE states METHOD cnexp
     ina  = gmax*m*m*m*h*s*(v-ena)
     iNa = ina
 }

@@ -27,4 +27,5 @@ class EphysCellType(NativeCellType):
 		"""
 		Create new PyNN cell type that encapsulates the given cell.
 		"""
+		pass
 

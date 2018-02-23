@@ -72,6 +72,14 @@ def to_nrn_units(nrn_obj, attr, quantity, hoc_classname=None):
 
     @return q : pint.Quantity
             Original quantity converted to units of the NEURON object.
+
+    EXAMPLE
+    -------
+    
+        > import neuron, units
+        > quantity = units.Quantity(value, param_spec['units'])
+        > converted_quantity = units.to_nrn_units(neuron.h, 'gnabar_hh', quantity)
+        > value = converted_quantity.magnitude
     """
     target_units = get_nrn_units(nrn_obj, attr, hoc_classname)
     return quantity.to(target_units)

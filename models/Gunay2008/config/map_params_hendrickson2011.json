@@ -285,7 +285,7 @@
 // axonal conductances
     {
         "param_name": "gmax_NaF",
-        "sectionlist": "basal",
+        "sectionlist": "axonal",
         "mech": "NaF",
         "mech_param": "gmax",
         "type": "range",
@@ -295,7 +295,7 @@
     },
     {
         "param_name": "gmax_NaP",
-        "sectionlist": "basal",
+        "sectionlist": "axonal",
         "mech": "NaP",
         "mech_param": "gmax",
         "type": "range",
@@ -305,7 +305,7 @@
     },
     {
         "param_name": "gmax_Kv2",
-        "sectionlist": "basal",
+        "sectionlist": "axonal",
         "mech": "Kv2",
         "mech_param": "gmax",
         "type": "range",
@@ -315,7 +315,7 @@
     },
     {
         "param_name": "gmax_Kv3",
-        "sectionlist": "basal",
+        "sectionlist": "axonal",
         "mech": "Kv3",
         "mech_param": "gmax",
         "type": "range",
@@ -325,7 +325,7 @@
     },
     {
         "param_name": "gmax_Kv4f",
-        "sectionlist": "basal",
+        "sectionlist": "axonal",
         "mech": "Kv4f",
         "mech_param": "gmax",
         "type": "range",
@@ -335,7 +335,7 @@
     },
     {
         "param_name": "gmax_Kv4s",
-        "sectionlist": "basal",
+        "sectionlist": "axonal",
         "mech": "Kv4s",
         "mech_param": "gmax",
         "type": "range",
@@ -345,7 +345,7 @@
     },
     {
         "param_name": "gmax_KCNQ",
-        "sectionlist": "basal",
+        "sectionlist": "axonal",
         "mech": "KCNQ",
         "mech_param": "gmax",
         "type": "range",
