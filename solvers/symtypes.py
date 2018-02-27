@@ -55,8 +55,17 @@ class SymbolicQuantity(sympy.Symbol):
         sp_scale = base_units.magnitude
         self._sympy_units = sympy_units.Quantity(name, sp_dims, sp_scale)
 
-# Built-in symbolic quantities
-# v = SymbolicQuantity('v', units='mV')
+
+def as_raw_expr(expr):
+    """
+    """
+    if expr.is_Atom:
+        return expr
+    elif hasattr(expr, 'expr') and expr.expr.is_Atom:
+        return expr.expr
+    else:
+        return expr.func(*[as_raw_expr(a) for a in expr.args])
+
 
 class QuantitativeExpr(Expr):
     """
@@ -120,9 +129,9 @@ class QuantitativeExpr(Expr):
     def units(self):
         return self.q
     
-    # @property
-    # def func(self):
-    #     return self.expr.func
+    @property
+    def func(self):
+        return self.expr.func
     
 
     def as_expr(self):
@@ -133,15 +142,22 @@ class QuantitativeExpr(Expr):
 
         @see    http://docs.sympy.org/latest/tutorial/manipulation.html#recursing-through-an-expression-tree
         """
-        expr = self.expr
-        args = expr.args
-        if len(args) == 0: # or: expr.is_Atom/is_Symbol
-            args = (str(expr),) # for Symbol
-        else:
-            args = [a.as_expr() for a in args]
-        # return expr.func(*[a.as_expr() for a in expr.args])
         # TODO: make diagram to understand recursive call and see if overriding arithmethic operations is necessary to prevent hijacking (debug +/- operations)
-        return expr.func(*args)
+        # PROBLEM: It does not keep calling as_expr() down the chain: it stops
+        #  when a regular sympy op is encountered. 
+        #  e.g. on a Mul(int, QuantitativeExpr), it will just do mul.func
+
+        return as_raw_expr(self)
+
+        # expr = self.expr
+        # args = expr.args
+
+        # if len(args) == 0: # or: expr.is_Atom/is_Symbol
+        #     args = (str(expr),) # for Symbol
+        # else:
+        #     args = [a.as_expr() for a in args]
+
+        # return expr.func(*args)
 
 
     # def __repr__(self):
