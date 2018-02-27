@@ -37,7 +37,7 @@ PARAMETER {
     dt (ms)
     gmax  = 0.5e-4 (mho/cm2)
     iHCN  = 0.0 (mA/cm2)
-    e (mV)
+    eh = -30 (mV)
 
     : m-gate
     theta_m = -87.5 (mV)
@@ -61,7 +61,7 @@ ASSIGNED {
 
 BREAKPOINT {
     SOLVE states METHOD cnexp
-    ih  = gmax*m*(v-e)
+    ih  = gmax*m*(v-eh)
     iHCN = ih
 }
 

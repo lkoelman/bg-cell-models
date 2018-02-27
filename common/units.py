@@ -8,6 +8,7 @@ import re
 import pint
 ureg = pint.UnitRegistry()
 Q_ = Quantity = ureg.Quantity
+QuantityType = pint.quantity._Quantity # Base class
 
 from neuron import h
 

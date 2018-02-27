@@ -410,7 +410,8 @@ def rewrite_config_files():
 
 if __name__ == '__main__':
     # Make GPe cell
-    icell, nrnsim = create_cell()
+    cell, nrnsim = create_cell()
+    icell = cell.icell
     from neuron import gui
 
     # Write GENESIS parameters to json

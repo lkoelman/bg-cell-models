@@ -176,6 +176,7 @@ def plot_currents_activations(recData, recordStep, timeRange=None, sec_tag=None)
 
 	return figs, cursors
 
+
 def recordTraces(secs, traceSpecs, recordStep=0.05, duration=None, recData=None):
 	"""
 	Record the given traces from section
@@ -185,21 +186,22 @@ def recordTraces(secs, traceSpecs, recordStep=0.05, duration=None, recData=None)
 	@returns recData	Collections.OrderedDict(str -> Hoc.Vector) : dictionary
 						containing recorded trace data after running simulation
 
-	EXAMPLE USE:
+	USAGE
+	-----
 
-	secs = {'soma': soma, 'dend': dends[1], 'izhpp': izh, 'synpp': syn}
+		secs = {'soma': soma, 'dend': dends[1], 'izhpp': izh, 'synpp': syn}
 
-	traceSpecs = {
-		'V_izhi': {'pointp': 'izh'},
-		'g_syn': {'pointp': 'synpp', 'var': 'g'}
-		'V_soma':{'sec':'soma','loc':0.5,'var':'v'},
-		'GP_RT_cai':{'sec':'soma','loc':0.5,'var':'cai'},
-		'GP_RT_ainf':{'sec':'soma','loc':0.5,'mech':'gpRT','var':'a_inf'}, 
-		'GP_RT_r':{'sec':'soma','loc':0.5,'mech':'gpRT','var':'r'},
-		'STN_r':{'sec':'soma','loc':0.5,'mech':'stn','var':'r'},
-		'STN_p':{'sec':'soma','loc':0.5,'mech':'stn','var':'p'},
-		'STN_q':{'sec':'soma','loc':0.5,'mech':'stn','var':'q'},
-	}
+		traceSpecs = {
+			'V_izhi': {'pointp': 'izh'},
+			'g_syn': {'pointp': 'synpp', 'var': 'g'}
+			'V_soma':{'sec':'soma','loc':0.5,'var':'v'},
+			'GP_RT_cai':{'sec':'soma','loc':0.5,'var':'cai'},
+			'GP_RT_ainf':{'sec':'soma','loc':0.5,'mech':'gpRT','var':'a_inf'}, 
+			'GP_RT_r':{'sec':'soma','loc':0.5,'mech':'gpRT','var':'r'},
+			'STN_r':{'sec':'soma','loc':0.5,'mech':'stn','var':'r'},
+			'STN_p':{'sec':'soma','loc':0.5,'mech':'stn','var':'p'},
+			'STN_q':{'sec':'soma','loc':0.5,'mech':'stn','var':'q'},
+		}
 
 	WARNING: For multithreaded execution, section _must_ have POINT_PROCESS
 	         associated with it to identify the tread. Hence, a PointProcessMark

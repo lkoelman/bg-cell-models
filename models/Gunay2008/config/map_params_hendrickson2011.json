@@ -136,6 +136,22 @@
         "units": "V",
         "value": "{ECa}"
     },
+    // {
+    //     "param_name": "eh_HCN",
+    //     "sectionlist": "somatic",
+    //     "type": "section",
+    //     "dist_type": "uniform",
+    //     "units": "V",
+    //     "value": "{Eh}"
+    // },
+    // {
+    //     "param_name": "eh_HCN2",
+    //     "sectionlist": "somatic",
+    //     "type": "section",
+    //     "dist_type": "uniform",
+    //     "units": "V",
+    //     "value": "{Eh}"
+    // },
 // somatic conductances
     {
         "param_name": "gmax_NaF",
@@ -395,6 +411,22 @@
         "units": "V",
         "value": "{ECa}"
     },
+    // {
+    //     "param_name": "eh_HCN",
+    //     "sectionlist": "basal",
+    //     "type": "section",
+    //     "dist_type": "uniform",
+    //     "units": "V",
+    //     "value": "{Eh}"
+    // },
+    // {
+    //     "param_name": "eh_HCN2",
+    //     "sectionlist": "basal",
+    //     "type": "section",
+    //     "dist_type": "uniform",
+    //     "units": "V",
+    //     "value": "{Eh}"
+    // },
 // -----------------------------------------------------------------------------
 // dendritic conductances
     {
