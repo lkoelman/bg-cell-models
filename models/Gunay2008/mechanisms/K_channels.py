@@ -58,7 +58,7 @@ class Kv3_channel(mechanism.MechanismBase):
 
         # RHS_EXPRESSIONS
         ## m gate
-        theta_m = mech.theta_m0 + (mech.k_m * (log((1 / pow(0.5, 1/4)) - 1)))
+        theta_m = mech.theta_m0 + (mech.k_m * log((1.0 / pow(0.5, 1.0/4.0)) - 1.0))
 
         minf = state_steadystate(
                     1.0 / (1.0 + exp((theta_m - v)/mech.k_m)),

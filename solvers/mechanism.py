@@ -3,7 +3,7 @@ Cell mechanism
 """
 
 from __future__ import division
-import inspect
+import inspect, functools
 import sympy
 import numpy as np
 
@@ -239,6 +239,23 @@ class MechanismType(type):
         return newattrs
 
 
+def check_inf_nan(expr):
+    """
+    Check for inf and NaN in Sympy expression
+
+    @return     bool
+                True if ok
+
+    @throws     ValueError
+                Raises ValueError if any of the atoms of expr is inf or NaN
+    """
+    # Test for inf and nan
+    atoms = expr.atoms(sympy.Number) # leaf nodes of expression tree
+    for a in atoms:
+        if not a.is_finite or a==sympy.nan:
+            raise Exception('Found infinite or NaN in expression {}'.format(expr))
+
+
 class MechanismBase:
     """
     Base class for Cell Mechanism
@@ -313,13 +330,83 @@ class MechanismBase:
             getattr(subcls, vars_name).update(mech_vars[vars_name])
 
 
-    def make_func(self, expr):
+    def get_param(self, name):
         """
-        Make ufunc by substituting parameters
+        Get instantiated parameter.
+
+        @return     QuantitativeExpr
         """
-        func = sympy.lambdify(v, expr.as_expr(), 'numpy')
-        # func = ufuncify(v, raw_expr)
+        return self._IMECH_PARAMS[name]
+
+
+    def make_v_func(self, expr):
+        """
+        Make ufunc by substituting mechanism parameters and leaving other symbols
+        as free symbols
+        """
+        raw_expr = expr.as_expr()
+
+        # Make expression with 'v' as only free symbol
+        subs_params = [self.get_param(p.name) for p in raw_expr.free_symbols if p!=v]
+        substitutions = {p.as_expr():p.val for p in subs_params}
+        v_expr = raw_expr.subs(substitutions)
+
+        # Test for inf and nan
+        check_inf_nan(v_expr)
+
+        # Debug lambda expression
+        logger.debug('Attempting to lambdify expression {}'.format(v_expr))
+        if logger.level <= 20:
+            from sympy.utilities.lambdify import lambdastr
+            from sympy.printing.lambdarepr import NumPyPrinter as Printer
+            printer = Printer()
+            lstr = lambdastr([v], v_expr, printer=printer)
+            logger.debug('Lambda string passed to eval() is: {}'.format(lstr))
+
+        func = sympy.lambdify([v], v_expr, 'numpy') # func = ufuncify(v, raw_expr)
         return func
+
+
+    def make_full_func(self, expr):
+        """
+        Turn expression into function with keyword arguments
+        equal to its free symbols.
+
+        @return     callable
+        """
+        
+        raw_expr = expr.as_expr()
+
+        # Test for inf and nan
+        check_inf_nan(raw_expr)
+
+        # Lambdify
+        args = [p for p in raw_expr.free_symbols]
+        argnames = [p.name for p in args]
+        func = sympy.lambdify(args, raw_expr, 'numpy') # func = ufuncify(v, raw_expr)
+
+        @functools.wraps(func)
+        def wrapped(**_kwargs):
+            """
+            Put kwargs in same order as initial args list passed to lambdify
+            """
+            args_ordered = [_kwargs[k] for k in argnames]
+            return func(*args_ordered)
+        
+        return wrapped
+
+
+    def check_units(self, expr):
+        """
+        Check units by converting expression to a function, and executing it with
+        mechanism parameters as Quantities.
+
+        @return     bool
+                    True if expression can be evaluated with parameters as quantities
+
+        @throws     pint.
+        """
+        func = self.make_func(expr)
 
 
     def compile_mod():
@@ -366,16 +453,18 @@ class MechanismBase:
                 continue
 
             # Convert quantity to expression
-            fn_inf = self.make_func(s_inf)
-            fn_tau = self.make_func(s_tau)
+            fn_inf = self.make_v_func(s_inf)
+            fn_tau = self.make_v_func(s_tau)
             v_range = np.linspace(-100, 100, 400)
+            sst_range = fn_inf(v_range)
+            tau_range = fn_tau(v_range)
 
-            plt.figure()
-            plt.suptitle('State variable {}'.format(state_name))
-            plt.plot(v_range, fn_inf(v_range), label=r'$x_{\inf}$')
-            plt.plot(v_range, fn_tau(v_range), label=r'$\tau_x$')
-            plt.xlabel('V (mV)')
-            plt.legend()
+            fig, ax = plt.subplots()
+            ax.set_title('State variable {}'.format(state_name))
+            ax.plot(v_range, sst_range, label=r'$x_{\inf}$')
+            ax.plot(v_range, tau_range, label=r'$\tau_x$')
+            ax.set_xlabel('V (mV)')
+            ax.legend()
 
             # fig, axes = plt.subplots(2,1)
             # axes[0].plot(v_range, fn_inf(v_range))
@@ -410,7 +499,6 @@ class HHNaChannel(MechanismBase):
     ENa = Parameter('gnabar', 50.0, 'mV')
 
     # STATE block
-    # TODO: make sympy symbol + register power
     m = State('m', power=3)
     h = State('h', power=1)
 
