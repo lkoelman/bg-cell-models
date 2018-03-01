@@ -5,48 +5,50 @@ COMMENT
 ENDCOMMENT
 
 NEURON {
- SUFFIX Calcium
- USEION ca READ ica WRITE cai
- RANGE a2v
+    SUFFIX Calcium
+    USEION ca READ ica WRITE cai
+    RANGE a2v
 }
 
 UNITS {
- (mM) = (milli/liter)
- (mA) = (milliamp)
- (um) = (microm)
- F = (faraday)(coulomb)
+    (mM) = (milli/liter)
+    (mA) = (milliamp)
+    (um) = (microm)
+    F = (faraday)(coulomb)
 }
 
 PARAMETER {
- dt (ms)
- z = 2.0
- kca = 0.4 (1/ms)
- cai0 = 0.00001 (mM)
- a2v = 3000.0 (1/cm)
+    z = 2.0
+    kca = 0.4 (1/ms)
+    cai0 = 0.00001 (mM)
+    a2v = 3000.0 (1/cm)
 }
 
 ASSIGNED {
- ica (mA/cm2)
- alpha
+    : read simulator variables
+    ica (mA/cm2)
+
+    : assigned mechanism variables
+    alpha
 }
 
 STATE {
- cai (mM)
+    cai (mM)
 }
 
 BREAKPOINT {
- SOLVE integrate METHOD cnexp
+    SOLVE integrate METHOD cnexp
 }
 
 UNITSOFF
 
 INITIAL{
- alpha = a2v/(z*F)
- cai = cai0
+    alpha = a2v/(z*F)
+    cai = cai0
 }
 
 DERIVATIVE integrate {
- cai' = -alpha*ica - kca*(cai - cai0)
+    cai' = -alpha*ica - kca*(cai - cai0)
 }
 
 UNITSON

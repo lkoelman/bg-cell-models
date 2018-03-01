@@ -407,6 +407,11 @@ class MechanismBase:
         @throws     pint.
         """
         func = self.make_func(expr)
+        # - get all equations
+        # for all equations:
+        # - make full func
+        # - gather parameters
+        # - substitute quantity (param.val * param.units)
 
 
     def compile_mod():

@@ -68,7 +68,8 @@ gleak_name = 'gmax_leak'
 mechs_params_dict = {
     # Nonspecific channels
     'HCN':      ['gmax', 'e'], # HCN channel
-    'leak':     ['gmax'],
+    'HCN2':     ['gmax', 'e'], # HCN channel
+    'pas':      ['g', 'e'],
     # Na channels
     'NaF':      ['gmax'],
     'NaP':      ['gmax'],
@@ -81,7 +82,7 @@ mechs_params_dict = {
     'SK':       ['gmax'],
     # Calcium channels / buffering
     'Calcium':  [''],
-    'CaH':      ['gmax', 'e'], # high-voltage-activated calcium channel
+    'CaHVA':    ['gmax', 'e'], # high-voltage-activated calcium channel
 
 }
 
@@ -199,6 +200,12 @@ def define_parameters(genesis_params_file, params_mapping_file):
 
     parameters = []
 
+    # Create dummy section so we can query all units
+    h('create dummy')
+    dummysec = h.dummy
+    for mech_name in mechs_params_dict.keys():
+        dummysec.insert(mech_name)
+
     for param_spec in param_specs:
 
         # Get param name in NEURON
@@ -307,6 +314,10 @@ def define_parameters(genesis_params_file, params_mapping_file):
         p = parameters[-1]
         logger.debug("Created parameter description:\n" + "\n\t".join(
             ["{} : {}".format(k,getattr(p,k)) for k in 'name', 'value', 'bounds']))
+
+    # delete dummy section
+    h.delete_section(sec=dummysec)
+    del dummysec
 
     return parameters
 

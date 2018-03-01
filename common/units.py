@@ -48,7 +48,9 @@ def get_nrn_units(nrn_obj, attr, hoc_classname=None):
     else:
         full_attr = '{}.{}'.format(hoc_classname, attr)
     try:
-        nrn_units = h.units(full_attr) # can return '' -> treated as dimensionless by Pint
+        # NOTE: h.units() can return '' -> treated as dimensionless by Pint
+        # NOTE: h.units() does not accept unicode strings
+        nrn_units = h.units(str(full_attr))
     except RuntimeError as e:
         if e.args[0] == 'hoc error':
             raise ValueError('Attribute {} not recognized by hoc'.format(attr))

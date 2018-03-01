@@ -35,11 +35,7 @@ NEURON {
 }
 
 PARAMETER {
-    v (mV)
-    dt (ms)
     gmax  = 0.001 (mho/cm2)
-    iNa  = 0.0 (mA/cm2)
-    ena (mV)
 
     activate_Q10 = 1
     Q10 = 3
@@ -77,8 +73,16 @@ STATE {
     m h s
 }
 
-ASSIGNED { 
+ASSIGNED {
+    : read simulator variables
+    v (mV)
+    ena (mV)
+
+    : assigned simulator variables
     ina (mA/cm2)
+
+    : assigned mechanism variables
+    iNa (mA/cm2)
 
     minf
     taum (ms)

@@ -36,13 +36,7 @@ NEURON {
 }
 
 PARAMETER {
-    v (mV)
-    dt (ms)
-    cai (mM)
-    cao (mM)
-    eca (mV)
     gmax  = 0.001 (mho/cm2)
-    iCaH  = 0.0 (mA/cm2)
 
     : m-gate
     theta_m0 = -20.0 (mV)
@@ -56,7 +50,17 @@ STATE {
 }
 
 ASSIGNED { 
+    : read simulator variables
+    v (mV)
+    cai (mM)
+    cao (mM)
+    eca (mV)
+
+    : assigned simulator variables
     ica (mA/cm2)
+
+    : assigned mechanism variables
+    iCaH (mA/cm2)
 
     taum (ms)
     minf
