@@ -32,6 +32,7 @@ NEURON {
     SUFFIX NaP
     USEION na READ ena WRITE ina
     RANGE gmax, iNa
+    RANGE minf, hinf, sinf, taum, tauh, taus
 }
 
 PARAMETER {
@@ -52,8 +53,8 @@ PARAMETER {
     h0 = 0.154
     theta_h = -57.0 (mV)
     k_h = -4.0 (mV)
-    tau_h0 = 10.0 (ms)
-    tau_h1 = 17.0 (ms)
+    tau_h0 = 30.0 (ms)
+    tau_h1 = 51.0 (ms)
     phi_h = -34.0 (mV)
     sigma_h0 = -26.0 (mV)
     sigma_h1 = -31.9 (mV)
@@ -87,7 +88,6 @@ ASSIGNED {
     minf
     taum (ms)
     theta_m (mV)
-    T_Q10
     
     hinf
     tauh (ms)
@@ -107,14 +107,6 @@ BREAKPOINT {
 UNITSOFF
 
 INITIAL {
-    LOCAL ktemp,ktempb,ktemp1,ktemp2
-
-    if (activate_Q10>0) {
-        T_Q10 = Q10^((celsius-22)/10)
-    } else {
-        T_Q10 = 1.0
-    }
-
     theta_m = theta_m0 + (k_m * (log((1 / pow(0.5, 1/3)) - 1)))
     settables(v)
 
@@ -131,8 +123,15 @@ DERIVATIVE states {
 }
 
 PROCEDURE settables(v) {
-    LOCAL alpham, betam
-    TABLE minf, taum, hinf, tauh, sinf, alphas, betas, taus FROM -100 TO 100 WITH 400
+    LOCAL alpham, betam, aphas, betas, T_Q10
+    TABLE minf, taum, hinf, tauh, sinf, taus FROM -100 TO 100 WITH 400
+
+    : Temperature adjustment for rates
+    if (activate_Q10>0) {
+        T_Q10 = Q10^((celsius-22)/10)
+    } else {
+        T_Q10 = 1.0
+    }
 
     : Activation & Deactivation (m-gate)
     minf = 1.0 / (1.0 + exp((theta_m - v)/k_m))
