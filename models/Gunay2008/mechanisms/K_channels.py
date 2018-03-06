@@ -6,6 +6,15 @@ from solvers.mechanism import (
     v, exp, log,
 )
 
+nrn_mechs = [ # suffixes for K-channels
+    'Kv2',
+    'Kv3',
+    'Kv4f',
+    'Kv4s',
+    'KCNQ',
+    'SK',
+]
+
 class Kv3_channel(mechanism.MechanismBase):
     """
     fast activated potassium Kv3 (Kv3.1/3.4) channel for GPe neuron
@@ -58,7 +67,7 @@ class Kv3_channel(mechanism.MechanismBase):
 
         # RHS_EXPRESSIONS
         ## m gate
-        theta_m = mech.theta_m0 + (mech.k_m * (log((1 / pow(0.5, 1/4)) - 1)))
+        theta_m = mech.theta_m0 + (mech.k_m * log((1.0 / pow(0.5, 1.0/4.0)) - 1.0))
 
         minf = state_steadystate(
                     1.0 / (1.0 + exp((theta_m - v)/mech.k_m)),
@@ -83,11 +92,44 @@ class Kv3_channel(mechanism.MechanismBase):
         dh = state_derivative((hinf - h) / tau_h, state='h')
 
         # BREAKPOINT block
-        ina = Current(mech.gmax * m**m.power * h**h.power * (v-mech.ek), ion='na')
+        ik = Current(mech.gmax * m**m.power * h**h.power * (v-mech.ek), ion='k')
 
         super(mech, mech).DYNAMICS()
 
+def plot_IV_curves():
+    """
+    Plot I-V curves for K channel mechanisms
+    """
+    from common.channel_analysis import ivcurve
+
+    from matplotlib import pyplot as plt
+    import neuron
+    h = neuron.h
+
+    # Load NEURON libraries, mechanisms
+    # import os
+    # nrn_dll_path = os.path.dirname(__file__)
+    # neuron.load_mechanisms(nrn_dll_path)
+
+    # h.CVode().active(1)
+
+    for mech_name in nrn_mechs:
+        print('Generating I-V curve for {} ...'.format(mech_name))
+        ik, v = ivcurve(mech_name, 'ik')
+
+        plt.figure()
+        plt.plot(v, ik, label='ik_' + mech_name)
+
+        plt.suptitle(mech_name)
+        plt.xlabel('v (mV)')
+        plt.ylabel('current (mA/cm^2)')
+        plt.legend()
+        plt.show(block=False)
+
 if __name__ == '__main__':
     # Create channel
-    chan = Kv3_channel()
-    chan.plot_steadystate_gating()
+    # chan = Kv3_channel()
+    # chan.plot_steadystate_gating()
+
+    # Plot response of mod file channel
+    plot_IV_curves()

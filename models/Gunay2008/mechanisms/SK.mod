@@ -35,12 +35,7 @@ NEURON {
 }
 
 PARAMETER {
-    v (mV)
-    dt (ms)
     gmax  = 0.005 (mho/cm2)
-    iSK  = 0.0 (mA/cm2)
-    cai (mM)
-    ek (mV)
 
     ECh = 0.00035 (mM)
     HCoeff = 4.6
@@ -54,8 +49,18 @@ STATE {
     m
 }
 
-ASSIGNED { 
+ASSIGNED {
+    : read simulator variables
+    v (mV)
+    cai (mM)
+    ek (mV)
+
+    : assigned simulator variables
     ik (mA/cm2)
+
+    : assigned mechanism variables
+    iSK (mA/cm2)
+
     minf
     taum (ms)
 }

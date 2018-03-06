@@ -33,10 +33,7 @@ NEURON {
 }
 
 PARAMETER {
-    v (mV)
-    dt (ms)
     gmax  = 0.5e-4 (mho/cm2)
-    iHCN  = 0.0 (mA/cm2)
     eh = -30 (mV)
 
     : m-gate
@@ -53,8 +50,14 @@ STATE {
     m
 }
 
-ASSIGNED { 
+ASSIGNED {
+    : read simulator variables
+    v (mV)
+    
+    : assigned mechanism variables
     ih (mA/cm2)
+    iHCN (mA/cm2)
+
     minf
     taum (ms)
 }

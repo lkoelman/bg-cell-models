@@ -35,11 +35,7 @@ NEURON {
 }
 
 PARAMETER {
-    v (mV)
-    dt (ms)
     gmax  = 0.001 (mho/cm2)
-    iKv3  = 0.0 (mA/cm2)
-    ek (mV)
 
     : m-gate (n-gate in Hendrickson et al., 2010)
     theta_m0 = -13.0 (mV)
@@ -63,8 +59,16 @@ STATE {
     m h
 }
 
-ASSIGNED { 
+ASSIGNED {
+    : read simulator variables
+    v (mV)
+    ek (mV)
+
+    : assigned simulator variables
     ik (mA/cm2)
+
+    : assigned mechanism variables
+    iKv3 (mA/cm2)
 
     minf
     taum (ms)

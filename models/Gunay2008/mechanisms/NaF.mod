@@ -34,11 +34,7 @@ NEURON {
 }
 
 PARAMETER {
-    v (mV)
-    dt (ms)
     gmax  = 0.001 (mho/cm2)
-    iNa  = 0.0 (mA/cm2)
-    ena (mV)
 
     : m-gate - activation & deactivation
     k_m = 5.0 (mV)          : @aliases Km
@@ -72,8 +68,16 @@ STATE {
     m h s
 }
 
-ASSIGNED { 
+ASSIGNED {
+    : read built-in variables
+    v (mV)
+    ena (mV)
+
+    : assigned built-in variables
     ina (mA/cm2)
+
+    : assigned mechanism variables
+    iNa (mA/cm2)
 
     minf
     taum (ms)
