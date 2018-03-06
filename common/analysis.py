@@ -236,7 +236,8 @@ def recordTraces(secs, traceSpecs, recordStep=0.05, duration=None, recData=None)
 			# Get pointer/reference to variable to record
 			if 'mech' in spec:  # eg. soma(0.5).hh._ref_gna
 				ptr = seg.__getattribute__(spec['mech']).__getattribute__('_ref_'+spec['var'])
-			else:  # eg. soma(0.5)._ref_v
+			else:
+				# No mechanism. E.g. soma(0.5)._ref_v
 				ptr = seg.__getattribute__('_ref_'+spec['var'])
 			
 			# find a POINT_PROCESS in segment to imptove efficiency
@@ -331,7 +332,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		
 	Returns figure handles
 	"""
-
+	trace_vecs = traceData
 	tracesList = traceData.keys()
 	if includeTraces is not None:
 		tracesList = [trace for trace in tracesList if trace in includeTraces]
@@ -339,8 +340,9 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 		tracesList = [trace for trace in tracesList if trace not in excludeTraces]
 
 	# Convert to numpy
-	for trace in traceData.keys():
-		traceData[trace] = to_numpy(traceData[trace])
+	traceData = collections.OrderedDict()
+	for trace_name in tracesList:
+		traceData[trace_name] = to_numpy(trace_vecs[trace_name])
 
 	# time range
 	first_trace = traceData[tracesList[0]]

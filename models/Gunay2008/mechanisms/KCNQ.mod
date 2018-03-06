@@ -57,7 +57,6 @@ ASSIGNED {
 
     minf
     taum (ms)
-    theta_m (mV)
 }
 
 BREAKPOINT {
@@ -69,7 +68,6 @@ BREAKPOINT {
 UNITSOFF
 
 INITIAL {
-    theta_m = theta_m0 + (k_m * (log((1 / pow(0.5, 1/4)) - 1)))
     settables(v)
     m = minf
 }
@@ -80,7 +78,11 @@ DERIVATIVE states {
 }
 
 PROCEDURE settables(v) {
+    LOCAL theta_m
     TABLE minf, taum FROM -100 TO 100 WITH 400
+
+    : derived parameters cannot go in INITIAL (uninitialized when table made)
+    theta_m = theta_m0 + (k_m * (log((1 / pow(0.5, 1/4)) - 1)))
 
     : m-gate
     minf = 1.0 / (1.0 + exp((theta_m - v)/k_m))

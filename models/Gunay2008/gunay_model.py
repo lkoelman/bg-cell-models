@@ -141,7 +141,7 @@ def write_json_after_edit(filenames):
 
 
 
-def define_mechanisms(filename):
+def define_mechanisms(filename, exclude_mechs=None):
     """
     Create list of mechanism descriptions that link NEURON mechanisms to 
     specific regions in the cell, identified by named section lists.
@@ -149,12 +149,17 @@ def define_mechanisms(filename):
     @param      filename : str
                 Filename of json file containing MOD mechanisms for each
                 region (section list)
+
+    @param      exclude : list(str)
+                List of mechanism names to exclude.
     
     @return     mechanisms: list(ephys.mechanisms.NrnModMechanism)
                 List of NEURON mechanism descriptions as Ephys objects.
     """
+    if exclude_mechs is None:
+        exclude_mechs = []
+
     full_filename = os.path.join(script_dir, filename)
-    
     with open(full_filename) as json_file:
         mech_definitions = json.load(json_file)
 
@@ -166,6 +171,8 @@ def define_mechanisms(filename):
                                         seclist_name=seclist_name)
         
         for channel in mod_names:
+            if channel in exclude_mechs:
+                continue
             mechanisms.append(ephys.mechanisms.NrnMODMechanism(
                             name='{}.{}'.format(channel, seclist_name),
                             mod_path=None,
@@ -176,7 +183,11 @@ def define_mechanisms(filename):
     return mechanisms
 
 
-def define_parameters(genesis_params_file, params_mapping_file):
+def define_parameters(
+        genesis_params_file,
+        params_mapping_file,
+        exclude_mechs=None,
+    ):
     """
     Create list of parameter descriptions that link (distributions of)
     mechanism parameters to specific regions in the cell, 
@@ -189,6 +200,8 @@ def define_parameters(genesis_params_file, params_mapping_file):
     @return     parameters: list(ephys.parameters.NrnParameter)
                 List of NEURON parameter descriptions as Ephys objects.
     """
+    if exclude_mechs is None:
+        exclude_mechs = []
 
     fullfile = os.path.join(script_dir, genesis_params_file)
     with open(fullfile) as json_file:
@@ -207,6 +220,12 @@ def define_parameters(genesis_params_file, params_mapping_file):
         dummysec.insert(mech_name)
 
     for param_spec in param_specs:
+
+        # Check if parameter should be excluded
+        if 'mech' in param_spec and param_spec['mech'] in exclude_mechs:
+            logger.debug('Skipping parameter {} because its mechanism '
+                        'is in excluded mechanisms list'.format(param_spec))
+            continue
 
         # Get param name in NEURON
         if 'param_name' in param_spec:
@@ -334,7 +353,7 @@ def define_morphology(filename, replace_axon):
                 do_replace_axon=False)
 
 
-def define_cell():
+def define_cell(exclude_mechs=None):
     """
     Create GPe cell model
     """
@@ -345,10 +364,12 @@ def define_cell():
                         'morphology/bg0121b_axonless_GENESIS_import.swc',
                         replace_axon=False),
                 mechs=define_mechanisms(
-                        'config/mechanisms.min.json'),
+                        'config/mechanisms.min.json',
+                        exclude_mechs=exclude_mechs),
                 params=define_parameters(
                         'config/params_hendrickson2011_GENESIS.min.json',
-                        'config/map_params_hendrickson2011.min.json'))
+                        'config/map_params_hendrickson2011.min.json',
+                        exclude_mechs=exclude_mechs))
 
     # DONE: write mechanisms.json
     #   - [x] find out how Ephys makes SectionLists

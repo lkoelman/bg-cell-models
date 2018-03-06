@@ -1,12 +1,3 @@
-// Parameters from model https:#senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
-// in following scripts:
-//   + /articleCode/commonGPFull/GP1_defaults.g
-//   + /articleCode/commonGPFull/simdefaults.g
-//   + /articleCode/commonGPFull/actpars.g
-//
-// Parameters are copied from GENESIS script and put in dictionary format 
-// using regex replace, and following regular expression: 
-//      > r"float\s(\w+)\s+\=\s+(-?[\d.]+)" replaced by '$1' : $2,
 {
     "Abeta_NaP": 6.94, 
     "B_Ca_GP_conc": 6.933333333333332e-12, 
@@ -82,8 +73,10 @@
     "Vhalfn_KCNQ": -0.0285, 
     "Vhalfn_Kv2": -0.018, 
     "Vhalfn_Kv3": -0.013, 
+    "axon_shell_vol": 6.283185183253437e-08, 
     "dQ10_SK": 2, 
     "dendNaF": 40, 
+    "dend_shell_vol": 6.283185183253437e-08, 
     "hmin_Kv2": 0.2, 
     "hmin_Kv3": 0.6, 
     "hmin_NaP": 0.154, 
@@ -92,6 +85,7 @@
     "npower_Kv2": 4, 
     "npower_Kv3": 4, 
     "shell_thick": 2e-08, 
+    "soma_shell_vol": 6.283185050026674e-08, 
     "tau_CaClearance": 0.001, 
     "tauhV0_NaF": -0.043, 
     "tauhmax_NaF": 0.004, 

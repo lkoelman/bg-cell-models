@@ -72,8 +72,6 @@
 // NOTE: reversal potentials and default conductances are set in this script
 // NOTE: parameters that don't have soma/dend/axon specific value are already
 //       set in the .mod file itself
-// TODO: check that Ca buffering parameters are taken over correctly, also check
-//       buffering parameters in GPcomps.p
     {
         "param_name": "ena",
         "sectionlist": "all",
@@ -90,11 +88,21 @@
         "units": "V",
         "value": "{EK}"
     },
+    {
+        "param_name": "ek",
+        "sectionlist": "all",
+        "type": "section",
+        "dist_type": "uniform",
+        "units": "V",
+        "value": "{EK}"
+    },
 // #############################################################################
 // # Parameters from GPcomps.g
 // #############################################################################
 // see setfield statements in GPcomps.g
 // =============================================================================
+// SOMATIC parameters
+// -----------------------------------------------------------------------------
 // somatic passive parameters
     {
         "param_name": "Ra",
@@ -128,14 +136,14 @@
         "units": "V",
         "value": "{ELEAK_sd}"
     },
-    {
-        "param_name": "eca",
-        "sectionlist": "somatic",
-        "type": "section",
-        "dist_type": "uniform",
-        "units": "V",
-        "value": "{ECa}"
-    },
+    // { // ERROR WHEN GHK USED AND ASSIGNED BEFORE MECHANISM INSERTED
+    //     "param_name": "eca",
+    //     "sectionlist": "somatic",
+    //     "type": "section",
+    //     "dist_type": "uniform",
+    //     "units": "V",
+    //     "value": "{ECa}"
+    // },
     // {
     //     "param_name": "eh_HCN",
     //     "sectionlist": "somatic",
@@ -152,6 +160,34 @@
     //     "units": "V",
     //     "value": "{Eh}"
     // },
+// -----------------------------------------------------------------------------
+// somatic Ca buffering
+    {
+        "mech": "Calcium",
+        "mech_param": "B",
+        "sectionlist": "somatic",
+        "type": "range",
+        "dist_type": "uniform",
+        "value": "{B_Ca_GP_conc}"
+    },
+    {
+        "mech": "Calcium",
+        "mech_param": "tau",
+        "sectionlist": "somatic",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "seconds",
+        "value": "{tau_CaClearance}"
+    },
+    {
+        "mech": "Calcium",
+        "mech_param": "shell_vol",
+        "sectionlist": "somatic",
+        "type": "range",
+        "dist_type": "uniform",
+        "value": "{soma_shell_vol}"
+    },
+// -----------------------------------------------------------------------------
 // somatic conductances
     {
         "param_name": "gmax_NaF",
@@ -298,6 +334,7 @@
         "units": "V",
         "value": "{ELEAK_sd}"
     },
+// -----------------------------------------------------------------------------
 // axonal conductances
     {
         "param_name": "gmax_NaF",
@@ -403,14 +440,14 @@
         "units": "V",
         "value": "{ELEAK_sd}"
     },
-    {
-        "param_name": "eca",
-        "sectionlist": "basal",
-        "type": "section",
-        "dist_type": "uniform",
-        "units": "V",
-        "value": "{ECa}"
-    },
+    // {
+    //     "param_name": "eca",
+    //     "sectionlist": "basal",
+    //     "type": "section",
+    //     "dist_type": "uniform",
+    //     "units": "V",
+    //     "value": "{ECa}"
+    // },
     // {
     //     "param_name": "eh_HCN",
     //     "sectionlist": "basal",
@@ -427,6 +464,33 @@
     //     "units": "V",
     //     "value": "{Eh}"
     // },
+// -----------------------------------------------------------------------------
+// dendritic Ca buffering
+    {
+        "mech": "Calcium",
+        "mech_param": "B",
+        "sectionlist": "basal",
+        "type": "range",
+        "dist_type": "uniform",
+        "value": "{B_Ca_GP_conc}"
+    },
+    {
+        "mech": "Calcium",
+        "mech_param": "tau",
+        "sectionlist": "basal",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "seconds",
+        "value": "{tau_CaClearance}"
+    },
+    {
+        "mech": "Calcium",
+        "mech_param": "shell_vol",
+        "sectionlist": "basal",
+        "type": "range",
+        "dist_type": "uniform",
+        "value": "{dend_shell_vol}"
+    },
 // -----------------------------------------------------------------------------
 // dendritic conductances
     {

@@ -6,10 +6,112 @@ from solvers.mechanism import (
     v, exp, log,
 )
 
+import math
+PI = math.pi
+
 nrn_mechs = [ # suffixes for Ca-channels
     'CaHVA',
     'Calcium', # not a channel; calcium buffering mechanism
 ]
+
+def plot_Ca_buffering(export_locals=False):
+    """
+
+    NOTES from GENESIS manual
+    -------------------------
+
+    http://genesis-sim.org/GENESIS/Hyperdoc/Manual-26.html#ss26.1
+
+    Single shell model for Ca concentration.
+    Solves  dC/dt = B*Ik - C/tau.
+    Ca = Ca_base + C.
+
+    In SI units, where concentration is moles/m^3
+    (milli-moles/liter) and current is in amperes, theory gives B
+    = 5.2e-6/(shell volume).  In practice, B is a parameter to be
+    fitted or estimated from experiment, as buffering, non-uniform
+    distribution of Ca, etc., will modify this value.  If thick =
+    0, the readcell routine calculates B by dividing the "density"
+    parameter in the cell parameter file by the volume of the
+    compartment.  Otherwise, it scales as a true shell, with the
+    volume of a shell having thickness thick.  A negative value of
+    the "density" parameter may be used to indicate that it should
+    be taken as an absolute value of B, without scaling.  
+    
+    """
+
+    # Hendrickson (2011) - GPchans.g
+    print(plot_Ca_buffering.__doc__)
+    
+    ## Parameters in simdefaults.g
+    B_Ca_GP_conc = 4.0/3.0*5.2e-12
+    shell_thick  = 20e-9        #  meters (NOTE: seems to be global param: same for all compartments)
+    tau_CaClearance = 0.001     #  time constant for Ca2+ clearance (sec)
+    
+    ## Settings in GPchans.g (creation of mechanism)
+    class Ca_GP_conc:
+        """ Ca buffering mechanism """
+        
+        tau = tau_CaClearance   # sec
+        B = 5.2e-6              # Moles per coulomb, later scaled to conc
+        Ca_base = 5e-05         # Units in mM, so = 50 nM.
+        
+        def __init__(self):
+            self.tau = Ca_GP_conc.tau
+            self.B = Ca_GP_conc.B
+            self.Ca_base = Ca_GP_conc.Ca_base
+    
+    ## Settings in GPcomps.g
+    ### Soma sections
+    dia = 1. 
+    rad = dia/2.
+    rad_core = rad - shell_thick # shell_thick is in (m) so rad too
+    surf = 4*PI*rad*rad
+    vol = 4.0/3.0*PI*rad*rad*rad
+    core_vol = 4.0/3.0*PI*rad_core*rad_core*rad_core
+    shell_vol = vol - core_vol # m^3
+    
+    soma_Ca_conc = Ca_GP_conc()
+    soma_Ca_conc.B = B_Ca_GP_conc / shell_vol
+
+    ### Axon hillock sections
+    L = 1.
+    dia = 1.
+    rad = dia / 2.
+    surf = 2*PI*rad*L
+    vol = PI*rad*rad*L
+    if dia > (shell_thick*2):
+        rad_core = rad - shell_thick
+        core_vol = PI*rad_core*rad_core*L
+        shell_vol = vol - core_vol
+    else:
+        shell_vol = vol
+
+    hillock_Ca_conc = Ca_GP_conc()
+    hillock_Ca_conc.B = B_Ca_GP_conc / shell_vol
+
+    ### Dendritic sections
+    L = 1.
+    dia = 1.
+    rad = dia / 2.
+    surf = 2*PI*rad*L
+    vol = PI*rad*rad*L
+    if dia > (shell_thick*2):
+        rad_core = rad - shell_thick
+        core_vol = PI*rad_core*rad_core*L
+        shell_vol = vol - core_vol
+    else:
+        shell_vol = vol
+
+    dend_Ca_conc = Ca_GP_conc()
+    dend_Ca_conc.B = B_Ca_GP_conc / shell_vol
+
+
+    if export_locals:
+        globals().update(locals())
+
+    return soma_Ca_conc, hillock_Ca_conc, dend_Ca_conc
+
 
 def plot_IV_curves():
     """
@@ -33,10 +135,11 @@ def plot_IV_curves():
         
         if mech_name=='Calcium':
             quantity = 'cai'
-            descr = 'current (mA/cm^2)'
+            descr = 'concentration (mM)'
         else:
             quantity = 'ica'
-            descr = 'concentration (mM)'
+            descr = 'current (mA/cm^2)'
+            
         
         ik, v = ivcurve(mech_name, quantity)
 

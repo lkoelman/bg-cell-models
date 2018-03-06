@@ -155,8 +155,70 @@ script_actpars = {
     'G_h_HCN2_dend' : 0.2*2.5,
 }
 
+# Calcium buffering parameters #################################################
+from math import pi as PI
+
+B_Ca_GP_conc = 4.0/3.0*5.2e-12  # 3.6e-7 #changed on 10/15/2009 to be consistent with GPcomps.g
+shell_thick = 20e-9             #  meters 
+tau_CaClearance = 0.001         #  time constant for Ca2+ clearance (sec)
+
+### Soma sections
+dia = 1.                        # (meters)
+rad = dia/2.
+rad_core = rad - shell_thick    # shell_thick is in (m) so rad too
+surf = 4*PI*rad*rad
+vol = 4.0/3.0*PI*rad*rad*rad
+core_vol = 4.0/3.0*PI*rad_core*rad_core*rad_core
+shell_vol = vol - core_vol      # (m^3)
+
+soma_shell_vol = shell_vol
+soma_B = B_Ca_GP_conc / shell_vol
+
+### Axon hillock sections
+L = 1.
+dia = 1.
+rad = dia / 2.
+surf = 2*PI*rad*L
+vol = PI*rad*rad*L
+if dia > (shell_thick*2):
+    rad_core = rad - shell_thick
+    core_vol = PI*rad_core*rad_core*L
+    shell_vol = vol - core_vol
+else:
+    shell_vol = vol
+
+axon_shell_vol = shell_vol
+axon_B = B_Ca_GP_conc / shell_vol
+
+### Dendritic sections
+L = 1.
+dia = 1.
+rad = dia / 2.
+surf = 2*PI*rad*L
+vol = PI*rad*rad*L
+if dia > (shell_thick*2):
+    rad_core = rad - shell_thick
+    core_vol = PI*rad_core*rad_core*L
+    shell_vol = vol - core_vol
+else:
+    shell_vol = vol
+
+dend_shell_vol = shell_vol
+dend_B = B_Ca_GP_conc / shell_vol
+
+ca_buffering_params = {
+    'B_Ca_GP_conc': B_Ca_GP_conc,
+    'shell_thick': shell_thick,
+    'tau_CaClearance': tau_CaClearance,
+    'soma_shell_vol': soma_shell_vol,
+    'axon_shell_vol': axon_shell_vol,
+    'dend_shell_vol': dend_shell_vol,
+}
+
+################################################################################
+
 all_params = {}
-for param_dict in script_sim_defaults, script_gp_defaults, script_actpars:
+for param_dict in script_sim_defaults, script_gp_defaults, script_actpars, ca_buffering_params:
     all_params.update(param_dict)
 
 
