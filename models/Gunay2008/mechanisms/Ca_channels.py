@@ -2,7 +2,7 @@ import solvers.mechanism as mechanism
 from solvers.mechanism import (
     State, Current, Parameter,
     state_derivative, state_steadystate, state_timeconst,
-    mV, ms, S, cm2, nodim,
+    mV, ms, S, cm2, m2, nodim,
     v, exp, log,
 )
 
@@ -11,8 +11,96 @@ PI = math.pi
 
 nrn_mechs = [ # suffixes for Ca-channels
     'CaHVA',
+    'CaHVA2',
     'Calcium', # not a channel; calcium buffering mechanism
 ]
+
+
+class CaHVA_channel(mechanism.MechanismBase):
+    """
+    Persistent Na channel
+
+    Based on Magistretti & Alonso (1999), JGP 114:491-509
+    and Magistretti & Alonso (2002), JGP 120: 855-873.
+    """
+
+    @classmethod
+    def PARAMETERS(mech):
+        """
+        Define mechanism parameters
+
+        NOTES from GENESIS manual
+        -------------------------
+
+        See documentation for 'setuptau': 
+        http://genesis-sim.org/GENESIS/Hyperdoc/Manual-25.html#ss25.160
+
+        And documentation for 'tabchannel':
+        http://genesis-sim.org/GENESIS/Hyperdoc/Manual-26.html#ss26.62
+        """
+
+        G_Ca_HVA_dend = 0.15 * S/m2
+        G_Ca_HVA_soma = 2.0 * S/m2
+        
+        gmax  = G_Ca_HVA_dend.to('S/cm2')
+        eca = 130.0 * mV
+
+        tau =  0.2 * ms   # estimated from traces Q10=2.5 adjusted
+        K = -7.0 * mV # -1*{Kn_CaHVA} (V)
+        V0 = -20.0 * mV # {Vhalfn_CaHVA} (V)
+
+        # setuptau Ca_HVA_GP X  {tau} {tau*1e-6} 0 0 1e6 1 0 1 {-1.0*V0} {K} -range {xmin} {xmax}
+        # unit scaling: D and F need to be scaled from V to mV
+
+        Atau = tau
+        Btau = tau * 1e-6
+        Ctau = 0.0 * nodim
+        Dtau = 0.0 * mV
+        Ftau = 1e9 * mV
+        # def tauX(v,A,B,C,D,F):
+        #     # A,B,C,D,F = tau, tau*1e-6, 0., 0., 1e9
+        #     return (A + B * v) / (C + exp((v + D) / F))
+
+        Ainf = 1.0 * nodim
+        Binf = 0.0 * 1/mV
+        Cinf = 1.0 * nodim
+        Dinf = -V0 # already converted
+        Finf = K   # already converted
+        # def Xinf(v,A,B,C,D,F):
+        #     # A,B,C,D,F = 1., 0., 1., -1.0*V0, K
+        #     return (A + B * v) / (C + exp((v + D) / F))
+
+
+        super(mech, mech).PARAMETERS() # NOTE: cannot use explicit MechanismBase because we want base method with arg equal to subclass
+
+    @classmethod
+    def DYNAMICS(mech):
+        """
+        Define mechanism dynamics.
+        """
+
+        # STATE block
+        m = State('m', power=1)
+
+        # RHS expressions
+        ## m gate
+        minf = state_steadystate(
+                    (mech.Ainf + mech.Binf * v) / (mech.Cinf + exp((v + mech.Dinf) / mech.Finf)),
+                    state='m')
+
+        
+        tau_m = state_timeconst(
+                    (mech.Atau + mech.Btau * v) / (mech.Ctau + exp((v + mech.Dtau) / mech.Ftau)),
+                    state='m')
+
+        # DERIVATIVE block
+        dm = state_derivative((minf - m) / tau_m, state='m')
+
+        # BREAKPOINT block
+        ina = Current(mech.gmax * m**m.power * (v-mech.eca), ion='ca')
+
+        super(mech, mech).DYNAMICS()
+
 
 def plot_Ca_buffering(export_locals=False):
     """
@@ -153,5 +241,9 @@ def plot_IV_curves():
         plt.show(block=False)
 
 if __name__ == '__main__':
+    # Create channel
+    chan = CaHVA_channel()
+    chan.plot_steadystate_gating()
+
     # Plot response of mod file channel
-    plot_IV_curves()
+    # plot_IV_curves()

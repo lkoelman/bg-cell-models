@@ -35,6 +35,7 @@ mA  = ureg('mA')
 ms  = ureg('ms')
 S   = ureg('S')
 cm2 = ureg('cm^2')
+m2  = ureg('m^2')
 nodim = ureg('dimensionless')
 
 # Symbolic variable for membrane voltage

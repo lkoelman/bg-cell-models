@@ -17,6 +17,7 @@ from neuron import h
 ureg.define('Ohm = ohm')
 ureg.define('mho = 1/ohm')
 ureg.define('cm2 = cm^2')
+ureg.define('m2 = m^2')
 
 
 def get_nrn_units(nrn_obj, attr, hoc_classname=None):

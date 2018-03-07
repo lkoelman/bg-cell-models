@@ -32,21 +32,19 @@ UNITS {
 }
 
 NEURON {
-    SUFFIX CaHVA
+    SUFFIX CaHVA2
     USEION ca READ cai,cao,eca WRITE ica
     RANGE gmax, iCaH
-    : RANGE theta_m, k_m, tau_m, k_tau
 }
 
 PARAMETER {
     gmax  = 0.001 (mho/cm2)
 
     : m-gate
-    theta_m = 20.0 (mV)
-    k_m = -7.0 (mV)
-
-    tau_m = 0.2 (ms)
-    k_tau = 1e9 (mV)
+    theta_m0 = -20.0 (mV)
+    k_m = 7.0 (mV)
+    tau_m0 = 0.2 (ms) : estimated from traces Q10=2.5 adjusted
+    tau_m1 = 0.2 (ms)
 
     : read simulator variables
     v (mV)
@@ -90,11 +88,15 @@ DERIVATIVE states {
 }
 
 PROCEDURE settables(v) {
+    LOCAL theta_m
     TABLE minf, taum FROM -100 TO 100 WITH 400
 
+    : derived parameters cannot go in INITIAL (uninitialized when table made)
+    theta_m = theta_m0 + (k_m * (log((1/0.5) - 1)))
+
     : m-gate
-    minf = 1.0 / (1.0 + exp((v + theta_m) / k_m))
-    taum = (tau_m + tau_m*1e-6 * v) / (exp((v) / k_tau))
+    minf = 1.0 / (1.0 + exp((theta_m - v)/k_m))
+    taum = tau_m0 + ((tau_m1 - tau_m0) / (exp( (theta_m - v) / k_m ) + exp(-(theta_m - v) / k_m )))
 }
 
 : GHK equation, taken from NEURON examples (nrn/examples/nrniv/nmodl/cachan.mod)

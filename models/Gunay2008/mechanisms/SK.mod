@@ -45,10 +45,6 @@ PARAMETER {
     dQ10_SK = 2
 }
 
-STATE {
-    m
-}
-
 ASSIGNED {
     : read simulator variables
     v (mV)
@@ -65,17 +61,19 @@ ASSIGNED {
     taum (ms)
 }
 
-BREAKPOINT {
-    SOLVE states METHOD cnexp
-    ik  = gmax*m*(v-ek)
-    iSK = ik
+STATE {
+    m
 }
-
-UNITSOFF
 
 INITIAL {
     settables(cai)
     m = minf
+}
+
+BREAKPOINT {
+    SOLVE states METHOD cnexp
+    ik  = gmax*m*(v-ek)
+    iSK = ik
 }
 
 DERIVATIVE states {  
@@ -94,4 +92,3 @@ PROCEDURE settables(cai) { LOCAL can, can0
     }
 }
 
-UNITSON
