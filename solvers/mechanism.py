@@ -279,7 +279,7 @@ class MechanismBase:
 
     def __init__(self, *args, **kwargs):
         """
-        Inititialize instantiated mechanism.
+        Initialize instantiated mechanism.
         """
         super(MechanismBase, self).__init__(*args, **kwargs)
         # Copy class variables representing parameters so they can be modified

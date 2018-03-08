@@ -42,7 +42,7 @@ h.load_file("stdrun.hoc")
 # Debug messages
 from common import logutils
 logger = logutils.getBasicLogger('gunay')
-logutils.setLogLevel('verbose', ['gunay'])
+logutils.setLogLevel('quiet', ['gunay'])
 
 # Channel mechanisms (key = suffix of mod mechanism) : max conductance parameters
 gbar_dict = {
@@ -240,7 +240,7 @@ def define_parameters(
         # 'value' is an expression that maps from original GENESIS parameter name
         # to NEURON parameter value
         if 'value' in param_spec:
-            frozen = True
+            frozen = False # TODO: any reason this should True/False?
 
             # Interpret spec: can be expression or value
             spec = param_spec['value']
@@ -416,6 +416,27 @@ def define_cell(exclude_mechs=None):
     #   + ../actpars.g for active parameters
 
     return cell
+
+
+def define_pynn_model(exclude_mechs=None):
+    """
+    Create GPe cell model
+    """
+    import extensions.pynn.ephys_models as ephys_pynn
+
+    model = ephys_pynn.EphysModelWrapper(
+                'GPe',
+                morph=define_morphology(
+                        'morphology/bg0121b_axonless_GENESIS_import.swc',
+                        replace_axon=False),
+                mechs=define_mechanisms(
+                        'config/mechanisms.min.json',
+                        exclude_mechs=exclude_mechs),
+                params=define_parameters(
+                        'config/params_hendrickson2011_GENESIS.min.json',
+                        'config/map_params_hendrickson2011.min.json',
+                        exclude_mechs=exclude_mechs))
+    return model
 
 
 def create_cell():
