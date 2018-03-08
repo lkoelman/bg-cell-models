@@ -135,17 +135,16 @@ class EphysModelWrapper(ephys.models.CellModel):
         Factory method to create a cell that will not be stored on the
         cell description object.
 
+        @param      **kwargs : dict(str, object)
+                    Parameter name, value pairs
+
         @return     cell : HocObject
                     Return value of Hoc template.
 
         @see        Called by _build_cell(...) in module PyNN.neuron.simulator
                     https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
         """
-        # TODO: call super.__init__ with morph, mechs, params defined on class
-        #       by the Subclass. Then you don't have to create an icell wrapper.
-        #       For a specific cell, you will then have to create:
-        #           - a specific EphysModelWrapper subclass
-        #           - a specific NativeCellType sublass
+        # TODO: check if keyword arguments contain parameters and set them
 
         # First make params for ephys.models.CellModel
         # Get parameters from sublass
@@ -176,9 +175,17 @@ class EphysModelWrapper(ephys.models.CellModel):
         for mechanism in self.mechanisms:
             mechanism.instantiate(sim=sim, icell=icell)
         
-        # NOTE: params will be set and thus instantiated by pyNN Population
-        # for param in self.params.values():
-        #     param.instantiate(sim=sim, icell=icell)
+        # NOTE: default params will be passed by pyNN Population
+        kwarg_parameters = []
+        for param_name, param_value in kwargs.iteritems():
+            if param_name in self.parameter_names:
+                setattr(self, param_name, param_value) # calls property setter -> param.instantiate()
+                kwarg_parameters.append(param_name)
+
+        # Apply default parameters from class definition
+        for param in self.params.values():
+            if param.name.replace(".", "_") not in kwarg_parameters:
+                param.instantiate(sim=sim, icell=icell)
 
         # Attributes needed for PyNN
         self.source_section = icell.soma[0]

@@ -7,7 +7,6 @@ PyNN compatible cell models for GPe cell model.
 
 """
 
-import pyNN
 # from pyNN.standardmodels import StandardCellType
 from pyNN.neuron.cells import NativeCellType
 
@@ -75,11 +74,11 @@ class GPeCellType(NativeCellType):
 
     # TODO: to build interface properties: put generic things extracted from
     #       the Ephys CellModel in the encapsulated class, and put rest here.
-    # default_parameters = {
-    #     # ephys_model.params.values are ephys.Parameter objects
-    #     # ephys_param.name is same as key in ephys_model.params
-    #     ephys_param.name: ephys_param.value for ephys_param in ephys_model.params.values()
-    # }
+    default_parameters = {
+        # ephys_model.params.values are ephys.Parameter objects
+        # ephys_param.name is same as key in ephys_model.params
+        p.name.replace(".", "_"): p.value for p in model._ephys_parameters
+    }
 
     # extra_parameters = {}
     # default_initial_values = {'v': -65.0}
