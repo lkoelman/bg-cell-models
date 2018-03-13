@@ -32,6 +32,8 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
                         'config/params_hendrickson2011_GENESIS.min.json',
                         'config/map_params_hendrickson2011.min.json')
 
+    _ephys_locations = gunay_model.define_locations()
+    
     # _morph_func = functools.partial(
     #                     gunay_model.define_morphology,
     #                     'morphology/bg0121b_axonless_GENESIS_import.swc',

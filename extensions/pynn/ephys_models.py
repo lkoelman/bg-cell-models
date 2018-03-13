@@ -18,6 +18,26 @@ https://github.com/apdavison/BluePyOpt/blob/pynn-models/bluepyopt/ephys_pyNN/mod
 
 from copy import deepcopy
 import bluepyopt.ephys as ephys
+from pyNN.neuron import state as pynn_nrn_sim, h as pynn_nrn_h
+
+ephys_nrn_sim = None
+
+def ephys_sim_from_pynn():
+    """
+    Get Ephys NrnSimulator without changing parameters of wrapped
+    NEURON simulator from those set by pyNN.
+    """
+    global ephys_nrn_sim
+
+    if ephys_nrn_sim is None:
+        cvode_active = pynn_nrn_sim.cvode.active()
+        cvode_minstep = pynn_nrn_sim.cvode.minstep()
+        ephys_nrn_sim = ephys.simulators.NrnSimulator(
+                            dt=pynn_nrn_sim.dt,
+                            cvode_active=cvode_active,
+                            cvode_minstep=cvode_minstep)
+    return ephys_nrn_sim
+
 
 
 class CellModelMeta(type):
@@ -30,6 +50,10 @@ class CellModelMeta(type):
         """
         Create new type for a class definition that has this metaclass
         as its metaclass.
+
+        @effect     Converts each Ephys.Parameter object stored in subclass
+                    attribute '_ephys_parameters' into a class property,
+                    and stores its name in the 'parameter_names' attribute.
 
         @note       This method is called once every time a class is defined with 
                     MechanismType as its metaclass.
@@ -114,7 +138,8 @@ class EphysModelWrapper(ephys.models.CellModel):
         Create an empty cell in Neuron
 
         @override   CellModel.create_empty_cell
-                    The original function tries to recreate the template every
+
+                    The original function tries to recreate the Hoc template every
                     time so isn't suitable for instantiating multiple copies.
         """
         # TODO: find out how to create additional copies of a cell
@@ -196,3 +221,138 @@ class EphysModelWrapper(ephys.models.CellModel):
 
 
     # TODO: map attributes to (instantiated?) model's attributes as in pyNN/neuron/cells.py
+
+    # TODO: ensure that GPeCellType.receptor_types maps to an attribute that returns
+    #       a target object for a NetCon. E.g. if a receptor type is
+    #       "random_trunk_segment_AMPA", Connection.__init__ will use the return
+    #       value of this property as target for the NetCon.
+    #       
+    #       Potentially you can re-use classes SecListLocation and Synapse
+    #       from BluePyOpt.Ephys library. For example extend SecListLocation
+    #       with an AMPA/NMDA/... property that returns a synapse in the
+    #       instantiated location, and return this from property below.
+    #
+    #       Return a subclass of ephys.location. When you ask it for a receptor
+    #       type, it instantiates itself, and creates an appropriate synapse 
+    #       at that location. Make sure references are saved on this cell.
+    #       You can create these properties in the metaclass from the
+    #       location names like the cell parameters.
+
+
+from bluepyopt.ephys.locations import Location, EPhysLocInstantiateException
+from bluepyopt.ephys.serializer import DictMixin
+
+
+class SomaDistanceRangeLocation(Location, DictMixin):
+    """
+    Random segment between min and max distance from soma.
+    """
+
+    SERIALIZED_FIELDS = (
+        'name',
+        'comment',
+        'min_soma_distance',
+        'max_soma_distance'
+        'seclist_name',
+        'syn_mech_names')
+
+    # TODO: set serialized field to constructor arguments (info to reconstruct)
+    def __init__(
+            self,
+            name,
+            seclist_name=None,
+            min_distance=None,
+            max_distance=None,
+            syn_mech_names=None,
+            comment=''):
+        """
+        Constructor
+
+        @param      name : str
+                    Name of this object
+
+        @param      seclist_name : str
+                    Name of Neuron section list (ex: 'apical')
+
+        @param      syn_mech_names : list(str)
+                    List of NEURON synapse mechanism names
+        """
+
+        super(NrnSomaDistanceCompLocation, self).__init__(name, comment)
+        self.min_soma_distance = min_distance
+        self.max_soma_distance = max_distance
+        self.seclist_name = seclist_name
+        self.syn_mech_names = syn_mech_names
+
+
+    def __getattr__(self, name):
+        """
+        Override so synapse objects can be requested as attributes.
+
+        @note   __getattr__ is only called as a last resort i.e. if there are no
+                attributes in the instance that match the name.
+        """
+        if name in self.syn_mech_names:
+            return self.get_synapse(name)
+        else:
+            raise AttributeError()
+
+
+    def get_synapse(self, mechanism_name):
+        """
+        Get a synapse with given mechanism at this location.
+
+        @return     synapse : nrn.HocObject
+                    Instantiated Neuron POINT_PROCESS mechanism
+        """
+        # TODO: make a synapse, or check if mapped segment already has one.
+        # TODO: maybe make base class so we can also use specific sections without
+        #       duplication functionality.
+        pass
+
+
+    def instantiate(self, sim=None, icell=None):
+        """
+        Find the instantiate compartment
+        """
+
+        soma = icell.soma[0]
+
+        sim.neuron.h.distance(0, 0.5, sec=soma)
+
+        iseclist = getattr(icell, self.seclist_name)
+
+        icomp = None
+        max_diam = 0.0
+
+        for isec in iseclist:
+            start_distance = sim.neuron.h.distance(1, 0.0, sec=isec)
+            end_distance = sim.neuron.h.distance(1, 1.0, sec=isec)
+
+            min_distance = min(start_distance, end_distance)
+            max_distance = max(start_distance, end_distance)
+
+            if min_distance <= self.soma_distance <= end_distance:
+                comp_x = float(self.soma_distance - min_distance) / \
+                    (max_distance - min_distance)
+
+                comp_diam = isec(comp_x).diam
+
+                if comp_diam > max_diam:
+                    icomp = isec(comp_x)
+
+        if icomp is None:
+            raise EPhysLocInstantiateException(
+                'No comp found at %s distance from soma' %
+                self.soma_distance)
+
+        return icomp
+
+
+    def __str__(self):
+        """String representation"""
+
+        return '%f micron from soma in %s' % (
+            self.soma_distance, self.seclist_name)
+
+
