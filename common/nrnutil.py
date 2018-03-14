@@ -69,7 +69,11 @@ def get_mod_name(hobj):
 
     @param  hobj        HocObject: synapse POINT_PROCESS
     """
-    match_mod = re.search(r'^[a-zA-Z0-9]+', hobj.hname())
+    if hasattr(hobj, 'htype'):
+        hoc_name = hobj.htype.hname() # for wrapped HocObject, mechanism name is in htype attribute
+    else:
+        hoc_name = hobj.hname()
+    match_mod = re.search(r'^[a-zA-Z0-9]+', hoc_name)
     modname = match_mod.group()
     return modname
 

@@ -11,11 +11,39 @@ PyNN compatible cell models for GPe cell model.
 from pyNN.neuron.cells import NativeCellType
 
 import extensions.pynn.ephys_models as ephys_pynn
+from extensions.pynn.ephys_locations import SomaDistanceRangeLocation
+
 import gunay_model
 
 # Debug messages
 from common import logutils
 logutils.setLogLevel('quiet', ['bluepyopt.ephys.parameters', 'bluepyopt.ephys.mechanisms'])
+
+
+def define_gpe_locations():
+    """
+    Define locations / regions on the cell that will function as the target
+    of synaptic connections.
+
+    @return     list(SomaDistanceRangeLocation)
+                List of location / region definitions.
+    """
+
+    proximal_dend = SomaDistanceRangeLocation(
+        name='proximal_dend',
+        seclist_name='basal',
+        min_distance=5.0,
+        max_distance=100.0,
+        syn_mech_names=['Exp2Syn'])
+
+    distal_dend = SomaDistanceRangeLocation(
+        name='distal_dend',
+        seclist_name='basal',
+        min_distance=100.0,
+        max_distance=1000.0,
+        syn_mech_names=['Exp2Syn'])
+
+    return [proximal_dend, distal_dend]
 
 
 class GPeCellModel(ephys_pynn.EphysModelWrapper):
@@ -32,7 +60,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
                         'config/params_hendrickson2011_GENESIS.min.json',
                         'config/map_params_hendrickson2011.min.json')
 
-    _ephys_locations = gunay_model.define_locations()
+    _ephys_locations = define_gpe_locations()
     
     # _morph_func = functools.partial(
     #                     gunay_model.define_morphology,
@@ -87,8 +115,7 @@ class GPeCellType(NativeCellType):
 
     # Synapse receptor types per region
     receptor_types = [ # prefixes are ephys model secarray names
-        'soma.ampa', 'soma.gabaa', 'soma.gabab',
-        'dend.ampa', 'dend.gabaa', 'dend.gabab',
+        'proximal_dend.Exp2Syn', 'distal_dend.Exp2Syn'
     ]
 
 
@@ -126,11 +153,12 @@ def test_record_gpe_model(export_locals=False):
     # Stimulation spike source
     p2 = nrn.Population(1, nrn.SpikeSourcePoisson(rate=100.0))
     connector = nrn.AllToAllConnector()
-    syn = nrn.StaticSynapse(weight=0.1)
-    prj_alpha = nrn.Projection(p2, p1, connector, syn, receptor_type='apical.ampa')
+    syn = nrn.StaticSynapse(weight=0.1, delay=2.0)
+    prj_alpha = nrn.Projection(p2, p1, connector, syn, 
+        receptor_type='distal_dend.Exp2Syn')
 
     # Recording
-    p1.record(['apical(1.0).v', 'soma(0.5).ina'])
+    # p1.record(['apical(1.0).v', 'soma(0.5).ina'])
     nrn.run(250.0)
 
     if export_locals:

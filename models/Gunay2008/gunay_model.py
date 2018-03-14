@@ -345,6 +345,9 @@ def define_morphology(filename, replace_axon):
     """
     Define morphology (don't instantiate yet).
 
+    The morphology determines the named SecArray and SectionLists 
+    available as cell attributes.
+
     @note   The morphology is instantiated when cell.instantiate() is called.
     """
 
