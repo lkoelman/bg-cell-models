@@ -37,6 +37,7 @@ NEURON {
 PARAMETER {
     gmax  = 0.001 (mho/cm2)
 
+    celsius (degC)
     activate_Q10 = 1
     Q10 = 3
 
@@ -121,7 +122,7 @@ DERIVATIVE states {
 
 PROCEDURE settables(v) {
     LOCAL alpham, betam, aphas, betas, theta_m, T_Q10
-    TABLE minf, taum, hinf, tauh, sinf, taus FROM -100 TO 100 WITH 400
+    TABLE minf, taum, hinf, tauh, sinf, taus DEPEND celsius FROM -100 TO 100 WITH 400
 
     : Temperature adjustment for rates
     if (activate_Q10>0) {

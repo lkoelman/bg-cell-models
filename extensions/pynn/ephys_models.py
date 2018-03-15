@@ -192,6 +192,37 @@ class EphysModelWrapper(ephys.models.CellModel):
         return template_function()
 
 
+    def instantiate(self, sim=None):
+        """
+        Instantiate cell in simulator
+
+        The default behaviour implemented here works for cells that have ephys
+        morphology, mechanism, and parameter definitions. If you want to use
+        a Hoc cell without these definitions, you should subclass to override
+        this behaviour.
+
+        @override       ephys.models.CellModel.instantiate()
+        """
+
+        # Instantiate NEURON cell
+        icell = self.create_empty_cell(
+                    self.name,
+                    sim=sim,
+                    seclist_names=self.seclist_names,
+                    secarray_names=self.secarray_names)
+
+        self.icell = icell
+        icell.gid = self.gid # TODO: see how PyNN manages GID
+
+        self.morphology.instantiate(sim=sim, icell=icell)
+
+        for mechanism in self.mechanisms:
+            mechanism.instantiate(sim=sim, icell=icell)
+
+        for param in self.params.values():
+            param.instantiate(sim=sim, icell=icell)
+
+
     def __init__(self, *args, **kwargs):
         """
         Factory method to create a cell that will not be stored on the
@@ -206,27 +237,21 @@ class EphysModelWrapper(ephys.models.CellModel):
         @see        Called by _build_cell(...) in module PyNN.neuron.simulator
                     https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
         """
-        # First make params for ephys.models.CellModel : get parameters from 
-        # subclass class attributes.
+        # Get parameter definitions from class attributes of subclass.
         model_name = self.__class__.__name__
+        params = deepcopy(getattr(self, '_ephys_mechanisms', None))
+        if params is not None:
+            for e_param in params.values():
+                e_param.name = make_valid_attr_name(e_param.name)
+
         super(EphysModelWrapper, self).__init__(
             model_name,
-            morph=self._ephys_morphology,
-            mechs=self._ephys_mechanisms,
-            params=deepcopy(self._ephys_parameters)) # copy the class parameters
+            morph=getattr(self, '_ephys_morphology', None),
+            mechs=getattr(self, '_ephys_mechanisms', None),
+            params=params)
 
-        sim = ephys_sim_from_pynn()
-        self.sim = sim
-
-        # Instantiate NEURON cell
-        icell = self.create_empty_cell(
-                    self.name,
-                    sim=sim,
-                    seclist_names=self.seclist_names,
-                    secarray_names=self.secarray_names)
-
-        self.icell = icell
-        icell.gid = self.gid # TODO: see how PyNN manages GID
+        self.sim = ephys_sim_from_pynn()
+        self.instantiate(sim=self.sim)
 
         # Add locations / regions
         self.locations = {}
@@ -236,26 +261,18 @@ class EphysModelWrapper(ephys.models.CellModel):
             loc.icell = self.icell
             self.locations[make_valid_attr_name(loc.name)] = loc
 
-        self.morphology.instantiate(sim=sim, icell=icell)
-
-        for mechanism in self.mechanisms:
-            mechanism.instantiate(sim=sim, icell=icell)
-        
         # NOTE: default params will be passed by pyNN Population
-        kwarg_parameters = []
         for param_name, param_value in kwargs.iteritems():
-            if param_name in self.parameter_names:
-                setattr(self, param_name, param_value) # calls property setter -> param.instantiate()
-                kwarg_parameters.append(param_name)
-
-        # Apply default parameters from class definition
-        for param in self.params.values():
-            if make_valid_attr_name(param.name) not in kwarg_parameters:
-                param.instantiate(sim=sim, icell=icell)
+            # Ephys parameters already set in instantiate()
+            if (param_name in self.params) and \
+                (self.params[param_name].value == param_value):
+                continue
+            elif param_name in self.parameter_names:
+                setattr(self, param_name, param_value)
 
         # Attributes needed for PyNN
-        self.source_section = icell.soma[0]
-        self.source = icell.soma[0](0.5)._ref_v
+        self.source_section = self.icell.soma[0]
+        self.source = self.icell.soma[0](0.5)._ref_v
         # self.parameter_names = ... set in metaclass
         self.traces = {}
         self.recording_time = False
