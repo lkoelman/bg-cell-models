@@ -31,7 +31,7 @@ import gillies_model
 gleak_name = gillies_model.gleak_name
 
 # Physiology parameters
-from evalmodel.cellpopdata import StnModel
+from cellpopdata import StnModel
 from evalmodel.proto_common import StimProtocol
 CLAMP_PLATEAU = StimProtocol.CLAMP_PLATEAU
 CLAMP_REBOUND = StimProtocol.CLAMP_REBOUND

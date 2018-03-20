@@ -11,7 +11,7 @@ from cersei.collapse.optimize.cellmodels import Cell, CollapsableCell
 import gillies_model
 import cersei_reduce
 from reducemodel import redutils
-from evalmodel import cellpopdata as cpd
+import cellpopdata as cpd
 
 
 

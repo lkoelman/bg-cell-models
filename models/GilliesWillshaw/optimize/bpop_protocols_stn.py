@@ -20,11 +20,11 @@ from extensions.bluepyopt.bpop_extensions import PhysioProtocol, NrnSpaceClamp
 from extensions.bluepyopt.bpop_protocol_ext import SelfContainedProtocol
 
 from evalmodel import (
-	cellpopdata as cpd,
 	proto_common, proto_background, proto_simple_syn
 )
 from evalmodel.proto_common import StimProtocol
 
+import cellpopdata as cpd
 Pop = cpd.Populations
 NTR = cpd.NTReceptors
 Ref = cpd.ParameterSource
@@ -121,7 +121,7 @@ def connector_getter(setup_kwargs):
 	"""
 	Function to get CellConnector for stimulation protocol setup functions.
 	"""
-	from evalmodel import cellpopdata as cpd
+	import cellpopdata as cpd
 	physio_state = setup_kwargs['physio_state']
 	rng = setup_kwargs['rng']
 	return cpd.CellConnector(physio_state, rng)
