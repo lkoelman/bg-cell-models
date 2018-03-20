@@ -11,13 +11,16 @@ import neuron
 h = neuron.h
 
 # Load NEURON libraries, mechanisms
-import os.path
+import os, os.path
 script_dir = os.path.dirname(__file__)
 neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms'))
 
 # Load STN cell Hoc code
+prev_cwd = os.getcwd()
+os.chdir(script_dir)
+# os.environ['HOC_LIBRARY_PATH'] = os.environ.get('HOC_LIBRARY_PATH', '') + ':' + script_dir
 h.xopen("gillies_createcell.hoc")
-
+os.chdir(prev_cwd)
 
 # from pyNN.standardmodels import StandardCellType
 from pyNN.neuron.cells import NativeCellType
@@ -30,7 +33,7 @@ from common import logutils
 logutils.setLogLevel('quiet', ['bluepyopt.ephys.parameters', 'bluepyopt.ephys.mechanisms'])
 
 
-def define_stn_locations():
+def define_locations():
     """
     Define locations / regions on the cell that will function as the target
     of synaptic connections.
@@ -70,7 +73,9 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     #   - C: create two subclasses of intermediate base classEphysModelWrapper: 
     #        one with and one without morphology
 
-    _ephys_locations = define_stn_locations()
+
+    _ephys_locations = define_locations()
+
 
     def instantiate(self, sim=None):
         """
@@ -103,12 +108,64 @@ class StnCellType(NativeCellType):
     # default_initial_values = {'v': -65.0}
 
     # Synapse receptor types per region
-    receptor_types = [ # prefixes are ephys model secarray names
-        'proximal_dend.Exp2Syn', 'distal_dend.Exp2Syn'
+    receptor_types = [
+        "{}.{}".format(loc.name, syn_mech) for loc in StnCellModel._ephys_locations 
+            for syn_mech in loc.syn_mech_names
     ]
 
 
+def test_stn_cells_multiple(export_locals=True):
+    """
+    Test creation of multiple instances of the Gillies STN model.
+    """
+    stn_cells = []
+    for i in range(5):
+        cell_idx = h.make_stn_cell_global()
+        cell_idx = int(cell_idx)
+        stn_cells.append(h.SThcells[cell_idx])
+
+    if export_locals:
+        print("Adding to global namespace: {}".format(locals().keys()))
+        globals().update(locals())
+
+
+def test_stn_pynn_population(export_locals=True):
+    """
+    Test creation of PyNN population of STN cells.
+    """
+    from pyNN.utility import init_logging
+    import pyNN.neuron as nrn
+
+    init_logging(logfile=None, debug=True)
+    nrn.setup()
+
+    # STN cell population
+    cell_type = StnCellType()
+    p1 = nrn.Population(5, cell_type)
+
+    p1.initialize(v=-63.0)
+
+    # Stimulation electrode
+    current_source = nrn.StepCurrentSource(times=[50.0, 110.0, 150.0, 210.0],
+                                           amplitudes=[0.4, 0.6, -0.2, 0.2])
+    p1.inject(current_source)
+
+    # Stimulation spike source
+    p2 = nrn.Population(1, nrn.SpikeSourcePoisson(rate=100.0))
+    connector = nrn.AllToAllConnector()
+    syn = nrn.StaticSynapse(weight=0.1, delay=2.0)
+    prj_alpha = nrn.Projection(p2, p1, connector, syn, 
+        receptor_type='distal_dend.Exp2Syn')
+
+    # Recording
+    # p1.record(['apical(1.0).v', 'soma(0.5).ina'])
+    nrn.run(250.0)
+
+    if export_locals:
+        print("Adding to global namespace: {}".format(locals().keys()))
+        globals().update(locals())
+
+
 if __name__ == '__main__':
-    cell_idx = h.make_stn_cell_global()
-    cell_idx = int(cell_idx)
-    stn_cell = h.SThcells[cell_idx]
+    # test_stn_cells_multiple()
+    test_stn_pynn_population()

@@ -9,7 +9,7 @@ Using channel mechanisms ported to NEURON by Kitano (2011)
             explain spiking variability in the globus pallidus: a combined physiology 
             and computer simulation database approach. J Neurosci 28:7476-91
 
-            https:#senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=114639
+            https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=114639
 
 
 @reference  Fujita T, Fukai T, Kitano K (2012) Influences of membrane properties 

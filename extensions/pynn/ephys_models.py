@@ -75,13 +75,10 @@ class CellModelMeta(type):
                     MechanismType as its metaclass.
         """
         # Process mechanism variables declared in class definition
-
-        print("These are the bases: {}".format(new_class_bases))
-        print(type(new_class_bases))
-
         # modified_bases = tuple(list(new_class_bases) + [ephys.models.CellModel])
+        
         parameter_names = [] # for pyNN
-
+        
         for e_param in new_class_namespace.get("_ephys_parameters", []):
             param_name = e_param.name
             
@@ -117,8 +114,8 @@ class CellModelMeta(type):
                 return self.locations[loc_name]
 
             # Change name of getter function
-            __get_ephys_param.__name__ = "__get_" + loc_name_nodots
-            location_names.append(param_name_nodots)
+            __get_location.__name__ = "__get_" + loc_name_nodots
+            location_names.append(loc_name_nodots)
 
             # Insert into namespace as properties
             new_class_namespace[loc_name_nodots] = property(fget=__get_location)
@@ -237,11 +234,14 @@ class EphysModelWrapper(ephys.models.CellModel):
         @see        Called by _build_cell(...) in module PyNN.neuron.simulator
                     https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
         """
+        # TODO: If you put instantiation in __call__ rather than __init__, you can intialize with different morphology or parameters sets. This way you also preserve the intention of CellModel to not be instantiated initially, but just describe the model.
         # Get parameter definitions from class attributes of subclass.
         model_name = self.__class__.__name__
-        params = deepcopy(getattr(self, '_ephys_mechanisms', None))
+
+        # Ensure self.params has valid names, and does not refer to class params
+        params = deepcopy(getattr(self, '_ephys_parameters', None))
         if params is not None:
-            for e_param in params.values():
+            for e_param in params:
                 e_param.name = make_valid_attr_name(e_param.name)
 
         super(EphysModelWrapper, self).__init__(

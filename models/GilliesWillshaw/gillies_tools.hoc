@@ -164,7 +164,7 @@ proc cset() { local tree, sec, ws, val, tst
   
   if (name_declared($s2)>0) {
     
-    sprint(fnm,"sth-data/cell-%s%s",$s2,$s3)
+    sprint(fnm,"%ssth-data/cell-%s%s", gillies_root, $s2, $s3)
     cdf = new File()
     cdf.ropen(fnm)
  
@@ -209,7 +209,7 @@ proc set_conductance_from_file() { local tree, sec, ws, val, tst localobj cell_r
   
   if (name_declared($s2)>0) {
     
-    sprint(fnm,"sth-data/cell-%s%s",$s2,$s3)
+    sprint(fnm,"%ssth-data/cell-%s%s", gillies_root, $s2, $s3)
     cdf = new File()
     cdf.ropen(fnm)
  

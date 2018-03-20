@@ -81,11 +81,11 @@ class GPeCellType(NativeCellType):
     for interoperability with PyNN.
 
     @see    Based on definition of SimpleNeuronType and standardized cell types in:
-            https://github.com/NeuralEnsemble/PyNN/blob/master/test/system/test_neuron.py
-            https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/standardmodels/cells.py
+                - https://github.com/NeuralEnsemble/PyNN/blob/master/test/system/test_neuron.py
+                - https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/standardmodels/cells.py
 
             And on documentation at:
-            http://neuralensemble.org/docs/PyNN/backends/NEURON.html#using-native-cell-models
+                - http://neuralensemble.org/docs/PyNN/backends/NEURON.html#using-native-cell-models
 
     IMPLEMENTATION NOTES
     --------------------
@@ -137,7 +137,8 @@ def test_record_gpe_model(export_locals=False):
     parameters = {
         'Ra_basal': 200.0
     }
-    p1 = nrn.Population(5, GPeCellType(**parameters))
+    cell_type = GPeCellType(**parameters)
+    p1 = nrn.Population(5, cell_type)
     
     print(p1.get('Ra_basal'))
     p1.rset('Ra_basal', RandomDistribution('uniform', low=100., high=300.))

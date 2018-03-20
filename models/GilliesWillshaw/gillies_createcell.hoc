@@ -9,6 +9,10 @@
 load_file("stdlib.hoc")
 load_file("stdrun.hoc")
 
+// Define root directory for Gillies code
+strdef gillies_root
+gillies_root = getcwd()
+
 // *** Load the cell prototypes
 xopen("gillies_prototypes.hoc")
 

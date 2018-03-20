@@ -8,7 +8,7 @@ print " "
 
 begintemplate SThproto
 
-    public ntrees,ntree0,ntree1,somadiam,somaL,PI
+    public ntrees,ntree0,ntree1,nsoma,somadiam,somaL,PI
     public ref,child,diam,L,nseg,Ra,Cm
 
     objref f
@@ -19,6 +19,7 @@ begintemplate SThproto
 
         somaL = 18.8
         somadiam = 18.3112
+        nsoma = 1 // number of soma sections
 
         nsegscale = 1
 
@@ -267,7 +268,7 @@ public soma, dend0, dend1
 
  // declare the variables we will be using
 
- create soma, dend0[1], dend1[1]
+ create soma[1], dend0[1], dend1[1]
 
  objref sthtype, all, somatic, basal, apical, axonal, myelinated
 
@@ -282,10 +283,11 @@ public soma, dend0, dend1
    
    sthtype = $o2
 
+   SThnsoma   = sthtype.nsoma
    SThndend0  = sthtype.ntree0
    SThndend1  = sthtype.ntree1
 
-   create soma, dend0[SThndend0], dend1[SThndend1]
+   create soma[SThnsoma], dend0[SThndend0], dend1[SThndend1]
 
    // Create named SectionLists for compatibility with imported morphologies
    all = new SectionList()
@@ -295,7 +297,7 @@ public soma, dend0, dend1
    axonal = new SectionList()
    myelinated = new SectionList()
 
-   soma {
+   soma[0] {
        nseg = sthtype.nseg(-1,-1)
        Ra = sthtype.Ra(-1)
        diam = sthtype.diam(-1,-1)
@@ -403,8 +405,8 @@ for i = 0,SThndend1-1 {
 }
 
    // connect trees to soma
-   connect dend0[0](0), soma(1)
-   connect dend1[0](0), soma(0)
+   connect dend0[0](0), soma[0](1)
+   connect dend1[0](0), soma[0](0)
 
 
    // set the ion styles
