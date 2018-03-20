@@ -15,7 +15,8 @@ https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/standardmodels/ce
 https://github.com/apdavison/BluePyOpt/blob/pynn-models/bluepyopt/ephys_pyNN/models.py
 
 """
-
+import re
+import itertools
 from copy import copy, deepcopy
 
 import bluepyopt.ephys as ephys
@@ -234,7 +235,8 @@ class EphysModelWrapper(ephys.models.CellModel):
         @see        Called by _build_cell(...) in module PyNN.neuron.simulator
                     https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
         """
-        # TODO: If you put instantiation in __call__ rather than __init__, you can intialize with different morphology or parameters sets. This way you also preserve the intention of CellModel to not be instantiated initially, but just describe the model.
+        # TODO: If you put instantiation in __call__ rather than __init__, you can intialize with different morphology or parameters sets. This way you also preserve the intention of CellModel to not be instantiated initially, but just describe the model. However, you can't return the icell since then you lose access to all this class' attributes
+
         # Get parameter definitions from class attributes of subclass.
         model_name = self.__class__.__name__
 
@@ -288,3 +290,50 @@ class EphysModelWrapper(ephys.models.CellModel):
         # TODO: implement initialization if required.
         pass
 
+
+    def resolve_section(self, spec):
+        """
+        Resolve a section specification.
+
+        @return     nrn.Section
+                    The section intended by the given section specifier.
+
+
+        @param      spec : str
+                    
+                    Section specifier in the format 'section_container[index]',
+                    where 'section_container' is the name of a secarray, Section,
+                    or SectionList that is a public attribute of the icell,
+                    and the index part is optional.
+
+
+        @note       The default secarray for an Ephys CellModel are:
+                    'soma', 'dend', 'apic', 'axon', 'myelin'.
+                    
+                    The default SectionLists are:
+                    'somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all'
+
+                    If 'section_container' matches any of these names, it will
+                    be treated as such. If not, it will be treated as an indexable
+                    attribute of the icell instance.
+        """
+        matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>\d+)\])?', spec)
+        sec_name = matches.group('secname')
+        sec_index = matches.group('idx')
+        icell = self.icell
+        
+        if sec_index is None:
+            return getattr(icell, sec_name)
+        
+        elif sec_name in ['soma', 'dend', 'apic', 'axon', 'myelin']:
+            # target is a secarray
+            return getattr(icell, sec_name)[sec_index]
+        
+        elif sec_name in ['somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all']:
+            # target is a SectionList (does not support indexing)
+            seclist = getattr(icell, sec_name)
+            return next(itertools.islice(seclist, sec_index, sec_index + 1))
+        
+        else:
+            # assume target is a secarray
+            return getattr(icell, sec_name)[sec_index]

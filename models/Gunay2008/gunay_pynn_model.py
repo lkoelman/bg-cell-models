@@ -118,6 +118,12 @@ class GPeCellType(NativeCellType):
         'proximal_dend.Exp2Syn', 'distal_dend.Exp2Syn'
     ]
 
+    def can_record(self, variable):
+        """
+        Override or it uses pynn.neuron.record.recordable_pattern.match(variable)
+        """
+        return super(GPeCellType, self).can_record(variable)
+
 
 def test_record_gpe_model(export_locals=False):
     """

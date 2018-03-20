@@ -113,6 +113,12 @@ class StnCellType(NativeCellType):
             for syn_mech in loc.syn_mech_names
     ]
 
+    def can_record(self, variable):
+        """
+        Override or it uses pynn.neuron.record.recordable_pattern.match(variable)
+        """
+        return super(StnCellType, self).can_record(variable)
+
 
 def test_stn_cells_multiple(export_locals=True):
     """
