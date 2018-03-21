@@ -28,7 +28,7 @@ class TraceSpecRecorder(Recorder):
     USAGE
     -----
 
-        >>> from pyNN.neuron.populations import Population
+        >>> from pyNN.neuron import Population
         >>> from extensions.pynn.recording import TraceSpecRecorder
         >>> Population._recorder_class = TraceSpecRecorder
         >>> ... (recording setup code)
@@ -43,7 +43,7 @@ class TraceSpecRecorder(Recorder):
 
         @param      variables : iterable(tuple(str, <dict or str>))
 
-                    Any iterable collection where the first element of each item
+                    Any iterable where the first element of each item
                     is the trace name, and the second element the trace
                     specification. The trace specification can be either a
                     string like the default PyNN variable names, or a dict
@@ -183,12 +183,11 @@ class TraceSpecRecorder(Recorder):
 
         elif 'pointp' in spec: # hoc_obj is POINT_PROCESS
             # Look for the point process in Section
+            mech_name = spec['pointp']
             seg_pps = seg.point_processes()
-            for hobj in seg_pps:
-                modname = nrnutil.get_mod_name(hobj)
-                if spec['pointp'] == modname:
-                    pp = hoc_obj
-                    break
+
+            pp = next((hobj for hobj in seg_pps if 
+                        nrnutil.get_mod_name(hobj)==mech_name), None)
             
             if pp is None:
                 raise ValueError("Could not find point process '{}' "

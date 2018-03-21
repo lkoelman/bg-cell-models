@@ -15,6 +15,7 @@ Based on structure of:
 
 from enum import Enum, unique
 from textwrap import dedent
+import collections
 
 import numpy as np
 import neuron
@@ -64,16 +65,35 @@ class CellConnector(object):
     Class for storing connection parameters and making connections.
     """
 
-    def __init__(self, physio_state, rng):
+    def __init__(self, physio_state, rng, 
+            preferred_mechanisms=None, preferred_sources=None):
+        """
+
+        @param      preferred_mechanisms : list(str)
+                    
+                    Ordered list of preferred synaptic mechanisms to use
+                    when making connections. When connection is made with only
+                    the receptor specified, mechanisms will be used in this
+                    order.
+        """
         if isinstance(physio_state, str):
             physio_state = PhysioState.from_descr(physio_state)
+        
         self._physio_state = physio_state
         self._rng = rng
 
         # make some functions available as instance methods (lazy refactoring)
-        self.getSynMechReceptors = synmechs.getSynMechReceptors
-        self.getSynMechParamNames = synmechs.getSynMechParamNames
-        self.getNrnConParamMap = synmechs.getNrnConParamMap
+        self.getSynMechReceptors = synmechs.get_mechanism_receptors
+        self.getSynMechParamNames = synmechs.get_mech_param_names
+        self.getNrnConParamMap = synmechs.physio_to_neuron_params
+
+        if preferred_mechanisms is None:
+            self.preferred_mechanisms = ['GLUsyn', 'GABAsyn', 'Exp2Syn']
+        else:
+            self.preferred_mechanisms = preferred_mechanisms
+
+        if preferred_sources is None:
+            self.preferred_sources = [Src.Custom, Src.Default]
 
 
     def getFireParams(self, pre_pop, phys_state, use_sources, custom_params=None):
@@ -166,7 +186,7 @@ class CellConnector(object):
             self,
             pre_pop,
             post_pop,
-            use_sources,
+            use_sources=None,
             custom_params=None,
             adjust_gsyn_msr=None
         ):
@@ -457,6 +477,8 @@ class CellConnector(object):
 
         # Make final dict with only (receptor -> params)
         cp_final = {}
+        if use_sources is None:
+            use_sources = self.preferred_sources
         use_sources = list(use_sources)
         use_sources.append(Src.Default) # this source was used for default parameters
         use_sources.append(Src.CommonUse) # source used for unreferenced parameters from other models
@@ -513,7 +535,7 @@ class CellConnector(object):
         receptors = physio_params.keys()
 
         # Get mapping from physiological to NEURON mechanism parameters
-        nrn_param_map = synmechs.getNrnConParamMap(nrn_mech_name)
+        nrn_param_map = synmechs.physio_to_neuron_params(nrn_mech_name)
 
         # keep track of parameters that are assigned
         nrn_param_values = {
@@ -571,52 +593,68 @@ class CellConnector(object):
         return nrn_param_values
 
 
-    def make_synapse(self, pre_post_pop, pre_post_obj, syn_type, receptors, 
-                        use_sources=None, custom_conpar=None, custom_synpar=None,
-                        con_par_data=None, weight_scales=None, weight_times=None):
+    def make_parallel_connection(self, pc, pre_pop, post_pop, src_seg, src_gid, 
+            receptors, use_sources=None, custom_conpar=None, custom_synpar=None,
+            con_par_data=None, weight_scales=None, weight_times=None):
         """
-        Insert synapse POINT_PROCESS in given section.
+        Make synaptic connection using NEURON parallel context.
 
-
-        USAGE
-        -----
-
-        - either provide argument 'use_sources' to fetch connection parameters
-          or provide them yourself in argument 'con_par_data'
+        @return     tuple(Hoc.POINT_PROCESS, Hoc.NetCon)
+                    The synapse object and NetCon.
+        """
+        # Get the synaptic mechanism name
+        syn_mech_name = None
+        for mech in self.preferred_mechanisms:
+            mech_receptors = synmechs.get_mechanism_receptors(mech)
+            # Check that the mechanism implements all receptors
+            if all(((NTReceptors.from_str(rec) in mech_receptors) for rec in receptors)):
+                syn_mech_name = mech
+        
+        if syn_mech_name is None:
+            raise ValueError("Could not find synaptic mechanism that "
+                    "implements all receptors in {}".format(receptors))
 
         
+        # Get synapse type constructor and make it
+        syn_ctor = synmechs.syn_wrapper_classes.get(
+                        syn_mech_name, getattr(h, syn_mech_name))
+        syn_pp = syn_ctor(src_seg)
+
+        # Make the NetCon
+        nc = pc.gid_connect(src_gid, syn_pp)
+
+        # Store some data on the synapse
+        if hasattr(syn_pp, 'htype'): # check if wrapper class (see nrn/lib/python/hclass.py)
+            syn_pp.pre_pop = pre_pop.name
+            syn_pp.post_pop = post_pop.name
+
+        # Set synapse and NetCon parameters
+        self.set_connection_params(
+                        syn_pp, nc, pre_pop, post_pop, syn_mech_name, receptors, 
+                        use_sources, custom_conpar, custom_synpar,
+                        con_par_data, weight_scales, weight_times)
+
+
+        return syn_pp, nc
+
+
+    def init_synaptic_connection(self, pre_post_pop, pre_post_obj, syn_type):
+        """
+        Create the synaptic POINT_PROCESS and NetCon instance without
+        setting their parameters.
+
+
         ARGUMENTS
         ---------
         
-        @param pre_post_pop     tuple(str, str) containing keys for pre-synaptic
-                                and post-synaptic populations, e.g.
-                                (Populations.GPE, Populations.STN)
+        @param      pre_post_pop : tuple(str, str)
+                    Identifiers for pre- and post-synaptic populations, e.g.
+                    (Populations.GPE, Populations.STN)
 
-        @param pre_post_obj     tuple(object, object) containing source and target object
-                                for synaptic connection. Synapse will be inserted into
-                                target object
-
-        @param custom_conpar    Custom physiological parameters for the connection,
-                                in the form of a dict {NTR_0: {params_0}, NTR_1: {params_1}}
-
-        @param custom_synpar    Custom mechanism parameters for the synaptic mechanism,
-                                in the form of a dict {param_name: param_value, ...}
-
-
-        @param weight_scales    Scale factors for the weights in range (0,1). 
-                                This must be an iterable: NetCon.weight[i] is scaled by the i-th value. 
-                                If a vector is given, it is scaled and played into the weight.
-
-        @param  con_par_data : dict
-        
-                Either dict<NTReceptors, dict<str, object>> if multiple receptors
-                are used on the given synapse mechanism, or a dict<str, object>
-                with synapse parameters if only a single receptor is used.
-
-        @effect                 creates an Exp2Syn with an incoming NetCon with
-                                weight equal to maximum synaptic conductance
+        @param      pre_post_obj : tuple(object, object)
+                    Source and target object for synaptic connection. 
+                    Synapse will be inserted into target object
         """
-
         pre_pop, post_pop = pre_post_pop
         pre_obj, post_obj = pre_post_obj
 
@@ -642,12 +680,54 @@ class CellConnector(object):
         nc.pre_pop = pre_pop.name
         nc.post_pop = post_pop.name
 
+        return syn, nc
+
+
+    def set_connection_params(self, syn, nc, pre_pop, post_pop, syn_type, receptors, 
+                        use_sources=None, custom_conpar=None, custom_synpar=None,
+                        con_par_data=None, weight_scales=None, weight_times=None):
+        """
+        Set parameters of synapse POINT_PROCESS and NetCon from database.
+
+        USAGE
+        -----
+
+        - either provide argument 'use_sources' to fetch connection parameters
+          or provide them yourself in argument 'con_par_data'
+
+        
+        ARGUMENTS
+        ---------
+        
+        @see        set_connection_params()
+
+
+        @param      custom_conpar : dict
+                    Custom physiological parameters for the connection,
+                    in the form of a dict {NTR_0: {params_0}, NTR_1: {params_1}}
+
+
+        @param      custom_synpar : dict 
+                    Custom mechanism parameters for the synaptic mechanism,
+                    in the form of a dict {param_name: param_value, ...}
+
+
+        @param      weight_scales : iterable
+                    Scale factors for the weights in range (0,1). 
+                    This must be an iterable: NetCon.weight[i] is scaled by the i-th value. 
+                    If a vector is given, it is scaled and played into the weight.
+
+        @param      con_par_data : dict
+                    Either dict<NTReceptors, dict<str, object>> if multiple receptors
+                    are used on the given synapse mechanism, or a dict<str, object>
+                    with synapse parameters if only a single receptor is used.
+        """
         # Get physiological parameter descriptions
         if con_par_data is None:
             con_par_data = self.getPhysioConParams(pre_pop, post_pop, use_sources, custom_conpar)
         
         # Get mapping from physiological to NEURON mechanism parameters
-        syn_par_map = synmechs.getNrnConParamMap(syn_type)
+        syn_par_map = synmechs.physio_to_neuron_params(syn_type)
 
         # keep track of parameters that are assigned
         syn_assigned_pars = []
@@ -656,7 +736,8 @@ class CellConnector(object):
         # For each NT receptor, look up the physiological connection parameters,
         # and translate them to a parameter of the synaptic mechanism or NetCon
         num_receptors = len(receptors)
-        for rec in receptors:
+        for receptor_descr in receptors:
+            rec = NTReceptors.get(receptor_descr)
             parname_map = syn_par_map[rec] # how each connection parameter is mapped to mechanism parameter
 
             # Get dict with synapse param values
@@ -741,6 +822,32 @@ class CellConnector(object):
                     timevec = weight_times[i_w]
                     wvec.play(nc._ref_weight[i_w], timevec)
                     weight_vecs.append(wvec)
+
+        # Return refs to objects that need to stay alive
+        return syn, nc, weight_vecs
+
+
+    def make_synapse(self, pre_post_pop, pre_post_obj, syn_type, receptors, 
+                        use_sources=None, custom_conpar=None, custom_synpar=None,
+                        con_par_data=None, weight_scales=None, weight_times=None):
+        """
+        Insert synapse POINT_PROCESS in given section.
+        
+        @see        set_connection_params()
+
+        @effect     creates an Exp2Syn with an incoming NetCon with
+                    weight equal to maximum synaptic conductance
+        """
+
+        pre_pop, post_pop = pre_post_pop
+
+        syn, nc = self.init_synaptic_connection(pre_post_pop, pre_post_obj, syn_type)
+
+        weight_vecs = self.set_connection_params(
+                        syn, nc, pre_pop, post_pop, syn_type, receptors, 
+                        use_sources, custom_conpar, custom_synpar,
+                        con_par_data, weight_scales, weight_times)
+
 
         # Return refs to objects that need to stay alive
         return syn, nc, weight_vecs

@@ -33,15 +33,13 @@ def define_gpe_locations():
         name='proximal_dend',
         seclist_name='basal',
         min_distance=5.0,
-        max_distance=100.0,
-        syn_mech_names=['Exp2Syn'])
+        max_distance=100.0)
 
     distal_dend = SomaDistanceRangeLocation(
         name='distal_dend',
         seclist_name='basal',
         min_distance=100.0,
-        max_distance=1000.0,
-        syn_mech_names=['Exp2Syn'])
+        max_distance=1000.0)
 
     return [proximal_dend, distal_dend]
 
@@ -114,8 +112,10 @@ class GPeCellType(NativeCellType):
     # default_initial_values = {'v': -65.0}
 
     # Synapse receptor types per region
-    receptor_types = [ # prefixes are ephys model secarray names
-        'proximal_dend.Exp2Syn', 'distal_dend.Exp2Syn'
+    receptor_types = [
+        "proximal_dend.GABAA", "proximal_dend.GABAB",
+        "proximal_dend.AMPA", "proximal_dend.NMDA",
+        "distal_dend.AMPA", "distal_dend.NMDA"
     ]
 
     def can_record(self, variable):

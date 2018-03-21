@@ -19,18 +19,92 @@ rng_structural_variability = h.Random(
     nrn_state.mpi_rank + nrn_state.native_rng_baseseed)
 
 
+# class SynapseLocation(Location, DictMixin):
+#     """
+#     Random segment between min and max distance from soma.
+#     """
+
+#     SERIALIZED_FIELDS = (
+#         'name',
+#         'comment',
+#         'syn_mech_names')
+
+
+#     def __init__(
+#             self,
+#             name,
+#             syn_mech_names=None,
+#             comment=''):
+#         """
+#         Constructor
+
+#         @param      name : str
+#                     Name of this object
+
+#         @param      syn_mech_names : list(str)
+#                     List of NEURON synapse mechanism names that are supported
+#                     by this location
+#         """
+
+#         super(SynapseLocation, self).__init__(name, comment)
+
+#         self.syn_mech_names = syn_mech_names # could also be set after creation
+
+#         # Attributes to be set by owner icell
+#         self.sim = None
+#         self.icell = None
+
+
+#     def __getattr__(self, name):
+#         """
+#         Override so synapse objects can be requested as attributes.
+
+#         @note   __getattr__ is only called as a last resort i.e. if there are no
+#                 attributes in the instance that match the name.
+#         """
+#         if name in self.syn_mech_names:
+#             return self.get_synapse(name)
+#         else:
+#             raise AttributeError("Synapse model '{}' not supported by "
+#                     "this location".format(name))
+
+
+#     def get_synapse(self, mechanism_name):
+#         """
+#         Get a synapse with given mechanism at this location.
+
+#         If a synapse of the given type (mechanism_name) is already present,
+#         return that synapse. If not, make a new synapse and return it.
+
+#         @return     synapse : nrn.HocObject
+#                     Instantiated Neuron POINT_PROCESS mechanism
+#         """
+#         iseg = self.instantiate(sim=self.sim, icell=self.icell)
+#         seg_pps = iseg.point_processes()
+
+#         target_syn = next((syn for syn in seg_pps if 
+#                         nrnutil.get_mod_name(syn)==mechanism_name), None)
+        
+#         if target_syn is None:
+#             constructor = getattr(h, mechanism_name)
+#             target_syn = constructor(iseg)
+
+#         # TODO: retrieve synapse parameters from somewhere, e.g. parent cell param space or see connection creation
+#         return target_syn
+
+
 class SomaDistanceRangeLocation(Location, DictMixin):
     """
     Random segment between min and max distance from soma.
     """
-
+    
     SERIALIZED_FIELDS = (
         'name',
         'comment',
-        'min_soma_distance',
-        'max_soma_distance'
+        #'syn_mech_names',
         'seclist_name',
-        'syn_mech_names')
+        'min_soma_distance',
+        'max_soma_distance')
 
 
     def __init__(
@@ -39,7 +113,7 @@ class SomaDistanceRangeLocation(Location, DictMixin):
             seclist_name=None,
             min_distance=None,
             max_distance=None,
-            syn_mech_names=None,
+            #syn_mech_names=None,
             comment=''):
         """
         Constructor
@@ -54,52 +128,17 @@ class SomaDistanceRangeLocation(Location, DictMixin):
                     List of NEURON synapse mechanism names
         """
 
-        super(SomaDistanceRangeLocation, self).__init__(name, comment)
+        super(SomaDistanceRangeLocation, self).__init__(
+            name,
+            #syn_mech_names=syn_mech_names,
+            comment=comment)
+
         self.min_soma_distance = min_distance
         self.max_soma_distance = max_distance
         self.seclist_name = seclist_name
-        self.syn_mech_names = syn_mech_names # could also be set after creation
 
         # Attributes to be set by owner icell
-        self.sim = None
-        self.icell = None
         self.rng = None
-
-
-    def __getattr__(self, name):
-        """
-        Override so synapse objects can be requested as attributes.
-
-        @note   __getattr__ is only called as a last resort i.e. if there are no
-                attributes in the instance that match the name.
-        """
-        if name in self.syn_mech_names:
-            return self.get_synapse(name)
-        else:
-            raise AttributeError()
-
-
-    def get_synapse(self, mechanism_name):
-        """
-        Get a synapse with given mechanism at this location.
-
-        If a synapse of the given type (mechanism_name) is already present,
-        return that synapse. If not, make a new synapse and return it.
-
-        @return     synapse : nrn.HocObject
-                    Instantiated Neuron POINT_PROCESS mechanism
-        """
-        iseg = self.instantiate(sim=self.sim, icell=self.icell)
-        seg_pps = iseg.point_processes()
-
-        target_syn = next((syn for syn in seg_pps if 
-                        nrnutil.get_mod_name(syn)==mechanism_name), None)
-        if target_syn is None:
-            constructor = getattr(h, mechanism_name)
-            target_syn = constructor(iseg)
-
-        # TODO: retrieve synapse parameters from somewhere, e.g. parent cell param space or see connection creation
-        return target_syn
 
 
     def instantiate(self, sim=None, icell=None):

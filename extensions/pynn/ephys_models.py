@@ -112,7 +112,7 @@ class CellModelMeta(type):
             
             # NOTE: self.params is set in __init__()
             def __get_location(self):
-                return self.locations[loc_name]
+                return self.locations[loc_name].instantiate(self.sim, self.icell)
 
             # Change name of getter function
             __get_location.__name__ = "__get_" + loc_name_nodots
@@ -259,8 +259,8 @@ class EphysModelWrapper(ephys.models.CellModel):
         self.locations = {}
         for static_loc in self._ephys_locations:
             loc = copy(static_loc)
-            loc.sim = self.sim
-            loc.icell = self.icell
+            # loc.sim = self.sim
+            # loc.icell = self.icell
             self.locations[make_valid_attr_name(loc.name)] = loc
 
         # NOTE: default params will be passed by pyNN Population
@@ -272,12 +272,19 @@ class EphysModelWrapper(ephys.models.CellModel):
             elif param_name in self.parameter_names:
                 setattr(self, param_name, param_value)
 
-        # Attributes needed for PyNN
+        # Attributes required by PyNN
         self.source_section = self.icell.soma[0]
         self.source = self.icell.soma[0](0.5)._ref_v
-        # self.parameter_names = ... set in metaclass
+        
+        if not hasattr(self, '_v_threshold'):
+            self._v_threshold = -10.0
+        self.rec = h.NetCon(self.source, None,
+                            self._v_threshold, 0.0, 0.0,
+                            sec=self.source_section)
+        self.spike_times = h.Vector(0) # see pyNN.neuron.recording.Recorder._record()
         self.traces = {}
         self.recording_time = False
+        # self.parameter_names = ... set in metaclass
 
 
     def memb_init(self):

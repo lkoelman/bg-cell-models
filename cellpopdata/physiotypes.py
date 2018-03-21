@@ -7,8 +7,40 @@ Classes describing the ontology of Basal Ganglia physiology and histology.
 
 from enum import Enum, IntEnum, unique
 
+class IntEnumDescriptor(IntEnum):
+
+    def to_str(self):
+        """
+        Convert Enum instance to string
+        """
+        return self.name.lower()
+
+    @classmethod
+    def from_str(cls, descr):
+        """
+        Get Enum instance from string.
+        """
+        return cls._member_map_[descr.upper()]
+
+    @classmethod
+    def get(cls, descr):
+        """
+        Get Enum instance from description.
+        """
+        if isinstance(descr, cls):
+            return descr
+        elif isinstance(descr, str):
+            return cls.from_str(descr)
+        else:
+            raise ValueError("Cannot convert {} to class {}".format(
+                    descr, cls))
+
+    to_descr = to_str
+    from_descr = from_str
+
+
 @unique
-class PhysioState(IntEnum):
+class PhysioState(IntEnumDescriptor):
     """
     Physiological state of the cell
     """
@@ -43,17 +75,9 @@ class PhysioState(IntEnum):
         """
         return (self.value & int_item) == self.value
 
-    @classmethod
-    def from_descr(cls, descr):
-        return cls._member_map_[descr.upper()]
-
-    @classmethod
-    def from_str(cls, descr):
-        return cls._member_map_[descr.upper()]
-
 
 @unique
-class Populations(Enum):
+class Populations(IntEnumDescriptor):
     """
     Physiological state of the cell
     """
@@ -64,16 +88,9 @@ class Populations(Enum):
     PPN = 5
     STR = 6
 
-    def to_descr(self):
-        return self.name.lower()
-
-    @classmethod
-    def from_descr(cls, descr):
-        return cls._member_map_[descr.upper()]
-
 
 @unique
-class NTReceptors(Enum):
+class NTReceptors(IntEnumDescriptor):
     """
     NTReceptors used in synaptic connections
     """
@@ -82,13 +99,12 @@ class NTReceptors(Enum):
     GABAA = 2
     GABAB = 3
 
-    @classmethod
-    def from_descr(cls, descr):
-        return cls._member_map_[descr.upper()]
-
 
 @unique
-class ParameterSource(Enum):
+class ParameterSource(IntEnumDescriptor):
+    """
+    A source (e.g. scientific article) for physiological parameters.
+    """
     Default = 0
     CommonUse = 1       # Widely used or commonly accepted values
     Chu2015 = 2

@@ -173,6 +173,12 @@ def getSynMechParamNames(mech_name):
     return mech_parnames
 
 
+# Aliases
+get_mechanism_receptors = getSynMechReceptors
+get_mech_param_names = getSynMechParamNames
+physio_to_neuron_params = getNrnConParamMap
+
+
 def evalValueSpec(value_spec, rng=None):
     """
     Evaluate specification of a parameter value in a range of formats.

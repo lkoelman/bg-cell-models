@@ -46,15 +46,13 @@ def define_locations():
         name='proximal_dend',
         seclist_name='basal',
         min_distance=5.0,
-        max_distance=100.0,
-        syn_mech_names=['Exp2Syn'])
+        max_distance=100.0)
 
     distal_dend = SomaDistanceRangeLocation(
         name='distal_dend',
         seclist_name='basal',
         min_distance=100.0,
-        max_distance=1000.0,
-        syn_mech_names=['Exp2Syn'])
+        max_distance=1000.0)
 
     return [proximal_dend, distal_dend]
 
@@ -109,8 +107,9 @@ class StnCellType(NativeCellType):
 
     # Synapse receptor types per region
     receptor_types = [
-        "{}.{}".format(loc.name, syn_mech) for loc in StnCellModel._ephys_locations 
-            for syn_mech in loc.syn_mech_names
+        "proximal_dend.GABAA", "proximal_dend.GABAB",
+        "proximal_dend.AMPA", "proximal_dend.NMDA",
+        "distal_dend.AMPA", "distal_dend.NMDA"
     ]
 
     def can_record(self, variable):
