@@ -37,6 +37,7 @@ class ConnectionFromDB(Connection):
 
         # Get the target region on the cell and the receptor type
         region, receptor = projection.receptor_type.split(".")
+        receptors = receptor.split("+")
         segment = getattr(self.postsynaptic_cell._cell, region)
         pre_gid = int(self.presynaptic_cell)
         
@@ -45,7 +46,7 @@ class ConnectionFromDB(Connection):
         pp, nc = params_db.make_parallel_connection(
                     state.parallel_context, 
                     pre_pop_id, post_pop_id,
-                    segment, pre_gid, [receptor])
+                    segment, pre_gid, receptors)
 
         self.pp = pp
         self.nc = nc

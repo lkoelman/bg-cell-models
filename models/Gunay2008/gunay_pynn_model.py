@@ -73,7 +73,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     #                     'config/map_params_hendrickson2011.min.json',)
 
 
-class GPeCellType(NativeCellType):
+class GPeCellType(ephys_pynn.EphysCellType):
     """
     Encapsulates a GPe model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -112,11 +112,13 @@ class GPeCellType(NativeCellType):
     # default_initial_values = {'v': -65.0}
 
     # Synapse receptor types per region
-    receptor_types = [
-        "proximal_dend.GABAA", "proximal_dend.GABAB",
-        "proximal_dend.AMPA", "proximal_dend.NMDA",
-        "distal_dend.AMPA", "distal_dend.NMDA"
-    ]
+    receptor_types = []
+    excitatory_locs = ['proximal_dend', 'distal_dend']
+    inhibitory_locs = ['proximal_dend']
+    for loc in excitatory_locs:
+        receptor_types.extend([loc+'.AMPA', loc+'.NMDA', loc+'.AMPA+NMDA'])
+    for loc in inhibitory_locs:
+        receptor_types.extend([loc+'.GABAA', loc+'.GABAB', loc+'.GABAA+GABAB'])
 
     def can_record(self, variable):
         """

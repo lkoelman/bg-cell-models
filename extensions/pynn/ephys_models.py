@@ -21,6 +21,7 @@ from copy import copy, deepcopy
 
 import bluepyopt.ephys as ephys
 from pyNN.neuron import state as nrn_state, h
+from pyNN.neuron.cells import NativeCellType
 
 ephys_nrn_sim = None
 
@@ -55,6 +56,19 @@ def make_valid_attr_name(name):
                 String that is a valid attribute name.
     """
     return name.replace(".", "_")
+
+
+class UnitFetcherPlaceHolder(dict):
+    def __getitem__(self, key):
+        return 'V'
+
+
+class EphysCellType(NativeCellType):
+    """
+    PyNN native cell type that has Ephys model as 'model' attribute.
+    """
+    # TODO: units property with __getitem__ implemented
+    units = UnitFetcherPlaceHolder()
 
 
 class CellModelMeta(type):
@@ -326,13 +340,15 @@ class EphysModelWrapper(ephys.models.CellModel):
         """
         matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>\d+)\])?', spec)
         sec_name = matches.group('secname')
-        sec_index = matches.group('idx')
+        sec_index = matches.group('index')
         icell = self.icell
         
         if sec_index is None:
             return getattr(icell, sec_name)
+        else:
+            sec_index = int(sec_index)
         
-        elif sec_name in ['soma', 'dend', 'apic', 'axon', 'myelin']:
+        if sec_name in ['soma', 'dend', 'apic', 'axon', 'myelin']:
             # target is a secarray
             return getattr(icell, sec_name)[sec_index]
         

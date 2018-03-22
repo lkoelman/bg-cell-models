@@ -41,6 +41,7 @@ class TraceSpecRecorder(Recorder):
 
         @override   pyNN.recording.Recorder.record()
 
+
         @param      variables : iterable(tuple(str, <dict or str>))
 
                     Any iterable where the first element of each item
@@ -49,6 +50,10 @@ class TraceSpecRecorder(Recorder):
                     string like the default PyNN variable names, or a dict
                     that specifies the trace in NetPyne format.
         
+        @note       The original graph is as follows:
+                    -> Recorder.record() @ /pyNN/recording/__init__.py
+                    -> Recorder._record() @ /pyNN/neuron/recording.py
+                    -> Recorder._record_state_variable() @ /pyNN/neuron/recording.py
         USAGE
         -----
 
@@ -62,13 +67,17 @@ class TraceSpecRecorder(Recorder):
         """
         logger.debug('Recorder.record(<%d cells>)' % len(ids))
         if sampling_interval is not None:
-            if sampling_interval != self.sampling_interval and len(self.recorded) > 0:
+            if ((sampling_interval != self.sampling_interval) and (len(self.recorded) > 0) and 
+                    not (len(self.recorded) == 1 and 'spikes' in self.recorded)):
                 raise ValueError("All neurons in a population must be recorded with the same sampling interval.")
 
         ids = set([id for id in ids if id.local])
 
         for variable in variables:
-            trace_name, trace_spec = variable
+            if isinstance(variable, str):
+                trace_name = variable
+            else:
+                trace_name, trace_spec = variable
             # if not self.population.can_record(trace_spec):
             #     raise errors.RecordingError(trace_spec, self.population.celltype)
             
@@ -92,7 +101,10 @@ class TraceSpecRecorder(Recorder):
                     A trace specifier consisting of the trace name as first
                     element and full trace specification as second element.
         """
-        trace_name, trace_spec = variable
+        if isinstance(variable, str):
+            trace_name, trace_spec = variable, variable
+        else:
+            trace_name, trace_spec = variable
         recorded = False
 
         # First try to interpret spec as PyNN format (string)
@@ -104,6 +116,9 @@ class TraceSpecRecorder(Recorder):
             hoc_var = cell.esyn._ref_g
         elif trace_spec == 'gsyn_inh':
             hoc_var = cell.isyn._ref_g
+        elif trace_spec == 'spikes':
+            cell.rec.record(cell.spike_times)
+            return # was implemented in _record() -> don't execute rest of body
         elif isinstance(trace_spec, str):
             source, var_name = self._resolve_variable(cell, trace_spec)
             hoc_var = getattr(source, "_ref_%s" % var_name)
