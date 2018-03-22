@@ -60,17 +60,12 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
     _ephys_locations = define_gpe_locations()
     
-    # _morph_func = functools.partial(
-    #                     gunay_model.define_morphology,
-    #                     'morphology/bg0121b_axonless_GENESIS_import.swc',
-    #                     replace_axon=False)
-    # _mechs_func = functools.partial(
-    #                     gunay_model.define_mechanisms,
-    #                     'config/mechanisms.min.json')
-    # _params_func = functools.partial(
-    #                     gunay_model.define_parameters,
-    #                     'config/params_hendrickson2011_GENESIS.min.json',
-    #                     'config/map_params_hendrickson2011.min.json',)
+    
+    def memb_init(self):
+        """
+        Initialization function required by PyNN.
+        """
+        pass
 
 
 class GPeCellType(ephys_pynn.EphysCellType):

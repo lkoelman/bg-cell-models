@@ -30,7 +30,10 @@ from extensions.pynn.ephys_locations import SomaDistanceRangeLocation
 
 # Debug messages
 from common import logutils
-logutils.setLogLevel('quiet', ['bluepyopt.ephys.parameters', 'bluepyopt.ephys.mechanisms'])
+logutils.setLogLevel('quiet', [
+    'bluepyopt.ephys.parameters', 
+    'bluepyopt.ephys.mechanisms', 
+    'bluepyopt.ephys.morphologies'])
 
 
 def define_locations():
@@ -90,6 +93,18 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         cell_idx = h.make_stn_cell_global()
         cell_idx = int(cell_idx)
         self.icell = h.SThcells[cell_idx]
+
+
+    def memb_init(self):
+        """
+        Initialization function required by PyNN.
+
+        Don't forget to set initial ion concentrations globally.
+        """
+        for sec in self.icell.all:
+            h.ion_style("na_ion",1,2,1,0,1, sec=sec)
+            h.ion_style("k_ion",1,2,1,0,1, sec=sec)
+            h.ion_style("ca_ion",3,2,1,1,1, sec=sec)
 
 
 class StnCellType(ephys_pynn.EphysCellType):

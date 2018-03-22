@@ -286,6 +286,10 @@ class EphysModelWrapper(ephys.models.CellModel):
             elif param_name in self.parameter_names:
                 setattr(self, param_name, param_value)
 
+        # Synapses will map the mechanism name to the synapse object
+        # and is set by our custom Connection class
+        self.synapses = {}
+
         # Attributes required by PyNN
         self.source_section = self.icell.soma[0]
         self.source = self.icell.soma[0](0.5)._ref_v
@@ -308,8 +312,8 @@ class EphysModelWrapper(ephys.models.CellModel):
         @override   Implements the memb_init() function that is part of the
                     pyNN interface for cell models.
         """
-        # TODO: implement initialization if required.
-        pass
+        raise NotImplementedError("Please implement an initializer for your "
+                "custom cell model.")
 
 
     def resolve_section(self, spec):

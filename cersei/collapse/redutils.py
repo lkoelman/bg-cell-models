@@ -17,7 +17,9 @@ logger = logging.getLogger(logname) # create logger for this module
 import numpy as np
 from neuron import h
 
-from common.nrnutil import getsecref, seg_index, seg_xmin, seg_xmax
+from common.nrnutil import (
+    getsecref, seg_index, seg_xmin, seg_xmax,
+    copy_ion_styles, get_ion_styles, set_ion_styles, ion_styles_bits_to_dict)
 from common.treeutils import subtreeroot, dfs_iter_tree_stack
 from common.electrotonic import seg_lambda
 
@@ -571,105 +573,6 @@ def copy_sec_properties(src_sec, tar_sec, mechs_pars):
 
     # ion styles
     copy_ion_styles(src_sec, tar_sec)
-
-
-def copy_ion_styles(src_sec, tar_sec, ions=None):
-    """
-    Copy ion styles from source to target section
-
-    NOTE:
-
-    oldstyle = ion_style("name_ion")
-
-    oldstyle = int:
-        int( 1*c_style + 4*cinit + 8*e_style + 32*einit + 64*eadvance )
-        c_style:    0, 1, 2, 3  (2 bits)
-        e_style:    0, 1, 2, 3  (2 bits)
-        einit:      0, 1        (1 bits)
-        eadvance:   0, 1        (1 bits)
-        cinit:      0, 1        (1 bits)
-
-    ion_style("name_ion", c_style, e_style, einit, eadvance, cinit)
-
-    """
-    if ions is None:
-        ions = ['na', 'k', 'ca']
-
-    # Get ion style for each ion species
-    src_sec.push()
-    styles = dict(((ion, h.ion_style(ion+'_ion')) for ion in ions))
-    
-    # Copy to target Section
-    set_ion_styles(tar_sec, **styles)
-
-    h.pop_section()
-
-
-def get_ion_styles(src_sec, ions=None):
-    """
-    Get ion styles as integer for each ion.
-
-    @return     dict({str:int}) with ion species as keys and integer
-                containing bit flags signifying ion styles as values
-    """
-    if not isinstance(ions, list):
-        ions = ['na', 'k', 'ca']
-
-    # Get ion style for each ion species
-    src_sec.push()
-    styles = {}
-    for ion in ions:
-        pname = ion + '_ion'
-        if hasattr(src_sec(0.5), pname):
-            styles[ion] = h.ion_style(pname)
-    h.pop_section()
-
-    return styles
-
-
-def set_ion_styles(tar_sec, **kwargs):
-    """
-    Set ion styles from integer containing bit flags.
-
-    @param  kwargs      keyword arguments ion_name: style_int
-    """
-    # Copy to target Section
-    tar_sec.push()
-    for ion, style in kwargs.iteritems():
-
-        # Decompose int into bit flags
-        c_style = int(style) & (1+2)
-        cinit = (int(style) & 4) >> 2
-        e_style = (int(style) & (8+16)) >> 3
-        einit = (int(style) & 32) >> 5
-        eadvance = (int(style) & 64) >> 6
-
-        # Copy to new section
-        h.ion_style(ion+'_ion', c_style, e_style, einit, eadvance, cinit)
-    
-    h.pop_section()
-
-
-def ion_styles_bits_to_dict(style):
-    """
-    Convert a float representing the styles of one ion to a dictionary
-    containing values for all the style flags.
-
-    @param  style : float
-            Result of call to h.ion_style(ion) for the CAS
-
-    @return styles: dict
-            Names of styles flags and their values
-    """
-    # Decompose int into bit flags
-    styles = {}
-    styles['c_style'] = int(style) & (1+2)
-    styles['cinit'] = (int(style) & 4) >> 2
-    styles['e_style'] = (int(style) & (8+16)) >> 3
-    styles['einit'] = (int(style) & 32) >> 5
-    styles['eadvance'] = (int(style) & 64) >> 6
-
-    return styles
 
 
 def save_tree_properties(node_sec, mechs_pars):
