@@ -88,7 +88,20 @@ class TraceSpecRecorder(Recorder):
             self._record(variable, new_ids, sampling_interval)
 
 
-    def _record_state_variable(self, cell, variable):
+    def _record(self, variable, new_ids, sampling_interval=None):
+        """Add the cells in `new_ids` to the set of recorded cells."""
+        if variable == 'spikes':
+            for id in new_ids:
+                if id._cell.rec is not None:
+                    id._cell.rec.record(id._cell.spike_times)
+        else:
+            self.sampling_interval = sampling_interval or self._simulator.state.dt
+            for id in new_ids:
+                # Override to pass ID instead of cell
+                self._record_state_variable(id, variable)
+
+
+    def _record_state_variable(self, id, variable):
         """
         Record the variable specified by the object 'variable'.
 
@@ -101,10 +114,12 @@ class TraceSpecRecorder(Recorder):
                     A trace specifier consisting of the trace name as first
                     element and full trace specification as second element.
         """
+        cell = id._cell
         if isinstance(variable, str):
             trace_name, trace_spec = variable, variable
         else:
             trace_name, trace_spec = variable
+        
         recorded = False
 
         # First try to interpret spec as PyNN format (string)
@@ -119,28 +134,50 @@ class TraceSpecRecorder(Recorder):
         elif trace_spec == 'spikes':
             cell.rec.record(cell.spike_times)
             return # was implemented in _record() -> don't execute rest of body
+        
         elif isinstance(trace_spec, str):
             source, var_name = self._resolve_variable(cell, trace_spec)
             hoc_var = getattr(source, "_ref_%s" % var_name)
-        else:
+        
+        elif 'sec' in trace_spec.keys():
             # spec is in NetPyne format
             hoc_obj = cell.resolve_section(trace_spec['sec'])
             vec, marker = self._record_trace(hoc_obj, trace_spec, self.sampling_interval)
-            recorded = True
             if marker is not None:
                 _pp_markers = getattr(cell, '_pp_markers', [])
                 _pp_markers.append(marker)
                 cell._pp_markers = _pp_markers
+            cell.traces[trace_name] = vec
+            recorded = True
+
+        elif 'syn' in trace_spec.keys():
+            # trace spec 
+            #   'Syn{:d}' : {'syn': Exp2Syn[:], var:'g'}
+            #   'Syn{:d}' : {'syn': Exp2Syn[0], var:'g'}
+            pp_list = cell.resolve_synapses(trace_spec['syn'])
+            for i, pp in enumerate(pp_list):
+                vec = h.Vector()
+                hoc_ptr = getattr(pp, '_ref_'+trace_spec['var'])
+                vec.record(pp, hoc_ptr, self.sampling_interval)
+
+                numbered_trace_name = trace_name.format(i)
+                cell.traces[numbered_trace_name] = vec
+                self.recorded[numbered_trace_name] = \
+                    self.recorded[numbered_trace_name].union((id,))
+
+            # This is a hack: remove the unformatted trace name from recorded
+            # signals for this ID
+            self.recorded[trace_name] = set()
+            recorded = True
         
-        # Make NEURON Vector and record into it
+        # recorded == True means recording vector was created and saved
         if not recorded:
             vec = h.Vector()
             if self.sampling_interval == self._simulator.state.dt:
                 vec.record(hoc_var)
             else:
                 vec.record(hoc_var, self.sampling_interval)
-
-        cell.traces[trace_name] = vec
+            cell.traces[trace_name] = vec
         
         # Record global time variable 't' if not recorded already
         if not cell.recording_time:

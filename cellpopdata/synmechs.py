@@ -176,7 +176,7 @@ def getSynMechParamNames(mech_name):
 # Aliases
 get_mechanism_receptors = getSynMechReceptors
 get_mech_param_names = getSynMechParamNames
-physio_to_neuron_params = getNrnConParamMap
+get_physio2mech_map = getNrnConParamMap
 
 
 def evalValueSpec(value_spec, rng=None):

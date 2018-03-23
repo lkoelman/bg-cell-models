@@ -71,6 +71,34 @@ class EphysCellType(NativeCellType):
     units = UnitFetcherPlaceHolder()
 
 
+    def __init__(self, with_receptors=None):
+        """
+        The instantated cell type is passed to Population.
+
+        @param      with_synapses : iterable(str)
+
+                    Synaptic mechanism names of synapses that should be allowed
+                    on this cell type.
+
+        @post       The list of receptors in self.receptor_types will be 
+                    updated with each receptor in 'with_receptors' for every
+                    cell location/region.
+        """
+        super(EphysCellType, self).__init__()
+        
+        if with_receptors is not None:
+            # Update receptor types
+            class_receptor_types = type(self).receptor_types
+            instance_receptor_types = list(class_receptor_types)
+            
+            for mech_name in with_receptors:
+                for loc in self.model._ephys_locations:
+                    instance_receptor_types.append(loc.name + "." + mech_name)
+            
+            self.receptor_types = instance_receptor_types
+
+
+
 class CellModelMeta(type):
     """
     Create new type that is subclass of ephys.models.CellModel and
@@ -166,6 +194,14 @@ class EphysModelWrapper(ephys.models.CellModel):
     instances of a cell to be created. As opposed to the original CellModel class,
     this class instantiates the cell in its __init__ method.
 
+
+    @note   Called by ID._build_cell(...) defined in
+                https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
+            
+            Retrieved from Population.cell_type.model, instantiated as
+            model(**cell_parameters) and assigned to ID._cell
+
+
     @see    Based on definition of SimpleNeuronType and standardized cell types in:
                 https://github.com/NeuralEnsemble/PyNN/blob/master/test/system/test_neuron.py
                 https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/standardmodels/cells.py
@@ -191,7 +227,6 @@ class EphysModelWrapper(ephys.models.CellModel):
                     The original function tries to recreate the Hoc template every
                     time so isn't suitable for instantiating multiple copies.
         """
-        # TODO: find out how to create additional copies of a cell
         if not hasattr(sim.neuron.h, template_name):
             template_string = ephys.models.CellModel.create_empty_template(
                                                         template_name,
@@ -224,7 +259,7 @@ class EphysModelWrapper(ephys.models.CellModel):
                     secarray_names=self.secarray_names)
 
         self.icell = icell
-        icell.gid = self.gid # TODO: see how PyNN manages GID
+        # icell.gid = self.gid # gid = int(ID) where ID._cell == self
 
         self.morphology.instantiate(sim=sim, icell=icell)
 
@@ -246,11 +281,7 @@ class EphysModelWrapper(ephys.models.CellModel):
         @return     cell : HocObject
                     Return value of Hoc template.
 
-        @see        Called by _build_cell(...) in module PyNN.neuron.simulator
-                    https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
         """
-        # TODO: If you put instantiation in __call__ rather than __init__, you can intialize with different morphology or parameters sets. This way you also preserve the intention of CellModel to not be instantiated initially, but just describe the model. However, you can't return the icell since then you lose access to all this class' attributes
-
         # Get parameter definitions from class attributes of subclass.
         model_name = self.__class__.__name__
 
@@ -328,11 +359,45 @@ class EphysModelWrapper(ephys.models.CellModel):
                 "custom cell model.")
 
 
-    def resolve_pointp(self, spec):
+    def resolve_synapses(self, spec):
         """
         Resolve point process specification for Recorder.
+
+        @param      spec : str
+                    
+                    Synapse specifier in format "mechanism_name[slice]" where
+                    'slice' as a slice expression like '::2' or integer.
+
+        @return     list(nrn.POINT_PROCESS)
+                    List of NEURON synapse objects.
         """
-        pass
+        matches = re.search(r'^(?P<mechname>\w+)(\[(?P<slice>[\d:]+)\])', spec)
+        mechname = matches.group('mechname')
+        slice_expr = matches.group('slice') # "i:j:k"
+        slice_parts = slice_expr.split(':') # ["i", "j", "k"]
+        slice_parts_valid = [int(i) if i!='' else None for i in slice_parts]
+        synlist = self.synapses.get(mechname, [])
+        
+        if len(synlist) == 0:
+            return []
+        elif len(slice_parts) == 1: # zero colons
+            return [synlist[int(slice_parts_valid[0])]]
+        else: # at least one colon
+            slice_object = slice(*slice_parts_valid)
+            return synlist[slice_object]
+
+        # elif len(slice_parts) == 2: # one colon
+        #     start = slice_parts[0]
+        #     stop = slice_parts[1]
+        #     if start == stop == '':
+        #         return self.synlist[:]
+        #     elif start == '':
+        #         return self.synlist[:int(stop)]
+        #     elif stop == '':
+        #         return self.synlist[int(start):]
+        #     else:
+        #         return self.synlist[int(start):int(stop)]
+        # elif len(slice_parts) == 3: # two colons
 
 
     def resolve_section(self, spec):

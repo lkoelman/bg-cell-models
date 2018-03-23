@@ -24,7 +24,7 @@ import numpy as np
 
 from pyNN.utility import init_logging
 import pyNN.neuron as sim
-from extensions.pynn.connection import SynapseFromDB, SynapseToCellRegion
+from extensions.pynn.connection import SynapseFromDB, NativeSynapse
 from extensions.pynn.recording import TraceSpecRecorder
 sim.Population._recorder_class = TraceSpecRecorder
 
@@ -36,7 +36,7 @@ sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses')
 import models.GilliesWillshaw.gillies_pynn_model as gillies
 import models.Gunay2008.gunay_pynn_model as gunay
 
-from cellpopdata.physiotypes import Populations as PopID
+from cellpopdata.physiotypes import Populations as PopID, ParameterSource as LitRef
 from cellpopdata.cellpopdata import CellConnector
 
 
@@ -127,26 +127,37 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
     # Parameters database
     params_db = CellConnector('Parkinsonian', numpy_rng,
-                                preferred_mechanisms=['GLUsyn', 'GABAsyn'])
+        preferred_sources=[LitRef.Chu2015, LitRef.Fan2012, LitRef.Atherton2013],
+        preferred_mechanisms=['GLUsyn', 'GABAsyn'])
 
     ############################################################################
     # POPULATIONS
     ############################################################################
 
     # STN cell population
-    pop_stn = sim.Population(ncell_per_pop, gillies.StnCellType(), label='STN')
+    stn_type = gillies.StnCellType(with_receptors=['GLUsyn', 'GABAsyn'])
+    pop_stn = sim.Population(ncell_per_pop, stn_type, label='STN')
     pop_stn.pop_id = PopID.STN
     pop_stn.initialize(v=-63.0)
 
     # GPe cell population
-    pop_gpe = sim.Population(ncell_per_pop, gunay.GPeCellType(), label='GPE')
+    gpe_type = gunay.GPeCellType(with_receptors=['GLUsyn', 'GABAsyn'])
+    pop_gpe = sim.Population(ncell_per_pop, gpe_type, label='GPE')
     pop_gpe.pop_id = PopID.GPE
     pop_gpe.initialize(v=-63.0)
 
+
     # CTX spike sources
-    pop_ctx = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=50.0),
+    pop_ctx = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=20.0),
                     label='CTX')
     pop_ctx.pop_id = PopID.CTX
+
+
+    # STR spike sources
+    pop_str = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=20.0),
+                    label='STR')
+    pop_str.pop_id = PopID.STR
+
 
     # Noise sources
     noise_gpe = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=50.0),
@@ -165,41 +176,37 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     db_syn = SynapseFromDB(parameter_database=params_db) # our custom synapse class
 
     ############################################################################
-    # XXX -> GPE 
+    # TO GPE 
 
     #---------------------------------------------------------------------------
     # STN -> GPE (excitatory)
-    stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, conn_all2all, db_syn, 
-        receptor_type='distal_dend.AMPA')
-
-    # stn_gpe_NMDA = sim.Projection(pop_stn, pop_gpe, all_to_all, db_syn, 
-    #     receptor_type='distal_dend.NMDA')
+    stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, conn_allp05, db_syn, 
+        receptor_type='distal_dend.AMPA+NMDA')
 
     #---------------------------------------------------------------------------
     # STR -> GPE (inhbitory)
-
+    str_gpe_INH = sim.Projection(pop_str, pop_gpe, conn_allp05, db_syn, 
+        receptor_type='proximal_dend.GABAA+GABAB')
 
     #---------------------------------------------------------------------------
     # NOISE -> GPE (excitatory)
-    # TODO: set synapse parameters manually
-    # noise_syn = sim.StaticSynapse(weight=1.0, delay=5.0)
-    # noise_connector = sim.FixedProbabilityConnector(0.5)
-    # noise_connector.connection_type = SynapseToCellRegion
-    # noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, noise_connector, noise_syn,
-    #     receptor_type='proximal_dend.AMPA+NMDA')
+    noise_syn = NativeSynapse(weight=1.0, delay=5.0, mechanism='GLUsyn') # default params
+    noise_connector = sim.FixedProbabilityConnector(0.5)
+    noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, noise_connector, noise_syn,
+                                    receptor_type='proximal_dend.AMPA+NMDA')
 
 
     ############################################################################
-    # XXX -> STN 
+    # TO STN 
 
     #---------------------------------------------------------------------------
     # GPe -> STN (inhibitory)
-    gpe_stn_INH = sim.Projection(pop_gpe, pop_stn, conn_all2all, db_syn, 
-        receptor_type='proximal_dend.GABAA')
+    gpe_stn_INH = sim.Projection(pop_gpe, pop_stn, conn_allp05, db_syn, 
+        receptor_type='proximal_dend.GABAA+GABAB')
 
     #---------------------------------------------------------------------------
     # CTX -> STN (excitatory)
-    ctx_stn_EXC = sim.Projection(pop_ctx, pop_stn, conn_all2all, db_syn, 
+    ctx_stn_EXC = sim.Projection(pop_ctx, pop_stn, conn_allp05, db_syn, 
         receptor_type='distal_dend.AMPA+NMDA')
 
     ############################################################################
@@ -208,9 +215,14 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
     traces_allpops = {
         'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
+        'gAMPA{:d}': {'syn':'GLUsyn[0]', 'var':'g_AMPA'},
+        # 'gNMDA{:d}': {'syn':'GLUsyn[::2]', 'var':'g_NMDA'},
+        # 'gGABAA{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAA'},
+        # 'gGABAB{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAB'},
     }
     for pop in [pop_gpe, pop_stn]:
         pop.record(traces_allpops.items(), sampling_interval=.05)
+    
     for pop in all_pops.values():
         pop.record(['spikes'], sampling_interval=.05)
 

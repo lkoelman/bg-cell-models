@@ -7,24 +7,42 @@ and get their parameters from centralized parameter databvase.
 @date       21/03/2018
 """
 
-from pyNN.neuron import StaticSynapse
+import re
+import pyNN.neuron
 from pyNN.neuron.simulator import Connection, state, h
 from common import nrnutil
 
 
 class ConnectionFromDB(Connection):
+    #    The call graph is:
+    #
+    #    -> Projection.__init__(..., Connector
+    #    `-> Connector.connect(..., Projection)
+    #    `-> MapConnector._standard_connect(...)
+    #        `-> Connector._parameters_from_synapse_type(...)
+    #            - parameters are fetched from Projection.synapse_type
+    #            - parameters are optionally calculated from distance map
+    #    `-> Projection._convergent_connect(..., **connection_parameters)
+    #    `-> Projection.synapse_type.connection_type(...)
+    #    `-> Connection.__init__(...)
 
     def __init__(self, projection, pre, post, **parameters):
         """
         Create a new connection.
 
+
         @pre        The synapse_type passed to Projection must have an attribute
                     'parameter_database' providing a method
                     make_parallel_connection()
 
+
         @pre        Each Population object needs to have an attribute
                     'pop_id' containing the population identifier recognized
                     by cellpopdata
+
+        @param      parameters : **dict
+                    Parameters retrieved from projection synapse type
+        
         """
         #logger.debug("Creating connection from %d to %d, weight %g" % (pre, post, parameters['weight']))
         self.presynaptic_index = pre
@@ -42,12 +60,28 @@ class ConnectionFromDB(Connection):
         segment = getattr(self.postsynaptic_cell._cell, region)
         pre_gid = int(self.presynaptic_cell)
         
-        # TODO: allow custom_conpar/custom_synpar in **parameters, and pass them on
         params_db = projection.synapse_type.parameter_database
-        syn, nc = params_db.make_parallel_connection(
-                    state.parallel_context, 
-                    pre_pop_id, post_pop_id,
-                    segment, pre_gid, receptors)
+        custom_physio_params = parameters.get('custom_physio_params', None)
+        custom_nrn_params = parameters.get('custom_nrn_params', None)
+
+        # Get suitable parameters for populations and receptors
+        syn_mech_name = params_db.get_synaptic_mechanism(receptors)
+
+        physio_params = params_db.get_physiological_parameters(
+                            pre_pop_id, post_pop_id,
+                            custom_params=custom_physio_params,
+                            use_sources=None)
+
+        # Make a synapse and NetCon
+        synapse_type = getattr(h, syn_mech_name)
+        syn = synapse_type(segment)
+        nc = state.parallel_context.gid_connect(pre_gid, syn)
+
+        # Set the mechanism and NetCon parameters from phsyiological parameters
+        params_db.set_connection_params_from_physio(
+                    syn, nc, syn_mech_name, receptors, 
+                    con_par_data=physio_params,
+                    custom_synpar=custom_nrn_params)
 
         self.synapse = syn
         self.nc = nc
@@ -63,16 +97,22 @@ class ConnectionFromDB(Connection):
         # nc.threshold is supposed to be set by ParallelContext.threshold, called in _build_cell(), above, but this hasn't been tested
 
 
-class SynapseToCellRegion(Connection):
+class NativeSynToRegion(Connection):
     """
-    Connectt a synaptic mechanism (MOD file name)
-    to a cell region specified as Ephys location.
+    Connect a synaptic mechanism (MOD file name) to a cell region
+    pecified as Ephys location.
+
+    This connection type is only for use with NativeSynapse defined in 
+    this module.
 
     USAGE
     -----
 
-        >>> syn = sim.StaticSynapse(**syn_mech_params)
-        >>> syn.connection_type = SynapseToCellRegion
+        >>> syn_params = {'netcon:weight[0]': 1.0, 'netcon:weight[1]: 0.5', 
+        >>>               'netcon:delay': 3.0, 'syn:e_rev': 80.0,
+        >>>               'syn:tau_fall': 15.0, 'syn:tau_rise': 5.0}
+        >>> syn = sim.StaticSynapse(**syn_params)
+        >>> syn.connection_type = NativeSynToRegion
     
     """
 
@@ -91,7 +131,11 @@ class SynapseToCellRegion(Connection):
         self.postsynaptic_cell = projection.post[post]
 
         # Get the target region on the cell and the receptor type
-        region, syn_mech_name = projection.receptor_type.split(".")
+        # syn_mech_name = parameters.pop('mechanism', None)
+        syn_mech_name = projection.synapse_type.mechanism
+        region, receptor_name = projection.receptor_type.split(".")
+        if syn_mech_name is None:
+            syn_mech_name = receptor_name
         segment = getattr(self.postsynaptic_cell._cell, region)
         
         # Find a synapse to connect to or create one
@@ -114,22 +158,38 @@ class SynapseToCellRegion(Connection):
             post_syns = self.postsynaptic_cell._cell.synapses.setdefault(syn_mech_name, [])
             post_syns.append(target_syn)
 
-        # TODO: set parameters using interpretParamSpec (synmech.py)
-        self.nc.weight[0] = parameters.pop('weight')
-        # if we have a mechanism (e.g. from 9ML) that includes multiple
-        # synaptic channels, need to set nc.weight[1] here
-        if self.nc.wcnt() > 1 and hasattr(self.postsynaptic_cell._cell, "type"):
-            self.nc.weight[1] = self.postsynaptic_cell._cell.type.receptor_types.index(projection.receptor_type)
-        
-        self.nc.delay = parameters.pop('delay')
-        if projection.synapse_type.model is not None:
-            self._setup_plasticity(projection.synapse_type, parameters)
-        # nc.threshold is supposed to be set by ParallelContext.threshold, called in _build_cell(), above, but this hasn't been tested
+        # Interpret connection parameters
+        param_targets = {'syn': self.synapse, 'netcon': self.nc}
+        parameters.update(projection.synapse_type.mechanism_parameters)
+        for param_spec, param_value in parameters.iteritems():
+            # Default PyNN parameters
+            if param_spec == 'weight':
+                self.nc.weight[0] = param_value
+            elif param_spec == 'delay':
+                self.nc.delay = param_value
+            else:
+                # read param spec in format "target:attribute[index]"
+                matches = re.search(
+                    r'^(?P<target>\w+):(?P<parname>\w+)(\[(?P<index>\d+)\])?', 
+                    param_spec)
+    
+                target_name = matches.group('target')
+                param_name = matches.group('parname')
+                param_index = matches.group('index')
+
+                # Determine target (synapse or NetCon)
+                target = param_targets[target_name]
+
+                # Set attribute
+                if param_index is None:
+                    setattr(target, param_name, param_value)
+                else:
+                    getattr(target, param_name)[int(param_index)] = param_value
 
 
 # We have to define a custom Synapse model so we can make the connection_type
 # point to our custom Connection class
-class SynapseFromDB(StaticSynapse):
+class SynapseFromDB(pyNN.neuron.StaticSynapse):
     """
     Same as StaticSynapse except we specify our own connection_type.
 
@@ -152,3 +212,43 @@ class SynapseFromDB(StaticSynapse):
         parameters['delay'] = 1.0
         parameters['weight'] = 1.0
         super(SynapseFromDB, self).__init__(**parameters)
+
+
+class NativeSynapse(pyNN.neuron.StaticSynapse):
+    """
+    A NEURON native synapse model.
+
+    You can specify any mechanism name as the 'mechanism' argument,
+    and its parameters as 'mechanism_parameters'
+
+    @see        pyNN.standardmodels.synapses.StaticSynapse
+    """
+    connection_type = NativeSynToRegion
+
+    # default_parameters = {
+    #     'weight': 0.0,
+    #     'delay': None,
+    #     'mechanism': 'Exp2Syn',
+    #     'mechanism_parameters': None,
+    # }
+
+    def __init__(self, **parameters):
+        """
+        Make new NEURON native synapse
+
+        @param      mechanism : str
+                    NEURON synapse mechanism name
+
+        @param      mechanism_parameters : dict(str, float)
+                    Parameters of neuron mechanism and NetCon, in format
+                    "syn:attribute[index]" and "netcon:attribute[index]".
+        """
+        # Don't pass native mechanism parameters
+        self.mechanism = parameters.pop('mechanism')
+        self.mechanism_parameters = parameters.pop('mechanism_parameters', {})
+        self.physiological_parameters = parameters.pop('physiological_parameters', {})
+        
+        # Insert dummy variables so pyNN doesn't complain
+        parameters.setdefault('delay', None)
+        parameters.setdefault('weight', 0.0)
+        super(NativeSynapse, self).__init__(**parameters)

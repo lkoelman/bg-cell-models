@@ -11,11 +11,18 @@ def interpretParamSpec(spec):
 	"""
 	Extract <mechanism_type>, <parameter_name>, <index> from parameter specification in format 'mechanism:parameter[index]'
 
-	@return		tuple (mechanism_type, parameter_name, index)
+	@param		spec : str
 
-					mechanism_type: <str> 'syn', 'netcon'
-					parameter_name: <str> attribute name on Hoc object
-					index:			<int> index of attribute on Hoc object
+				A string in the format "mechtype.paramname[index]" where the
+				index part is optional. The only requirement is to have
+				two substring separated by "." and possibly followed by the
+				index in brackets.
+
+
+	@return		tuple(mechanism_type: str, parameter_name: str, index: int)
+				
+				Tuple corresponding to the three parts of the parameter spec,
+				with the index equal to None of not specified.
 	"""
 	# Regular expression with ?P<groupname> to mark named groups
 	matches = re.search(r'^(?P<mech>\w+):(?P<parname>\w+)(\[(?P<idx>\d+)\])?', spec)

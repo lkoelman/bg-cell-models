@@ -61,19 +61,12 @@ def define_locations():
 
 
 class StnCellModel(ephys_pynn.EphysModelWrapper):
-    # TODO: adapt model wrapper for cells without morphology
-    #   - A: maintain the class, just do checks to see which of _ephys_xxx
-    #     is present in class definition, and adapt instantiation procedure.
-    #       => makes most sense, since we need to subclass CellModel anyway for
-    #          Hoc models without morphology etc., then we might as well override
-    #          instantiate etc.
-    #
-    #   - B: make a new wrapper class called HocModelWrapper that inherits from
-    #     ephys.CellModel (see bpop_cellmodels) + does the pyNN-related modifications.
-    #
-    #   - C: create two subclasses of intermediate base classEphysModelWrapper: 
-    #        one with and one without morphology
+    """
+    Model class for Gillies STN cell.
 
+    @note   instantiated using Population.cell_type.model(**parameters) 
+            and assigned to ID._cell
+    """
 
     _ephys_locations = define_locations()
 
