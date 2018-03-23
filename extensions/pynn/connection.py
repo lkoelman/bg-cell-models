@@ -54,7 +54,7 @@ class ConnectionFromDB(Connection):
 
         # Also store synapse on postsynaptic cell
         syn_mech_name = nrnutil.get_mod_name(syn)
-        post_syns = self.postsynaptic_cell.synapses.setdefault(syn_mech_name, [])
+        post_syns = self.postsynaptic_cell._cell.synapses.setdefault(syn_mech_name, [])
         post_syns.append(syn)
 
         
@@ -111,7 +111,7 @@ class SynapseToCellRegion(Connection):
 
         # Also store synapse on postsynaptic cell
         if not existing_syn:
-            post_syns = self.postsynaptic_cell.synapses.setdefault(syn_mech_name, [])
+            post_syns = self.postsynaptic_cell._cell.synapses.setdefault(syn_mech_name, [])
             post_syns.append(target_syn)
 
         # TODO: set parameters using interpretParamSpec (synmech.py)

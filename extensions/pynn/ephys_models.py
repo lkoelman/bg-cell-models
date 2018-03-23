@@ -294,10 +294,8 @@ class EphysModelWrapper(ephys.models.CellModel):
         self.source_section = self.icell.soma[0]
         self.source = self.icell.soma[0](0.5)._ref_v
         
-        if not hasattr(self, '_v_threshold'):
-            self._v_threshold = -10.0
         self.rec = h.NetCon(self.source, None,
-                            self._v_threshold, 0.0, 0.0,
+                            self.get_threshold(), 0.0, 0.0,
                             sec=self.source_section)
         self.spike_times = h.Vector(0) # see pyNN.neuron.recording.Recorder._record()
         self.traces = {}
@@ -314,6 +312,27 @@ class EphysModelWrapper(ephys.models.CellModel):
         """
         raise NotImplementedError("Please implement an initializer for your "
                 "custom cell model.")
+
+
+    def get_threshold(self):
+        """
+        Get spike threshold for self.source variable (usually points to membrane
+        potential). This threshold is used when creating NetCon connections.
+
+        @override   Implements get_threshold() which belongs to the pyNN
+                    interface for cell models.
+
+        @return     threshold : float
+        """
+        raise NotImplementedError("Please set the spike threshold for your "
+                "custom cell model.")
+
+
+    def resolve_pointp(self, spec):
+        """
+        Resolve point process specification for Recorder.
+        """
+        pass
 
 
     def resolve_section(self, spec):

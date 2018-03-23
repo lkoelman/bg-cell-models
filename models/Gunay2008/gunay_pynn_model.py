@@ -68,6 +68,13 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         pass
 
 
+    def get_threshold(self):
+        """
+        Get spike threshold for soma membrane potential (used for NetCon)
+        """
+        return -10.0
+
+
 class GPeCellType(ephys_pynn.EphysCellType):
     """
     Encapsulates a GPe model described as a BluePyOpt Ephys model 

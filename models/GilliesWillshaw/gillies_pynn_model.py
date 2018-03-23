@@ -107,6 +107,13 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
             h.ion_style("ca_ion",3,2,1,1,1, sec=sec)
 
 
+    def get_threshold(self):
+        """
+        Get spike threshold for soma membrane potential (used for NetCon)
+        """
+        return -10.0
+
+
 class StnCellType(ephys_pynn.EphysCellType):
     """
     Encapsulates an STN model described as a BluePyOpt Ephys model 

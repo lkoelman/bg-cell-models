@@ -40,6 +40,78 @@ from cellpopdata.physiotypes import Populations as PopID
 from cellpopdata.cellpopdata import CellConnector
 
 
+def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
+    """
+    Run a simple network consisting of an STN and GPe cell population
+    that are reciprocally connected.
+    """
+
+    init_logging(logfile=None, debug=False)
+    mpi_rank = sim.setup(use_cvode=False)
+    h = sim.h
+    
+    seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
+    numpy_rng = np.random.RandomState(seed)
+
+    # STN cell population
+    pop_stn = sim.Population(ncell_per_pop, gillies.StnCellType(), label='STN')
+    pop_stn.pop_id = PopID.STN
+    pop_stn.initialize(v=-63.0)
+
+    # RECORDING
+    traces = {
+        'Vm': {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
+    }
+    pop_stn.record(traces.items(), sampling_interval=.05)
+
+
+    # INITIALIZE + RUN
+
+    # Set physiological conditions
+    h.celsius = 36.0
+    h.set_aCSF(4) # Hoc function defined in Gillies code
+
+    print("CVode state: {}".format(sim.state.cvode.active()))
+    tstart = time.time()
+    sim.run(sim_dur)
+    tstop = time.time()
+    cputime = tstop - tstart
+    num_segments = sum((sec.nseg for sec in h.allsec()))
+    print("Simulated {} segments for {} ms in {} ms CPU time".format(
+            num_segments, sim.state.tstop, cputime))
+
+
+    # PLOTTING
+    import matplotlib.pyplot as plt
+
+    # Fetch recorded data
+    pop = pop_stn
+    pop_data = pop.get_data() # Neo Block object
+    segment = pop_data.segments[0] # segment = all data with common time basis
+
+    # Plot each signal
+    for signal in segment.analogsignals:
+        # one figure per trace type
+        fig, axes = plt.subplots(signal.shape[1], 1)
+        fig.suptitle("Population {} - trace {}".format(
+                        pop.label, signal.name))
+
+        time_vec = signal.times
+        y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
+        
+        for i_cell in range(signal.shape[1]):
+            ax = axes[i_cell]
+            label = "cell {}".format(signal.annotations['source_ids'][i_cell])
+            ax.plot(time_vec, signal[:, i_cell], label=label)
+            ax.set_ylabel(y_label)
+            ax.legend()
+
+    plt.show(block=False)
+
+    if export_locals:
+        globals().update(locals())
+
+
 def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     """
     Run a simple network consisting of an STN and GPe cell population
@@ -61,7 +133,7 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     # POPULATIONS
     ############################################################################
 
-    # GPe cell population
+    # STN cell population
     pop_stn = sim.Population(ncell_per_pop, gillies.StnCellType(), label='STN')
     pop_stn.pop_id = PopID.STN
     pop_stn.initialize(v=-63.0)
@@ -109,11 +181,12 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
     #---------------------------------------------------------------------------
     # NOISE -> GPE (excitatory)
-    noise_syn = sim.StaticSynapse(weight=1.0, delay=5.0) # TODO: set synapse parameters manually
-    noise_connector = sim.FixedProbabilityConnector(0.5)
-    noise_connector.connection_type = SynapseToCellRegion
-    input_conns = sim.Projection(noise_gpe, pop_gpe, noise_connector, noise_syn,
-        receptor_type='proximal_dend.AMPA+NMDA')
+    # TODO: set synapse parameters manually
+    # noise_syn = sim.StaticSynapse(weight=1.0, delay=5.0)
+    # noise_connector = sim.FixedProbabilityConnector(0.5)
+    # noise_connector.connection_type = SynapseToCellRegion
+    # noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, noise_connector, noise_syn,
+    #     receptor_type='proximal_dend.AMPA+NMDA')
 
 
     ############################################################################
@@ -146,7 +219,8 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     # INITIALIZE + RUN
     ############################################################################
 
-    # Set initial ion concentrations
+    # Set physiological conditions
+    h.celsius = 36.0
     h.set_aCSF(4) # Hoc function defined in Gillies code
 
     print("CVode state: {}".format(sim.state.cvode.active()))
@@ -213,4 +287,6 @@ if __name__ == '__main__':
                         dest='ncell_per_pop', help='Number of cells per population')
 
     args = parser.parse_args() # Namespace object
+    
     run_simple_net(**vars(args))
+    # test_STN_population(**vars(args))
