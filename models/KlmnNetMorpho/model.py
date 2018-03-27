@@ -22,7 +22,7 @@ To run using MPI, you can use the following command:
 import time
 import numpy as np
 
-from pyNN.utility import init_logging
+from pyNN.utility import init_logging, connection_plot
 import pyNN.neuron as sim
 from extensions.pynn.connection import SynapseFromDB, NativeSynapse
 from extensions.pynn.recording import TraceSpecRecorder
@@ -195,7 +195,6 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, noise_connector, noise_syn,
                                     receptor_type='proximal_dend.AMPA+NMDA')
 
-
     ############################################################################
     # TO STN 
 
@@ -208,6 +207,11 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     # CTX -> STN (excitatory)
     ctx_stn_EXC = sim.Projection(pop_ctx, pop_stn, conn_allp05, db_syn, 
         receptor_type='distal_dend.AMPA+NMDA')
+
+    #---------------------------------------------------------------------------
+    # Plot connectivity matrix
+    for prj in [stn_gpe_EXC, gpe_stn_INH]:
+        print(u"{} connectivity matrix: \n".format(prj) + connection_plot(prj))
 
     ############################################################################
     # RECORDING
