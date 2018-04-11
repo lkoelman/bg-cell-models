@@ -14,6 +14,11 @@ from common import nrnutil
 
 
 class ConnectionFromDB(Connection):
+    """
+    Same as NativeSynToRegion except it looks up its parameters in
+    the synapse type's attached database, using the Projection's 
+    region + receptor type, presynaptic and postsynaptic cell types.
+    """
     #    The call graph is:
     #
     #    -> Projection.__init__(..., Connector
@@ -34,7 +39,10 @@ class ConnectionFromDB(Connection):
         @pre        The synapse_type passed to Projection must have an attribute
                     'parameter_database' providing a method
                     make_parallel_connection()
-
+        
+        @pre        The projection must have an attribute 'preferred_param_sources'
+                    containing the preferred sources used for looking up
+                    parameters in the database.
 
         @pre        Each Population object needs to have an attribute
                     'pop_id' containing the population identifier recognized
@@ -70,7 +78,7 @@ class ConnectionFromDB(Connection):
         physio_params = params_db.get_physiological_parameters(
                             pre_pop_id, post_pop_id,
                             custom_params=custom_physio_params,
-                            use_sources=None)
+                            use_sources=projection.preferred_param_sourcesr)
 
         # Make a synapse and NetCon
         synapse_type = getattr(h, syn_mech_name)
@@ -161,6 +169,7 @@ class NativeSynToRegion(Connection):
         # Interpret connection parameters
         param_targets = {'syn': self.synapse, 'netcon': self.nc}
         parameters.update(projection.synapse_type.mechanism_parameters)
+        
         for param_spec, param_value in parameters.iteritems():
             # Default PyNN parameters
             if param_spec == 'weight':
@@ -191,12 +200,21 @@ class NativeSynToRegion(Connection):
 # point to our custom Connection class
 class SynapseFromDB(pyNN.neuron.StaticSynapse):
     """
-    Same as StaticSynapse except we specify our own connection_type.
-
-    This synapse figures out the synapse parameters from the
-    Projection.receptor_type and pre- and post-synaptic cell types.
+    A NEURON native synapse that looks up the correct MOD mechanism
+    and all its synapse parameters in the provided database, using the
+    Projection's receptor type, presynaptic cell and postsynaptic cell.
 
     @see        pyNN.standardmodels.synapses.StaticSynapse
+
+    USAGE
+    -----
+
+        >>> from cellpopdata import cellpopdata
+        >>> params_db = cellpopdata.Cellconnector(...)
+        >>> syn = SynapseFromDB(parameter_database=params_db)
+        >>> proj = sim.Projection(pop_stn, pop_gpe, connector, db_syn,
+        >>>>                      receptor_type="distal_dend.AMPA+NMDA")
+    
     """
     connection_type = ConnectionFromDB
 
@@ -216,7 +234,8 @@ class SynapseFromDB(pyNN.neuron.StaticSynapse):
 
 class NativeSynapse(pyNN.neuron.StaticSynapse):
     """
-    A NEURON native synapse model.
+    A NEURON native synapse model with an explicit MOD mechanism
+    and mechanism parameters.
 
     You can specify any mechanism name as the 'mechanism' argument,
     and its parameters as 'mechanism_parameters'
@@ -239,6 +258,10 @@ class NativeSynapse(pyNN.neuron.StaticSynapse):
         @param      mechanism : str
                     NEURON synapse mechanism name
 
+        @param      **parameters : (keyword arguments)
+                    Only 'weight' 'delay' and 'mechanism_parameters'
+                    are recognized keywords.
+
         @param      mechanism_parameters : dict(str, float)
                     Parameters of neuron mechanism and NetCon, in format
                     "syn:attribute[index]" and "netcon:attribute[index]".
@@ -246,7 +269,7 @@ class NativeSynapse(pyNN.neuron.StaticSynapse):
         # Don't pass native mechanism parameters
         self.mechanism = parameters.pop('mechanism')
         self.mechanism_parameters = parameters.pop('mechanism_parameters', {})
-        self.physiological_parameters = parameters.pop('physiological_parameters', {})
+        # self.physiological_parameters = parameters.pop('physiological_parameters', {})
         
         # Insert dummy variables so pyNN doesn't complain
         parameters.setdefault('delay', None)

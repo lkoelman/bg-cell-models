@@ -32,7 +32,8 @@ import synmechs
 from common.conutils import interpretParamSpec
 
 import logging
-logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
+logging.basicConfig(format='%(levelname)s@%(filename)s:%(lineno)s>%(message)s',
+                    level=logging.DEBUG)
 logger = logging.getLogger(__name__) # create logger for this module
 
 
@@ -823,8 +824,12 @@ class CellConnector(object):
         syn_par_map = synmechs.get_physio2mech_map(syn_type)
 
         # keep track of parameters that are assigned
-        syn_assigned_pars = []
-        netcon_assigned_pars = []
+        syn_assigned_pars = {}
+        netcon_assigned_pars = {}
+        assigned_params = {
+            'syn': syn_assigned_pars,
+            'netcon': netcon_assigned_pars
+        }
 
         # For each NT receptor, look up the physiological connection parameters,
         # and translate them to a parameter of the synaptic mechanism or NetCon
@@ -861,11 +866,9 @@ class CellConnector(object):
                 # Determine target (synapse or NetCon)
                 if mechtype == 'syn':
                     target = syn
-                    syn_assigned_pars.append(mech_parname)
                 
                 elif mechtype == 'netcon':
                     target = nc
-                    netcon_assigned_pars.append(mech_parname)
                 else:
                     raise ValueError("Cannot set attribute of unknown mechanism type {}".format(mechtype))
 
@@ -874,6 +877,9 @@ class CellConnector(object):
                     setattr(target, mech_parname, par_val)
                 else:
                     getattr(target, mech_parname)[int(paridx)] = par_val
+
+                # Save which parameters were assigned
+                assigned_params[mechtype][mech_parname] = par_val
 
         # Custom synaptic mechanism parameters
         if custom_synpar is not None:

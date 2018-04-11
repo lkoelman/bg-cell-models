@@ -16,7 +16,7 @@ USAGE
 
 To run using MPI, you can use the following command:
 
-    >>> mpiexec -np 8 python model.py 
+    >>> mpiexec -np 8 python model.py
 
 """
 import time
@@ -33,10 +33,12 @@ import os.path
 script_dir = os.path.dirname(__file__)
 sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses'))
 
+# Our custom cell models
 import models.GilliesWillshaw.gillies_pynn_model as gillies
 import models.Gunay2008.gunay_pynn_model as gunay
 
-from cellpopdata.physiotypes import Populations as PopID, ParameterSource as LitRef
+# Our physiological parameters
+from cellpopdata.physiotypes import Populations as PopID, ParameterSource as ParamSrc
 from cellpopdata.cellpopdata import CellConnector
 
 
@@ -49,7 +51,7 @@ def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     init_logging(logfile=None, debug=False)
     mpi_rank = sim.setup(use_cvode=False)
     h = sim.h
-    
+
     seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
     numpy_rng = np.random.RandomState(seed)
 
@@ -98,7 +100,7 @@ def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
         time_vec = signal.times
         y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
-        
+
         for i_cell in range(signal.shape[1]):
             ax = axes[i_cell]
             label = "cell {}".format(signal.annotations['source_ids'][i_cell])
@@ -121,18 +123,19 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     init_logging(logfile=None, debug=False)
     mpi_rank = sim.setup(use_cvode=False)
     h = sim.h
-    
+
     seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
     numpy_rng = np.random.RandomState(seed)
 
     # Parameters database
     params_db = CellConnector('Parkinsonian', numpy_rng,
-        preferred_sources=[LitRef.Chu2015, LitRef.Fan2012, LitRef.Atherton2013],
+        preferred_sources=[ParamSrc.Chu2015, ParamSrc.Fan2012, ParamSrc.Atherton2013],
         preferred_mechanisms=['GLUsyn', 'GABAsyn'])
 
     ############################################################################
     # POPULATIONS
     ############################################################################
+    # Define each cell population with its cell type, number of cells
 
     # STN cell population
     stn_type = gillies.StnCellType(with_receptors=['GLUsyn', 'GABAsyn'])
@@ -168,44 +171,56 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     ############################################################################
     # CONNECTIONS
     ############################################################################
-    
-    # Create connection    
+
+    # Create connection
     conn_all2all = sim.AllToAllConnector()
     conn_allp05 = sim.FixedProbabilityConnector(0.5)
 
     db_syn = SynapseFromDB(parameter_database=params_db) # our custom synapse class
+    # TODO: set get_physiological_parameters(adjust_gsyn_msr=XXX)
+    #       - you can implement it in get_physiological_parameters() so that
+    #         the returned conductance is adjusted if the param is included
+    #         in custom_params. E.g. if it's in custom_params and adjust_gsyn_msr
+    #         is truthy: use that param to scale, else use adjust_gsyn_msr.
 
     ############################################################################
-    # TO GPE 
+    # TO GPE
 
     #---------------------------------------------------------------------------
     # STN -> GPE (excitatory)
-    stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, conn_allp05, db_syn, 
+    stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, conn_allp05, db_syn,
         receptor_type='distal_dend.AMPA+NMDA')
+    stn_gpe_EXC.preferred_param_sources = [
+        ParamSrc.Chu2015, ParamSrc.Fan2012, ParamSrc.Atherton2013]
 
     #---------------------------------------------------------------------------
     # STR -> GPE (inhbitory)
-    str_gpe_INH = sim.Projection(pop_str, pop_gpe, conn_allp05, db_syn, 
+    str_gpe_INH = sim.Projection(pop_str, pop_gpe, conn_allp05, db_syn,
         receptor_type='proximal_dend.GABAA+GABAB')
+    str_gpe_INH.preferred_param_sources = [
+        ParamSrc.Chu2015, ParamSrc.Fan2012, ParamSrc.Atherton2013]
 
     #---------------------------------------------------------------------------
     # NOISE -> GPE (excitatory)
     noise_syn = NativeSynapse(weight=1.0, delay=5.0, mechanism='GLUsyn') # default params
     noise_connector = sim.FixedProbabilityConnector(0.5)
+    
     noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, noise_connector, noise_syn,
-                                    receptor_type='proximal_dend.AMPA+NMDA')
+                                   receptor_type='proximal_dend.AMPA+NMDA')
+    noise_gpe_EXC.preferred_param_sources = [
+        ParamSrc.Chu2015, ParamSrc.Fan2012, ParamSrc.Atherton2013]
 
     ############################################################################
-    # TO STN 
+    # TO STN
 
     #---------------------------------------------------------------------------
     # GPe -> STN (inhibitory)
-    gpe_stn_INH = sim.Projection(pop_gpe, pop_stn, conn_allp05, db_syn, 
+    gpe_stn_INH = sim.Projection(pop_gpe, pop_stn, conn_allp05, db_syn,
         receptor_type='proximal_dend.GABAA+GABAB')
 
     #---------------------------------------------------------------------------
     # CTX -> STN (excitatory)
-    ctx_stn_EXC = sim.Projection(pop_ctx, pop_stn, conn_allp05, db_syn, 
+    ctx_stn_EXC = sim.Projection(pop_ctx, pop_stn, conn_allp05, db_syn,
         receptor_type='distal_dend.AMPA+NMDA')
 
     #---------------------------------------------------------------------------
@@ -226,7 +241,7 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     }
     for pop in [pop_gpe, pop_stn]:
         pop.record(traces_allpops.items(), sampling_interval=.05)
-    
+
     for pop in all_pops.values():
         pop.record(['spikes'], sampling_interval=.05)
 
@@ -261,7 +276,7 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
         pop_data = pop.get_data() # Neo Block object
         segment = pop_data.segments[0] # segment = all data with common time basis
-        
+
         ax = axes_spikes[i_pop]
         for spiketrain in segment.spiketrains:
             y = np.ones_like(spiketrain) * spiketrain.annotations['source_id']
@@ -278,7 +293,7 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
             # signal matrix has one cell signal per column
             time_vec = signal.times
             y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
-            
+
             for i_cell in range(signal.shape[1]):
                 ax = axes[i_cell]
                 label = "cell {}".format(signal.annotations['source_ids'][i_cell])
@@ -295,7 +310,7 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Run basal ganglia network simulation')
-    
+
     parser.add_argument('-d', '--dur', nargs='?', type=float, default=500.0,
                         dest='sim_dur', help='Simulation duration')
 
@@ -303,6 +318,6 @@ if __name__ == '__main__':
                         dest='ncell_per_pop', help='Number of cells per population')
 
     args = parser.parse_args() # Namespace object
-    
+
     run_simple_net(**vars(args))
     # test_STN_population(**vars(args))
