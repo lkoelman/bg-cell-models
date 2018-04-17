@@ -43,6 +43,8 @@
 // #############################################################################
 // see setfield statements in GPcomps.g
 // =============================================================================
+// SOMATIC parameters
+// -----------------------------------------------------------------------------
 // somatic passive parameters
     {
         "param_name": "Ra",
@@ -76,6 +78,7 @@
         "units": "V",
         "value": "{ELEAK_sd}"
     },
+    // ERROR WHEN GHK USED AND ASSIGNED BEFORE MECHANISM INSERTED
     { // this param is from GPchans.g but must be set per section
         "param_name": "eca",
         "sectionlist": "somatic",
@@ -84,8 +87,13 @@
         "units": "V",
         "value": "{ECa}"
     },
-// somatic active channels (see GPchans.g: "put channels in soma")
-// TODO: channel K_ahp, Ca-buffering 'B' parameter,
+// -----------------------------------------------------------------------------
+// somatic Ca buffering
+// TODO
+// -----------------------------------------------------------------------------
+// somatic conductances
+// (see GPchans.g: "put channels in soma")
+// TODO: channel K_ahp,
     {
         "param_name": "gmax_SK",
         "sectionlist": "somatic",

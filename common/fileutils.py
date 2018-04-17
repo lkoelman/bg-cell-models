@@ -5,6 +5,23 @@ File handling utilities.
 """
 
 import re
+import json
+
+
+def load_json_nonstrict(filename):
+    """
+    Same as json.load(filename) except the json file can contain
+    non strictly valid JSON.
+
+    For the things that are allowed in non-strict JSON, see function
+    `validate_minify_json`.
+    """
+    with open(filename) as json_file:
+        invalid_json = json_file.read()
+        valid_json = validate_minify_json(invalid_json)
+        deserialized_dict = json.loads(valid_json)
+        return deserialized_dict
+
 
 def validate_minify_json(string):
     """

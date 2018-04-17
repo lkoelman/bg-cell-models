@@ -62,14 +62,30 @@ def get_nrn_units(nrn_obj, attr, hoc_classname=None):
     return target_units
 
 
-def to_nrn_units(nrn_obj, attr, quantity, hoc_classname=None):
+def to_nrn_units(quantity, nrn_obj, attr, hoc_classname=None):
     """
     Convert quantity to same units as NEURON variable.
 
-    @see    get_nrn_units() for description of arguments
+    ARGUMENTS
+    ---------
+
+    @param  nrn_obj : nrn.HocObject
+            Top-level Hoc interpreter
+
+    @param  attr : str
+            Variable name of NEURON object
 
     @param  quantity : pint.Quantity
             Quantity object consisting of value and units
+
+    @param  hoc_classname : str
+            if 'attr' is not a mechanism, Section, or global Hoc variable name,
+            specify the Hoc classname here. E.g. to set 'Exp2Syn.tau1',
+            use attr='tau1' and hoc_classname='Exp2Syn'
+
+
+    EXCEPTIONS
+    ----------
 
     @throws err : pint.errors.DimensionalityError
             Error thrown in case of dimensionality (not units) mismatch.
@@ -77,12 +93,13 @@ def to_nrn_units(nrn_obj, attr, quantity, hoc_classname=None):
     @return q : pint.Quantity
             Original quantity converted to units of the NEURON object.
 
-    EXAMPLE
-    -------
+
+    USAGE
+    -----
     
         > import neuron, units
         > quantity = units.Quantity(value, param_spec['units'])
-        > converted_quantity = units.to_nrn_units(neuron.h, 'gnabar_hh', quantity)
+        > converted_quantity = units.to_nrn_units(quantity, neuron.h, 'gnabar_hh')
         > value = converted_quantity.magnitude
     """
     target_units = get_nrn_units(nrn_obj, attr, hoc_classname)
@@ -102,7 +119,7 @@ def compatible_units(nrn_obj, attr, quantity, hoc_classname=None):
             True if units are compatible.
     """
     try:
-        to_nrn_units(nrn_obj, attr, quantity, hoc_classname)
+        to_nrn_units(quantity, nrn_obj, attr, hoc_classname)
     except pint.errors.DimensionalityError:
         return True
     else:
@@ -138,6 +155,6 @@ def set_nrn_quantity(nrn_obj, attr, quantity, hoc_classname=None):
     @throws err : pint.errors.DimensionalityError
             Error thrown in case of dimensionality (not units) mismatch.
     """
-    val_converted = to_nrn_units(nrn_obj, attr, quantity, hoc_classname)
+    val_converted = to_nrn_units(quantity, nrn_obj, attr, hoc_classname)
     setattr(nrn_obj, attr, val_converted.magnitude)
 

@@ -39,6 +39,8 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 h.load_file("stdlib.hoc")
 h.load_file("stdrun.hoc")
 
+from common.electrotonic import calc_min_nseg_hines, calc_lambda_AC
+
 # Debug messages
 from common import logutils
 logger = logutils.getBasicLogger('gunay')
@@ -106,38 +108,27 @@ gbar_list = [gname+'_'+mech for mech,chans in gbar_dict.iteritems() for gname in
 active_gbar_names = [gname for gname in gbar_list if gname != gleak_name]
 
 
-def parse_json_commented(json_file):
-    """
-    Parse json file with C-style comments in it.
+# def write_json_after_edit(filenames):
+#     """
+#     Rewrite JSON files after editing them, stripping comments and validating
+#     against the JSON schema.
 
-    JSON format does not allow comments in it, but you can strip them manually.
-    """
-    input_str = json_file.read()
-    input_str = re.sub(r"//.*$", "", input_str, flags=re.M)
-    return json.loads(input_str)
+#     @note   This is a better alternative to writing our own parser
+#             that strips comments, since it will also catch any syntax
+#             errors
+#     """
+#     for filename in filenames:
+#         full_filename = os.path.join(script_dir, filename)
 
+#         with open(full_filename) as json_file:
+#             invalid_json = json_file.read()
+#             valid_json = fileutils.validate_minify_json(invalid_json)
 
-def write_json_after_edit(filenames):
-    """
-    Rewrite JSON files after editing them, stripping comments and validating
-    against the JSON schema.
+#         write_json_filename = full_filename[:-5] + '.min.json'
+#         with open(write_json_filename, 'w') as outfile:
+#             outfile.write(valid_json)
 
-    @note   This is a better alternative to writing our own parser
-            that strips comments, since it will also catch any syntax
-            errors
-    """
-    for filename in filenames:
-        full_filename = os.path.join(script_dir, filename)
-
-        with open(full_filename) as json_file:
-            invalid_json = json_file.read()
-            valid_json = fileutils.validate_minify_json(invalid_json)
-
-        write_json_filename = full_filename[:-5] + '.min.json'
-        with open(write_json_filename, 'w') as outfile:
-            outfile.write(valid_json)
-
-        print("Wrote parameters to json file {}".format(write_json_filename))
+#         print("Wrote parameters to json file {}".format(write_json_filename))
 
 
 
@@ -161,7 +152,7 @@ def define_mechanisms(filename, exclude_mechs=None):
 
     full_filename = os.path.join(script_dir, filename)
     with open(full_filename) as json_file:
-        mech_definitions = json.load(json_file)
+        mech_definitions = fileutils.load_json_nonstrict(json_file)
 
     mechanisms = []
     for seclist_name, mod_names in mech_definitions.items():
@@ -205,11 +196,11 @@ def define_parameters(
 
     fullfile = os.path.join(script_dir, genesis_params_file)
     with open(fullfile) as json_file:
-        genesis_params = json.load(json_file)
+        genesis_params = fileutils.load_json_nonstrict(json_file)
     
     fullfile = os.path.join(script_dir, params_mapping_file)
     with open(fullfile) as json_file:
-        param_specs = json.load(json_file)
+        param_specs = fileutils.load_json_nonstrict(json_file)
 
     parameters = []
 
@@ -268,11 +259,11 @@ def define_parameters(
         if 'units' in param_spec:
             if value is not None:
                 quantity = units.Quantity(value, param_spec['units'])
-                converted_quantity = units.to_nrn_units(h, param_name, quantity)
+                converted_quantity = units.to_nrn_units(quantity, h, param_name)
                 value = converted_quantity.magnitude
             if bounds is not None:
                 quantity = units.Quantity(bounds, param_spec['units'])
-                converted_quantity = units.to_nrn_units(h, param_name, quantity)
+                converted_quantity = units.to_nrn_units(quantity, h, param_name)
                 bounds = converted_quantity.magnitude
 
         # Make Ephys description of parameter
@@ -367,11 +358,11 @@ def define_cell(exclude_mechs=None):
                         'morphology/bg0121b_axonless_GENESIS_import.swc',
                         replace_axon=False),
                 mechs=define_mechanisms(
-                        'config/mechanisms.min.json',
+                        'config/mechanisms.json',
                         exclude_mechs=exclude_mechs),
                 params=define_parameters(
-                        'config/params_hendrickson2011_GENESIS.min.json',
-                        'config/map_params_hendrickson2011.min.json',
+                        'config/params_hendrickson2011_GENESIS.json',
+                        'config/map_params_hendrickson2011.json',
                         exclude_mechs=exclude_mechs))
 
     # DONE: write mechanisms.json
@@ -433,11 +424,11 @@ def define_pynn_model(exclude_mechs=None):
                         'morphology/bg0121b_axonless_GENESIS_import.swc',
                         replace_axon=False),
                 mechs=define_mechanisms(
-                        'config/mechanisms.min.json',
+                        'config/mechanisms.json',
                         exclude_mechs=exclude_mechs),
                 params=define_parameters(
-                        'config/params_hendrickson2011_GENESIS.min.json',
-                        'config/map_params_hendrickson2011.min.json',
+                        'config/params_hendrickson2011_GENESIS.json',
+                        'config/map_params_hendrickson2011.json',
                         exclude_mechs=exclude_mechs))
     return model
 
@@ -448,20 +439,67 @@ def create_cell():
     """
     cell = define_cell()
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+
     cell.instantiate(sim=nrnsim)
+
+    # Adjust number of segments after morphology and passive initialization
+    # eqsec.nseg = calc_min_nseg_hines(
+    #                                 self.f_lambda, eqsec.L, eqsec.diam, 
+    #                                 eqsec.Ra, eq_cm, round_up=False)
     return cell, nrnsim
 
 
-def rewrite_config_files():
+# def rewrite_config_files():
+#     """
+#     Clean up commented JSON files
+#     """
+#     commented_json = [
+#         'config/mechanisms.json',
+#         'config/params_hendrickson2011_GENESIS.json',
+#         'config/map_params_hendrickson2011.json'
+#     ]
+#     write_json_after_edit(commented_json)
+
+
+def correct_num_compartments(cell, f_lambda, sim, report=False):
     """
-    Clean up commented JSON files
+    Correct the discretization (minimum number of compartments per section)
+    based on Hines' rule of thumb: L/lambda ~= 0.1
     """
-    commented_json = [
-        'config/mechanisms.json',
-        'config/params_hendrickson2011_GENESIS.json',
-        'config/map_params_hendrickson2011.json'
-    ]
-    write_json_after_edit(commented_json)
+
+    f_lambda = 100.0
+
+    # Calculate total nseg
+    all_sec = list(cell.icell.all)
+    tot_nseg = sum((sec.nseg for sec in all_sec))
+    if report:
+        print("Number of segments before adjustment: nseg = {}".format(tot_nseg))
+
+    # Adjust minimum number of segments
+    for sec in cell.icell.all:
+        # Check if we need to re-discretize
+        lamb = calc_lambda_AC(f_lambda, sec.diam, sec.Ra, sec.cm)
+        Lseg = sec.L/sec.nseg
+        min_nseg = calc_min_nseg_hines(f_lambda, sec.L, sec.diam, sec.Ra, sec.cm, round_up=False)
+
+        if min_nseg > sec.nseg:
+            if report:
+                print("Discretization too coarse:\n"
+                      "\tL/lambda = {} -- nseg = {}\n"
+                      "\t=> new nseg = {}".format(Lseg/lamb, sec.nseg, min_nseg))
+            sec.nseg = min_nseg
+
+    # Recalculate total nseg
+    new_nseg = sum((sec.nseg for sec in all_sec))
+    nseg_fraction = float(new_nseg) / tot_nseg
+    if report:
+        print("Number of segments after adjustment: nseg = {}".format(new_nseg))
+        print("Change is {} percent".format(nseg_fraction))
+
+    # If number of segments has changed we need to reset properties
+    for param in cell.params.values():
+        param.instantiate(sim=sim, icell=cell.icell)
+
 
 
 if __name__ == '__main__':
