@@ -1,17 +1,18 @@
 // Mapping to original GENESIS variable names.
 // Model available at https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
 //
-// + main script in /articleCode/scripts/genesisScripts/GP1axonless_full_synaptic.g
-//   First it loads variables from following scripts:
-//     + /articleCode/commonGPFull/GP1_defaults.g
-//     + /articleCode/commonGPFull/simdefaults.g
-//     + /articleCode/commonGPFull/actpars.g
+// - main script in /runs/runsample/setup.g loads following scripts:
 //
-// + The variables are then used in following scripts, in braces: {varname}
-//   (GP1axonless_full*.g -> make_GP_libary.g -> ...)
-//     + /articleCode/commonGPFull/GP1_axonless.p
-//     + /articleCode/commonGPFull/GPchans.g
-//     + /articleCode/commonGPFull/GPcomps.g
+//   + /common/CIPfuncs.g
+//       + /common/simdefaults.g        -> sets param variables
+//
+//   + /runs/runsample/readGPparams.g
+//       + /common/GP<i>_default.g       -> sets param variables
+//       + /common/actpars.g             -> sets param variables
+//
+//   + /common/make_GP_libary.g          -> uses param variables
+//       + /common.GPchans.g             -> defines mechanisms using parameters
+//       + /common.GPcomps.g             -> defines compartments using parameters
 //
 // GENESIS uses SI units
 //   - Cm : F/m^2
@@ -71,8 +72,9 @@
 // see setfield statements in GPcomps.g
 // =============================================================================
 // SOMATIC parameters
-// -----------------------------------------------------------------------------
+// =============================================================================
 // somatic passive parameters
+// -----------------------------------------------------------------------------
     {
         "param_name": "Ra",
         "sectionlist": "somatic",
@@ -132,6 +134,7 @@
     // },
 // -----------------------------------------------------------------------------
 // somatic Ca buffering
+// -----------------------------------------------------------------------------
     {
         "mech": "Calcium",
         "mech_param": "B",
@@ -159,6 +162,7 @@
     },
 // -----------------------------------------------------------------------------
 // somatic conductances
+// -----------------------------------------------------------------------------
     {
         "param_name": "gmax_NaF",
         "sectionlist": "somatic",
@@ -167,7 +171,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_NaF_soma}"
+        "value": "{G_Na_fast_GP}*{G_mult_Na_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_NaP",
@@ -177,7 +181,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_NaP_soma}"
+        "value": "{G_Na_slow_GP}*{G_mult_Na_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv2",
@@ -187,7 +191,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv2_soma}"
+        "value": "{G_Kv2_GP}*{G_mult_Kdr_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv3",
@@ -197,7 +201,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv3_soma}"
+        "value": "{G_Kv3_GP}*{G_mult_Kdr_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv4f",
@@ -207,7 +211,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv4f_soma}"
+        "value": "{G_Kv4_fast_GP}*{G_mult_KA_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv4s",
@@ -217,7 +221,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv4s_soma}"
+        "value": "{G_Kv4_slow_GP}*{G_mult_KA_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_KCNQ",
@@ -227,7 +231,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_KCNQ_soma}"
+        "value": "{G_KCNQ_GP}*{G_mult_KCNQ_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_CaHVA",
@@ -237,7 +241,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Ca_HVA_soma}"
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_SK",
@@ -247,7 +251,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_SK_soma}"
+        "value": "{G_K_ahp_GP}*{G_mult_SK_soma}*{G_mult}"
     },
     {
         "param_name": "gmax_HCN",
@@ -257,7 +261,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_h_HCN_soma}"
+        "value": "{G_h_HCN_GP}*{G_mult}"
     },
     {
         "param_name": "gmax_HCN2",
@@ -267,11 +271,16 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_h_HCN2_soma}"
+        "value": "{G_h_HCN2_GP}*{G_mult}"
     },
 // =============================================================================
-// axonal compartment (SectionList "axonal")
+// AXONAL compartment (SectionList "axonal")
+// =============================================================================
+// source file: GPcomps.g/"make axon hillock prototype"
+// source file: GPcomps.g/"make axon initial segment prototype"
+// -----------------------------------------------------------------------------
 // axonal passive parameters
+// -----------------------------------------------------------------------------
     {
         "param_name": "Ra",
         "sectionlist": "axonal",
@@ -286,7 +295,7 @@
         "type": "section",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "1.0/{RM_sd}"
+        "value": "1.0/{RM_ax}"
     },
     {
         "param_name": "cm",
@@ -302,10 +311,11 @@
         "type": "section",
         "dist_type": "uniform",
         "units": "V",
-        "value": "{ELEAK_sd}"
+        "value": "{ELEAK_ax}"
     },
 // -----------------------------------------------------------------------------
 // axonal conductances
+// -----------------------------------------------------------------------------
     {
         "param_name": "gmax_NaF",
         "sectionlist": "axonal",
@@ -314,7 +324,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_NaF_axon}"
+        "value": "{G_Na_fast_GP}*{G_mult_Na_axon}"
     },
     {
         "param_name": "gmax_NaP",
@@ -324,7 +334,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_NaP_axon}"
+        "value": "{G_Na_slow_GP}*{G_mult_Na_axon}"
     },
     {
         "param_name": "gmax_Kv2",
@@ -334,7 +344,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv2_axon}"
+        "value": "{G_Kv2_GP}*{G_mult_Kdr_axon}"
     },
     {
         "param_name": "gmax_Kv3",
@@ -344,7 +354,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv3_axon}"
+        "value": "{G_Kv3_GP}*{G_mult_Kdr_axon}"
     },
     {
         "param_name": "gmax_Kv4f",
@@ -354,7 +364,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv4f_axon}"
+        "value": "{G_Kv4_fast_GP}*{G_mult_KA_axon}"
     },
     {
         "param_name": "gmax_Kv4s",
@@ -364,7 +374,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv4s_axon}"
+        "value": "{G_Kv4_slow_GP}*{G_mult_KA_axon}"
     },
     {
         "param_name": "gmax_KCNQ",
@@ -374,10 +384,12 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_KCNQ_axon}"
+        "value": "{G_KCNQ_GP}*{G_mult_KCNQ_axon}*{G_mult}"
     },
 // =============================================================================
 // dendritic compartments (SectionList "basal")
+// =============================================================================
+// source file: GPcomps.g/"Dendritic prototype"
     {
         "param_name": "cm",
         "sectionlist": "basal",
@@ -439,6 +451,7 @@
     // },
 // -----------------------------------------------------------------------------
 // dendritic Ca buffering
+// -----------------------------------------------------------------------------
     {
         "mech": "Calcium",
         "mech_param": "B",
@@ -474,7 +487,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_NaF_dend}"
+        "value": "{G_Na_fast_GP}*surf*{G_mult_Na_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_NaP",
@@ -484,7 +497,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_NaP_dend}"
+        "value": "{G_Na_slow_GP}*surf*{G_mult_Na_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv2",
@@ -494,7 +507,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv2_dend}"
+        "value": "{G_Kv2_GP}*surf*{G_mult_Kdr_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv3",
@@ -504,7 +517,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv3_dend}"
+        "value": "{G_Kv3_GP}*surf*{G_mult_Kdr_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv4f",
@@ -514,7 +527,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv4f_dend}"
+        "value": "{G_Kv4_fast_GP}*surf*{G_mult_KA_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv4s",
@@ -524,7 +537,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv4s_dend}"
+        "value": "{G_Kv4_slow_GP}*surf*{G_mult_KA_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_KCNQ",
@@ -534,7 +547,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_KCNQ_dend}"
+        "value": "{G_KCNQ_GP}*surf*{G_mult_KCNQ_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_CaHVA",
@@ -544,7 +557,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Ca_HVA_dend}"
+        "value": "{G_Ca_HVA_GP}*surf*{G_mult_Ca_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_SK",
@@ -554,7 +567,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_SK_dend}"
+        "value": "{G_K_ahp_GP}*surf*{G_mult_SK_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_HCN",
@@ -564,7 +577,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_h_HCN_dend}"
+        "value": "{G_h_HCN_GP}*surf*{G_mult_HCN_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_HCN2",
@@ -574,6 +587,6 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_h_HCN2_dend}"
+        "value": "{G_h_HCN2_GP}*surf*{G_mult_HCN_dend}*{G_mult}"
     },
 ]

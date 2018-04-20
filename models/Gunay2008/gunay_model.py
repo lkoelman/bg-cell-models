@@ -174,6 +174,25 @@ def define_mechanisms(filename, exclude_mechs=None):
     return mechanisms
 
 
+def define_region_locations():
+    """
+    Define named regions based on specific criteria used for setting
+    parameters or mechanisms.
+
+    This defines the locations described in Hanson & Smith 2002, 
+    https://doi.org/10.1002/cne.10075
+
+    The locations are defined algorithmically by J.Edgeton as follows:
+
+    """
+    distance_diam_pairs = {}
+
+    for max_dist in ([25, 50, 100] + range(200, 2400, 100)):
+        for diam_range in ((0.0, 0.5), (0.5,1.0), (1.0,1e9)):
+            location = SomaDistanceDiamLocation()
+            distance_diam_pairs[(max_dist, diam_range)] = location
+
+
 def define_parameters(
         genesis_params_file,
         params_mapping_file,

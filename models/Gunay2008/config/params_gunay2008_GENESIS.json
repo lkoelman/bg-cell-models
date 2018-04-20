@@ -109,7 +109,10 @@
 
   //Calcium concentration parameters
   "B_Ca_GP_conc" : 5.2e-12,  
-  "shell_thick" : 20e-9,  //  meters 
+  "shell_thick" : 20e-9,  //  meters
+  "soma_shell_vol": 6.283185050026674e-08, // computed from source file params
+  "dend_shell_vol": 6.283185183253437e-08, // computed from source file params
+  "axon_shell_vol": 6.283185183253437e-08, // computed from source file params
   "tau_CaClearance" : 0.001,  //  time constant for Ca2+ clearance (sec)
 
   //Synaptic conductances
@@ -170,7 +173,7 @@
   "G_Kv4_slow_GP" : 30,
   "G_KCNQ_GP" : 2,
   "G_Ca_HVA_GP" : 0.3,    
-  "G_K_ahp_GP" : 4,
+  "G_K_ahp_GP" : 4, // SK channel
   "G_h_HCN_GP" : 1,
   "G_h_HCN2_GP" : 2.5,
 

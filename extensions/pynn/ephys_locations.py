@@ -224,3 +224,110 @@ class SomaDistanceRangeLocation(Location, DictMixin):
         """
         return 'Distance range {}-{} micron from soma in {}'.format(
             self.min_soma_distance, self.max_soma_distance, self.seclist_name)
+
+
+class SomaDistanceDiamLocation(Location, DictMixin):
+    """
+    All sections in a SectionList with diameter in a given range
+    that lie in a given distance range from the soma compartment.
+    """
+    
+    SERIALIZED_FIELDS = (
+        'name',
+        'comment',
+        'seclist_name',
+        'distance_range',
+        'diameter_range')
+
+    def __init__(
+            self,
+            name,
+            seclist_name=None,
+            distance_range=None,
+            diameter_range=None,
+            comment=''):
+        """
+        Constructor
+
+        @param      name : str
+                    Name of this object
+
+        @param      seclist_name : str
+                    Name of Neuron section list (ex: 'apical')
+
+        @param      distance_range : tuple(float, float)
+
+        @param      diameter_range : tuple(float, float)
+        """
+
+        super(SomaDistanceDiamLocation, self).__init__(
+            name,
+            comment=comment)
+
+        self.distance_range = distance_range
+        self.diameter_range = diameter_range
+        self.seclist_name = seclist_name
+
+
+    def instantiate(self, sim=None, icell=None):
+        """
+        Find the instantiate compartment
+
+        - for sec in seclist:
+          - get sections on path to soma
+          - filter the ones that are in same seclist
+          - if diam & distance constraint satisfied + parent/child constraints
+            satisfied: return section
+        """
+        # see functions:
+        #   - common/treeutils/path_segments()
+        #   - clustering: recursive functions
+
+        # !!! you have to know the parent category (cannot go higher than parent
+        #     diam rating) so we have to do a complete traversal starting from soma
+        # - find all subtree roots for sectionlist
+        # - do traversal starting from each subtree root:
+        # - first do a lookahead: check diameter of four next descendants along 
+        #   each subtree path
+        #   - descend + pass int (level) + save stack, if level is max, 
+        #     save four top items on stack
+        #   - assign diam rating based on diam & lookahead
+        #   - save sec if dist range and diam range is OK
+        #   - repeat recursively
+
+        # calculate temp rating (based on interval)
+        for sec in dfs_iter_tree_stack(subtree_root):
+            paths_ahead, stack = [], []
+            lookahead_diams(sec, 0, 4, paths_ahead, stack)
+            for path in paths_ahead:
+                ratings = [diam_rating(sec) for sec in path]
+            # if 3/4 would get rating <= temp, assign temp, else asssign parent
+
+
+    def __str__(self):
+        """
+        String representation of location.
+        """
+        return 'Distance range {}-{} micron from soma in {} with diameter {}-{} um'.format(
+            self.distance_range[0], self.distance_range[1],
+            self.seclist_name,
+            self.diameter_range[0], self.diameter_range[1])
+
+
+def lookahead_diams(sec, parent_dist, max_dist, paths, stack):
+    """
+
+    Usage
+    -----
+    
+    >>> paths, stack = [], []
+    >>> lookahead_diams(sec, 0, 4, paths, stack)
+    
+    """
+    if parent_dist > max_dist:
+        paths.append([stack.pop() for i in range(4)])
+        return
+
+    for child in getattr(sec, 'chidlren', []):
+        stack.append(child)
+        lookahead_diams(child, parent_dist+1, max_dist, paths, stack)
