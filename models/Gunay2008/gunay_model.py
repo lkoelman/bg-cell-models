@@ -40,6 +40,7 @@ h.load_file("stdlib.hoc")
 h.load_file("stdrun.hoc")
 
 from common.electrotonic import calc_min_nseg_hines, calc_lambda_AC
+from extensions.pynn.ephys_locations import SomaDistanceDiamLocation
 
 # Debug messages
 from common import logutils
@@ -174,28 +175,37 @@ def define_mechanisms(filename, exclude_mechs=None):
     return mechanisms
 
 
-def define_region_locations():
+def define_locations(locations_file):
     """
-    Define named regions based on specific criteria used for setting
-    parameters or mechanisms.
+    Create named locations based on Ephys Location definitions in JSON file.
 
-    This defines the locations described in Hanson & Smith 2002, 
-    https://doi.org/10.1002/cne.10075
+    @param      locations_file : str
+                Relative path to location definitions JSON file.
 
-    The locations are defined algorithmically by J.Edgeton as follows:
-
+    @return     locations : dict<str, ephys.Location>
     """
-    distance_diam_pairs = {}
 
-    for max_dist in ([25, 50, 100] + range(200, 2400, 100)):
-        for diam_range in ((0.0, 0.5), (0.5,1.0), (1.0,1e9)):
-            location = SomaDistanceDiamLocation()
-            distance_diam_pairs[(max_dist, diam_range)] = location
+    fullfile = os.path.join(script_dir, locations_file)
+    with open(fullfile) as json_file:
+        location_specs = fileutils.load_json_nonstrict(json_file)
+
+    locations = {}
+    for spec in location_specs:
+        loc_name = spec['loc_name']
+        locations[loc_name] = SomaDistanceDiamLocation(
+            loc_name,
+            seclist_name=spec['sectionlist'],
+            distance_range=(spec['lower_distance'], spec['upper_distance']),
+            diameter_range=(spec['lower_diameter'], spec['upper_diameter']))
+
+    return locations
+
 
 
 def define_parameters(
         genesis_params_file,
         params_mapping_file,
+        named_locations,
         exclude_mechs=None,
     ):
     """
@@ -203,9 +213,8 @@ def define_parameters(
     mechanism parameters to specific regions in the cell, 
     identified by named section lists.
 
-    @param      filename : str
-                Filename of json file containing MOD mechanisms for each
-                region (section list)
+    @param      named_locations: dict<str, ephys.Location>
+                Predefined locations on the cell.
     
     @return     parameters: list(ephys.parameters.NrnParameter)
                 List of NEURON parameter descriptions as Ephys objects.
@@ -305,9 +314,12 @@ def define_parameters(
                 scaler = ephys.parameterscalers.NrnSegmentSomaDistanceScaler(
                     distribution=param_spec['dist'])
             
-            seclist_loc = ephys.locations.NrnSeclistLocation(
-                            param_spec['sectionlist'],
-                            seclist_name=param_spec['sectionlist'])
+            if 'location' in param_spec:
+                param_loc = named_locations[param_spec['location']]
+            else:
+                param_loc = ephys.locations.NrnSeclistLocation(
+                                param_spec['sectionlist'],
+                                seclist_name=param_spec['sectionlist'])
 
             name = '{}.{}'.format(param_name,
                                    param_spec['sectionlist'])
@@ -322,7 +334,7 @@ def define_parameters(
                         value=value,
                         frozen=frozen,
                         bounds=bounds,
-                        locations=[seclist_loc]))
+                        locations=[param_loc]))
             
             # RANGE parameters vary over x-loc of Section
             elif param_spec['type'] == 'range':
@@ -334,7 +346,7 @@ def define_parameters(
                         value=value,
                         frozen=frozen,
                         bounds=bounds,
-                        locations=[seclist_loc]))
+                        locations=[param_loc]))
         else:
             raise Exception(
                 'Param config type has to be global, section or range: {}'.format(
@@ -371,62 +383,28 @@ def define_cell(exclude_mechs=None):
     Create GPe cell model
     """
 
-    cell = ephys.models.CellModel(
-                'GPe',
-                morph=define_morphology(
+    morphology = define_morphology(
                         'morphology/bg0121b_axonless_GENESIS_import.swc',
-                        replace_axon=False),
-                mechs=define_mechanisms(
+                        replace_axon=False)
+
+    locations = define_locations(
+                        'config/locations.json')
+
+    mechanisms = define_mechanisms(
                         'config/mechanisms.json',
-                        exclude_mechs=exclude_mechs),
-                params=define_parameters(
+                        exclude_mechs=exclude_mechs)
+
+    parameters = define_parameters(
                         'config/params_hendrickson2011_GENESIS.json',
                         'config/map_params_hendrickson2011.json',
-                        exclude_mechs=exclude_mechs))
+                        locations,
+                        exclude_mechs=exclude_mechs)
 
-    # DONE: write mechanisms.json
-    #   - [x] find out how Ephys makes SectionLists
-    #       => based on identified SWC types
-
-    # For model at https:#senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
-    # "Comparison of full and reduced globus pallidus models (Hendrickson 2010)"
-    # see:
-    #   + main script in /articleCode/scripts/genesisScripts/GP1axonless_full_synaptic.g
-    #     First it loads variables from following scripts:
-    #       + /articleCode/commonGPFull/GP1_defaults.g
-    #       + /articleCode/commonGPFull/simdefaults.g
-    #       + /articleCode/commonGPFull/actpars.g
-    #   + The variables are then used in following scripts, in braces: {varname}
-    #     (GP1axonless_full*.g -> make_GP_libary.g -> ...)
-    #       + /articleCode/commonGPFull/GP1_axonless.p
-    #       + /articleCode/commonGPFull/GPchans.g
-    #       + /articleCode/commonGPFull/GPcomps.g
-
-    # For model at https:#senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=136315
-    # "Globus pallidus neuron models with differing dendritic Na channel expression 
-    # (Edgerton et al., 2010)", see: 
-    #   + main script in /run_example/run_vivo_example.g, loads scripts:
-    #   + ../common/GP1_constants.g
-    #   + ../common/biophysics/GP1_passive.g
-    #   + ../common/biophysics/GP1_active.g
-    #   + .. see lines with 'getarg' statement for modification of scaling factors/gradients
-
-    # For model at https:#senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=114639
-    # Gunay, Edgerton, and Jaeger (2008). Channel Density Distributions Explain Spiking Variability in the Globus Pallidus: A Combined Physiology and Computer Simulation Database Approach.
-    # - main script in /runs/runsample/setup.g loads following scripts:
-    #   + /runs/runsample/readGPparams.g
-    #       + /common/GP<i>_default.g       -> sets param variables
-    #       + /common/actpars.g             -> sets param variables
-    #   + /common/make_GP_libary.g          -> uses param variables
-    #       + /common.GPchans.g             -> defines mechanisms using parameters
-    #       + /common.GPcomps.g             -> defines compartments using parameters
-
-    # For other models, i.e.
-    # - 
-    # - https:#senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=137846
-    #   + see main script where following files are loaded:
-    #   + ./paspars.g for passive parameters
-    #   + ../actpars.g for active parameters
+    cell = ephys.models.CellModel(
+                        'GPe',
+                        morph=morphology,
+                        mechs=mechanisms,
+                        params=parameters)
 
     return cell
 
@@ -524,6 +502,8 @@ def correct_num_compartments(cell, f_lambda, sim, report=False):
 if __name__ == '__main__':
     # Make GPe cell
     cell, nrnsim = create_cell()
+
+    # Instantiated cell has SectionLists 'all' 'somatic' 'axonal' 'basal'
     icell = cell.icell
     from neuron import gui
 

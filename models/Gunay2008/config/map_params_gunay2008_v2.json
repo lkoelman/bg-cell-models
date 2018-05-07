@@ -487,7 +487,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Na_fast_GP}*surf*{G_mult_Na_dend}*{G_mult}"
+        "value": "{G_Na_fast_GP}*{G_mult_Na_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_NaP",
@@ -497,7 +497,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Na_slow_GP}*surf*{G_mult_Na_dend}*{G_mult}"
+        "value": "{G_Na_slow_GP}*{G_mult_Na_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv2",
@@ -507,7 +507,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv2_GP}*surf*{G_mult_Kdr_dend}*{G_mult}"
+        "value": "{G_Kv2_GP}*{G_mult_Kdr_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv3",
@@ -517,7 +517,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv3_GP}*surf*{G_mult_Kdr_dend}*{G_mult}"
+        "value": "{G_Kv3_GP}*{G_mult_Kdr_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv4f",
@@ -527,7 +527,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv4_fast_GP}*surf*{G_mult_KA_dend}*{G_mult}"
+        "value": "{G_Kv4_fast_GP}*{G_mult_KA_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_Kv4s",
@@ -537,7 +537,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_Kv4_slow_GP}*surf*{G_mult_KA_dend}*{G_mult}"
+        "value": "{G_Kv4_slow_GP}*{G_mult_KA_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_KCNQ",
@@ -547,17 +547,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_KCNQ_GP}*surf*{G_mult_KCNQ_dend}*{G_mult}"
-    },
-    {
-        "param_name": "gmax_CaHVA",
-        "sectionlist": "basal",
-        "mech": "CaHVA",
-        "mech_param": "gmax",
-        "type": "range",
-        "dist_type": "uniform",
-        "units": "S/m^2",
-        "value": "{G_Ca_HVA_GP}*surf*{G_mult_Ca_dend}*{G_mult}"
+        "value": "{G_KCNQ_GP}*{G_mult_KCNQ_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_SK",
@@ -567,7 +557,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_K_ahp_GP}*surf*{G_mult_SK_dend}*{G_mult}"
+        "value": "{G_K_ahp_GP}*{G_mult_SK_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_HCN",
@@ -577,7 +567,7 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_h_HCN_GP}*surf*{G_mult_HCN_dend}*{G_mult}"
+        "value": "{G_h_HCN_GP}*{G_mult_HCN_dend}*{G_mult}"
     },
     {
         "param_name": "gmax_HCN2",
@@ -587,6 +577,261 @@
         "type": "range",
         "dist_type": "uniform",
         "units": "S/m^2",
-        "value": "{G_h_HCN2_GP}*surf*{G_mult_HCN_dend}*{G_mult}"
+        "value": "{G_h_HCN2_GP}*{G_mult_HCN_dend}*{G_mult}"
+    },
+    // CaHVA is non-uniform
+    {
+        "param_name": "gmax_CaHVA",
+        "sectionlist": "basal",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}"
+    },
+    // values below are from file GPcomps.g @ end of file
+    // It seems that dendritic sections with diameter between 0.5 - 1 micron
+    // (labeled 'dia1') get multiplier 1.5 and dendritic sections with
+    // diameter 0 - 0.5 micron (labeled 'dia0') get multiplier 3
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d0_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d0_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d25_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d25_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d50_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d50_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d100_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d100_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d200_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d200_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d300_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d300_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d400_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d400_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d500_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d500_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d600_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d600_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d700_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d700_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d800_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d800_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d900_dia1",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*1.5"
+    },
+    {
+        "param_name": "gmax_CaHVA",
+        "location": "GP_dendrite_d900_dia0",
+        "mech": "CaHVA",
+        "mech_param": "gmax",
+        "type": "range",
+        "dist_type": "uniform",
+        "units": "S/m^2",
+        "value": "{G_Ca_HVA_GP}*{G_mult_Ca_dend}*{G_mult}*3"
     },
 ]

@@ -9,7 +9,7 @@ Module for working with BluePyOpt Ephys locations in PyNN.
 import numpy as np
 from pyNN.neuron import h, state as nrn_state
 
-from common import nrnutil
+from common import treeutils
 
 from bluepyopt.ephys.locations import Location, EPhysLocInstantiateException
 from bluepyopt.ephys.serializer import DictMixin
@@ -271,37 +271,111 @@ class SomaDistanceDiamLocation(Location, DictMixin):
 
     def instantiate(self, sim=None, icell=None):
         """
-        Find the instantiate compartment
+        Get all Sections in named SectionList within requested distance range
+        and diameter range.
 
-        - for sec in seclist:
-          - get sections on path to soma
-          - filter the ones that are in same seclist
-          - if diam & distance constraint satisfied + parent/child constraints
-            satisfied: return section
+        Whether a section falls within the diameter range depends on the
+        transition rules defined by J.Edgerton.
+
+        ALGORITHM
+        ---------
+
+        - start at root
+        - assign initial rating
+        - ascend tree: go to next section
+            - assign temporary rating based on section's diam
+            - look ahead for 4 sections, along each possible path (depth-first)
+                - if each path has <= 1 higher rating, keep temporary rating
+                - if a path has > 1 higher rating, use parent rating
         """
-        # see functions:
-        #   - common/treeutils/path_segments()
-        #   - clustering: recursive functions
 
-        # !!! you have to know the parent category (cannot go higher than parent
-        #     diam rating) so we have to do a complete traversal starting from soma
-        # - find all subtree roots for sectionlist
-        # - do traversal starting from each subtree root:
-        # - first do a lookahead: check diameter of four next descendants along 
-        #   each subtree path
-        #   - descend + pass int (level) + save stack, if level is max, 
-        #     save four top items on stack
-        #   - assign diam rating based on diam & lookahead
-        #   - save sec if dist range and diam range is OK
-        #   - repeat recursively
+        isections = []
+        target_seclist = list(getattr(icell, self.seclist_name))
 
-        # calculate temp rating (based on interval)
-        for sec in dfs_iter_tree_stack(subtree_root):
-            paths_ahead, stack = [], []
-            lookahead_diams(sec, 0, 4, paths_ahead, stack)
-            for path in paths_ahead:
-                ratings = [diam_rating(sec) for sec in path]
-            # if 3/4 would get rating <= temp, assign temp, else asssign parent
+        # Initialize distance measurement at soma
+        somatic = list(icell.somatic)
+        # trunk_sections = [ch for sec in somatic for ch in sec.children() if ch not in somatic]
+        assert len(somatic) == 1, "more than one somatic section"
+        soma = somatic[0]
+        h.distance(0, 0.5, sec=soma)
+        soma_offset = soma.L / 2.0
+
+        # do tree traversal
+        for root_sec in soma.children():
+            parent_rating = 1 # initialize to above diameter range
+            for sec in treeutils.ascend_tree_dfs(root_sec):
+                if sec not in target_seclist:
+                    continue
+
+                # check if this is trunk section
+                # (implement this for > 1 somatic sections: start ascent
+                #  at soma and recet diam rating at trunk sections)
+                # if sec in trunk_sections or sec in somatic:
+                #   parent_rating = self.diameter_rating(sec.diam)
+
+                # first check distance constraint
+                sec_dist = max(0.0, h.distance(0.5, sec=sec) - soma_offset)
+                lower, upper = self.distance_range
+                if not (lower < sec_dist <= upper):
+                    continue
+
+                # then check diameter constraint
+                temp_rating = self.diameter_rating(sec.diam)
+                if self.children_within_range(sec, 4, 1):
+                    diam_rating = temp_rating
+                else:
+                    diam_rating = parent_rating
+                parent_rating = diam_rating
+
+                if diam_rating == 0:
+                    isections.append(sec)
+
+
+        return (sec for sec in isections)
+
+
+    def diameter_rating(self, diam):
+        """
+        Check whether given diameter is within range, above it, or below it.
+
+        @return     relative_range : int
+                    +1 if diameter is above range
+                    0 if diamtere is within range
+                    -1 if diameter is below range
+        """
+        lower, upper = self.diameter_range
+        if diam <= lower:
+            return -1
+        elif diam <= upper:
+            return 0
+        else:
+            return 1
+
+
+    def children_within_range(self, sec, max_depth, max_greater, depth=0, num_greater=0):
+        """
+        Check that all paths along child sections up to max_depth have
+        maximum <max_greater> diameters that are above the given diameter range.
+
+        @param  sec : nrn.Section
+                starting section
+
+        @pram   max_depth : int
+                Maximum depth of ascent / number of sections from starting section.
+        """
+        if depth > max_depth:
+            return True
+        if num_greater > max_greater:
+            return False
+
+        if depth != 0 and self.diameter_rating(sec.diam) > 0:
+            num_greater += 1
+
+        for child_sec in sec.children():
+            if not self.children_within_range(child_sec, max_depth, max_greater, 
+                                              depth+1, num_greater):
+                return False
+        return True
 
 
     def __str__(self):
@@ -312,22 +386,3 @@ class SomaDistanceDiamLocation(Location, DictMixin):
             self.distance_range[0], self.distance_range[1],
             self.seclist_name,
             self.diameter_range[0], self.diameter_range[1])
-
-
-def lookahead_diams(sec, parent_dist, max_dist, paths, stack):
-    """
-
-    Usage
-    -----
-    
-    >>> paths, stack = [], []
-    >>> lookahead_diams(sec, 0, 4, paths, stack)
-    
-    """
-    if parent_dist > max_dist:
-        paths.append([stack.pop() for i in range(4)])
-        return
-
-    for child in getattr(sec, 'chidlren', []):
-        stack.append(child)
-        lookahead_diams(child, parent_dist+1, max_dist, paths, stack)

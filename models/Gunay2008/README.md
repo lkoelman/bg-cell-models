@@ -74,15 +74,20 @@ Gunay, Edgerton, and Jaeger (2008). _Channel Density Distributions Explain Spiki
       that paper
 
     + if we use `GP1.p` from Gunay (2008):
+        
         + look at `GP1.p` file and check distance from soma + diameter for `GP_axHill`
           and `GP_axIS` compartments: it looks like only the first compartmen (Section)
           is the hillock, and following 10 compartment are IS.
+        
         + => this means we need to supply both parameter sets.
 
 
-+ [ ] TODO: see end of file `GPcomps.g` : set gradient in `G_Ca_HVA`
++ [ ] TODO : set gradient in `G_Ca_HVA`
+
+    + see end of file `GPcomps.g` : different named sections `GP_dendrite_dXXX_diamYYY`
+      get different density
     
-    + => see files `GP[i].p`: explanation of compartment grouping and associated
+    + see files `GP[i].p`: explanation of compartment grouping and associated
          Ca_HVA values
     
     + the mechanisms/parameter combinations defined in `GPcomps.g` are associated

@@ -333,7 +333,8 @@ def dfs_iter_tree_stack(start_node):
     """
     Return generator that does depth-first tree traversal starting at given node.
 
-    @note   non-recusrive, avoids making a new generator per descent
+    @note   non-recursive, avoids making a new generator per descent
+            and avoids blowing up the stack trace
     """
     stack = [start_node]
     while stack:
@@ -341,6 +342,10 @@ def dfs_iter_tree_stack(start_node):
         yield node
         for child in getattr(node, 'children', []):
             stack.append(child)
+
+
+# alias most efficient version
+ascend_tree_dfs = dfs_iter_tree_stack
 
 
 def subtree_topology(sub_root, max_depth=1e9):
