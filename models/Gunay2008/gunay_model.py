@@ -109,28 +109,11 @@ gbar_list = [gname+'_'+mech for mech,chans in gbar_dict.iteritems() for gname in
 active_gbar_names = [gname for gname in gbar_list if gname != gleak_name]
 
 
-# def write_json_after_edit(filenames):
-#     """
-#     Rewrite JSON files after editing them, stripping comments and validating
-#     against the JSON schema.
-
-#     @note   This is a better alternative to writing our own parser
-#             that strips comments, since it will also catch any syntax
-#             errors
-#     """
-#     for filename in filenames:
-#         full_filename = os.path.join(script_dir, filename)
-
-#         with open(full_filename) as json_file:
-#             invalid_json = json_file.read()
-#             valid_json = fileutils.validate_minify_json(invalid_json)
-
-#         write_json_filename = full_filename[:-5] + '.min.json'
-#         with open(write_json_filename, 'w') as outfile:
-#             outfile.write(valid_json)
-
-#         print("Wrote parameters to json file {}".format(write_json_filename))
-
+# Different models from Edgerton lab:
+MODEL_GUNAY2008_AXONLESS = "GUNAY2008_AXONLESS"
+MODEL_GUNAY2008_FULL = "GUNAY2008_FULL"
+MODEL_HENDRICKSON2011_AXONLESS = "HENDRICKSON2011_AXONLESS"
+MODEL_HENDRICKSON2011_FULL = "HENDRICKSON2011_FULL"
 
 
 def define_mechanisms(filename, exclude_mechs=None):
@@ -152,8 +135,7 @@ def define_mechanisms(filename, exclude_mechs=None):
         exclude_mechs = []
 
     full_filename = os.path.join(script_dir, filename)
-    with open(full_filename) as json_file:
-        mech_definitions = fileutils.load_json_nonstrict(json_file)
+    mech_definitions = fileutils.load_json_nonstrict(full_filename)
 
     mechanisms = []
     for seclist_name, mod_names in mech_definitions.items():
@@ -186,8 +168,7 @@ def define_locations(locations_file):
     """
 
     fullfile = os.path.join(script_dir, locations_file)
-    with open(fullfile) as json_file:
-        location_specs = fileutils.load_json_nonstrict(json_file)
+    location_specs = fileutils.load_json_nonstrict(fullfile)
 
     locations = {}
     for spec in location_specs:
@@ -223,12 +204,10 @@ def define_parameters(
         exclude_mechs = []
 
     fullfile = os.path.join(script_dir, genesis_params_file)
-    with open(fullfile) as json_file:
-        genesis_params = fileutils.load_json_nonstrict(json_file)
+    genesis_params = fileutils.load_json_nonstrict(fullfile)
     
     fullfile = os.path.join(script_dir, params_mapping_file)
-    with open(fullfile) as json_file:
-        param_specs = fileutils.load_json_nonstrict(json_file)
+    param_specs = fileutils.load_json_nonstrict(fullfile)
 
     parameters = []
 
@@ -378,9 +357,12 @@ def define_morphology(filename, replace_axon):
                 do_replace_axon=False)
 
 
-def define_cell(exclude_mechs=None):
+def define_cell(model, exclude_mechs=None):
     """
     Create GPe cell model
+
+    @param  model : str
+            Model identifier.
     """
 
     morphology = define_morphology(
@@ -394,11 +376,20 @@ def define_cell(exclude_mechs=None):
                         'config/mechanisms.json',
                         exclude_mechs=exclude_mechs)
 
-    parameters = define_parameters(
-                        'config/params_hendrickson2011_GENESIS.json',
-                        'config/map_params_hendrickson2011.json',
-                        locations,
-                        exclude_mechs=exclude_mechs)
+    if model == MODEL_HENDRICKSON2011_AXONLESS:
+        parameters = define_parameters(
+                            'config/params_hendrickson2011_GENESIS.json',
+                            'config/map_params_hendrickson2011.json',
+                            locations,
+                            exclude_mechs=exclude_mechs)
+    elif model == MODEL_GUNAY2008_AXONLESS:
+        parameters = define_parameters(
+                            'config/params_gunay2008_GENESIS.json',
+                            'config/map_params_gunay2008_v2.json',
+                            locations,
+                            exclude_mechs=exclude_mechs)
+    else:
+        raise ValueError("Unknown model '{}'".format(model))
 
     cell = ephys.models.CellModel(
                         'GPe',

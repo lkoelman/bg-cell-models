@@ -186,14 +186,26 @@
   "G_mult_SK_dend" : 0.1,
   "G_mult_Ca_dend" : 1,
   "G_mult_HCN_dend" : 1,
+
   "G_mult_Na_soma" : 0.7, 
   "G_mult_Kdr_soma" : 1, 
   "G_mult_KA_soma" : 1,
   "G_mult_KCNQ_soma" : 1,
   "G_mult_SK_soma" : 16,
   "G_mult_Ca_soma" : 1,
+  
   "G_mult_Na_axon" : 40,
   "G_mult_Kdr_axon" : 40,
   "G_mult_KA_axon" : 40,
   "G_mult_KCNQ_axon" : 40,
+
+  // Parameters for axon stub in axonless morphology from Hendrickson (2011)
+  "G_NaF_axon": 5000,
+  "G_NaP_axon": 40,
+  "G_Kv2_axon": 640,
+  "G_Kv3_axon": 1280,
+  "G_Kv3_axon": 1280,
+  "G_Kv4f_axon": 1600,
+  "G_Kv4s_axon": 2400.0,
+  "G_KCNQ_axon": 0.4,
 }

@@ -61,28 +61,50 @@ Gunay, Edgerton, and Jaeger (2008). _Channel Density Distributions Explain Spiki
       + `/common.GPcomps.g`             -> defines compartments using parameters
 
 
-- [ ] TODO: look in online [supplemental materials][1] to see which exact parameter combinations within ranges in Table 1 were used.
+- [X] TODO: look in online [supplemental materials](http://www.jneurosci.org/highwire/filestream/599434/field_highwire_adjunct_files/0/cengiz_p1_manuscript_R2_supptext_djv3_cg2.pdf) to see which exact parameter combinations within ranges in paper Table 1 were used.
+
     + set `G_<channel>` and `G_mult_<channel>` accordingly
+    
+    + information in Supplementary Materials:
+
+        + their parameter fitting approach yielded the baseline parameters that
+          are specified in their model code (except NaP which is 1.45 in code VS 1.0
+          in paper)
+
+        + the multipliers are just used for the different reggions (soma, dend, axon)
+
+        + the ranges given in Table 1 are used for specific experiments
 
 
-- [ ] TODO: check if we should use params from Axon hillock or Axon initial segment
+- [X] check if we should use params from Axon hillock or Axon initial segment
       for the axon stub in axonless neuron.
+
+    + DONE: used parameters for axon stub from Hendrickson (2011)
     
     + they are different in the values of active channels
     
-    + if we use `GP1_axonless.p` from Hendrickson (2011) -> use parameters from
-      that paper
+    + we are using morphology with single axon equivalent compartment (stub)
+      (axonless morphology from Hendrickson (2011))
 
-    + if we use `GP1.p` from Gunay (2008):
+        + for the axon stub, he uses different parameters than the model
+          with axon (see `GP_ax` section in `GP_comps.g`)
+
+        + these parameters are labeled `G_XXX_axon`
+          => copy those parameters to Gunay (2008) model
+
+    + if we use morphology `GP1.p` from Gunay (2008):
         
         + look at `GP1.p` file and check distance from soma + diameter for `GP_axHill`
-          and `GP_axIS` compartments: it looks like only the first compartmen (Section)
-          is the hillock, and following 10 compartment are IS.
+          and `GP_axIS` compartments:
+
+        + => it looks like only the first compartment (first 5 um) is the hillock, 
+             and following 10 compartment (next 25 um) are IS.
         
-        + => this means we need to supply both parameter sets.
+        + => since our stub is 40 um long, this means we need to split it
+             and assign both parameter sets.
 
 
-+ [ ] TODO : set gradient in `G_Ca_HVA`
++ [x] set gradient in `G_Ca_HVA`
 
     + see end of file `GPcomps.g` : different named sections `GP_dendrite_dXXX_diamYYY`
       get different density
@@ -92,11 +114,6 @@ Gunay, Edgerton, and Jaeger (2008). _Channel Density Distributions Explain Spiki
     
     + the mechanisms/parameter combinations defined in `GPcomps.g` are associated
       with specific compartments in this .p file
-        - algorithm summarized:
-            + travel in direction proximal -> distal
-            + descend a diam level if threshold crossed, but only if at least
-              3 of the next 4 compartments are at the same or lower level
-            + never go back to a higher level
     
     + the gradients/density mapping to diameter & soma distance is based on the paper
       [Hanson & Smith 2002](https://doi.org/10.1002/cne.10075)
@@ -111,24 +128,22 @@ Gunay, Edgerton, and Jaeger (2008). _Channel Density Distributions Explain Spiki
             satisfied: return section
 
 
-[1]: http://www.jneurosci.org/highwire/filestream/599434/field_highwire_adjunct_files/0/cengiz_p1_manuscript_R2_supptext_djv3_cg2.pdf
-
 ### Hendrickson (2011)
 
 For model at https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
 "Comparison of full and reduced globus pallidus models (Hendrickson 2010)" see:
   
-+ main script in /articleCode/scripts/genesisScripts/GP1axonless_full_synaptic.g
++ main script in `/articleCode/scripts/genesisScripts/GP1axonless_full_synaptic.g`
   First it loads variables from following scripts:
-    + /articleCode/commonGPFull/GP1_defaults.g
-    + /articleCode/commonGPFull/simdefaults.g
-    + /articleCode/commonGPFull/actpars.g
+    + `/articleCode/commonGPFull/GP1_defaults.g`
+    + `/articleCode/commonGPFull/simdefaults.g`
+    + `/articleCode/commonGPFull/actpars.g`
 
 + The variables are then used in following scripts, in braces: {varname}
   (`GP1axonless_full*.g` -> `make_GP_libary.g` -> ...)
-    + /articleCode/commonGPFull/GP1_axonless.p
-    + /articleCode/commonGPFull/GPchans.g
-    + /articleCode/commonGPFull/GPcomps.g
+    + `/articleCode/commonGPFull/GP1_axonless.p`
+    + `/articleCode/commonGPFull/GPchans.g`
+    + `/articleCode/commonGPFull/GPcomps.g`
 
 ### Edgerton (2010)
 
