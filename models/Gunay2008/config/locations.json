@@ -178,7 +178,7 @@
         "upper_diameter": "1"
     },
     {
-        "loc_name": "GP_dendrite_d200_dia0",
+        "loc_name": "GP_dendrite_d300_dia0",
         "sectionlist": "basal",
         "lower_distance": "300",
         "upper_distance": "400",

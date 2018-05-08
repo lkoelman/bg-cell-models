@@ -23,8 +23,6 @@ Using channel mechanisms ported to NEURON by Kitano (2011)
 """
 
 import os
-import re
-import json
 
 import neuron
 import bluepyopt.ephys as ephys
@@ -40,7 +38,8 @@ h.load_file("stdlib.hoc")
 h.load_file("stdrun.hoc")
 
 from common.electrotonic import calc_min_nseg_hines, calc_lambda_AC
-from extensions.pynn.ephys_locations import SomaDistanceDiamLocation
+import extensions.bluepyopt.bpop_locations as ext_locations
+from extensions.bluepyopt.bpop_parameters import NrnSegmentParameter
 
 # Debug messages
 from common import logutils
@@ -173,14 +172,19 @@ def define_locations(locations_file):
     locations = {}
     for spec in location_specs:
         loc_name = spec['loc_name']
-        locations[loc_name] = SomaDistanceDiamLocation(
+        locations[loc_name] = ext_locations.SomaDistanceDiamLocation(
             loc_name,
             seclist_name=spec['sectionlist'],
-            distance_range=(spec['lower_distance'], spec['upper_distance']),
-            diameter_range=(spec['lower_diameter'], spec['upper_diameter']))
+            distance_range=parse_values(
+                spec, float, tuple, 'lower_distance', 'upper_distance'),
+            diameter_range=parse_values(
+                spec, float, tuple, 'lower_diameter', 'upper_diameter'))
 
     return locations
 
+
+def parse_values(src_dict, target_type, container_type, *keys):
+    return container_type(target_type(src_dict[k]) for k in keys)
 
 
 def define_parameters(
@@ -283,7 +287,7 @@ def define_parameters(
                     bounds=bounds,
                     value=value))
         
-        elif param_spec['type'] in ['section', 'range']:
+        elif param_spec['type'] in ['section', 'segment', 'range']:
             
             # Spatial distribution of parameter
             if param_spec['dist_type'] == 'uniform':
@@ -300,8 +304,7 @@ def define_parameters(
                                 param_spec['sectionlist'],
                                 seclist_name=param_spec['sectionlist'])
 
-            name = '{}.{}'.format(param_name,
-                                   param_spec['sectionlist'])
+            name = '{}.{}'.format(param_name, param_loc.name)
 
             # Section parameter is uniform in a Section
             if param_spec['type'] == 'section':
@@ -313,6 +316,15 @@ def define_parameters(
                         value=value,
                         frozen=frozen,
                         bounds=bounds,
+                        locations=[param_loc]))
+
+            elif param_spec['type'] == 'segment':
+                parameters.append(
+                    NrnSegmentParameter(
+                        name=name,
+                        param_name=param_name,
+                        value=value,
+                        frozen=frozen,
                         locations=[param_loc]))
             
             # RANGE parameters vary over x-loc of Section
@@ -328,7 +340,7 @@ def define_parameters(
                         locations=[param_loc]))
         else:
             raise Exception(
-                'Param config type has to be global, section or range: {}'.format(
+                'Param config type has to be global, section, segment, or range: {}'.format(
                 param_spec))
 
         p = parameters[-1]
@@ -355,6 +367,46 @@ def define_morphology(filename, replace_axon):
     return ephys.morphologies.NrnFileMorphology(
                 os.path.join(script_dir, filename),
                 do_replace_axon=False)
+
+
+def correct_num_compartments(cell, f_lambda, sim, report=False):
+    """
+    Correct the discretization (minimum number of compartments per section)
+    based on Hines' rule of thumb: L/lambda ~= 0.1
+    """
+
+    f_lambda = 100.0
+
+    # Calculate total nseg
+    all_sec = list(cell.icell.all)
+    tot_nseg = sum((sec.nseg for sec in all_sec))
+    if report:
+        print("Number of segments before adjustment: nseg = {}".format(tot_nseg))
+
+    # Adjust minimum number of segments
+    for sec in cell.icell.all:
+        # Check if we need to re-discretize
+        lamb = calc_lambda_AC(f_lambda, sec.diam, sec.Ra, sec.cm)
+        Lseg = sec.L/sec.nseg
+        min_nseg = calc_min_nseg_hines(f_lambda, sec.L, sec.diam, sec.Ra, sec.cm, round_up=False)
+
+        if min_nseg > sec.nseg:
+            if report:
+                print("Discretization too coarse:\n"
+                      "\tL/lambda = {} -- nseg = {}\n"
+                      "\t=> new nseg = {}".format(Lseg/lamb, sec.nseg, min_nseg))
+            sec.nseg = min_nseg
+
+    # Recalculate total nseg
+    new_nseg = sum((sec.nseg for sec in all_sec))
+    nseg_fraction = float(new_nseg) / tot_nseg
+    if report:
+        print("Number of segments after adjustment: nseg = {}".format(new_nseg))
+        print("Change is {} percent".format(nseg_fraction))
+
+    # If number of segments has changed we need to reset properties
+    for param in cell.params.values():
+        param.instantiate(sim=sim, icell=cell.icell)
 
 
 def define_cell(model, exclude_mechs=None):
@@ -437,67 +489,12 @@ def create_cell():
     return cell, nrnsim
 
 
-# def rewrite_config_files():
-#     """
-#     Clean up commented JSON files
-#     """
-#     commented_json = [
-#         'config/mechanisms.json',
-#         'config/params_hendrickson2011_GENESIS.json',
-#         'config/map_params_hendrickson2011.json'
-#     ]
-#     write_json_after_edit(commented_json)
-
-
-def correct_num_compartments(cell, f_lambda, sim, report=False):
-    """
-    Correct the discretization (minimum number of compartments per section)
-    based on Hines' rule of thumb: L/lambda ~= 0.1
-    """
-
-    f_lambda = 100.0
-
-    # Calculate total nseg
-    all_sec = list(cell.icell.all)
-    tot_nseg = sum((sec.nseg for sec in all_sec))
-    if report:
-        print("Number of segments before adjustment: nseg = {}".format(tot_nseg))
-
-    # Adjust minimum number of segments
-    for sec in cell.icell.all:
-        # Check if we need to re-discretize
-        lamb = calc_lambda_AC(f_lambda, sec.diam, sec.Ra, sec.cm)
-        Lseg = sec.L/sec.nseg
-        min_nseg = calc_min_nseg_hines(f_lambda, sec.L, sec.diam, sec.Ra, sec.cm, round_up=False)
-
-        if min_nseg > sec.nseg:
-            if report:
-                print("Discretization too coarse:\n"
-                      "\tL/lambda = {} -- nseg = {}\n"
-                      "\t=> new nseg = {}".format(Lseg/lamb, sec.nseg, min_nseg))
-            sec.nseg = min_nseg
-
-    # Recalculate total nseg
-    new_nseg = sum((sec.nseg for sec in all_sec))
-    nseg_fraction = float(new_nseg) / tot_nseg
-    if report:
-        print("Number of segments after adjustment: nseg = {}".format(new_nseg))
-        print("Change is {} percent".format(nseg_fraction))
-
-    # If number of segments has changed we need to reset properties
-    for param in cell.params.values():
-        param.instantiate(sim=sim, icell=cell.icell)
-
-
-
 if __name__ == '__main__':
     # Make GPe cell
-    cell, nrnsim = create_cell()
+    cell = define_cell(MODEL_GUNAY2008_AXONLESS)
+    nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+    cell.instantiate(sim=nrnsim)
 
     # Instantiated cell has SectionLists 'all' 'somatic' 'axonal' 'basal'
     icell = cell.icell
-    from neuron import gui
-
-    # Write GENESIS parameters to json
-    # outfile = os.path.join(script_dir, 'config/GENESIS_parameters.json')
-    # get_GENESIS_parameters(write_json_filename=outfile)
+    # from neuron import gui
