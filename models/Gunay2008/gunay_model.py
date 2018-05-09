@@ -23,6 +23,7 @@ Using channel mechanisms ported to NEURON by Kitano (2011)
 """
 
 import os
+from math import pi as PI
 
 import neuron
 import bluepyopt.ephys as ephys
@@ -369,7 +370,7 @@ def define_morphology(filename, replace_axon):
                 do_replace_axon=False)
 
 
-def correct_num_compartments(cell, f_lambda, sim, report=False):
+def fix_num_compartments(cell, f_lambda, sim, report=False):
     """
     Correct the discretization (minimum number of compartments per section)
     based on Hines' rule of thumb: L/lambda ~= 0.1
@@ -407,6 +408,20 @@ def correct_num_compartments(cell, f_lambda, sim, report=False):
     # If number of segments has changed we need to reset properties
     for param in cell.params.values():
         param.instantiate(sim=sim, icell=cell.icell)
+
+
+def fix_comp_dimensions(cell):
+    """
+    Fix dimensions for each compartment after instantiating cell
+    with specific quantities so that cable equation corresponds to
+    the one solved by GENESIS.
+    """
+    # Everywhere L=1 and diam=1.
+    # In soma they use sphere with diam=1, so we get L from following equality:
+    # pi * diam^2 = pi*diam*L  <=>  L = diam
+    for sec in cell.icell.all:
+        sec.diam = 1.0
+        sec.L = 1.0
 
 
 def define_cell(model, exclude_mechs=None):
@@ -481,11 +496,8 @@ def create_cell():
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
     cell.instantiate(sim=nrnsim)
-
-    # Adjust number of segments after morphology and passive initialization
-    # eqsec.nseg = calc_min_nseg_hines(
-    #                                 self.f_lambda, eqsec.L, eqsec.diam, 
-    #                                 eqsec.Ra, eq_cm, round_up=False)
+    fix_comp_dimensions(cell)
+    
     return cell, nrnsim
 
 
@@ -494,6 +506,7 @@ if __name__ == '__main__':
     cell = define_cell(MODEL_GUNAY2008_AXONLESS)
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
     cell.instantiate(sim=nrnsim)
+    fix_comp_dimensions(cell)
 
     # Instantiated cell has SectionLists 'all' 'somatic' 'axonal' 'basal'
     icell = cell.icell

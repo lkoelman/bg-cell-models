@@ -1,91 +1,66 @@
-TITLE Calcium buffering for GPe neuron
-
 COMMENT
+Calcium accumulation into a volume of area*depth next to the
+membrane with a decay (time constant tau) to resting level
+given by the global calcium variable cai0_ca_ion
 
-DESCRIPTION
------------
-
-Ca2+ buffering for GPe neuron
-
-NEURON Implementation of GENESIS "Ca_concen" mechanism described in 
-http://genesis-sim.org/GENESIS/Hyperdoc/Manual-26.html#ss26.1
-
-Parameters taken from Hendrickson et al., 2010:
-https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
-
-USAGE
+NOTES
 -----
 
-If you want to use the Ca2+ concentrations calcualted here to calculate 
-the Ca reversal potential using the Nernst equation for use in other mechanisms 
-that read eca, you can set the ion_style in the correspondic sections 
-to [3,2,1,1,1]. (see 
-https://neuron.yale.edu/neuron/static/new_doc/modelspec/programmatic/ions.html#ion_style)
+Depth parameter was calculated by equating the 'B' parameter for
+calcium buffering in Gunay (2008) model to the multiplicative factor for ica
+in equations below, specifically:
 
-Alternatively, you can calculate the Nernst potential explicitly from cai/cao
-in those mechanims. For an example: see /nrn/share/examples/nrniv/nmodl/cachan.mod
+1/depth = 5.2e-12/6.283e-8 * 1e-6 * (2.0*Faraday/1e7)
+
+The factor 1e-6 is obtained by adjusting the B factor in
+http://genesis-sim.org/GENESIS/Hyperdoc/Manual-26.html#ss26.1
+for NEURON units (concentration rate and current are in SI units in GENESIS)
 
 
 CREDITS
 -------
 
-modeled in GENESIS by J.R. Edgerton, 2004
-implemented in NEURON by Lucas Koelman, 2018 to reflect model Hendrickson et al., 2010
-
+This is the example mechanism included with NEURON under 
+/share/examples/nrniv/nmodl/examples/cacum.mod
 ENDCOMMENT
 
 NEURON {
     SUFFIX Calcium
     USEION ca READ ica WRITE cai
-    RANGE B, shell_vol, tau
+    RANGE depth, tau, cai0
 }
 
 UNITS {
     (mM) = (milli/liter)
     (mA) = (milliamp)
-    (um) = (microm)
+    F = (faraday) (coulombs)
 }
 
 PARAMETER {
-    
-    cai0 = 5e-05 (mM)   : 'Ca_base' in Hendrickson model files
-    tau = 1.0 (ms)      : 'tau_CaClearance' in Hendrickson model files
-    B = 6.9333333e-12 (1/coulomb) : = 4.0/3.0*5.2e-12 (mol/coulomb) ('B' in Hendrickson model files)
-                        : Not equal to Ca_concen.B, but value before division by shell volume
-    shell_vol = 6.283185050026674e-08 : (m3) Hendrickson value for soma
-    area (um2)          : segment area in micron
-    
+    depth = 1.6e12 (nm)  : assume volume = area*depth
+    tau = 1 (ms)
+    cai0 = 50e-6 (mM)   : Requires explicit use in INITIAL
+            : block for it to take precedence over cai0_ca_ion
+            : Do not forget to initialize in hoc if different
+            : from this default.
 }
 
 ASSIGNED {
-    : read simulator variables
     ica (mA/cm2)
 }
 
 STATE {
-    : assigned mechanism variables (differential equation)
-    : ca_offset (mM)  : fluctuation around Ca_base
-
-    : assigned simulator variables
     cai (mM)
 }
 
-INITIAL{
-    : ca_offset = 0.0
+INITIAL {
     cai = cai0
 }
 
 BREAKPOINT {
-    SOLVE integrate METHOD derivimplicit :cnexp
-    : cai = cai0 + ca_offset
+    SOLVE integrate METHOD derivimplicit
 }
 
 DERIVATIVE integrate {
-    : negative membrane current = positive charge injection
-    : -> ica is first converted to GENSIS units (Ampere)
-    : -> B / shell_vol is in same units as GENESIS (moles/coulomb/m3)
-    : => units of first term are (mM/s) -> convert to mM/ms
-    : ca_offset' = 1e-3 * (-B / shell_vol) * (area * 1e3 * ica) - ca_offset / tau : (mM / ms)
-    cai' = (-B / shell_vol) * (area * ica) - (cai - cai0) / tau : (mM / ms)
+    cai' = -ica/depth/F/2 * (1e7) + (cai0 - cai)/tau
 }
-

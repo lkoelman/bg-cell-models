@@ -325,8 +325,6 @@ class SomaDistanceDiamLocation(Location, DictMixin):
                 lower, upper = self.distance_range
                 if (lower < sec_dist <= upper) and (diam_rating == 0):
                     isegments.append(seg)
-                    print("Add {} to distance {} and diam {}".format(
-                        seg, self.distance_range, self.diameter_range))
 
 
         return (sec for sec in isegments)

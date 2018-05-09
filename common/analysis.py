@@ -244,13 +244,13 @@ def recordTraces(secs, traceSpecs, recordStep=0.05, duration=None, recData=None)
                 # No mechanism. E.g. soma(0.5)._ref_v
                 ptr = seg.__getattribute__('_ref_'+spec['var'])
             
-            # find a POINT_PROCESS in segment to imptove efficiency
-            seg_pps = seg.point_processes()
-            if any(seg_pps):
-                pp = seg_pps[0]
-            else:
-                pp = h.PointProcessMark(seg)
-                pp_markers.append(pp)
+            # find a POINT_PROCESS in segment to improve efficiency
+            # seg_pps = seg.point_processes()
+            # if len(seg_pps) > 0:
+            #     pp = seg_pps[0]
+            # else:
+            pp = h.PointProcessMark(seg)
+            pp_markers.append(pp)
         
         elif 'pointp' in spec: # POINT_PROCESS objects
             if spec['pointp'] in secs:
@@ -377,7 +377,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
                 figs.append(plt.figure())
                 
                 ax = plt.subplot(len(tracesList), 1, itrace+1, sharex=shared_ax)
-                if traceSharex == True:
+                if traceSharex:
                     shared_ax = ax
             else:
                 ax = plt.subplot(len(tracesList), 1, itrace+1, sharex=shared_ax)
@@ -388,7 +388,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
             figs.append(fig)
             
             ax = plt.subplot(111, sharex=shared_ax)
-            if itrace==0 and traceSharex==True:
+            if itrace==0 and traceSharex:
                 shared_ax = ax
 
         # Get data to plot

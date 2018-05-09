@@ -114,6 +114,7 @@
   "dend_shell_vol": 6.283185183253437e-08, // computed from source file params
   "axon_shell_vol": 6.283185183253437e-08, // computed from source file params
   "tau_CaClearance" : 0.001,  //  time constant for Ca2+ clearance (sec)
+  "Ca_base" : 5e-05, // [mM] source file: GPchans.g
 
   //Synaptic conductances
   // STN excitatory inputs

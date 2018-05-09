@@ -136,31 +136,33 @@
 // -----------------------------------------------------------------------------
 // somatic Ca buffering
 // -----------------------------------------------------------------------------
-    {
-        "mech": "Calcium",
-        "mech_param": "B",
-        "sectionlist": "somatic",
-        "type": "range",
-        "dist_type": "uniform",
-        "value": "{B_Ca_GP_conc}"
-    },
-    {
-        "mech": "Calcium",
-        "mech_param": "tau",
-        "sectionlist": "somatic",
-        "type": "range",
-        "dist_type": "uniform",
-        "units": "seconds",
-        "value": "{tau_CaClearance}"
-    },
-    {
-        "mech": "Calcium",
-        "mech_param": "shell_vol",
-        "sectionlist": "somatic",
-        "type": "range",
-        "dist_type": "uniform",
-        "value": "{soma_shell_vol}"
-    },
+    // {
+    //     "mech": "Calcium",
+    //     "mech_param": "B",
+    //     "sectionlist": "somatic",
+    //     "type": "range",
+    //     "dist_type": "uniform",
+    //     "units" : "1/C",
+    //     "value": "{B_Ca_GP_conc}"
+    // },
+    // {
+    //     "mech": "Calcium",
+    //     "mech_param": "tau",
+    //     "sectionlist": "somatic",
+    //     "type": "range",
+    //     "dist_type": "uniform",
+    //     "units": "seconds",
+    //     "value": "{tau_CaClearance}"
+    // },
+    // {
+    //     "mech": "Calcium",
+    //     "mech_param": "shell_vol",
+    //     "sectionlist": "somatic",
+    //     "type": "range",
+    //     "dist_type": "uniform",
+    //     "units" : "m^3",
+    //     "value": "{soma_shell_vol}"
+    // },
 // -----------------------------------------------------------------------------
 // somatic conductances
 // -----------------------------------------------------------------------------
@@ -752,31 +754,33 @@
 // -----------------------------------------------------------------------------
 // dendritic Ca buffering
 // -----------------------------------------------------------------------------
-    {
-        "mech": "Calcium",
-        "mech_param": "B",
-        "sectionlist": "basal",
-        "type": "range",
-        "dist_type": "uniform",
-        "value": "{B_Ca_GP_conc}"
-    },
-    {
-        "mech": "Calcium",
-        "mech_param": "tau",
-        "sectionlist": "basal",
-        "type": "range",
-        "dist_type": "uniform",
-        "units": "seconds",
-        "value": "{tau_CaClearance}"
-    },
-    {
-        "mech": "Calcium",
-        "mech_param": "shell_vol",
-        "sectionlist": "basal",
-        "type": "range",
-        "dist_type": "uniform",
-        "value": "{dend_shell_vol}"
-    },
+    // {
+    //     "mech": "Calcium",
+    //     "mech_param": "B",
+    //     "sectionlist": "basal",
+    //     "type": "range",
+    //     "dist_type": "uniform",
+    //     "units" : "1/C",
+    //     "value": "{B_Ca_GP_conc}"
+    // },
+    // {
+    //     "mech": "Calcium",
+    //     "mech_param": "tau",
+    //     "sectionlist": "basal",
+    //     "type": "range",
+    //     "dist_type": "uniform",
+    //     "units": "seconds",
+    //     "value": "{tau_CaClearance}"
+    // },
+    // {
+    //     "mech": "Calcium",
+    //     "mech_param": "shell_vol",
+    //     "sectionlist": "basal",
+    //     "type": "range",
+    //     "dist_type": "uniform",
+    //     "units" : "m^3",
+    //     "value": "{dend_shell_vol}"
+    // },
 // -----------------------------------------------------------------------------
 // dendritic conductances
     {
