@@ -20,7 +20,7 @@ from common import logutils
 logutils.setLogLevel('quiet', ['bluepyopt.ephys.parameters', 'bluepyopt.ephys.mechanisms'])
 
 
-def define_gpe_locations():
+def define_synapse_locations():
     """
     Define locations / regions on the cell that will function as the target
     of synaptic connections.
@@ -58,7 +58,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
                         'config/params_hendrickson2011_GENESIS.min.json',
                         'config/map_params_hendrickson2011.min.json')
 
-    _ephys_locations = define_gpe_locations()
+    _ephys_locations = define_synapse_locations()
     
     
     def memb_init(self):
@@ -115,12 +115,16 @@ class GPeCellType(ephys_pynn.EphysCellType):
 
     # Synapse receptor types per region
     receptor_types = []
+
     excitatory_locs = ['proximal_dend', 'distal_dend']
     inhibitory_locs = ['proximal_dend']
+    
     for loc in excitatory_locs:
         receptor_types.extend([loc+'.AMPA', loc+'.NMDA', loc+'.AMPA+NMDA'])
+    
     for loc in inhibitory_locs:
         receptor_types.extend([loc+'.GABAA', loc+'.GABAB', loc+'.GABAA+GABAB'])
+
 
     def can_record(self, variable):
         """

@@ -15,11 +15,11 @@ import os, os.path
 script_dir = os.path.dirname(__file__)
 neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms'))
 
-# Load STN cell Hoc code
+# Load STN cell Hoc libraries
 prev_cwd = os.getcwd()
 os.chdir(script_dir)
 # os.environ['HOC_LIBRARY_PATH'] = os.environ.get('HOC_LIBRARY_PATH', '') + ':' + script_dir
-h.xopen("gillies_createcell.hoc")
+h.xopen("gillies_createcell.hoc") # instantiates all functions & data structures on Hoc object
 os.chdir(prev_cwd)
 
 # from pyNN.standardmodels import StandardCellType
@@ -66,6 +66,15 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
     @note   instantiated using Population.cell_type.model(**parameters) 
             and assigned to ID._cell
+
+
+    EXAMPLE
+    -------
+
+    >>> cell = StnCellModel()
+    >>> nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+    >>> icell = cell.instantiate(sim=nrnsim)
+    
     """
 
     _ephys_locations = define_locations()
@@ -192,3 +201,8 @@ def test_stn_pynn_population(export_locals=True):
 if __name__ == '__main__':
     # test_stn_cells_multiple()
     test_stn_pynn_population()
+
+    # Make single cell
+    cell = StnCellModel()
+    nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+    icell = cell.instantiate(sim=nrnsim)

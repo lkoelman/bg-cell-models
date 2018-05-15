@@ -208,7 +208,22 @@ class EphysModelWrapper(ephys.models.CellModel):
 
             And on documentation at:
                 http://neuralensemble.org/docs/PyNN/backends/NEURON.html#using-native-cell-models
+    
+    ATTRIBUTES
+    ----------
 
+    @attr   <location_name> : nrn.Section or nrn.Segment
+            Each location defined on the cell has a corresponding attribute
+
+    @attr   <param_name> : float
+            Each parameter defined for thsi cell has a corresponding attribute
+    
+    @attr   locations : dict<str, Ephys.location>
+            Dict containing all locations defined on the cell.
+            Keys are the same as the location attributes of this cell.
+
+    @attr   synapses : dict<str, list(nrn.POINT_PROCESS)>
+            Synapse object that synapse onto this cell.
     """
 
     __metaclass__ = CellModelMeta
@@ -272,14 +287,13 @@ class EphysModelWrapper(ephys.models.CellModel):
 
     def __init__(self, *args, **kwargs):
         """
-        Factory method to create a cell that will not be stored on the
-        cell description object.
+        As opposed to the original CellModel class,
+        this class instantiates the cell in its __init__ method.
 
         @param      **kwargs : dict(str, object)
                     Parameter name, value pairs
 
-        @return     cell : HocObject
-                    Return value of Hoc template.
+        @post       self.icell contains the instantiated Hoc cell model
 
         """
         # Get parameter definitions from class attributes of subclass.
@@ -319,7 +333,7 @@ class EphysModelWrapper(ephys.models.CellModel):
 
         # Synapses will map the mechanism name to the synapse object
         # and is set by our custom Connection class
-        self.synapses = {}
+        self.synapses = {} # mech_name: str -> list(nrn.POINT_PROCESS)
 
         # Attributes required by PyNN
         self.source_section = self.icell.soma[0]
@@ -361,7 +375,8 @@ class EphysModelWrapper(ephys.models.CellModel):
 
     def resolve_synapses(self, spec):
         """
-        Resolve point process specification for Recorder.
+        Resolve string definition of a synapse or point process
+        on this cell (used by Recorder).
 
         @param      spec : str
                     

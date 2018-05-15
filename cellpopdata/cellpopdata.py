@@ -214,6 +214,7 @@ class CellConnector(object):
                 If an int > 0 is given, each synaptic condcutance
                 is divided by this number.
 
+
         @return params : dict<NTR, dict<str, object>>
                 
                 Dictionary containing synapse parameters for each neurotransmitter
@@ -221,14 +222,16 @@ class CellConnector(object):
                 The parameter dict for each key (NTReceptor) may contain following
                 entries:
 
-                    'Ipeak':        float
-                    'gbar':         float
-                    'tau_rise_g':   float
-                    'tau_decay_g':  float
-                    'Erev':         float
-                    'tau_rec_STD':  float
-                    'tau_rec_STP':  float
-                    'P_release_base':   float
+                'Ipeak':        float       peak synaptic current
+                'Epeak':        float       peak PSP amplitude
+                'PSP_dV':       float       PSP deviation from baseline membrane voltage
+                'gbar':         float       synaptic conductance
+                'tau_rise_g':   float       exponential time constant for rising phase
+                'tau_decay_g':  float       exponential rime constant for decay phase
+                'Erev':         float       reversal potential for synapse
+                'tau_rec_STD':  float       time constant of recovery from depression
+                'tau_rec_STP':  float       time constant of facilitation
+                'P_release_base':   float   baseline release probability
 
 
         """
@@ -243,12 +246,18 @@ class CellConnector(object):
         cp = {}
 
         # TODO: refactor this in table (excel-like): one table per projection,
-        #       one column per neurotransmitter, one row per source, with annotations.
+        #       one row per observation, one column per parameter (and NT, comment).
         #       Goal should be that you can clearly see which information is missing,
         #       which is N/A, and what is known about the connection
+        
         # TODO: add units and check them while setting, like Ephys parameters.
         #       Also plot a final connectivity matrix that shows all connections
         #       strengths in same units (easy to check visually, in color)
+
+        # TODO: none of the time constants are temperature-corrected
+
+        # TODO: remove IPSC/EPSC calculations: only save data that is
+        #       actually present/shown in articles (PSP magnitudes etc.)
         if post_pop == Pop.GPE:
 
             # Inputs from Striatum
@@ -264,7 +273,8 @@ class CellConnector(object):
             }
 
             # ---------------------------------------------------------------------
-            # TODO: set default parameters. Current values are copied from AMPA/NMDA CTX->STN
+            # Default parameters XYZ -> GPE.
+            # TODO: Change these. Current values are copied from AMPA/NMDA CTX->STN
             
             # Default GLUergic (STN -> GPE)
             Erev = 0.0
@@ -317,8 +327,38 @@ class CellConnector(object):
                 'f_med_PSP_burst': 8.72,
             }
 
+            # ------------------------------------------------------------------
+            # Levine, Hull, Buchenwald (1974) GP PSPs
+            # Data is from cats
 
-            # ---------------------------------------------------------------------
+            # Figure 1: measurement of IPSP by stimulating Caudate Nucleus
+            cp[Pop.STR][Rec.GABAB][Src.Levine1974] = {
+                'PSP_dV': -5.0, # ~ 5 mV dip from baseline
+                'tau_rise_g': 66.0, # ~ 66 ms to 63% of dip amplitude
+                'tau_decay_g': 100.0, # ~ 100 ms to 63% recovery to baseline
+            }
+
+            # Figure 5: measurement of EPSP-IPSP by stimulating Caudate
+            # This is the magnitude of the initial EPSP before the IPSP
+            cp[Pop.STR][Rec.AMPA][Src.Levine1974] = {
+                'PSP_dV': 2.65, # ~ +2.6 mV increase from baseline
+                'tau_rise_g': 23.5, # ~ 23.5 ms to 63% of peak
+                'tau_decay_g': 29.5, # ~ 29.5 ms to 63% recovery to baseline
+            }
+
+            # ------------------------------------------------------------------
+            # Kita & Kitai (1991) GP intracellular recordings
+            # Data is from rats
+
+            # Figure 7: measurement of EPSP by stimulating STh (Subthalamic Nucleus)
+            cp[Pop.STN][Rec.AMPA][Src.KitaKitai1991] = {
+                'PSP_dV': (11.0, 31.0), # ~ 21 mV increase for middle trace
+                'tau_rise_g': 12.0, # ~ 12 ms to 63% of peak
+                'tau_decay_g': 30.0, # ~ 30 ms to 63% recovery to baseline
+            }
+
+
+            # ------------------------------------------------------------------
             # Parameters Hendrickson (2011) - Capabilities and Limitations ...
             # TODO: chech these, STN -> GPe should be excitatory, and STR->inhibitory
 
@@ -393,6 +433,9 @@ class CellConnector(object):
             })
 
             # ---------------------------------------------------------------------
+            # Parameters Chu (2015) - Heterosynaptic Regulation of External Globus
+            # Pallidus Inputs to the Subthalamic Nucleus by the Motor Cortex
+
             # AMPA from Chu (2015)
             Ermp = -80.
             cp[Pop.CTX][Rec.AMPA][Src.Chu2015] = {
@@ -407,7 +450,7 @@ class CellConnector(object):
             if physio_state == PhysioState.PARKINSONIAN:
                 Ermp = -80. # Fig. 2G
                 cp[Pop.CTX][Rec.AMPA][Src.Chu2015].update({
-                    'Ipeak': -390.,
+                    'Ipeak': -390., # pA
                     'gbar': -390.*1e-3 / (Ermp - Erev), 
                 })
             park_gain = 390./275. # increase in Parkinsonian condition
@@ -484,6 +527,8 @@ class CellConnector(object):
 
             # ---------------------------------------------------------------------
             # Parameters from Chu (2015)
+
+            # GABA-A ISPSc examples in Figures 2,3,4,5,6.
             cp[Pop.GPE][Rec.GABAA][Src.Chu2015] = {
                 'Ipeak': 350.,  # peak synaptic current (pA)
                 'gbar': 350.*1e-3 / (Ermp - Erev_GABAA), # gbar calculation
@@ -500,6 +545,8 @@ class CellConnector(object):
 
             # ---------------------------------------------------------------------
             # Parameters from Fan (2012)
+
+            # Figure 2 shows magnitudes for spike-invoked IPSCs
             cp[Pop.GPE][Rec.GABAA][Src.Fan2012] = {
                 'gbar': {
                     'mean': 7.03e-3,
@@ -522,8 +569,10 @@ class CellConnector(object):
 
             # ---------------------------------------------------------------------
             # Parameters from Atherton (2013)
+
+            # Figure 2 shows short-term depression
             cp[Pop.GPE][Rec.GABAA][Src.Atherton2013] = {
-                'tau_rec_STD': 1730., # See Fig. 2
+                'tau_rec_STD': 17300., # See Fig. 2 & legend
                 'tau_rec_STP': 1.0, # no STP: very fast recovery
                 'P_release_base': 0.5, # Fitted
             }
