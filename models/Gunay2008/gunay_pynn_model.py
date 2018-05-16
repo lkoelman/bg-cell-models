@@ -29,16 +29,18 @@ def define_synapse_locations():
                 List of location / region definitions.
     """
 
+    # NOTE: distances are not realistic since Gunay model adjusts
+    #       compartment dimensions to 1 micron after loading morphology
     proximal_dend = SomaDistanceRangeLocation(
         name='proximal_dend',
         seclist_name='basal',
-        min_distance=5.0,
-        max_distance=100.0)
+        min_distance=0.01,
+        max_distance=1.5)
 
     distal_dend = SomaDistanceRangeLocation(
         name='distal_dend',
         seclist_name='basal',
-        min_distance=100.0,
+        min_distance=1.5,
         max_distance=1000.0)
 
     return [proximal_dend, distal_dend]
@@ -52,11 +54,16 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
                         replace_axon=False)
     
     _ephys_mechanisms = gunay_model.define_mechanisms(
-                        'config/mechanisms.min.json')
+                        'config/mechanisms.json')
+
+    _param_locations = gunay_model.define_locations(
+                        'config/locations.json')
+
     
     _ephys_parameters = gunay_model.define_parameters(
-                        'config/params_hendrickson2011_GENESIS.min.json',
-                        'config/map_params_hendrickson2011.min.json')
+                            'config/params_gunay2008_GENESIS.json',
+                            'config/map_params_gunay2008_v2.json',
+                            _param_locations)
 
     _ephys_locations = define_synapse_locations()
     
@@ -65,7 +72,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         """
         Initialization function required by PyNN.
         """
-        pass
+        gunay_model.fix_comp_dimensions(self)
 
 
     def get_threshold(self):
@@ -114,14 +121,12 @@ class GPeCellType(ephys_pynn.EphysCellType):
     # default_initial_values = {'v': -65.0}
 
     # Synapse receptor types per region
-    receptor_types = []
-
     excitatory_locs = ['proximal_dend', 'distal_dend']
     inhibitory_locs = ['proximal_dend']
     
+    receptor_types = []
     for loc in excitatory_locs:
         receptor_types.extend([loc+'.AMPA', loc+'.NMDA', loc+'.AMPA+NMDA'])
-    
     for loc in inhibitory_locs:
         receptor_types.extend([loc+'.GABAA', loc+'.GABAB', loc+'.GABAA+GABAB'])
 

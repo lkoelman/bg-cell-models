@@ -8,9 +8,24 @@ and get their parameters from centralized parameter databvase.
 """
 
 import re
+from math import exp
+
 import pyNN.neuron
 from pyNN.neuron.simulator import Connection, state, h
+from pyNN.standardmodels import synapses, build_translations
 from common import nrnutil
+
+#    The call graph for creating Connections is:
+#
+#    -> Projection.__init__(..., Connector)
+#    `-> Connector.connect(..., Projection)
+#    `-> MapConnector._standard_connect(...)
+#        `-> Connector._parameters_from_synapse_type(...)
+#            - parameters are fetched from Projection.synapse_type
+#            - parameters are optionally calculated from distance map
+#    `-> Projection._convergent_connect(..., **connection_parameters)
+#    `-> Projection.synapse_type.connection_type(...)
+#    `-> Connection.__init__(...)
 
 
 class ConnectionFromDB(Connection):
@@ -19,17 +34,6 @@ class ConnectionFromDB(Connection):
     the synapse type's attached database, using the Projection's 
     region + receptor type, presynaptic and postsynaptic cell types.
     """
-    #    The call graph is:
-    #
-    #    -> Projection.__init__(..., Connector)
-    #    `-> Connector.connect(..., Projection)
-    #    `-> MapConnector._standard_connect(...)
-    #        `-> Connector._parameters_from_synapse_type(...)
-    #            - parameters are fetched from Projection.synapse_type
-    #            - parameters are optionally calculated from distance map
-    #    `-> Projection._convergent_connect(..., **connection_parameters)
-    #    `-> Projection.synapse_type.connection_type(...)
-    #    `-> Connection.__init__(...)
 
     def __init__(self, projection, pre, post, **parameters):
         """
@@ -152,6 +156,17 @@ class NativeSynToRegion(Connection):
         if syn_mech_name is None:
             syn_mech_name = receptor_name
 
+
+        # FIXME:
+        #   - Connection class in pyNN.neuron.simulator module defines 
+        #     properties 'weight' and 'delay' that use this attribute
+        #   - make sure it is OK to leave this attribute unset
+        self.nc = None      # PyNN default attribute
+        self.synapse = None # PyNN default attribute
+
+
+        # Ask cell for segment in target region
+        segment = getattr(self.postsynaptic_cell._cell, region)
         # TODO: handle distribution of synapses better
         #   - cell is responsible for maintaining realistic distribution of synapses
         #       - maintain spacing, etc.
@@ -160,75 +175,166 @@ class NativeSynToRegion(Connection):
         #   - can give existing synapses if parameters are the same
         #       - no overwrite of params in this case
         #       - check by comparing same pre-cel, receptor, region,
-
-        # TODO: handle multi-synapse rule
-        #   - Connection class in pyNN.neuron.simulator module defines 
-        #     properties 'weight' and 'delay' that use this attribute
-        #   - make sure it is OK to leave this attribute unset
-        self.nc = None      # PyNN default attribute
-        self.synapse = None # PyNN default attribute
-        self.netcons = []
-        self.synapses = []
-        for i_syn in range(parameters.get('multi_synapse_rule', 1)):
-            # Ask cell for segment in target region
-            segment = getattr(self.postsynaptic_cell._cell, region)
-            
-            # Find an existing synapse to connect to or create one
-            # FIXME: cannot overwrite existing syn params set by previous connection
-            # seg_pps = segment.point_processes()
-            # target_syn = next((syn for syn in seg_pps if 
-            #                 nrnutil.get_mod_name(syn)==syn_mech_name), None)
-            # if target_syn is None:
-            #     constructor = getattr(h, syn_mech_name)
-            #     target_syn = constructor(segment)
-            #     existing_syn = False
-            # else:
-            #     existing_syn = True
-            constructor = getattr(h, syn_mech_name)
-            target_syn = constructor(segment)
-            existing_syn = False
-            
-            pre_gid = int(self.presynaptic_cell)
-
-            # TODO: handle multi-synapse rule
-            nc = state.parallel_context.gid_connect(pre_gid, target_syn)
-            synapse = target_syn
-            self.netcons.append(nc)
-            self.synapses.append(synapse)
-
-            # Also store synapse on postsynaptic cell
-            if not existing_syn:
-                post_syns = self.postsynaptic_cell._cell.synapses.setdefault(syn_mech_name, [])
-                post_syns.append(target_syn)
-
-            # Interpret connection parameters
-            param_targets = {'syn': synapse, 'netcon': nc}
-            parameters.update(projection.synapse_type.mechanism_parameters)
-            
-            for param_spec, param_value in parameters.iteritems():
-                # Default PyNN parameters
-                if param_spec == 'weight':
-                    nc.weight[0] = param_value
-                elif param_spec == 'delay':
-                    nc.delay = param_value
-                else:
-                    # read param spec in format "target:attribute[index]"
-                    matches = re.search(
-                        r'^(?P<target>\w+):(?P<parname>\w+)(\[(?P<index>\d+)\])?', 
-                        param_spec)
         
-                    target_name = matches.group('target')
-                    param_name = matches.group('parname')
-                    param_index = matches.group('index')
+        # Find an existing synapse to connect to or create one
+        # FIXME: cannot overwrite existing syn params set by previous connection
+        # seg_pps = segment.point_processes()
+        # target_syn = next((syn for syn in seg_pps if 
+        #                 nrnutil.get_mod_name(syn)==syn_mech_name), None)
+        # if target_syn is None:
+        #     constructor = getattr(h, syn_mech_name)
+        #     target_syn = constructor(segment)
+        #     existing_syn = False
+        # else:
+        #     existing_syn = True
+        constructor = getattr(h, syn_mech_name)
+        self.synapse = constructor(segment)
+        
+        # Create NEURON synapse and NetCon
+        pre_gid = int(self.presynaptic_cell)
+        self.nc = state.parallel_context.gid_connect(pre_gid, self.synapse)
 
-                    # Determine target (synapse or NetCon)
-                    target = param_targets[target_name]
+        # Also store synapse on postsynaptic cell
+        # if not existing_syn:
+        post_syns = self.postsynaptic_cell._cell.synapses.setdefault(syn_mech_name, [])
+        post_syns.append(self.synapse)
 
-                    # Set attribute
-                    if param_index is None:
-                        setattr(target, param_name, param_value)
-                    else:
-                        getattr(target, param_name)[int(param_index)] = param_value
+        # Interpret connection parameters
+        param_targets = {'syn': self.synapse, 'netcon': self.nc}
+        parameters.update(projection.synapse_type.mechanism_parameters)
+
+        # Don't allow weight and delay in **parameters
+        pynn_delay = parameters.pop('delay')
+        parameters.setdefault('netcon:delay', pynn_delay)
+
+        pynn_weight = parameters.pop('weight')
+        parameters.setdefault('netcon:weight[0]', pynn_weight)
+        
+        for param_spec, value_spec in parameters.iteritems():
+            # Convert value specification to actual parameter value
+            if callable(value_spec):
+                # Generate distance map lazily and cache it
+                distance_map = getattr(projection, '_distance_map', None)
+                if distance_map is None:
+                    distance_map = projection._connector._generate_distance_map(
+                                                            projection)
+                    projection._distance_map = distance_map
+                # distance_map has projection.shape
+                distance = distance_map[pre, post]
+                param_value = value_spec(distance)
+            elif isinstance(value_spec, (float, int)):
+                param_value = value_spec
+            else:
+                raise ValueError("Cannot interpret parameter specification "
+                    "<{}> for parameter {}".format(value_spec, param_spec))
+
+            # interpret parameter specification in format "target:attribute[index]"
+            matches = re.search(
+                r'^(?P<target>\w+):(?P<parname>\w+)(\[(?P<index>\d+)\])?', 
+                param_spec)
+            target_name = matches.group('target')
+            param_name = matches.group('parname')
+            param_index = matches.group('index')
+
+            # Set attribute
+            target = param_targets[target_name]
+            if param_index is None:
+                setattr(target, param_name, param_value)
+            else:
+                getattr(target, param_name)[int(param_index)] = param_value
+
+
+class ConnectionNrnWrapped(Connection):
+    """
+    Connection to a wrapped NEURON synapse that exposes certain
+    parameters to PyNN
+
+    The advantage is that you can specify parameters using PyNN's built-in
+    mechanisms. E.g.
+    """
+
+    def __init__(self, projection, pre, post, **parameters):
+        """
+        Create a new connection.
+        """
+        #logger.debug("Creating connection from %d to %d, weight %g" % (pre, post, parameters['weight']))
+        self.presynaptic_index = pre
+        self.postsynaptic_index = post
+        self.presynaptic_cell = projection.pre[pre]
+        self.postsynaptic_cell = projection.post[post]
+
+
+        # Get the target region on the cell and the receptor type
+        self.synapse_type = projection.synapse_type
+        syn_mech_name = projection.synapse_type.model
+        region, receptor_name = projection.receptor_type.split(".")
+        if syn_mech_name is None:
+            syn_mech_name = receptor_name
+
+
+        # Ask cell for segment in target region
+        segment = getattr(self.postsynaptic_cell._cell, region)
+
+        # Create NEURON synapse
+        constructor = getattr(h, syn_mech_name)
+        self.synapse = target_syn = constructor(segment)
+        
+        # Create NEURON NetCon
+        pre_gid = int(self.presynaptic_cell)
+        self.nc = state.parallel_context.gid_connect(pre_gid, target_syn)
+        self.nc.weight[0] = parameters.pop('weight')
+        self.nc.delay = parameters.pop('delay')
+        
+        # if we have a mechanism (e.g. from 9ML) that includes multiple
+        # synaptic channels, need to set nc.weight[1] here
+        if self.nc.wcnt() > 1 and hasattr(self.postsynaptic_cell._cell, "type"):
+            self.nc.weight[1] = self.postsynaptic_cell._cell.type.receptor_types.index(projection.receptor_type)
+        
+        # Plastic synapses use SynapseType.model to store weight adjuster,
+        # we use it for the synapse model
+        if projection.synapse_type.model is not None:
+            self._setup_nrn_synapse(projection.synapse_type, parameters)
+            # self._setup_plasticity(projection.synapse_type, parameters)
+
+
+    def __setattr__(self, name, value):
+        """
+        Support properties of associated Synapse object.
+
+        This is required to support Projection.set(param_name=param_val)
+
+        NOTES
+        -----
+
+        In PyNN.neuron.simulator.py, this is solved by generating properties
+        for each attribute of the associated synapse type and weight adjuster.
+        We catch it in this method instead.
+        """
+        if hasattr(self, 'synapse_type') and name in self.synapse_type.get_parameter_names():
+            pinfo = self.synapse_type.translations[name]
+            pname = pinfo['translated_name']
+            setattr(self.synapse, pname, value)
+        else:
+            super(ConnectionNrnWrapped, self).__setattr__(name, value)
+
+
+    def _setup_nrn_synapse(self, synapse_type, parameters):
+        """
+        Set parameters on the NEURON synapse object.
+
+        @param      parameters : dict(str, float)
+                    Parameters are already evaluated by PyNN
+        """
+        # parameters = synapse_type.translate(parameters<ParameterSpace>, copy=copy)
+        # parameters.evaluate(simplify=True)
+        # for name, value in parameters.items():
+        #   setattr(target, name, value)
+        synapse_param_names = synapse_type.get_parameter_names()
+        for name, value in parameters.items():
+            if name in synapse_param_names:
+                pinfo = synapse_type.translations[name]
+                pname = pinfo['translated_name']
+                setattr(self.synapse, pname, value)
 
 
 # We have to define a custom Synapse model so we can make the connection_type
@@ -309,10 +415,125 @@ class NativeSynapse(pyNN.neuron.StaticSynapse):
         # Don't pass native mechanism parameters
         self.mechanism = parameters.pop('mechanism')
         self.mechanism_parameters = parameters.pop('mechanism_parameters', {})
+        self.multi_synapse_rule = parameters.pop('multi_synapse_rule', 1)
         # self.physiological_parameters = parameters.pop('physiological_parameters', {})
+
+        # Convert distance-based string expressions to callable functions
+        converted_expressions = {}
+        for param_spec, value_spec in self.mechanism_parameters.iteritems():
+            if not isinstance(value_spec, str):
+                continue
+            d_expression = value_spec
+            try:
+                # Check for singularities at large and small distances
+                d = 0; assert 0 <= eval(d_expression), eval(d_expression)
+                d = 1e12; assert 0 <= eval(d_expression), eval(d_expression)
+            except ZeroDivisionError as err:
+                raise ZeroDivisionError("Error in the distance expression %s. %s" % (d_expression, err))
+            converted_expressions[param_spec]= eval("lambda d: {}".format(d_expression))
+        self.mechanism_parameters.update(converted_expressions)
         
         # Insert dummy variables so pyNN doesn't complain
-        parameters.setdefault('delay', None)
+        parameters.setdefault('delay', 1.0)
         parameters.setdefault('weight', 0.0)
-        parameters.setdefault('multi_synapse_rule', 1.0)
         super(NativeSynapse, self).__init__(**parameters)
+
+
+
+class GluSynapse(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
+    """
+    Wrapper for NEURON GLUsyn mechanism defined in .mod file
+    """
+
+    connection_type = ConnectionNrnWrapped
+    model = 'GLUsyn'
+
+    # PyNN internal name to NEURON name
+    translations = build_translations(
+        # NetCon parameters
+        ('weight', 'weight'),
+        ('delay', 'delay'),
+        # Conductance time course
+        ('gmax_AMPA', 'gmax_AMPA'),     # Weight conversion factor (from nS to uS)
+        ('gmax_NMDA', 'gmax_NMDA'),     # Weight conversion factor (from nS to uS)
+        ('tau_r_AMPA', 'tau_r_AMPA'),   # Dual-exponential conductance profile
+        ('tau_d_AMPA', 'tau_d_AMPA'),   # IMPORTANT: tau_r < tau_d
+        ('tau_r_NMDA', 'tau_r_NMDA'),   # Dual-exponential conductance profile
+        ('tau_d_NMDA', 'tau_d_NMDA'),    # IMPORTANT: tau_r < tau_d
+        # Short-term Depression/Facilitation
+        ('tau_rec', 'tau_rec'),         # time constant of recovery from depression
+        ('tau_facil', 'tau_facil'),     # time constant of facilitation
+        ('U1', 'U1'),                   # baseline release probability
+        # Magnesium block for NMDA
+        ('e', 'e'),                     # AMPA and NMDA reversal potential
+        ('mg', 'mg'),                   # Initial concentration of mg2+
+    )
+
+    default_parameters = {
+        'weight':       1.0,
+        'delay':        None,
+        'tau_r_AMPA':   0.2,
+        'tau_d_AMPA':   1.7,
+        'tau_r_NMDA':   0.29,
+        'tau_d_NMDA':   43.0,
+        'e':            0.0,
+        'mg':           1.0,
+        'gmax_AMPA':    0.001,
+        'gmax_NMDA':    0.001,
+        'tau_rec':      200.0,
+        'tau_facil':    200.0,
+        'U1':           0.5,
+    }
+
+    def _get_minimum_delay(self):
+        return state.min_delay
+
+
+class GabaSynapse(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
+    """
+    Wrapper for NEURON GLUsyn mechanism defined in .mod file
+    """
+
+    connection_type = ConnectionNrnWrapped
+    model = 'GABAsyn' # defined in GABAsyn.mod
+
+    # PyNN internal name to NEURON name
+    translations = build_translations(
+        # NetCon parameters
+        ('weight', 'weight'),
+        ('delay', 'delay'),
+        # Conductance time course
+        ('gmax_GABAA', 'gmax_GABAA'),     # Weight conversion factor (from nS to uS)
+        ('gmax_GABAB', 'gmax_GABAB'),     # Weight conversion factor (from nS to uS)
+        ('tau_r_GABAA', 'tau_r_GABAA'),   # Dual-exponential conductance profile
+        ('tau_d_GABAA', 'tau_d_GABAA'),   # IMPORTANT: tau_r < tau_d
+        ('tau_r_GABAB', 'tau_r_GABAB'),   # Dual-exponential conductance profile
+        ('tau_d_GABAB', 'tau_d_GABAB'),    # IMPORTANT: tau_r < tau_d
+        # Short-term Depression/Facilitation
+        ('tau_rec', 'tau_rec'),         # time constant of recovery from depression
+        ('tau_facil', 'tau_facil'),     # time constant of facilitation
+        ('U1', 'U1'),                   # baseline release probability
+        # Reversal potentials
+        ('Erev_GABAA', 'Erev_GABAA'),                     # GABAA and GABAB reversal potential
+        ('Erev_GABAB', 'Erev_GABAB'),                   # Initial concentration of mg2+
+        # TODO: include GABA-B signaling cascade if necessary
+    )
+
+    default_parameters = {
+        'weight':     1.0,
+        'delay':     None,
+        'tau_r_GABAA':   0.2,
+        'tau_d_GABAA':   1.7,
+        'tau_r_GABAB':   0.2,
+        'tau_d_GABAB':   1.7,
+        'Erev_GABAA':   -80.0,
+        'Erev_GABAB':   -95.0,
+        'gmax_GABAA':    0.001,
+        'gmax_GABAB':    0.001,
+        'tau_rec':      200.0,
+        'tau_facil':    200.0,
+        'U1':           0.5,
+    }
+
+    def _get_minimum_delay(self):
+        return state.min_delay

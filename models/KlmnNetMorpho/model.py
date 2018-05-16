@@ -22,24 +22,28 @@ To run using MPI, you can use the following command:
 import time
 import numpy as np
 
-from pyNN.utility import init_logging, connection_plot
+# PyNN library
 import pyNN.neuron as sim
-from extensions.pynn.connection import SynapseFromDB, NativeSynapse
+from pyNN import space
+from pyNN.utility import init_logging, connection_plot
+
+# Custom PyNN extensions
+from extensions.pynn.connection import NativeSynapse, GluSynapse, GabaSynapse # , SynapseFromDB
 from extensions.pynn.recording import TraceSpecRecorder
 sim.Population._recorder_class = TraceSpecRecorder
 
-# Load custom synapse mechanisms
+# Custom NEURON mechanisms
 import os.path
 script_dir = os.path.dirname(__file__)
 sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses'))
 
-# Our custom cell models
+# Custom cell models
 import models.GilliesWillshaw.gillies_pynn_model as gillies
 import models.Gunay2008.gunay_pynn_model as gunay
 
 # Our physiological parameters
 from cellpopdata.physiotypes import Populations as PopID, ParameterSource as ParamSrc
-from cellpopdata.cellpopdata import CellConnector
+# from cellpopdata.cellpopdata import CellConnector
 
 
 def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
@@ -114,7 +118,7 @@ def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
         globals().update(locals())
 
 
-def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
+def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
@@ -133,20 +137,44 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     #     preferred_sources=[ParamSrc.Chu2015, ParamSrc.Fan2012, ParamSrc.Atherton2013],
     #     preferred_mechanisms=['GLUsyn', 'GABAsyn'])
 
+    # NOTE: if wrapped synapses like GluSynapse and GabaSynapse are used, any
+    #       parameter can be a function of distance or cell index. For complex
+    #       functions using math and numpy modules, write a function. For
+    #       simple ones, you can use a string as as well.
+
     ############################################################################
     # POPULATIONS
     ############################################################################
     # Define each cell population with its cell type, number of cells
 
     # STN cell population
+    stn_grid = space.Line(x0=0.0, dx=50.0,
+                          y=0.0, z=0.0)
+    
     stn_type = gillies.StnCellType(with_receptors=['GLUsyn', 'GABAsyn'])
-    pop_stn = sim.Population(ncell_per_pop, stn_type, label='STN')
+
+    ncell_stn = ncell_per_pop
+    pop_stn = sim.Population(ncell_stn, 
+                             cellclass=stn_type, 
+                             label='STN',
+                             structure=stn_grid)
+    
     pop_stn.pop_id = PopID.STN
     pop_stn.initialize(v=-63.0)
 
+
     # GPe cell population
+    gpe_grid = space.Line(x0=0.0, dx=50.0,
+                          y=1e6, z=0.0)
+
     gpe_type = gunay.GPeCellType(with_receptors=['GLUsyn', 'GABAsyn'])
-    pop_gpe = sim.Population(ncell_per_pop, gpe_type, label='GPE')
+
+    ncell_gpe = ncell_per_pop
+    pop_gpe = sim.Population(ncell_gpe, 
+                             cellclass=gpe_type,
+                             label='GPE',
+                             structure=gpe_grid)
+
     pop_gpe.pop_id = PopID.GPE
     pop_gpe.initialize(v=-63.0)
 
@@ -190,40 +218,66 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     #---------------------------------------------------------------------------
     # STN -> GPE (excitatory)
 
-    stn_gpe_syn = NativeSynapse(
-        mechanism='GLUsyn',
-        multi_synapse_rule=1,
-        mechanism_parameters={
-            'netcon:weight[0]': 1.0,
-            'netcon:delay':     2.0, # [ms] delay from literature
-            'syn:U1':           0.1, # baseline release probability
-            'syn:tau_rec':      200.0, # [ms] recovery from STD
-            'syn:tau_facil':    800.0, # [ms] recovery from facilitation
-            # AMPA receptor
-            'syn:gmax_AMPA':    0.025 / 0.1 * 1e-3, # [uS], adjusted for U1
-            'syn:tau_r_AMPA':   1.0, # [ms] rise time
-            'syn:tau_d_AMPA':   4.0, # [ms] decay time
-            # NMDA receptor
-            'syn:gmax_NMDA':    0.0,
-            
-        })
+    stn_gpe_syn = GluSynapse(**{
+        'weight':       1.0,
+        'delay':        2.0, # [ms] delay from literature
+        'U1':           0.1, # baseline release probability
+        'tau_rec':      200.0, # [ms] recovery from STD
+        'tau_facil':    800.0, # [ms] recovery from facilitation
+        # AMPA receptor
+        'gmax_AMPA':    0.025 / 0.1 * 1e-3, # [uS], adjusted for U1
+        'tau_r_AMPA':   1.0, # [ms] rise time
+        'tau_d_AMPA':   4.0, # [ms] decay time
+        # NMDA receptor
+        'gmax_NMDA':    0.0,
+    })
+    # stn_gpe_syn = sim.StaticSynapse(weight='1/(1+d)', delay=1.0)
+    # stn_gpe_syn = NativeSynapse(
+    #     mechanism='GLUsyn',
+    #     mechanism_parameters={
+    #         'netcon:weight[0]': 1.0,
+    #         'netcon:delay':     2.0, # [ms] delay from literature
+    #         'syn:U1':           0.1, # baseline release probability
+    #         'syn:tau_rec':      200.0, # [ms] recovery from STD
+    #         'syn:tau_facil':    800.0, # [ms] recovery from facilitation
+    #         # AMPA receptor
+    #         'syn:gmax_AMPA':    0.025 / 0.1 * 1e-3, # [uS], adjusted for U1
+    #         'syn:tau_r_AMPA':   1.0, # [ms] rise time
+    #         'syn:tau_d_AMPA':   4.0, # [ms] decay time
+    #         # NMDA receptor
+    #         'syn:gmax_NMDA':    0.0,
+    #     })
 
     # TODO: distance-based, use variable weight or variable number of synapses
-    stn_gpe_connector = TODO
+    stn_gpe_connector = conn_allp05
 
     stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, 
-                                 stn_gpe_connector, stn_gpe_syn,
+                                 connector=stn_gpe_connector,
+                                 synapse_type=stn_gpe_syn,
                                  receptor_type='distal_dend.AMPA+NMDA')
+
+    stn_gpe_EXC.set(gmax_NMDA=1.0)
 
     #---------------------------------------------------------------------------
     # GPE -> GPE (inhibitory)
 
+    # Distance-calculation: wrap-around in along x-axis
+    x_max = ncell_gpe * gpe_grid.dx
+    gpe_gpe_space = space.Space(periodic_boundaries=((0, x_max), None, None))
+
+    # Connect to four neighboring neurons
+    dist_fun_conn = 'd < 205'
+    gpe_gpe_connector = sim.DistanceDependentProbabilityConnector(
+                                dist_fun_conn,
+                                allow_self_connections=False)
+    # NOTE: for math and numpy functions: use function instead of string
+    dist_fun_weight = '(d<50)*1.0 + (d>=50)*exp(-(d-50)/100)'
+
     # Calibrated using Miguelez (2012)
     gpe_gpe_syn = NativeSynapse(
         mechanism='GABAsyn',
-        multi_synapse_rule=1,
         mechanism_parameters={
-            'netcon:weight[0]': 1.0,
+            'netcon:weight[0]': dist_fun_weight,
             'netcon:delay':     0.5, # [ms] delay from literature
             'syn:U1':           0.2, # baseline release probability
             'syn:tau_rec':      400.0, # [ms] recovery from STD
@@ -239,14 +293,12 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
             
         })
 
-    # TODO: adjust connectivity pattern
-    #   - see http://neuralensemble.org/docs/PyNN/connections.html#connecting-neurons-with-a-position-dependent-probability
-    #   - adjust DistanceDependentProbabilityConnector to adjust weight
-    #     based on distance (rather than connection probability)
-    #   - do ctrl+f 'space' and see http://neuralensemble.org/docs/PyNN/space.html
-    #     to see how to assign/calculate space, e.g. assign Pop to Line space
-    gpe_gpe_INH = sim.Projection(pop_gpe, pop_gpe, conn_allp05, gpe_gpe_syn,
-        receptor_type='proximal_dend.GABAA+GABAB')
+    # TODO: set connector and weight dependence
+    gpe_gpe_INH = sim.Projection(pop_gpe, pop_gpe, 
+                                 connector=gpe_gpe_connector,
+                                 synapse_type=gpe_gpe_syn,
+                                 receptor_type='proximal_dend.GABAA+GABAB',
+                                 space=gpe_gpe_space)
 
     #---------------------------------------------------------------------------
     # STR -> GPE (inhibitory)
@@ -254,7 +306,6 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     # TODO: calibrate using refs Steiner BG HB, facilation params
     str_gpe_syn = NativeSynapse(
         mechanism='GABAsyn',
-        multi_synapse_rule=1,
         mechanism_parameters={
             'netcon:weight[0]': 1.0,
             'netcon:delay':     5.0, # [ms] delay from literature
@@ -269,16 +320,28 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
             'syn:gmax_GABAB':   0.0, # [uS], adjusted for U1
         })
 
-    str_gpe_INH = sim.Projection(pop_str, pop_gpe, conn_allp05, str_gpe_syn,
-        receptor_type='proximal_dend.GABAA+GABAB')
+    # TODO connection pattern STR -> GPE
+    str_gpe_connector = conn_allp05
+    str_gpe_INH = sim.Projection(pop_str, pop_gpe,
+                                 connector=str_gpe_connector,
+                                 synapse_type=str_gpe_syn,
+                                 receptor_type='proximal_dend.GABAA+GABAB')
 
 
     #---------------------------------------------------------------------------
     # NOISE -> GPE (excitatory)
-    noise_syn = NativeSynapse(weight=1.0, delay=5.0, mechanism='GLUsyn') # default params
+    noise_syn = NativeSynapse(
+        mechanism='GLUsyn',
+        mechanism_parameters={
+            'netcon:weight[0]': 1.0,
+            'netcon:delay':     5.0, # [ms] delay from literature
+        })
+
     noise_connector = sim.FixedProbabilityConnector(0.5)
     
-    noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, noise_connector, noise_syn,
+    noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, 
+                                   connector=noise_connector,
+                                   synapse_type=noise_syn,
                                    receptor_type='proximal_dend.AMPA+NMDA')
     
     noise_gpe_EXC.preferred_param_sources = [
@@ -291,7 +354,6 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     # GPe -> STN (inhibitory)
     gpe_stn_syn = NativeSynapse(
         mechanism='GABAsyn',
-        multi_synapse_rule=1,
         mechanism_parameters={
             'netcon:weight[0]': 1.0,
             'netcon:delay':     4.0, # [ms] delay from literature
@@ -309,8 +371,11 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
             
         })
 
+    # TODO: GPE -> STN projection pattern
     gpe_stn_INH = sim.Projection(
-                        pop_gpe, pop_stn, conn_allp05, gpe_stn_syn,
+                        pop_gpe, pop_stn,
+                        connector=conn_allp05,
+                        synapse_type=gpe_stn_syn,
                         receptor_type='proximal_dend.GABAA+GABAB')
 
     #---------------------------------------------------------------------------
@@ -318,7 +383,6 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
     ctx_stn_syn = NativeSynapse(
         mechanism='GLUsyn',
-        multi_synapse_rule=1,
         mechanism_parameters={
             'netcon:weight[0]': 1.0,
             'netcon:delay':     5.9, # [ms] delay from literature
@@ -336,8 +400,11 @@ def run_simple_net(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
             
         })
 
+    # TODO: CTX -> STN projection pattern
     ctx_stn_EXC = sim.Projection(
-                        pop_ctx, pop_stn, conn_allp05, ctx_stn_syn,
+                        pop_ctx, pop_stn,
+                        connector=conn_allp05,
+                        synapse_type=ctx_stn_syn,
                         receptor_type='distal_dend.AMPA+NMDA')
 
     #---------------------------------------------------------------------------

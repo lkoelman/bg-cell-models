@@ -467,27 +467,6 @@ def define_cell(model, exclude_mechs=None):
     return cell
 
 
-def define_pynn_model(exclude_mechs=None):
-    """
-    Create GPe cell model
-    """
-    import extensions.pynn.ephys_models as ephys_pynn
-
-    model = ephys_pynn.EphysModelWrapper(
-                'GPe',
-                morph=define_morphology(
-                        'morphology/bg0121b_axonless_GENESIS_import.swc',
-                        replace_axon=False),
-                mechs=define_mechanisms(
-                        'config/mechanisms.json',
-                        exclude_mechs=exclude_mechs),
-                params=define_parameters(
-                        'config/params_hendrickson2011_GENESIS.json',
-                        'config/map_params_hendrickson2011.json',
-                        exclude_mechs=exclude_mechs))
-    return model
-
-
 def create_cell():
     """
     Instantiate GPe cell in NEURON simulator.
