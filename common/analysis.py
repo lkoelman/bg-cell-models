@@ -491,17 +491,25 @@ def pick_line(trace_name, trace_index, solid_only=False):
     return colors[trace_index%len(colors)], styles[trace_index%len(styles)]
 
 
-def match_traces(recData, matchfun, orderfun=None, reverse=False):
+def match_traces(recData, matchfun, orderfun=None, reverse=False, pop=False):
     """
     Get ordered dictionary with matching traces.
 
-    @param matchfun     lambda string -> bool
+    @param  matchfun: lambda string -> bool
+            Filter function that matches trace names
+
+    @param  pop : bool
+            Pop (remove) matched traces from recData
     """
 
     traces = ((name,data) for name,data in recData.iteritems() if matchfun(name))
 
     if orderfun is not None:
         traces = sorted(traces, key=orderfun, reverse=reverse) # if no orderfun: keep recData order
+
+    if pop:
+        for trace_name, _ in traces:
+            recData.pop(trace_name)
     
     return collections.OrderedDict(traces)
 
@@ -763,6 +771,13 @@ def nrn_avg_rate_simple(spiketrains, tstart, tstop, binwidth):
     """
     Simple algorithm for calculating the running firing rate
     (average firing rate in each bin of the psth, averaged over spike trains)
+
+    @param      binwidth: float
+                Bin width in (ms)
+
+    @return     h.Vector() containing, the firing rate in each bin.
+                The firing rate is just the number of spikes in a bin
+                divided by the bin width in seconds.
     """
     # first compute the histogram
     avghist = nrn_sum_psth(spiketrains, tstart, tstop, binwidth)
