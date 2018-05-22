@@ -34,7 +34,15 @@ See notes in `notes/BG_observations_experiments.md`
 
 # Installation
 
-These installation instructions are for the Conda Python ditribution:
+These installation instructions are for the Conda Python ditribution.
+
+Our custom PyNN classes have only been tested with PyNN 0.9.2 (git commit
+`4b80343ba17afd688a92b3a0755ea73179c9daab`) and BluePyOpt version 1.5.35 
+(commit `7d7c65be0bff3a9832d1d5dec3f4ba1c8906fa75`).
+
+## Installation using PYTHONPATH
+
+This will make the module globally available by adding it to the `PYTHONPATH` environment variable.
 
 ```bash
 # Create Python virtual environment using Conda
@@ -43,7 +51,7 @@ conda create -n neuro python=2
 source activate neuro
 
 # Install dependencies in new environment
-pip install scipy matplotlib cython numba elephant PySpike
+pip install scipy matplotlib cython numba pint elephant PySpike
 git clone https://github.com/BlueBrain/BluePyOpt.git
 pip install -e ./BluePyOpt # -e only if you want editable version
 
@@ -61,9 +69,23 @@ cd ~/workspace/bgcellmodels
 ipcluster start
 ```
 
-## Install useful tools
+## Installation using Pip
+
+TODO
+
+```sh
+pip install -e ./bg-cell-models
+```
+
+## Installation of Extra Tools
+
+### NEURON Syntax Definitions
+
+NEURON Syntax definitions for Hoc and NMODL languages [for Sublime Text](https://github.com/jordan-g/NEURON-for-Sublime-Text) and [for VS Code](https://github.com/imatlopez/vscode-neuron).
 
 ### nbstripout
+
+This facilitates working with git and Jupyter notebooks by stripping output cells before commits. This avoids committing large binary outputs like images embedded into notebooks.
 
 ```bash
 pip install --upgrade nbstripout
@@ -71,12 +93,12 @@ cd bgcellmodels
 nbstripout install
 ```
 
-### ipython extensions
+### Jupyter extensions
 
 ```bash
 pip install jupyter_contrib_nbextensions
-jupyter nbextensions_configurator enable --user
+jupyter contrib nbextension install --user
 ```
 
-Now extensions can be enabled via Jupyter extensions tab
+Now extensions can be enabled via the tab 'Nbextensions' in Jupyter. For example, 'Table of Contents' will add a handy navigation widget when working with notebooks.
 
