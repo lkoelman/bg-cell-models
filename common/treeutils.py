@@ -5,6 +5,7 @@ Utilities for dealing with NEURON cell models
 """
 
 from neuron import h
+import numpy as np
 
 from nrnutil import seg_index, seg_xmin, seg_xmax, getsecref
 import StringIO
@@ -407,6 +408,43 @@ def ascend_with_fixed_spacing(start_segment, dL):
             else:
                 Lrem = abs(Lb)
                 stack.extend([sec(Lrem/sec.L) for sec in curseg.sec.children() if sec.parentseg().x==0])
+
+
+def sample_tree_uniformly(root_sec, num_seg, spacing, 
+                          filter_func=None, rng=None, replace=False):
+    """
+    Sample dendritic tree with uniform spacing (in micron).
+
+    @param      root_sec : nrn.Section
+                Root section of the tree
+
+    @param      num_seg : int
+                Number of sections to pick
+
+    @param      spacing : float
+                Spacing between segments in micron
+
+    @param      filter_func : callable(nrn.Segment) -> bool (optional)
+                Filter function to mark segments as eligible to be picked
+
+    @param      replace : bool
+                Sample with replacement
+
+    @param      rng : numpy.Random (optional)
+                Random number generator.
+    """
+    # Get random number generator
+    if rng is None:
+        rng = np.random
+        
+    # Generate sample segments with uniform spacing
+    segment_sampler = ascend_with_fixed_spacing(root_sec(0.5), spacing)
+    if filter_func is not None:
+        eligible_segs = [seg for seg in segment_sampler if filter_func(seg)]
+    else:
+        eligible_segs = [seg for seg in segment_sampler]
+    sample_indices = rng.choice(len(eligible_segs), num_seg, replace=replace)
+    return [eligible_segs[i] for i in sample_indices]
 
 
 def subtree_topology(sub_root, max_depth=1e9):

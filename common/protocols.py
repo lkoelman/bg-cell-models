@@ -85,40 +85,8 @@ def pick_random_segments(sections, n_segs, elig_func, rng=None):
     return target_segs
 
 
-def sample_tree_uniformly(root_sec, num_seg, spacing, filter_func=None, rng=None, replace=False):
-    """
-    Sample dendritic tree with uniform spacing (in micron).
-
-    @param      root_sec : nrn.Section
-                Root section of the tree
-
-    @param      num_seg : int
-                Number of sections to pick
-
-    @param      spacing : float
-                Spacing between segments in micron
-
-    @param      filter_func : callable(nrn.Segment) -> bool (optional)
-                Filter function to mark segments as eligible to be picked
-
-    @param      replace : bool
-                Sample with replacement
-
-    @param      rng : numpy.Random (optional)
-                Random number generator.
-    """
-    # Get random number generator
-    if rng is None:
-        rng = np.random
-        
-    # Generate sample segments with uniform spacing
-    segment_sampler = treeutils.ascend_with_fixed_spacing(root_sec(0.5), spacing)
-    if filter_func is not None:
-        eligible_segs = [seg for seg in segment_sampler if filter_func(seg)]
-    else:
-        eligible_segs = [seg for seg in segment_sampler]
-    sample_indices = rng.choice(len(eligible_segs), num_seg, replace=replace)
-    return [eligible_segs[i] for i in sample_indices]
+# Backward compatibility
+sample_tree_uniformly = treeutils.sample_tree_uniformly
 
 
 def extend_dictitem(d, key, val, append=True):

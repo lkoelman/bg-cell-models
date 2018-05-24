@@ -7,6 +7,9 @@ PyNN compatible cell models for GPe cell model.
 
 """
 
+from neuron import h
+import numpy as np
+
 # from pyNN.standardmodels import StandardCellType
 from pyNN.neuron.cells import NativeCellType
 
@@ -16,7 +19,8 @@ from extensions.pynn.ephys_locations import SomaDistanceRangeLocation
 import gunay_model
 
 # Debug messages
-from common import logutils
+from common.stdutil import dotdict
+from common import logutils, treeutils
 logutils.setLogLevel('quiet', ['bluepyopt.ephys.parameters', 'bluepyopt.ephys.mechanisms'])
 
 
@@ -65,19 +69,74 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
                             'config/map_params_gunay2008_v2.json',
                             _param_locations)
 
-    _ephys_locations = define_synapse_locations()
+    # _ephys_locations = define_synapse_locations()
+    regions = ['proximal', 'distal']
     
     
     def memb_init(self):
         """
         Initialization function required by PyNN.
+
+        @override     EphysModelWrapper.memb_init()
         """
         gunay_model.fix_comp_dimensions(self)
+
+
+    def _init_synapses(self):
+        """
+        Initialize synapses on this neuron.
+
+        @override   EphysModelWrapper.memb_init()
+        """
+        # Sample each region uniformly and place synapses there
+        soma = self.icell.soma[0]
+        synapse_spacing = 0.25
+        segment_gen = treeutils.ascend_with_fixed_spacing(
+                            soma(0.5), synapse_spacing)
+        uniform_segments = [seg for seg in segment_gen]
+
+        # Sample cell regions
+        h.distance(0, 0.5, sec=soma) # reference for distance measurement
+
+        is_proximal = lambda seg: h.distance(1, seg.x, sec=seg.sec) < 5.0
+        proximal_segments = [seg for seg in uniform_segments if is_proximal(seg)]
+
+        is_distal = lambda seg: h.distance(1, seg.x, sec=seg.sec) > 3
+        distal_segments = [seg for seg in uniform_segments if is_distal(seg)]
+
+        # Synapses counts are fixed
+        num_gpe_syn = 8
+        num_str_syn = 22
+        num_stn_syn = 10
+        rng = np.random # TODO: make from base seed + self ID
+        
+        proximal_indices = rng.choice(len(proximal_segments), 
+                                num_gpe_syn+num_str_syn, replace=False)
+
+        distal_indices = rng.choice(len(distal_segments), num_stn_syn,
+                                replace=False)
+
+        # Fill synapse lists
+        self._synapses = {}
+        self._synapses['proximal'] = prox_syns = {}
+        self._synapses['distal'] = dist_syns = {}
+
+        prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
+        for seg_index in proximal_indices:
+            syn = h.GABAsyn(proximal_segments[seg_index])
+            prox_gaba_syns.append(dotdict(synapse=syn, used=0, mechanism='GABAsyn'))
+        
+        dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
+        for seg_index in distal_indices:
+            syn = h.GLUsyn(distal_segments[seg_index])
+            dist_glu_syns.append(dotdict(synapse=syn, used=0, mechanism='GLUsyn'))
 
 
     def get_threshold(self):
         """
         Get spike threshold for soma membrane potential (used for NetCon)
+
+        @override   EphysModelWrapper.get_threshold()
         """
         return -10.0
 
@@ -119,16 +178,10 @@ class GPeCellType(ephys_pynn.EphysCellType):
 
     # extra_parameters = {}
     # default_initial_values = {'v': -65.0}
-
-    # Synapse receptor types per region
-    excitatory_locs = ['proximal_dend', 'distal_dend']
-    inhibitory_locs = ['proximal_dend']
     
-    receptor_types = []
-    for loc in excitatory_locs:
-        receptor_types.extend([loc+'.AMPA', loc+'.NMDA', loc+'.AMPA+NMDA'])
-    for loc in inhibitory_locs:
-        receptor_types.extend([loc+'.GABAA', loc+'.GABAB', loc+'.GABAA+GABAB'])
+    # Combined with self.model.regions by EphysCellType constructor
+    receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
+                      'GABAA', 'GABAB', 'GABAA+GABAB']
 
 
     def can_record(self, variable):

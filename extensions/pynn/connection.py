@@ -8,7 +8,6 @@ and get their parameters from centralized parameter databvase.
 """
 
 import re
-from math import exp
 
 import pyNN.neuron
 from pyNN.neuron.simulator import Connection, state, h
@@ -148,25 +147,15 @@ class NativeSynToRegion(Connection):
         self.postsynaptic_index = post
         self.presynaptic_cell = projection.pre[pre]
         self.postsynaptic_cell = projection.post[post]
+        post_cell = self.postsynaptic_cell._cell # CellType.model instance
 
         # Get the target region on the cell and the receptor type
         # syn_mech_name = parameters.pop('mechanism', None)
-        syn_mech_name = projection.synapse_type.mechanism
-        region, receptor_name = projection.receptor_type.split(".")
-        if syn_mech_name is None:
-            syn_mech_name = receptor_name
+        # syn_mech_name = projection.synapse_type.mechanism
+        region, receptor = projection.receptor_type.split(".")
+        receptors = receptor.split("+")
 
 
-        # FIXME:
-        #   - Connection class in pyNN.neuron.simulator module defines 
-        #     properties 'weight' and 'delay' that use this attribute
-        #   - make sure it is OK to leave this attribute unset -> NOT OK
-        # self.nc = None      # PyNN default attribute
-        # self.synapse = None # PyNN default attribute
-
-
-        # Ask cell for segment in target region
-        segment = getattr(self.postsynaptic_cell._cell, region)
         # TODO: handle distribution of synapses better
         #   - cell is responsible for maintaining realistic distribution of synapses
         #       - maintain spacing, etc.
@@ -175,29 +164,18 @@ class NativeSynToRegion(Connection):
         #   - can give existing synapses if parameters are the same
         #       - no overwrite of params in this case
         #       - check by comparing same pre-cel, receptor, region,
+
+
+        # Ask cell for segment in target region
+        synapse, used = post_cell.get_synapse(region, receptors, True)
+        self.synapse = synapse
+        if used > 0:
+            raise Exception("No unused synapses on target cell {}".format())
         
-        # Find an existing synapse to connect to or create one
-        # FIXME: cannot overwrite existing syn params set by previous connection
-        # seg_pps = segment.point_processes()
-        # target_syn = next((syn for syn in seg_pps if 
-        #                 nrnutil.get_mod_name(syn)==syn_mech_name), None)
-        # if target_syn is None:
-        #     constructor = getattr(h, syn_mech_name)
-        #     target_syn = constructor(segment)
-        #     existing_syn = False
-        # else:
-        #     existing_syn = True
-        constructor = getattr(h, syn_mech_name)
-        self.synapse = constructor(segment)
         
         # Create NEURON synapse and NetCon
         pre_gid = int(self.presynaptic_cell)
         self.nc = state.parallel_context.gid_connect(pre_gid, self.synapse)
-
-        # Also store synapse on postsynaptic cell
-        # if not existing_syn:
-        post_syns = self.postsynaptic_cell._cell.synapses.setdefault(syn_mech_name, [])
-        post_syns.append(self.synapse)
 
         # Interpret connection parameters
         param_targets = {'syn': self.synapse, 'netcon': self.nc}
@@ -262,26 +240,22 @@ class ConnectionNrnWrapped(Connection):
         self.postsynaptic_index = post
         self.presynaptic_cell = projection.pre[pre]
         self.postsynaptic_cell = projection.post[post]
-
+        post_cell = self.postsynaptic_cell._cell # CellType.model instance
 
         # Get the target region on the cell and the receptor type
-        self.synapse_type = projection.synapse_type
-        syn_mech_name = projection.synapse_type.model
-        region, receptor_name = projection.receptor_type.split(".")
-        if syn_mech_name is None:
-            syn_mech_name = receptor_name
-
+        # syn_mech_name = projection.synapse_type.mechanism
+        region, receptor = projection.receptor_type.split(".")
+        receptors = receptor.split("+")
 
         # Ask cell for segment in target region
-        segment = getattr(self.postsynaptic_cell._cell, region)
-
-        # Create NEURON synapse
-        constructor = getattr(h, syn_mech_name)
-        self.synapse = target_syn = constructor(segment)
+        synapse, used = post_cell.get_synapse(region, receptors, True)
+        self.synapse = synapse
+        if used > 0:
+            raise Exception("No unused synapses on target cell {}".format(type(post_cell)))
         
         # Create NEURON NetCon
         pre_gid = int(self.presynaptic_cell)
-        self.nc = state.parallel_context.gid_connect(pre_gid, target_syn)
+        self.nc = state.parallel_context.gid_connect(pre_gid, synapse)
         self.nc.weight[0] = parameters.pop('weight')
         self.nc.delay = parameters.pop('delay')
         

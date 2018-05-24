@@ -64,7 +64,7 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 	usr_format = format
 	if format is None:
 		# format = '%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s'
-		format = '%(levelname)s@%(filename)s:%(lineno)s>%(message)s'
+		format = '%(name)s:%(levelname)s@%(filename)s:%(lineno)s> %(message)s'
 	fmt = logging.Formatter(format)
 
 	# Create new handler if none exists or stream explicitly specified
