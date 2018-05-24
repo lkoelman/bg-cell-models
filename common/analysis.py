@@ -616,7 +616,7 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 
 def plotRaster(spikeData, timeRange=None, showFig=True, 
                 includeTraces=None, excludeTraces=None, 
-                showGrid=True, title=None, color='b'):
+                showGrid=True, title=None, color='b', marker=','):
     """
     Plot rastergram of spike times.
 
@@ -631,6 +631,10 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
     
     - showFig (True|False)
         Whether to show the figure or not (default: True)
+
+    - marker
+        valid matplotlib marker, e.g. ',' '|'
+        see https://matplotlib.org/api/markers_api.html
 
     @return         tuple(fig, ax)
     """
@@ -656,7 +660,7 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
     
     # Plot data as scatter plot
     fig, ax = plt.subplots()
-    ax.scatter(x_data, y_data, s=4, c=color, lw=0, marker=',')
+    ax.scatter(x_data, y_data, s=4, c=color, lw=0, marker=marker)
     ax.set_xlabel('time (ms)')
     
     # X-Y limits

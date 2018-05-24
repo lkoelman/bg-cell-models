@@ -361,6 +361,54 @@ def ascend_segmentwise_dfs(start_section):
             stack.append(child_section)
 
 
+def ascend_with_fixed_spacing(start_segment, dL):
+    """
+    Generator that does depth-first tree traversal of segments sampled
+    at a fixed spacing from each other.
+
+    @param      start_segment : nrn.Segment
+                Segment to start the descent. 
+
+    @effect     If start_segment is in the root Section of the tree, 
+                all subtrees will be ascended no matter whether they 
+                are attached to the 0-end or 1-end. If start_segment
+                is not in the root_section, ascent will proceed
+                in the 1-direction only.
+    """
+    assert dL > 0, "dL must be strictly positive"
+    
+    stack = [start_segment]
+    root_sec = root_section(start_segment.sec)
+    start_seg_x = start_segment.x
+
+    while stack:
+        curseg = stack.pop()
+        yield curseg
+
+        stepping_backward = curseg.sec.same(root_sec) and curseg.x < start_seg_x
+        both_directions =  curseg.sec.same(root_sec) and curseg.x == start_seg_x
+
+        La = curseg.x * curseg.sec.L    # distance from 0-end in micron
+
+        if (not stepping_backward) or both_directions:
+            Lb = La + dL                # distance from 0-end of next sample
+
+            if Lb <= curseg.sec.L:      # next sample in same Section
+                stack.append(curseg.sec(Lb/curseg.sec.L))
+            else:
+                Lrem = Lb - curseg.sec.L
+                stack.extend([sec(Lrem/sec.L) for sec in curseg.sec.children() if sec.parentseg().x!=0])
+        
+        if stepping_backward or both_directions:
+            # Case where we are walking in reverse direction (1-end to 0-end)
+            Lb = La - dL
+            if Lb >= 0:
+                stack.append(curseg.sec(Lb/curseg.sec.L))
+            else:
+                Lrem = abs(Lb)
+                stack.extend([sec(Lrem/sec.L) for sec in curseg.sec.children() if sec.parentseg().x==0])
+
+
 def subtree_topology(sub_root, max_depth=1e9):
     """
     Like h.topology() but for subtree of section.

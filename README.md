@@ -90,7 +90,7 @@ This facilitates working with git and Jupyter notebooks by stripping output cell
 ```bash
 pip install --upgrade nbstripout
 cd bgcellmodels
-nbstripout install
+nbstripout --install
 ```
 
 ### Jupyter extensions

@@ -23,6 +23,8 @@ import bluepyopt.ephys as ephys
 from pyNN.neuron import state as nrn_state, h
 from pyNN.neuron.cells import NativeCellType
 
+from common.stdutil import dotdict
+
 ephys_nrn_sim = None
 
 rng_structural_variability = h.Random(
@@ -213,16 +215,25 @@ class EphysModelWrapper(ephys.models.CellModel):
     ----------
 
     @attr   <location_name> : nrn.Section or nrn.Segment
-            Each location defined on the cell has a corresponding attribute
+
+            Each location defined on the cell has a corresponding attribute.
+            This is a dynamic attribute: the Segment or Section is sampled
+            from the region.
+
 
     @attr   <param_name> : float
+
             Each parameter defined for thsi cell has a corresponding attribute
     
+
     @attr   locations : dict<str, Ephys.location>
+
             Dict containing all locations defined on the cell.
             Keys are the same as the location attributes of this cell.
 
+
     @attr   synapses : dict<str, list(nrn.POINT_PROCESS)>
+
             Synapse object that synapse onto this cell.
     """
 
@@ -333,7 +344,9 @@ class EphysModelWrapper(ephys.models.CellModel):
 
         # Synapses will map the mechanism name to the synapse object
         # and is set by our custom Connection class
-        self.synapses = {} # mech_name: str -> list(nrn.POINT_PROCESS)
+        # self.synapses = {} # mech_name: str -> list(nrn.POINT_PROCESS)
+        # Make synapse objects as targets for connections
+        self._init_synapses()
 
         # Attributes required by PyNN
         self.source_section = self.icell.soma[0]
@@ -371,6 +384,74 @@ class EphysModelWrapper(ephys.models.CellModel):
         """
         raise NotImplementedError("Please set the spike threshold for your "
                 "custom cell model.")
+
+
+    def _init_synapses():
+        """
+        Initialize synapses on this neuron.
+
+        @post       self._synapses is empty or unset
+
+        @post       self._synapses is a nested dict with depth=2 and following
+                    structure:
+                    { region: {receptors: list({ 'synapse':syn, 'used':int }) } }
+        """
+        raise NotImplementedError("Subclass should place synapses in dendritic tree.")
+
+
+    def get_synapse_list(region, receptors):
+        """
+        Return list of synapses in region that have given
+        neutotransmitter receptors.
+
+        @param      region : str
+                    Region descriptor.
+
+        @param      receptors : enumerable(str)
+                    Receptor descriptors.
+
+        @return     synapse_list : list(dict())
+                    List of synapse containers
+        """
+        return next((syns for recs, syns in self._synapses[region].items() if all(
+                        (ntr in recs for ntr in receptors))), [])
+
+
+    def get_synapse(region, receptors, mark_used, **kwargs):
+        """
+        Get a synapse in cell region for given neurotransmitter
+        receptors.
+
+        @param      region : str
+                    Region descriptor.
+
+        @param      receptors : enumerable(str)
+                    Receptor descriptors.
+
+        @param      mark_used : bool
+                    Whether the synapse should be marked as used
+                    (targeted by a NetCon).
+
+        @param      **kwargs
+                    (Unused) extra keyword arguments for use when overriding
+                    this method in a subclass.
+
+        @return     synapse, num_used : tuple(nrn.POINT_PROCESS, int)
+                    NEURON point process object that can serve as the
+                    target of a NetCon object, and the amount of times
+                    the synapse has been used before as the target
+                    of a NetCon.
+        """
+        syn_list = self.get_synapse_list(region, receptors)
+        if len(syn_list) == 0:
+            raise Exception("Could not find any synapses for "
+                "region '{}' and receptors'{}'".format(region, receptors))
+
+        min_used = min((meta.used for meta in syn_list))
+        metadata = next((meta for meta in syn_list if meta.used==min_used))
+        if mark_used:
+            metadata.used += 1 # increment used counter
+        return metadata.synapse, min_used
 
 
     def resolve_synapses(self, spec):

@@ -160,9 +160,9 @@ class NativeSynToRegion(Connection):
         # FIXME:
         #   - Connection class in pyNN.neuron.simulator module defines 
         #     properties 'weight' and 'delay' that use this attribute
-        #   - make sure it is OK to leave this attribute unset
-        self.nc = None      # PyNN default attribute
-        self.synapse = None # PyNN default attribute
+        #   - make sure it is OK to leave this attribute unset -> NOT OK
+        # self.nc = None      # PyNN default attribute
+        # self.synapse = None # PyNN default attribute
 
 
         # Ask cell for segment in target region
