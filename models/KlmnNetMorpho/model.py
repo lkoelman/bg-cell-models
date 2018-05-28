@@ -186,7 +186,9 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
 
 
     # CTX spike sources
-    pop_ctx = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=20.0),
+    pop_ctx = sim.Population(
+                    ncell_per_pop,
+                    sim.SpikeSourcePoisson(rate=20.0),
                     label='CTX')
     pop_ctx.pop_id = PopID.CTX
 
@@ -270,8 +272,6 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
                                  connector=stn_gpe_connector,
                                  synapse_type=stn_gpe_syn,
                                  receptor_type='distal.AMPA+NMDA')
-
-    stn_gpe_EXC.set(gmax_NMDA=1.0)
 
     #---------------------------------------------------------------------------
     # GPE -> GPE (inhibitory)
@@ -399,66 +399,108 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
 
     #---------------------------------------------------------------------------
     # GPe -> STN (inhibitory)
-    gpe_stn_syn = NativeSynapse(
-        mechanism='GABAsyn',
-        mechanism_parameters={
-            'netcon:weight[0]': 1.0,
-            'netcon:delay':     4.0, # [ms] delay from literature
-            'syn:U1':           0.2, # baseline release probability
-            'syn:tau_rec':      17300.0, # [ms] recovery from STD
-            'syn:tau_facil':    1.0, # [ms] recivery from facilitation
-            # AMPA receptor
-            'syn:gmax_GABAA':   7.0 / 0.2 * 1e-3, # [uS], adjusted for U1
-            'syn:tau_r_GABAA':  2.0, # [ms] rise time
-            'syn:tau_d_GABAA':  6.0, # [ms] decay time
-            # NMDA receptor
-            'syn:gmax_GABAB':   7.0 * 1e-3, # [uS]
-            'syn:tau_r_GABAB':  5.0, # [ms] rise time of cascade first species
-            'syn:tau_d_GABAB':  10.0, # [ms] decay time of cascade first species
-            
-        })
+
+    # Number of afferent axons:
+    #   - 300 [boutons] * 0.33 [GPE fraction] / 6-18 [boutons/afferent] 
+    #     = 100 / 12 = 8.33 [afferent axons]
+    # Spatial structure:
+    #   - TODO: spatial pattern of GPe->STN connection
+
+    gpe_stn_syn = GabaSynapse(**{
+        'weight':       1.0,
+        'delay':        4.0, # [ms] delay from literature
+        # STP parameters
+        'U1':           0.2, # baseline release probability
+        'tau_rec':      17300.0, # [ms] recovery from STD
+        'tau_facil':    1.0, # [ms] recovery from facilitation
+        # GABA-A receptor
+        'gmax_GABAA':    7.0 * 250 * 1e-3, # [uS], adjusted for U1
+        'tau_r_GABAA':   2.0, # [ms] rise time
+        'tau_d_GABAA':   6.0, # [ms] decay time
+        # GABA-B receptor
+        'gmax_GABAB':    7.0 * 10 * 1e-3, # [uS], adjusted for U1
+        'tau_r_GABAB':   5.0,   # [ms] rise time initial species of signaling cascade
+        'tau_d_GABAB':   10.0,  # [ms] decay time initial species of signaling cascade
+    })
+
+    gpe_stn_connector = sim.FixedNumberPreConnector(8)
 
     # TODO: GPE -> STN projection pattern
     gpe_stn_INH = sim.Projection(
                         pop_gpe, pop_stn,
-                        connector=conn_allp05,
+                        connector=gpe_stn_connector,
                         synapse_type=gpe_stn_syn,
                         receptor_type='proximal.GABAA+GABAB')
 
     #---------------------------------------------------------------------------
     # CTX -> STN (excitatory)
 
-    ctx_stn_syn = NativeSynapse(
-        mechanism='GLUsyn',
-        mechanism_parameters={
-            'netcon:weight[0]': 1.0,
-            'netcon:delay':     5.9, # [ms] delay from literature
-            'syn:U1':           0.7, # baseline release probability
-            'syn:tau_rec':      200.0, # [ms] recovery from STD
-            'syn:tau_facil':    1.0, # [ms] recivery from facilitation
-            # AMPA receptor
-            'syn:gmax_AMPA':    3.44 / 0.7 * 1e-3, # [uS], adjusted for U1
-            'syn:tau_r_AMPA':   1.0, # [ms] rise time
-            'syn:tau_d_AMPA':   4.0, # [ms] decay time
-            # NMDA receptor
-            'syn:gmax_NMDA':    7.0 / 0.7 * 1e-3, # [uS], adjusted for U1
-            'syn:tau_r_NMDA':   3.7, # [ms] rise time
-            'syn:tau_d_NMDA':   80.0, # [ms] decay time
-            
-        })
+    # Number of afferent axons:
+    #   - 300 [boutons] * 0.5 [CTX fraction] / 6-18 [boutons/afferent] 
+    #     = 150 / 10 = 15 [afferent axons]
+    # Spatial structure:
+    #   - TODO: spatial pattern of CTX->STN connection
 
-    # TODO: CTX -> STN projection pattern
+    ctx_stn_syn = GluSynapse(**{
+        'weight':       1.0,
+        'delay':        5.9, # [ms] delay from literature
+        # STP parameters
+        'U1':           0.1, # baseline release probability
+        'tau_rec':      200.0, # [ms] recovery from STD
+        'tau_facil':    800.0, # [ms] recovery from facilitation
+        # AMPA receptor
+        'gmax_AMPA':    3.44 * 4 * 1e-3, # [uS], adjusted for U1
+        'tau_r_AMPA':   1.0, # [ms] rise time
+        'tau_d_AMPA':   4.0, # [ms] decay time
+        # NMDA receptor
+        'gmax_NMDA':    7.0 * 2.0 * 1e-3, # [uS], adjusted for U1
+        'tau_r_NMDA':   3.7,    # [ms] rise time
+        'tau_d_NMDA':   80.0,   # [ms] decay time
+    })
+
+    ctx_stn_connector = sim.FixedNumberPreConnector(15)
+
     ctx_stn_EXC = sim.Projection(
                         pop_ctx, pop_stn,
-                        connector=conn_allp05,
+                        connector=ctx_stn_connector,
                         synapse_type=ctx_stn_syn,
                         receptor_type='distal.AMPA+NMDA')
 
     #---------------------------------------------------------------------------
     # TODO: STN -> STN (excitatory)
 
+    # Number of afferent axons:
+    #   - 300 [boutons] * 0.17? [STN fraction] / 14.4? [boutons/afferent] 
+    #     = 50 / 14.4 ~= 3.5 [afferent axons]
+
+    stn_stn_syn = GluSynapse(**{
+        'weight':       1.0,
+        'delay':        0.5, # [ms] delay from literature
+        # STP parameters
+        'U1':           0.1, # baseline release probability
+        'tau_rec':      200.0, # [ms] recovery from STD
+        'tau_facil':    800.0, # [ms] recovery from facilitation
+        # AMPA receptor
+        'gmax_AMPA':    3.44 * 4 * 1e-3, # [uS], adjusted for U1
+        'tau_r_AMPA':   1.0, # [ms] rise time
+        'tau_d_AMPA':   4.0, # [ms] decay time
+        # NMDA receptor
+        'gmax_NMDA':    7.0 * 2.0 * 1e-3, # [uS], adjusted for U1
+        'tau_r_NMDA':   3.7,    # [ms] rise time
+        'tau_d_NMDA':   80.0,   # [ms] decay time
+    })
+
+    stn_stn_connector = sim.FixedNumberPreConnector(4,
+                            allow_self_connections=False)
+
+    stn_stn_EXC = sim.Projection(
+                        pop_stn, pop_stn,
+                        connector=stn_stn_connector,
+                        synapse_type=stn_stn_syn,
+                        receptor_type='distal.AMPA+NMDA')
+
     #---------------------------------------------------------------------------
-    # Plot connectivity matrix
+    # Plot connectivity matrix ('O' is connection, ' ' is no connection)
     for prj in [stn_gpe_EXC, gpe_stn_INH]:
         print(u"{} connectivity matrix: \n".format(prj) + connection_plot(prj))
 
@@ -548,7 +590,7 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--dur', nargs='?', type=float, default=500.0,
                         dest='sim_dur', help='Simulation duration')
 
-    parser.add_argument('-n', '--ncell', nargs='?', type=int, default=5,
+    parser.add_argument('-n', '--ncell', nargs='?', type=int, default=30,
                         dest='ncell_per_pop', help='Number of cells per population')
 
     args = parser.parse_args() # Namespace object
