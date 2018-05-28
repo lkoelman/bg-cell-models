@@ -23,8 +23,6 @@ import bluepyopt.ephys as ephys
 from pyNN.neuron import state as nrn_state, h
 from pyNN.neuron.cells import NativeCellType
 
-from common.stdutil import dotdict
-
 ephys_nrn_sim = None
 
 rng_structural_variability = h.Random(
@@ -73,11 +71,11 @@ class EphysCellType(NativeCellType):
     units = UnitFetcherPlaceHolder()
 
 
-    def __init__(self, with_receptors=None):
+    def __init__(self, extra_receptors=None):
         """
         The instantated cell type is passed to Population.
 
-        @param      with_synapses : iterable(str)
+        @param      extra_receptors : iterable(str)
 
                     Synaptic mechanism names of synapses that should be allowed
                     on this cell type.
@@ -87,17 +85,21 @@ class EphysCellType(NativeCellType):
                     cell location/region.
         """
         super(EphysCellType, self).__init__()
+
+        # Combine receptors defined on the cell type with regions
+        # defined on the model class
+        celltype_receptors = type(self).receptor_types
+        if extra_receptors is None:
+            all_receptors = celltype_receptors
+        else:
+            all_receptors = celltype_receptors + list(extra_receptors)
         
-        if with_receptors is not None:
-            # Update receptor types
-            class_receptor_types = type(self).receptor_types
-            instance_receptor_types = list(class_receptor_types)
-            
-            for mech_name in with_receptors:
-                for loc in self.model._ephys_locations:
-                    instance_receptor_types.append(loc.name + "." + mech_name)
-            
-            self.receptor_types = instance_receptor_types
+        region_receptors = []
+        for region in self.model.regions:
+            for receptor in all_receptors:
+                region_receptors.append(region + "." + receptor)
+
+        self.receptor_types = region_receptors
 
 
 
@@ -148,26 +150,26 @@ class CellModelMeta(type):
                                                     fset=__set_ephys_param)
 
         # Make Ephys locations into class properties
-        location_names = []
-        for ephys_loc in new_class_namespace.get("_ephys_locations", []):
+        # location_names = []
+        # for ephys_loc in new_class_namespace.get("_ephys_locations", []):
 
-            loc_name = ephys_loc.name
-            loc_name_nodots = make_valid_attr_name(loc_name)
+        #     loc_name = ephys_loc.name
+        #     loc_name_nodots = make_valid_attr_name(loc_name)
             
-            # NOTE: self.params is set in __init__()
-            def __get_location(self):
-                return self.locations[loc_name].instantiate(self.sim, self.icell)
+        #     # NOTE: self.params is set in __init__()
+        #     def __get_location(self):
+        #         return self.locations[loc_name].instantiate(self.sim, self.icell)
 
-            # Change name of getter function
-            __get_location.__name__ = "__get_" + loc_name_nodots
-            location_names.append(loc_name_nodots)
+        #     # Change name of getter function
+        #     __get_location.__name__ = "__get_" + loc_name_nodots
+        #     location_names.append(loc_name_nodots)
 
-            # Insert into namespace as properties
-            new_class_namespace[loc_name_nodots] = property(fget=__get_location)
+        #     # Insert into namespace as properties
+        #     new_class_namespace[loc_name_nodots] = property(fget=__get_location)
 
         # Parameter names for pyNN
         new_class_namespace['parameter_names'] = parameter_names
-        new_class_namespace['location_names'] = location_names
+        # new_class_namespace['location_names'] = location_names
 
         return type.__new__(this_meta_class, new_class_name, 
                             new_class_bases, new_class_namespace)
@@ -326,12 +328,12 @@ class EphysModelWrapper(ephys.models.CellModel):
         self.instantiate(sim=self.sim)
 
         # Add locations / regions
-        self.locations = {}
-        for static_loc in self._ephys_locations:
-            loc = copy(static_loc)
-            # loc.sim = self.sim
-            # loc.icell = self.icell
-            self.locations[make_valid_attr_name(loc.name)] = loc
+        # self.locations = {}
+        # for static_loc in self._ephys_locations:
+        #     loc = copy(static_loc)
+        #     # loc.sim = self.sim
+        #     # loc.icell = self.icell
+        #     self.locations[make_valid_attr_name(loc.name)] = loc
 
         # NOTE: default params will be passed by pyNN Population
         for param_name, param_value in kwargs.iteritems():
@@ -386,11 +388,11 @@ class EphysModelWrapper(ephys.models.CellModel):
                 "custom cell model.")
 
 
-    def _init_synapses():
+    def _init_synapses(self):
         """
         Initialize synapses on this neuron.
 
-        @post       self._synapses is empty or unset
+        @pre        self._synapses is empty or unset
 
         @post       self._synapses is a nested dict with depth=2 and following
                     structure:
@@ -399,7 +401,7 @@ class EphysModelWrapper(ephys.models.CellModel):
         raise NotImplementedError("Subclass should place synapses in dendritic tree.")
 
 
-    def get_synapse_list(region, receptors):
+    def get_synapse_list(self, region, receptors):
         """
         Return list of synapses in region that have given
         neutotransmitter receptors.
@@ -417,7 +419,21 @@ class EphysModelWrapper(ephys.models.CellModel):
                         (ntr in recs for ntr in receptors))), [])
 
 
-    def get_synapse(region, receptors, mark_used, **kwargs):
+    def get_synapses_by_mechanism(self, mechanism):
+        """
+        Get all synapses that are an instance of the given NEURON mechanism
+        name.
+
+        @param      mechanism : str
+                    NEURON mechanism name
+
+        @return     synapse_list : list(dict())
+                    List of synapse containers
+        """
+        return sum((synlist for region in self._synapses.values() for recs, synlist in region.items()), [])
+
+
+    def get_synapse(self, region, receptors, mark_used, **kwargs):
         """
         Get a synapse in cell region for given neurotransmitter
         receptors.
@@ -472,7 +488,8 @@ class EphysModelWrapper(ephys.models.CellModel):
         slice_expr = matches.group('slice') # "i:j:k"
         slice_parts = slice_expr.split(':') # ["i", "j", "k"]
         slice_parts_valid = [int(i) if i!='' else None for i in slice_parts]
-        synlist = self.synapses.get(mechname, [])
+        syn_metadata = self.get_synapses_by_mechanism(mechname)
+        synlist = [meta.synapse for meta in syn_metadata]
         
         if len(synlist) == 0:
             return []

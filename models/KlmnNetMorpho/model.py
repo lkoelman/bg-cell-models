@@ -46,6 +46,11 @@ from cellpopdata.physiotypes import Populations as PopID
 #from cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from cellpopdata.cellpopdata import CellConnector
 
+from common import logutils
+
+# Debug messages
+logutils.setLogLevel('quiet', ['bpop_ext'])
+
 
 def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
     """
@@ -152,7 +157,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     stn_grid = space.Line(x0=0.0, dx=50.0,
                           y=0.0, z=0.0)
     
-    stn_type = gillies.StnCellType(with_receptors=['GLUsyn', 'GABAsyn'])
+    stn_type = gillies.StnCellType()
 
     ncell_stn = ncell_per_pop
     pop_stn = sim.Population(ncell_stn, 
@@ -168,7 +173,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     gpe_grid = space.Line(x0=0.0, dx=50.0,
                           y=1e6, z=0.0)
 
-    gpe_type = gunay.GPeCellType(with_receptors=['GLUsyn', 'GABAsyn'])
+    gpe_type = gunay.GPeCellType()
 
     ncell_gpe = ncell_per_pop
     pop_gpe = sim.Population(ncell_gpe, 
@@ -264,7 +269,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, 
                                  connector=stn_gpe_connector,
                                  synapse_type=stn_gpe_syn,
-                                 receptor_type='distal_dend.AMPA+NMDA')
+                                 receptor_type='distal.AMPA+NMDA')
 
     stn_gpe_EXC.set(gmax_NMDA=1.0)
 
@@ -333,7 +338,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     gpe_gpe_INH = sim.Projection(pop_gpe, pop_gpe, 
                                  connector=gpe_gpe_connector,
                                  synapse_type=gpe_gpe_syn,
-                                 receptor_type='proximal_dend.GABAA+GABAB',
+                                 receptor_type='proximal.GABAA+GABAB',
                                  space=gpe_gpe_space)
 
     #---------------------------------------------------------------------------
@@ -370,7 +375,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     str_gpe_INH = sim.Projection(pop_str, pop_gpe,
                                  connector=str_gpe_connector,
                                  synapse_type=str_gpe_syn,
-                                 receptor_type='proximal_dend.GABAA+GABAB')
+                                 receptor_type='proximal.GABAA+GABAB')
 
 
     #---------------------------------------------------------------------------
@@ -418,7 +423,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
                         pop_gpe, pop_stn,
                         connector=conn_allp05,
                         synapse_type=gpe_stn_syn,
-                        receptor_type='proximal_dend.GABAA+GABAB')
+                        receptor_type='proximal.GABAA+GABAB')
 
     #---------------------------------------------------------------------------
     # CTX -> STN (excitatory)
@@ -447,7 +452,10 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
                         pop_ctx, pop_stn,
                         connector=conn_allp05,
                         synapse_type=ctx_stn_syn,
-                        receptor_type='distal_dend.AMPA+NMDA')
+                        receptor_type='distal.AMPA+NMDA')
+
+    #---------------------------------------------------------------------------
+    # TODO: STN -> STN (excitatory)
 
     #---------------------------------------------------------------------------
     # Plot connectivity matrix
