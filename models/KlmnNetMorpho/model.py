@@ -42,7 +42,8 @@ import models.GilliesWillshaw.gillies_pynn_model as gillies
 import models.Gunay2008.gunay_pynn_model as gunay
 
 # Our physiological parameters
-from cellpopdata.physiotypes import Populations as PopID, ParameterSource as ParamSrc
+from cellpopdata.physiotypes import Populations as PopID
+#from cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from cellpopdata.cellpopdata import CellConnector
 
 
@@ -186,7 +187,12 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
 
 
     # STR spike sources
-    pop_str = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=20.0),
+    str_base_firing_rate = 1.0
+    str_num_poisson_combined = 3
+    str_combined_firing_rate = str_base_firing_rate * str_num_poisson_combined
+    pop_str = sim.Population(
+                    ncell_per_pop, 
+                    sim.SpikeSourcePoisson(rate=str_combined_firing_rate),
                     label='STR')
     pop_str.pop_id = PopID.STR
 
@@ -201,16 +207,31 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     # CONNECTIONS
     ############################################################################
 
-    # Create connection
-    conn_all2all = sim.AllToAllConnector()
-    conn_allp05 = sim.FixedProbabilityConnector(0.5)
+    # NOTE: for the different types of connectors available, see:
+    #   - overview: https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/connectors.py
+    #   - classes with docstrings: https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/connectors.py
+    #   - usage: http://neuralensemble.org/docs/PyNN/connections.html
+
+    # NOTE: distance-based expressions can be used for any parameter
+    #   - string expression can only use global functions
+    #   - lambda expression can use any function in its closure
+    
+    # # Example connectors
+    # conn_all_to_all =   sim.AllToAllConnector()
+    # # Probability based
+    # conn_all_p05 =      sim.FixedProbabilityConnector(0.5)
+    # conn_all_pdist =    sim.DistanceDependentProbabilityConnector('d<3')
+    # # Fixed number
+    # conn_5_to_all =     FixedNumberPreConnector(5)
+    # conn_all_to_5 =     FixedNumberPostConnector(5)
+    # # Indices specifying sparse matrix
+    # connector =         sim.FromListConnector([(0, 1), (0, 2), (2, 5)])
+    # # Indices as flags in full matrix
+    # connector =         sim.ArrayConnector(np.array([[0, 1, 1, 0],
+    #                                                  [1, 1, 0, 1],
+    #                                                  [0, 0, 1, 0]], dtype=bool)
 
     # db_syn = SynapseFromDB(parameter_database=params_db) # our custom synapse class
-    # TODO: set get_physiological_parameters(adjust_gsyn_msr=XXX)
-    #       - you can implement it in get_physiological_parameters() so that
-    #         the returned conductance is adjusted if the param is included
-    #         in custom_params. E.g. if it's in custom_params and adjust_gsyn_msr
-    #         is truthy: use that param to scale, else use adjust_gsyn_msr.
 
     ############################################################################
     # TO GPE
@@ -229,27 +250,16 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
         'tau_r_AMPA':   1.0, # [ms] rise time
         'tau_d_AMPA':   4.0, # [ms] decay time
         # NMDA receptor
-        'gmax_NMDA':    0.0,
+        'gmax_NMDA':    0.025 / 0.1 * 1e-3, # [uS], adjusted for U1
+        'tau_r_NMDA':   3.7,    # [ms] rise time
+        'tau_d_NMDA':   80.0,   # [ms] decay time
     })
-    # stn_gpe_syn = sim.StaticSynapse(weight='1/(1+d)', delay=1.0)
-    # stn_gpe_syn = NativeSynapse(
-    #     mechanism='GLUsyn',
-    #     mechanism_parameters={
-    #         'netcon:weight[0]': 1.0,
-    #         'netcon:delay':     2.0, # [ms] delay from literature
-    #         'syn:U1':           0.1, # baseline release probability
-    #         'syn:tau_rec':      200.0, # [ms] recovery from STD
-    #         'syn:tau_facil':    800.0, # [ms] recovery from facilitation
-    #         # AMPA receptor
-    #         'syn:gmax_AMPA':    0.025 / 0.1 * 1e-3, # [uS], adjusted for U1
-    #         'syn:tau_r_AMPA':   1.0, # [ms] rise time
-    #         'syn:tau_d_AMPA':   4.0, # [ms] decay time
-    #         # NMDA receptor
-    #         'syn:gmax_NMDA':    0.0,
-    #     })
 
-    # TODO: distance-based, use variable weight or variable number of synapses
-    stn_gpe_connector = conn_allp05
+    # Number of afferent axons:
+    #   - 135 [boutons] / 20? [boutons/(axon*cell)] ~= 6 [axons on one cell]
+    # Spatial structure:
+    #   - TODO: spatial structure of STN->GPE connection
+    stn_gpe_connector = sim.FixedNumberPreConnector(6)
 
     stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, 
                                  connector=stn_gpe_connector,
@@ -261,39 +271,65 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     #---------------------------------------------------------------------------
     # GPE -> GPE (inhibitory)
 
+    # Number of afferent axons:
+    #   - 2000 [boutons] / 264-581 [boutons/(axon*cell)] = 3.4-7.6 [axons on one cell]
+    # Spatial structure:
+    #   - distance-based probability and strength
+    #       + 581 [boutons/(axon*cell)] for close neighbors
+    #       + 264 [boutons/(axon*cell)] for far neighbors
+
+    # TODO: calibrate again with both weight and gmax modified
+    #   - (see what BBP uses in examples)
+    #   - may cause different dynamics & saturation behaviour
+
     # Distance-calculation: wrap-around in along x-axis
     x_max = ncell_gpe * gpe_grid.dx
     gpe_gpe_space = space.Space(periodic_boundaries=((0, x_max), None, None))
 
     # Connect to four neighboring neurons
-    dist_fun_conn = 'd < 205'
     gpe_gpe_connector = sim.DistanceDependentProbabilityConnector(
-                                dist_fun_conn,
+                                'd < 205',
                                 allow_self_connections=False)
-    # NOTE: for math and numpy functions: use function instead of string
-    dist_fun_weight = '(d<50)*1.0 + (d>=50)*exp(-(d-50)/100)'
+    
+    # weight 1 for distance < 50 um and exponentially decreasing from there
+    weight_expression = lambda d: (d<50)*1.0 + (d>=50)*np.exp(-(d-50)/100)
 
-    # Calibrated using Miguelez (2012)
-    gpe_gpe_syn = NativeSynapse(
-        mechanism='GABAsyn',
-        mechanism_parameters={
-            'netcon:weight[0]': dist_fun_weight,
-            'netcon:delay':     0.5, # [ms] delay from literature
-            'syn:U1':           0.2, # baseline release probability
-            'syn:tau_rec':      400.0, # [ms] recovery from STD
-            'syn:tau_facil':    1.0, # [ms] recivery from facilitation
-            # AMPA receptor
-            'syn:gmax_GABAA':   0.1 / 0.2 * 1e-3, # [uS], adjusted for U1
-            'syn:tau_r_GABAA':  2.0, # [ms] rise time
-            'syn:tau_d_GABAA':  6.0, # [ms] decay time
-            # NMDA receptor
-            'syn:gmax_GABAB':   0.1 * 1e-3, # [uS]
-            'syn:tau_r_GABAB':  5.0, # [ms] rise time of first species in cascade
-            'syn:tau_d_GABAB':  10.0, # [ms] decay time of first species cascade
+    gpe_gpe_syn = GabaSynapse(**{
+        'weight':       weight_expression,
+        'delay':        0.5, # [ms] delay from literature
+        # STP parameters
+        'U1':           0.2, # baseline release probability
+        'tau_rec':      400.0, # [ms] recovery from STD
+        'tau_facil':    1.0, # [ms] recovery from facilitation
+        # GABA-A receptor
+        'gmax_GABAA':    0.1 / 0.2 * 1e-3, # [uS], adjusted for U1
+        'tau_r_GABAA':   2.0, # [ms] rise time
+        'tau_d_GABAA':   5.0, # [ms] decay time
+        # GABA-B receptor
+        'gmax_GABAB':    0.1 * 1.0 * 1e-3, # [uS], adjusted for U1
+        'tau_r_GABAB':   5.0,   # [ms] rise time initial species of signaling cascade
+        'tau_d_GABAB':   10.0,  # [ms] decay time initial species of signaling cascade
+    })
+
+    # gpe_gpe_syn = NativeSynapse(
+    #     mechanism='GABAsyn',
+    #     mechanism_parameters={
+    #         'netcon:weight[0]': dist_fun_weight,
+    #         'netcon:delay':     0.5, # [ms] delay from literature
+    #         'syn:U1':           0.2, # baseline release probability
+    #         'syn:tau_rec':      400.0, # [ms] recovery from STD
+    #         'syn:tau_facil':    1.0, # [ms] recivery from facilitation
+    #         # AMPA receptor
+    #         'syn:gmax_GABAA':   0.1 / 0.2 * 1e-3, # [uS], adjusted for U1
+    #         'syn:tau_r_GABAA':  2.0, # [ms] rise time
+    #         'syn:tau_d_GABAA':  6.0, # [ms] decay time
+    #         # NMDA receptor
+    #         'syn:gmax_GABAB':   0.1 * 1e-3, # [uS]
+    #         'syn:tau_r_GABAB':  5.0, # [ms] rise time of first species in cascade
+    #         'syn:tau_d_GABAB':  10.0, # [ms] decay time of first species cascade
             
-        })
+    #     })
 
-    # TODO: set connector and weight dependence
     gpe_gpe_INH = sim.Projection(pop_gpe, pop_gpe, 
                                  connector=gpe_gpe_connector,
                                  synapse_type=gpe_gpe_syn,
@@ -303,25 +339,34 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     #---------------------------------------------------------------------------
     # STR -> GPE (inhibitory)
 
-    # TODO: calibrate using refs Steiner BG HB, facilation params
-    str_gpe_syn = NativeSynapse(
-        mechanism='GABAsyn',
-        mechanism_parameters={
-            'netcon:weight[0]': 1.0,
-            'netcon:delay':     5.0, # [ms] delay from literature
-            'syn:U1':           0.2, # baseline release probability
-            'syn:tau_rec':      1.0, # [ms] recovery from STD
-            'syn:tau_facil':    500.0, # [ms] recivery from facilitation
-            # GABA-A receptor
-            'syn:gmax_GABAA':   0.2 * 1e-3, # [uS], adjusted for U1
-            'syn:tau_r_GABAA':  2.0, # [ms] rise time
-            'syn:tau_d_GABAA':  6.0, # [ms] decay time
-            # GABA-B receptor
-            'syn:gmax_GABAB':   0.0, # [uS], adjusted for U1
-        })
+    # Number of afferent axons:
+    #   - 10622 [boutons] / 123-226 [boutons/(axon*cell)] = 47-86 [axons on one cell]
+    #       + If we use additive property of Poisson distribution we can divide 
+    #         the number of synapses by N, with Poisson spikers firing at N*f_mean
+    #       + => num_afferents ~= 60 / num_poisson_combined
+    # Spatial structure:
+    #   - TODO: if we re-use spike sources than connection pattern matters, else not
 
-    # TODO connection pattern STR -> GPE
-    str_gpe_connector = conn_allp05
+    str_gpe_syn = GabaSynapse(**{
+        'weight':       1.0,
+        'delay':        5.0, # [ms] delay from literature
+        # STP parameters
+        'U1':           0.2, # baseline release probability
+        'tau_rec':      400.0, # [ms] recovery from STD
+        'tau_facil':    1.0, # [ms] recovery from facilitation
+        # GABA-A receptor
+        'gmax_GABAA':    0.2 / 0.2 * 1e-3, # [uS], adjusted for U1
+        'tau_r_GABAA':   2.0, # [ms] rise time
+        'tau_d_GABAA':   5.0, # [ms] decay time
+        # GABA-B receptor
+        'gmax_GABAB':    0.0, # [uS], adjusted for U1
+        'tau_r_GABAB':   5.0,   # [ms] rise time initial species of signaling cascade
+        'tau_d_GABAB':   10.0,  # [ms] decay time initial species of signaling cascade
+    })
+
+
+    str_gpe_connector = sim.FixedNumberPreConnector(66 // str_num_poisson_combined)
+
     str_gpe_INH = sim.Projection(pop_str, pop_gpe,
                                  connector=str_gpe_connector,
                                  synapse_type=str_gpe_syn,
@@ -330,22 +375,19 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
 
     #---------------------------------------------------------------------------
     # NOISE -> GPE (excitatory)
-    noise_syn = NativeSynapse(
-        mechanism='GLUsyn',
-        mechanism_parameters={
-            'netcon:weight[0]': 1.0,
-            'netcon:delay':     5.0, # [ms] delay from literature
-        })
+    # noise_syn = NativeSynapse(
+    #     mechanism='GLUsyn',
+    #     mechanism_parameters={
+    #         'netcon:weight[0]': 1.0,
+    #         'netcon:delay':     5.0, # [ms] delay from literature
+    #     })
 
-    noise_connector = sim.FixedProbabilityConnector(0.5)
+    # noise_connector = sim.FixedProbabilityConnector(0.5)
     
-    noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, 
-                                   connector=noise_connector,
-                                   synapse_type=noise_syn,
-                                   receptor_type='proximal_dend.AMPA+NMDA')
-    
-    noise_gpe_EXC.preferred_param_sources = [
-        ParamSrc.Chu2015, ParamSrc.Fan2012, ParamSrc.Atherton2013]
+    # noise_gpe_EXC = sim.Projection(noise_gpe, pop_gpe, 
+    #                                connector=noise_connector,
+    #                                synapse_type=noise_syn,
+    #                                receptor_type='proximal_dend.AMPA+NMDA')
 
     ############################################################################
     # TO STN
