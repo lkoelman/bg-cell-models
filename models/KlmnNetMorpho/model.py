@@ -16,7 +16,7 @@ USAGE
 
 To run using MPI, you can use the following command:
 
-    >>> mpiexec -np 8 python model.py [-n numcell -d simdur]
+    >>> mpiexec -np 8 python model.py [-n numcell -d simdur -g 1 -o outdir/*.mat]
 
 """
 import time
@@ -126,22 +126,30 @@ def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
 
 def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True, 
-                   with_gui=True):
+                   with_gui=True, save_data=None):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
+
+    @param      save_data : str (optional)
+                File path to save recordings at in following format:
+                '~/storage/*.mat'
     """
 
     mpi_rank = sim.setup(use_cvode=False)
     if mpi_rank == 1:
         init_logging(logfile=None, debug=False)
 
-    print("Running net on MPI rank {}\n".format(mpi_rank))
-    print("This is node {} ({} of {})\n".format(
+    print("""\nRunning net on MPI rank {} with following settings:
+    - ncell_per_pop = {}
+    - sim_dur = {}
+    - save_data= {}
+    """.format(mpi_rank, ncell_per_pop, sim_dur, save_data))
+    
+    print("\nThis is node {} ({} of {})\n".format(
           sim.rank(), sim.rank() + 1, sim.num_processes()))
 
     h = sim.h
-
     seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
     numpy_rng = np.random.RandomState(seed)
 
@@ -552,6 +560,13 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
     ############################################################################
     # PLOTTING
     ############################################################################
+    if mpi_rank==0 and save_data is not None:
+        outdir, extension = save_data.split('*')
+
+        for pop in all_pops.values():
+            pop.write_data("{dir}{label}{ext}".format(
+                            dir=outdir, label=pop.label, ext=extension))
+    
     if mpi_rank==0 and with_gui:
         # Only plot on one process, and if GUI available
         import matplotlib.pyplot as plt
@@ -598,6 +613,9 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
 if __name__ == '__main__':
     # Parse arguments passed to `python model.py [args]`
     import argparse
+    import datetime
+    import os.path
+
     parser = argparse.ArgumentParser(description='Run basal ganglia network simulation')
 
     parser.add_argument('-d', '--dur', nargs='?', type=float, default=500.0,
@@ -608,6 +626,14 @@ if __name__ == '__main__':
 
     parser.add_argument('-g', '--gui', nargs='?', type=bool, default=True,
                         dest='with_gui', help='Enable graphical output')
+
+    timestamp = time.time()
+    default_output = os.path.expanduser('~/storage/*-{}.mat'.format(
+        datetime.datetime.fromtimestamp(timestamp).strftime('%Y.%m.%d-%H.%M.%S')))
+    
+    parser.add_argument('-o', '--output', nargs='?', type=str,
+                        default=default_output,
+                        dest='save_data', help='Save recorded data')
 
     args = parser.parse_args() # Namespace object
 
