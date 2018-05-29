@@ -40,13 +40,13 @@ Our custom PyNN classes have only been tested with PyNN 0.9.2 (git commit
 `4b80343ba17afd688a92b3a0755ea73179c9daab`) and BluePyOpt version 1.5.35 
 (commit `7d7c65be0bff3a9832d1d5dec3f4ba1c8906fa75`).
 
+
 ## Installation using PYTHONPATH
 
 This will make the module globally available by adding it to the `PYTHONPATH` environment variable.
 
 ```bash
 # Create Python virtual environment using Conda
-conda install nb_conda # use of environments in Jupyter kernels
 conda create -n neuro python=2
 source activate neuro
 
@@ -56,17 +56,14 @@ git clone https://github.com/BlueBrain/BluePyOpt.git
 pip install -e ./BluePyOpt # -e only if you want editable version
 
 git clone https://lkmn_ucd@bitbucket.org/lkmn_ucd/bg-cell-models.git bgcellmodels
+cd bgcellmodels
 git checkout --track origin/nothreadsafe
-echo "export PYTHONPATH=$PYTHONPATH:/home/myhome/workspace/bgcellmodels" >> ~/.bashrc
+# append the following to your ~/.bashrc or ~/.bash_profile file:
+export PYTHONPATH=$PYTHONPATH:$HOME/workspace/bgcellmodels
 
-# Start jupyter from the root environment where nb_conda is installed
+# Start jupyter from the environment where nb_conda is installed
 source activate
 jupyter notebook
-
-# In another terminal session, create ipyparallel instances in new environment
-source activate neuro
-cd ~/workspace/bgcellmodels
-ipcluster start
 ```
 
 ## Installation using Pip
@@ -77,13 +74,23 @@ TODO
 pip install -e ./bg-cell-models
 ```
 
-## Installation of Extra Tools
+--------------------------------------------------------------------------------
+# Install Supporting Tools (optional)
 
-### NEURON Syntax Definitions
+## NEURON Syntax Definitions
 
 NEURON Syntax definitions for Hoc and NMODL languages [for Sublime Text](https://github.com/jordan-g/NEURON-for-Sublime-Text) and [for VS Code](https://github.com/imatlopez/vscode-neuron).
 
-### nbstripout
+
+## nb_conda
+
+Allows you to select specific conda environment as Jupyter kernel.
+
+```sh
+conda install nb_conda
+```
+
+## nbstripout
 
 This facilitates working with git and Jupyter notebooks by stripping output cells before commits. This avoids committing large binary outputs like images embedded into notebooks.
 
@@ -93,7 +100,7 @@ cd bgcellmodels
 nbstripout --install
 ```
 
-### Jupyter extensions
+## Jupyter extensions
 
 ```bash
 pip install jupyter_contrib_nbextensions
@@ -102,3 +109,17 @@ jupyter contrib nbextension install --user
 
 Now extensions can be enabled via the tab 'Nbextensions' in Jupyter. For example, 'Table of Contents' will add a handy navigation widget when working with notebooks.
 
+--------------------------------------------------------------------------------
+# Running models
+
+See model-specific `README` file in its subdirectory.
+
+## BluePyOpt optimizations
+
+```sh
+# For Parallel BluePyOpt:
+# In another terminal session, create ipyparallel instances in new environment
+source activate neuro
+cd ~/workspace/bgcellmodels
+ipcluster start
+```

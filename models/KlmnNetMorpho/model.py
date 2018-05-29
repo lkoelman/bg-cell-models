@@ -16,7 +16,7 @@ USAGE
 
 To run using MPI, you can use the following command:
 
-    >>> mpiexec -np 8 python model.py
+    >>> mpiexec -np 8 python model.py [-n numcell -d simdur]
 
 """
 import time
@@ -26,9 +26,10 @@ import numpy as np
 import pyNN.neuron as sim
 from pyNN import space
 from pyNN.utility import init_logging, connection_plot
+from pyNN.parameters import Sequence
 
 # Custom PyNN extensions
-from extensions.pynn.connection import NativeSynapse, GluSynapse, GabaSynapse # , SynapseFromDB
+from extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
 from extensions.pynn.recording import TraceSpecRecorder
 sim.Population._recorder_class = TraceSpecRecorder
 
@@ -46,6 +47,7 @@ from cellpopdata.physiotypes import Populations as PopID
 #from cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from cellpopdata.cellpopdata import CellConnector
 
+from common.spikelib import make_oscillatory_bursts
 from common import logutils
 
 # Debug messages
@@ -67,7 +69,6 @@ def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
     # STN cell population
     pop_stn = sim.Population(ncell_per_pop, gillies.StnCellType(), label='STN')
-    pop_stn.pop_id = PopID.STN
     pop_stn.initialize(v=-63.0)
 
     # RECORDING
@@ -124,14 +125,21 @@ def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
         globals().update(locals())
 
 
-def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
+def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True, 
+                   with_gui=True):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
     """
 
-    init_logging(logfile=None, debug=False)
     mpi_rank = sim.setup(use_cvode=False)
+    if mpi_rank == 1:
+        init_logging(logfile=None, debug=False)
+
+    print("Running net on MPI rank {}\n".format(mpi_rank))
+    print("This is node {} ({} of {})\n".format(
+          sim.rank(), sim.rank() + 1, sim.num_processes()))
+
     h = sim.h
 
     seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
@@ -165,7 +173,6 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
                              label='STN',
                              structure=stn_grid)
     
-    pop_stn.pop_id = PopID.STN
     pop_stn.initialize(v=-63.0)
 
 
@@ -181,17 +188,25 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
                              label='GPE',
                              structure=gpe_grid)
 
-    pop_gpe.pop_id = PopID.GPE
     pop_gpe.initialize(v=-63.0)
 
 
     # CTX spike sources
-    # TODO: see example specific_network.py to use SpikeSourceArray (pre-make spikes)
+    def spiketimes_for_pop(i):
+        """ PyNN wants a Sequence generator """
+        def sequence_gen():
+            burst_gen = make_oscillatory_bursts(3500.0, 545.0, 50.0, 5.0, rng=numpy_rng)
+            bursty_spikes = np.fromiter(burst_gen, float)
+            return Sequence(bursty_spikes)
+        if hasattr(i, "__len__"):
+            return [sequence_gen() for j in i]
+        else:
+            return sequence_gen()
+    
     pop_ctx = sim.Population(
                     ncell_per_pop,
-                    sim.SpikeSourcePoisson(rate=20.0),
+                    sim.SpikeSourceArray(spike_times=spiketimes_for_pop),
                     label='CTX')
-    pop_ctx.pop_id = PopID.CTX
 
 
     # STR spike sources
@@ -202,14 +217,13 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
                     ncell_per_pop, 
                     sim.SpikeSourcePoisson(rate=str_combined_firing_rate),
                     label='STR')
-    pop_str.pop_id = PopID.STR
 
 
     # Noise sources
     noise_gpe = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=50.0),
                     label='NOISE')
 
-    all_pops = {pop.pop_id : pop for pop in [pop_gpe, pop_stn, pop_ctx]}
+    all_pops = {pop.label : pop for pop in [pop_gpe, pop_stn, pop_ctx]}
 
     ############################################################################
     # CONNECTIONS
@@ -247,6 +261,12 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     #---------------------------------------------------------------------------
     # STN -> GPE (excitatory)
 
+    # Number of afferent axons:
+    #   - 135 [boutons] / 20? [boutons/(axon*cell)] ~= 6 [axons on one cell]
+    # Spatial structure:
+    #   - TODO: spatial structure of STN->GPE connection
+    stn_gpe_connector = sim.FixedNumberPreConnector(10)
+
     stn_gpe_syn = GluSynapse(**{
         'weight':       1.0,
         'delay':        2.0, # [ms] delay from literature
@@ -262,12 +282,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
         'tau_r_NMDA':   3.7,    # [ms] rise time
         'tau_d_NMDA':   80.0,   # [ms] decay time
     })
-
-    # Number of afferent axons:
-    #   - 135 [boutons] / 20? [boutons/(axon*cell)] ~= 6 [axons on one cell]
-    # Spatial structure:
-    #   - TODO: spatial structure of STN->GPE connection
-    stn_gpe_connector = sim.FixedNumberPreConnector(6)
+    
 
     stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, 
                                  connector=stn_gpe_connector,
@@ -292,9 +307,11 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     x_max = ncell_gpe * gpe_grid.dx
     gpe_gpe_space = space.Space(periodic_boundaries=((0, x_max), None, None))
 
-    # Connect to four neighboring neurons
+    # Connect to four neighboring neurons (N_PRE=8)
+    N_PRE = 6
+    con_prob = 'd < ({})'.format(gpe_grid.dx * N_PRE / 2.0)
     gpe_gpe_connector = sim.DistanceDependentProbabilityConnector(
-                                'd < 205',
+                                con_prob,
                                 allow_self_connections=False)
     
     # weight 1 for distance < 50 um and exponentially decreasing from there
@@ -317,25 +334,6 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
         'tau_d_GABAB':   10.0,  # [ms] decay time initial species of signaling cascade
     })
 
-    # gpe_gpe_syn = NativeSynapse(
-    #     mechanism='GABAsyn',
-    #     mechanism_parameters={
-    #         'netcon:weight[0]': dist_fun_weight,
-    #         'netcon:delay':     0.5, # [ms] delay from literature
-    #         'syn:U1':           0.2, # baseline release probability
-    #         'syn:tau_rec':      400.0, # [ms] recovery from STD
-    #         'syn:tau_facil':    1.0, # [ms] recivery from facilitation
-    #         # AMPA receptor
-    #         'syn:gmax_GABAA':   0.1 / 0.2 * 1e-3, # [uS], adjusted for U1
-    #         'syn:tau_r_GABAA':  2.0, # [ms] rise time
-    #         'syn:tau_d_GABAA':  6.0, # [ms] decay time
-    #         # NMDA receptor
-    #         'syn:gmax_GABAB':   0.1 * 1e-3, # [uS]
-    #         'syn:tau_r_GABAB':  5.0, # [ms] rise time of first species in cascade
-    #         'syn:tau_d_GABAB':  10.0, # [ms] decay time of first species cascade
-            
-    #     })
-
     gpe_gpe_INH = sim.Projection(pop_gpe, pop_gpe, 
                                  connector=gpe_gpe_connector,
                                  synapse_type=gpe_gpe_syn,
@@ -352,6 +350,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     #       + => num_afferents ~= 60 / num_poisson_combined
     # Spatial structure:
     #   - TODO: if we re-use spike sources than connection pattern matters, else not
+    str_gpe_connector = sim.FixedNumberPreConnector(66 // str_num_poisson_combined)
 
     str_gpe_syn = GabaSynapse(**{
         'weight':       1.0,
@@ -369,9 +368,6 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
         'tau_r_GABAB':   5.0,   # [ms] rise time initial species of signaling cascade
         'tau_d_GABAB':   10.0,  # [ms] decay time initial species of signaling cascade
     })
-
-
-    str_gpe_connector = sim.FixedNumberPreConnector(66 // str_num_poisson_combined)
 
     str_gpe_INH = sim.Projection(pop_str, pop_gpe,
                                  connector=str_gpe_connector,
@@ -406,6 +402,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     #     = 100 / 12 = 8.33 [afferent axons]
     # Spatial structure:
     #   - TODO: spatial pattern of GPe->STN connection
+    gpe_stn_connector = sim.FixedNumberPreConnector(8)
 
     gpe_stn_syn = GabaSynapse(**{
         'weight':       1.0,
@@ -419,12 +416,10 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
         'tau_r_GABAA':   2.0, # [ms] rise time
         'tau_d_GABAA':   6.0, # [ms] decay time
         # GABA-B receptor
-        'gmax_GABAB':    7.0 * 10 * 1e-3, # [uS], adjusted for U1
+        'gmax_GABAB':    7.0 * 5 * 1e-3, # [uS], adjusted for U1
         'tau_r_GABAB':   5.0,   # [ms] rise time initial species of signaling cascade
         'tau_d_GABAB':   10.0,  # [ms] decay time initial species of signaling cascade
     })
-
-    gpe_stn_connector = sim.FixedNumberPreConnector(8)
 
     # TODO: GPE -> STN projection pattern
     gpe_stn_INH = sim.Projection(
@@ -459,7 +454,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
         'tau_d_NMDA':   80.0,   # [ms] decay time
     })
 
-    ctx_stn_connector = sim.FixedNumberPreConnector(15)
+    ctx_stn_connector = sim.FixedNumberPreConnector(14)
 
     ctx_stn_EXC = sim.Projection(
                         pop_ctx, pop_stn,
@@ -468,7 +463,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
                         receptor_type='distal.AMPA+NMDA')
 
     #---------------------------------------------------------------------------
-    # TODO: STN -> STN (excitatory)
+    # STN -> STN (excitatory)
 
     # Number of afferent axons:
     #   - 300 [boutons] * 0.17? [STN fraction] / 14.4? [boutons/afferent] 
@@ -491,7 +486,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
         'tau_d_NMDA':   80.0,   # [ms] decay time
     })
 
-    stn_stn_connector = sim.FixedNumberPreConnector(4,
+    stn_stn_connector = sim.FixedNumberPreConnector(6,
                             allow_self_connections=False)
 
     stn_stn_EXC = sim.Projection(
@@ -502,8 +497,9 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
 
     #---------------------------------------------------------------------------
     # Plot connectivity matrix ('O' is connection, ' ' is no connection)
-    for prj in [stn_gpe_EXC, gpe_stn_INH]:
-        print(u"{} connectivity matrix: \n".format(prj) + connection_plot(prj))
+    if mpi_rank == 0:
+        for prj in [stn_gpe_EXC, gpe_stn_INH]:
+            print(u"{} connectivity matrix: \n".format(prj) + connection_plot(prj))
 
     ############################################################################
     # RECORDING
@@ -532,59 +528,75 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
     h.set_aCSF(4) # Hoc function defined in Gillies code
 
     print("CVode state: {}".format(sim.state.cvode.active()))
+    num_segments = sum((sec.nseg for sec in h.allsec()))
+    num_cell = sum((1 for sec in h.allsec()))
+    print("Will simulate {} cells ({} segments) for {} seconds on MPI rank {}.".format(
+            num_cell, num_segments, sim_dur, mpi_rank))
+    
     tstart = time.time()
-    sim.run(sim_dur)
+    # sim.run() -> pyNN.common.control.run()
+    # sim.state.run() -> pyNN.neuron.simulator._State.run()
+
+    report_interval = 25.0
+    while sim.state.t < sim_dur:
+        print("Simulated {} ms. Advancing next {} ms ...".format(sim.state.t,
+              report_interval))
+        sim.state.run(report_interval)
+
     tstop = time.time()
     cputime = tstop - tstart
-    num_segments = sum((sec.nseg for sec in h.allsec()))
+    
     print("Simulated {} segments for {} ms in {} ms CPU time".format(
             num_segments, sim.state.tstop, cputime))
 
     ############################################################################
     # PLOTTING
     ############################################################################
-    import matplotlib.pyplot as plt
+    if mpi_rank==0 and with_gui:
+        # Only plot on one process, and if GUI available
+        import matplotlib.pyplot as plt
 
-    # Plot spikes
-    fig_spikes, axes_spikes = plt.subplots(len(all_pops), 1)
-    fig_spikes.suptitle('Spikes for each population')
+        # Plot spikes
+        fig_spikes, axes_spikes = plt.subplots(len(all_pops), 1)
+        fig_spikes.suptitle('Spikes for each population')
 
-    for i_pop, pop in enumerate(all_pops.values()):
+        for i_pop, pop in enumerate(all_pops.values()):
 
-        pop_data = pop.get_data() # Neo Block object
-        segment = pop_data.segments[0] # segment = all data with common time basis
+            pop_data = pop.get_data() # Neo Block object
+            segment = pop_data.segments[0] # segment = all data with common time basis
 
-        ax = axes_spikes[i_pop]
-        for spiketrain in segment.spiketrains:
-            y = np.ones_like(spiketrain) * spiketrain.annotations['source_id']
-            ax.plot(spiketrain, y, '.')
-            ax.set_ylabel(pop.label)
+            ax = axes_spikes[i_pop]
+            for spiketrain in segment.spiketrains:
+                y = np.ones_like(spiketrain) * spiketrain.annotations['source_id']
+                ax.plot(spiketrain, y, '.')
+                ax.set_ylabel(pop.label)
 
 
-        for signal in segment.analogsignals:
-            # one figure per trace type
-            fig, axes = plt.subplots(signal.shape[1], 1)
-            fig.suptitle("Population {} - trace {}".format(
-                            pop.label, signal.name))
+            for signal in segment.analogsignals:
+                # one figure per trace type
+                fig, axes = plt.subplots(signal.shape[1], 1)
+                fig.suptitle("Population {} - trace {}".format(
+                                pop.label, signal.name))
 
-            # signal matrix has one cell signal per column
-            time_vec = signal.times
-            y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
+                # signal matrix has one cell signal per column
+                time_vec = signal.times
+                y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
 
-            for i_cell in range(signal.shape[1]):
-                ax = axes[i_cell]
-                label = "cell {}".format(signal.annotations['source_ids'][i_cell])
-                ax.plot(time_vec, signal[:, i_cell], label=label)
-                ax.set_ylabel(y_label)
-                ax.legend()
+                for i_cell in range(signal.shape[1]):
+                    ax = axes[i_cell]
+                    label = "cell {}".format(signal.annotations['source_ids'][i_cell])
+                    ax.plot(time_vec, signal[:, i_cell], label=label)
+                    ax.set_ylabel(y_label)
+                    ax.legend()
 
-    plt.show(block=False)
+        plt.show(block=False)
 
     if export_locals:
         globals().update(locals())
 
 
 if __name__ == '__main__':
+    # Parse arguments passed to `python model.py [args]`
     import argparse
     parser = argparse.ArgumentParser(description='Run basal ganglia network simulation')
 
@@ -593,6 +605,9 @@ if __name__ == '__main__':
 
     parser.add_argument('-n', '--ncell', nargs='?', type=int, default=30,
                         dest='ncell_per_pop', help='Number of cells per population')
+
+    parser.add_argument('-g', '--gui', nargs='?', type=bool, default=True,
+                        dest='with_gui', help='Enable graphical output')
 
     args = parser.parse_args() # Namespace object
 

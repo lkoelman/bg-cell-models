@@ -47,9 +47,8 @@ class ConnectionFromDB(Connection):
                     containing the preferred sources used for looking up
                     parameters in the database.
 
-        @pre        Each Population object needs to have an attribute
-                    'pop_id' containing the population identifier recognized
-                    by cellpopdata
+        @pre        The 'label' attribute of each population must be an identifier
+                    recognized by cellpopdata
 
         @param      parameters : **dict
                     Parameters retrieved from projection synapse type
@@ -62,8 +61,8 @@ class ConnectionFromDB(Connection):
         self.postsynaptic_cell = projection.post[post] # Population[index] -> ID
 
         # Get our population identifiers
-        pre_pop_id = projection.pre.pop_id
-        post_pop_id = projection.post.pop_id
+        pre_pop_id = projection.pre.label
+        post_pop_id = projection.post.label
 
         # Get the target region on the cell and the receptor type
         region, receptor = projection.receptor_type.split(".")

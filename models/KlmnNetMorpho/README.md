@@ -11,9 +11,11 @@ cd PyNN
 git checkout 4b80343ba17afd688a92b3a0755ea73179c9daab
 cd pyNN/neuron/nmodl
 nrnivmodl # compile MOD mechanisms
-cd ..
+cd ../../..
 pip install -e ./PyNN
 pip install lazyarray # PyNN dependency
+
+# Make sure all common and model-specific mechanisms are compiled using nrnivmodl
 ```
 # Code Architecture
 

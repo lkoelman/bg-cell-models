@@ -21,7 +21,7 @@ logger = logging.getLogger('analysis')
 ################################################################################
 
 def rec_currents_activations(traceSpecs, sec_tag, sec_loc, ion_species=None, 
-                                currents=True, chan_states=True, ion_conc=True):
+                             currents=True, chan_states=True, ion_conc=True):
     """
     Specify trace recordings for all ionic currents
     and activation variables 
@@ -297,7 +297,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
                 includeTraces=None, excludeTraces=None, labelTime=False,
                 showFig=True, colorList=None, lineList=None, yRange=None,
                 traceSharex=False, showGrid=True, title=None, traceXforms=None,
-                fontSize=10, labelRotation=-90):
+                fontSize=10, labelRotation=-90, **plot_kwargs):
     """
     Plot previously recorded traces
 
@@ -333,6 +333,9 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
     - traceSharex
         if True, all x-axes will be shared (maintained during zooming/panning), else
         if an axes object is provided, share x axis with that axes
+
+    - **plot_kwargs : **dict
+        Extra parameters for calls to plt.plot() and plt.figure()
         
     Returns figure handles
     """
@@ -368,13 +371,15 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
 
     figs = []
     label_fontsize = fontSize
+    fig_size = plot_kwargs.pop('figsize', None)
+    plot_kwargs.setdefault('linewidth', 1.0)
     for itrace, trace in enumerate(tracesList):
         
         if oneFigPer == 'cell':
             
             if itrace == 0:
 
-                figs.append(plt.figure())
+                figs.append(plt.figure(figsize=fig_size))
                 
                 ax = plt.subplot(len(tracesList), 1, itrace+1, sharex=shared_ax)
                 if traceSharex:
@@ -384,7 +389,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
         
         else: # one separate figure per trace
             
-            fig = plt.figure()
+            fig = plt.figure(figsize=fig_size)
             figs.append(fig)
             
             ax = plt.subplot(111, sharex=shared_ax)
@@ -401,7 +406,8 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
         data = tracevec[int(timeRange[0]/recordStep):int(timeRange[1]/recordStep)]
         t = np.arange(timeRange[0], timeRange[1]+recordStep, recordStep)
 
-        plt.plot(t[:len(data)], data, linewidth=1.0, color=colorList[itrace%len(colorList)])
+        plt.plot(t[:len(data)], data, color=colorList[itrace%len(colorList)],
+                 **plot_kwargs)
 
         # Axes ranges/labels
         # plt.ylabel(trace, fontsize=label_fontsize)
@@ -519,15 +525,19 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
                     showFig=True, colorList=None, lineList=None, 
                     traceSharex=None, fig=None, showGrid=True,
                     yRange=None, twinFilter=None, includeFilter=None,
-                    yRangeR=None, ax1=None, solid_only=False):
-    """ Cumulative plot of traces
+                    yRangeR=None, ax1=None, solid_only=False, **plot_kwargs):
+    """
+    Cumulative plot of traces
 
-    @param fig              if provided, add axs as subplot to this fig
+    @param      **plot_kwargs : **dict
+                Extra parameters for calls to plt.plot() and plt.figure()
 
-    @param traceSharex      a matplotlib.axes.Axes object to share the
+    @param      fig              if provided, add axs as subplot to this fig
+
+    @param      traceSharex      a matplotlib.axes.Axes object to share the
                             x-axis with (x-axis locked while zooming/panning)
 
-    @param twinFilter       function that takes as argument a trace name, 
+    @param      twinFilter       function that takes as argument a trace name, 
                             returns True if trace should be plotted on right
                             axis (using ax.twinx()), False if on left
     """
@@ -550,7 +560,7 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 
     # Get the axes to draw on
     if not fig and not ax1: # create fig and axis
-        fig = plt.figure()
+        fig = plt.figure(figsize=plot_kwargs.pop('figsize', None))
         ax1 = fig.add_subplot(111, sharex=traceSharex)
     elif not fig and ax1: # get fig from given axis
         fig = ax1.figure
@@ -616,7 +626,7 @@ def cumulPlotTraces(traceData, recordStep, timeRange=None, cumulate=False,
 
 def plotRaster(spikeData, timeRange=None, showFig=True, 
                 includeTraces=None, excludeTraces=None, 
-                showGrid=True, title=None, color='b', marker=','):
+                showGrid=True, title=None, **plot_kwargs):
     """
     Plot rastergram of spike times.
 
@@ -638,6 +648,9 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
 
     @return         tuple(fig, ax)
     """
+    plot_kwargs.setdefault('marker', '|')   # clearest for raster plot
+    plot_kwargs.setdefault('snap', True)    # crisper lines
+    plot_kwargs.setdefault('color', 'b')
 
     # Select traces to be plotted
     traceNames = spikeData.keys()
@@ -659,8 +672,9 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
         y_data = y_data[mask]
     
     # Plot data as scatter plot
-    fig, ax = plt.subplots()
-    ax.scatter(x_data, y_data, s=4, c=color, lw=0, marker=marker)
+    fig, ax = plt.subplots(figsize=plot_kwargs.get('figsize', None))
+    # ax.scatter(x_data, y_data, s=4, c=color, lw=0, marker=marker)
+    ax.plot(x_data, y_data, **plot_kwargs) # crispest lines
     ax.set_xlabel('time (ms)')
     
     # X-Y limits
