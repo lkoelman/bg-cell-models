@@ -6,7 +6,8 @@
 *.csv
 *.pptx
 *.ppt
-# *.ipynb
+*.zip
+*.dat
 .ipynb_checkpoints/
 
 # Mac OS

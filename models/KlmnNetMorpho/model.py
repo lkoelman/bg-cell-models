@@ -186,6 +186,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True):
 
 
     # CTX spike sources
+    # TODO: see example specific_network.py to use SpikeSourceArray (pre-make spikes)
     pop_ctx = sim.Population(
                     ncell_per_pop,
                     sim.SpikeSourcePoisson(rate=20.0),
