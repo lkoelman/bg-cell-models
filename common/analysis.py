@@ -649,6 +649,7 @@ def plotRaster(spikeData, timeRange=None, showFig=True,
     @return         tuple(fig, ax)
     """
     plot_kwargs.setdefault('marker', '|')   # clearest for raster plot
+    plot_kwargs.setdefault('linestyle', '') # no line through markers
     plot_kwargs.setdefault('snap', True)    # crisper lines
     plot_kwargs.setdefault('color', 'b')
 

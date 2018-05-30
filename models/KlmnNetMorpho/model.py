@@ -126,12 +126,12 @@ def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
 
 def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True, 
-                   with_gui=True, save_data=None):
+                   with_gui=True, output=None):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
 
-    @param      save_data : str (optional)
+    @param      output : str (optional)
                 File path to save recordings at in following format:
                 '~/storage/*.mat'
     """
@@ -143,8 +143,8 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
     print("""\nRunning net on MPI rank {} with following settings:
     - ncell_per_pop = {}
     - sim_dur = {}
-    - save_data= {}
-    """.format(mpi_rank, ncell_per_pop, sim_dur, save_data))
+    - output = {}
+    """.format(mpi_rank, ncell_per_pop, sim_dur, output))
     
     print("\nThis is node {} ({} of {})\n".format(
           sim.rank(), sim.rank() + 1, sim.num_processes()))
@@ -560,51 +560,58 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
     ############################################################################
     # PLOTTING
     ############################################################################
-    if mpi_rank==0 and save_data is not None:
-        outdir, extension = save_data.split('*')
+    if mpi_rank==0 and output is not None:
+        outdir, extension = output.split('*')
 
         for pop in all_pops.values():
-            pop.write_data("{dir}{label}{ext}".format(
-                            dir=outdir, label=pop.label, ext=extension))
+            pop.write_data(
+                "{dir}{label}{ext}".format(dir=outdir, label=pop.label, ext=extension),
+                variables='all', annotations={'script_name': __file__})
     
     if mpi_rank==0 and with_gui:
         # Only plot on one process, and if GUI available
-        import matplotlib.pyplot as plt
+        import analysis
+        pop_neo_data = {
+            pop.label: pop.get_data().segments[0] for pop in all_pops.values()
+        }
+        analysis.plot_population_signals(pop_neo_data)
 
-        # Plot spikes
-        fig_spikes, axes_spikes = plt.subplots(len(all_pops), 1)
-        fig_spikes.suptitle('Spikes for each population')
+        # import matplotlib.pyplot as plt
 
-        for i_pop, pop in enumerate(all_pops.values()):
+        # # Plot spikes
+        # fig_spikes, axes_spikes = plt.subplots(len(all_pops), 1)
+        # fig_spikes.suptitle('Spikes for each population')
 
-            pop_data = pop.get_data() # Neo Block object
-            segment = pop_data.segments[0] # segment = all data with common time basis
+        # for i_pop, pop in enumerate(all_pops.values()):
 
-            ax = axes_spikes[i_pop]
-            for spiketrain in segment.spiketrains:
-                y = np.ones_like(spiketrain) * spiketrain.annotations['source_id']
-                ax.plot(spiketrain, y, '.')
-                ax.set_ylabel(pop.label)
+        #     pop_data = pop.get_data() # Neo Block object
+        #     segment = pop_data.segments[0] # segment = all data with common time basis
+
+        #     ax = axes_spikes[i_pop]
+        #     for spiketrain in segment.spiketrains:
+        #         y = np.ones_like(spiketrain) * spiketrain.annotations['source_id']
+        #         ax.plot(spiketrain, y, '.')
+        #         ax.set_ylabel(pop.label)
 
 
-            for signal in segment.analogsignals:
-                # one figure per trace type
-                fig, axes = plt.subplots(signal.shape[1], 1)
-                fig.suptitle("Population {} - trace {}".format(
-                                pop.label, signal.name))
+        #     for signal in segment.analogsignals:
+        #         # one figure per trace type
+        #         fig, axes = plt.subplots(signal.shape[1], 1)
+        #         fig.suptitle("Population {} - trace {}".format(
+        #                         pop.label, signal.name))
 
-                # signal matrix has one cell signal per column
-                time_vec = signal.times
-                y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
+        #         # signal matrix has one cell signal per column
+        #         time_vec = signal.times
+        #         y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
 
-                for i_cell in range(signal.shape[1]):
-                    ax = axes[i_cell]
-                    label = "cell {}".format(signal.annotations['source_ids'][i_cell])
-                    ax.plot(time_vec, signal[:, i_cell], label=label)
-                    ax.set_ylabel(y_label)
-                    ax.legend()
+        #         for i_cell in range(signal.shape[1]):
+        #             ax = axes[i_cell]
+        #             label = "cell {}".format(signal.annotations['source_ids'][i_cell])
+        #             ax.plot(time_vec, signal[:, i_cell], label=label)
+        #             ax.set_ylabel(y_label)
+        #             ax.legend()
 
-        plt.show(block=False)
+        # plt.show(block=False)
 
     if export_locals:
         globals().update(locals())
@@ -613,7 +620,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
 if __name__ == '__main__':
     # Parse arguments passed to `python model.py [args]`
     import argparse
-    import datetime
+    from datetime import datetime
     import os.path
 
     parser = argparse.ArgumentParser(description='Run basal ganglia network simulation')
@@ -634,16 +641,25 @@ if __name__ == '__main__':
                         help='Enable graphical output')
     parser.set_defaults(with_gui=True)
 
-    timestamp = time.time()
-    default_output = '~/storage/*-{}.mat'.format(
-        datetime.datetime.fromtimestamp(timestamp).strftime('%Y.%m.%d-%H.%M.%S'))
-    
     parser.add_argument('-o', '--output', nargs='?', type=str,
-                        default=default_output,
-                        dest='save_data', help='Save recorded data')
+                        default=None,
+                        dest='output',
+                        help='Output destination in format \'/outdir/*.ext\'')
 
     args = parser.parse_args() # Namespace object
     parsed_dict = vars(args) # Namespace to dict
-    parsed_dict['save_data'] = os.path.expanduser(parsed_dict['save_data'])
-
+    
+    # Post process output specifier
+    outspec = parsed_dict['output']
+    if outspec is None:
+        timestamp = time.time()
+        outspec = ('~/storage/{stamp}_pop{ncell}_dur{dur}/'
+            '*_{stamp}_pop{ncell}_dur{dur}.h5'.format(
+            ncell=parsed_dict['ncell_per_pop'],
+            dur=parsed_dict['sim_dur'],
+            stamp=datetime.fromtimestamp(timestamp).strftime('%Y.%m.%d-%H.%M.%S')))
+    
+    parsed_dict['output'] = os.path.expanduser(outspec)
+    
+    # Run the simulation
     run_simple_net(**parsed_dict)
