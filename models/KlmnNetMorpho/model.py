@@ -545,11 +545,11 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
     # sim.run() -> pyNN.common.control.run()
     # sim.state.run() -> pyNN.neuron.simulator._State.run()
 
-    report_interval = 25.0
+    report_interval = 50.0 # (ms) simulation time
     while sim.state.t < sim_dur:
         print("Simulated {} ms. Advancing next {} ms ...".format(sim.state.t,
               report_interval))
-        sim.state.run(report_interval)
+        sim.run(report_interval)
 
     tstop = time.time()
     cputime = tstop - tstart
@@ -624,18 +624,26 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--ncell', nargs='?', type=int, default=30,
                         dest='ncell_per_pop', help='Number of cells per population')
 
-    parser.add_argument('-g', '--gui', nargs='?', type=bool, default=True,
-                        dest='with_gui', help='Enable graphical output')
+    parser.add_argument('-g', '--gui',
+                        dest='with_gui',
+                        action='store_true',
+                        help='Enable graphical output')
+    parser.add_argument('-ng', '--no-gui',
+                        dest='with_gui',
+                        action='store_false',
+                        help='Enable graphical output')
+    parser.set_defaults(with_gui=True)
 
     timestamp = time.time()
-    default_output = os.path.expanduser('~/storage/*-{}.mat'.format(
-        datetime.datetime.fromtimestamp(timestamp).strftime('%Y.%m.%d-%H.%M.%S')))
+    default_output = '~/storage/*-{}.mat'.format(
+        datetime.datetime.fromtimestamp(timestamp).strftime('%Y.%m.%d-%H.%M.%S'))
     
     parser.add_argument('-o', '--output', nargs='?', type=str,
                         default=default_output,
                         dest='save_data', help='Save recorded data')
 
     args = parser.parse_args() # Namespace object
+    parsed_dict = vars(args) # Namespace to dict
+    parsed_dict['save_data'] = os.path.expanduser(parsed_dict['save_data'])
 
-    run_simple_net(**vars(args))
-    # test_STN_population(**vars(args))
+    run_simple_net(**parsed_dict)
