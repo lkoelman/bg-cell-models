@@ -23,6 +23,9 @@ To run using MPI, you can use the following command:
 """
 from __future__ import print_function
 import time
+import os
+from datetime import datetime
+
 import numpy as np
 
 # PyNN library
@@ -38,7 +41,6 @@ from extensions.pynn.utility import connection_plot
 sim.Population._recorder_class = TraceSpecRecorder
 
 # Custom NEURON mechanisms
-import os.path
 script_dir = os.path.dirname(__file__)
 sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses'))
 
@@ -130,7 +132,7 @@ def test_STN_population(ncell_per_pop=5, sim_dur=500.0, export_locals=True):
 
 
 def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True, 
-                   with_gui=True, output=None):
+                   with_gui=True, output=None, report_progress=None):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
@@ -561,22 +563,28 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
     print("Will simulate {} cells ({} segments) for {} seconds on MPI rank {}.".format(
             num_cell, num_segments, sim_dur, mpi_rank))
     tstart = time.time()
-
-    # sim.run() -> pyNN.common.control.run()
-    # sim.state.run() -> pyNN.neuron.simulator._State.run()
+    progress_file = os.path.expanduser('~/storage/{}_sim_progress.log'.format(
+        datetime.fromtimestamp(tstart).strftime('%Y.%m.%d-%H.%M.%S')))
 
     report_interval = 50.0 # (ms) simulation time
     tlast = tstart
     while sim.state.t < sim_dur:
         sim.run(report_interval)
+        
         if mpi_rank == 0:
             tnow = time.time()
             t_elapsed = tnow - tstart
             t_stepdur = tnow - tlast
             tlast = tnow
-            print("Simulation time is {} of {} ms."
-                  "\nCPU time elapsed is {} s, last step took {} s".format(
-                  sim.state.t, sim_dur, t_elapsed, t_stepdur))
+            # ! No newlines in progress report - passed to shell
+            progress = ("Simulation time is {} of {} ms. "
+                        "CPU time elapsed is {} s, last step took {} s".format(
+                        sim.state.t, sim_dur, t_elapsed, t_stepdur))
+            print(progress)
+        
+            if report_progress:
+                stamp = datetime.fromtimestamp(tnow).strftime('%Y-%m-%d@%H:%M:%S')
+                os.system("echo [{}]: {} >> {}".format(stamp, progress, progress_file))
 
     tstop = time.time()
     cputime = tstop - tstart
@@ -647,7 +655,6 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
 if __name__ == '__main__':
     # Parse arguments passed to `python model.py [args]`
     import argparse
-    from datetime import datetime
 
     parser = argparse.ArgumentParser(description='Run basal ganglia network simulation')
 
@@ -671,6 +678,10 @@ if __name__ == '__main__':
                         default=None,
                         dest='output',
                         help='Output destination in format \'/outdir/*.ext\'')
+
+    parser.add_argument('-p', '--progress',
+                        dest='report_progress', action='store_true',
+                        help='Report progress periodically to progress file')
 
     args = parser.parse_args() # Namespace object
     parsed_dict = vars(args) # Namespace to dict
