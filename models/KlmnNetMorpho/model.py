@@ -1,3 +1,5 @@
+
+# -*- coding: utf-8 -*-
 """
 Basal Ganglia network model consisting of morphologically detailed
 cell models for the major cell types.
@@ -19,18 +21,20 @@ To run using MPI, you can use the following command:
     >>> mpiexec -np 8 python model.py [-n numcell -d simdur -g 1 -o outdir/*.mat]
 
 """
+from __future__ import print_function
 import time
 import numpy as np
 
 # PyNN library
 import pyNN.neuron as sim
 from pyNN import space
-from pyNN.utility import init_logging, connection_plot
+from pyNN.utility import init_logging # connection_plot # broken method
 from pyNN.parameters import Sequence
 
 # Custom PyNN extensions
 from extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
 from extensions.pynn.recording import TraceSpecRecorder
+from extensions.pynn.utility import connection_plot
 sim.Population._recorder_class = TraceSpecRecorder
 
 # Custom NEURON mechanisms
@@ -43,7 +47,7 @@ import models.GilliesWillshaw.gillies_pynn_model as gillies
 import models.Gunay2008.gunay_pynn_model as gunay
 
 # Our physiological parameters
-from cellpopdata.physiotypes import Populations as PopID
+# from cellpopdata.physiotypes import Populations as PopID
 #from cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from cellpopdata.cellpopdata import CellConnector
 
@@ -136,9 +140,13 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
                 '~/storage/*.mat'
     """
 
-    mpi_rank = sim.setup(use_cvode=False)
-    if mpi_rank == 1:
-        init_logging(logfile=None, debug=False)
+    mpi_rank = sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, 
+                         use_cvode=False)
+    # if mpi_rank == 0:
+    #     init_logging(logfile=None, debug=False)
+    def nprint(*args, **kwargs):
+        if mpi_rank == 0:
+            print(*args, **kwargs)
 
     print("""\nRunning net on MPI rank {} with following settings:
     - ncell_per_pop = {}
@@ -168,6 +176,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
     # POPULATIONS
     ############################################################################
     # Define each cell population with its cell type, number of cells
+    print("{} start phase: POPULATIONS.".format(mpi_rank))
 
     # STN cell population
     stn_grid = space.Line(x0=0.0, dx=50.0,
@@ -221,6 +230,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
     str_base_firing_rate = 1.0
     str_num_poisson_combined = 3
     str_combined_firing_rate = str_base_firing_rate * str_num_poisson_combined
+    
     pop_str = sim.Population(
                     ncell_per_pop, 
                     sim.SpikeSourcePoisson(rate=str_combined_firing_rate),
@@ -228,10 +238,11 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
 
 
     # Noise sources
-    noise_gpe = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=50.0),
-                    label='NOISE')
+    # noise_gpe = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=50.0),
+    #                 label='NOISE')
 
     all_pops = {pop.label : pop for pop in [pop_gpe, pop_stn, pop_ctx]}
+    all_proj = {pop.label : {} for pop in [pop_gpe, pop_stn, pop_ctx, pop_str]}
 
     ############################################################################
     # CONNECTIONS
@@ -265,6 +276,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
 
     ############################################################################
     # TO GPE
+    print("{} start phase: GPE AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
     # STN -> GPE (excitatory)
@@ -296,6 +308,8 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
                                  connector=stn_gpe_connector,
                                  synapse_type=stn_gpe_syn,
                                  receptor_type='distal.AMPA+NMDA')
+
+    all_proj['STN']['GPE'] = stn_gpe_EXC
 
     #---------------------------------------------------------------------------
     # GPE -> GPE (inhibitory)
@@ -348,6 +362,8 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
                                  receptor_type='proximal.GABAA+GABAB',
                                  space=gpe_gpe_space)
 
+    all_proj['GPE']['GPE'] = gpe_gpe_INH
+
     #---------------------------------------------------------------------------
     # STR -> GPE (inhibitory)
 
@@ -382,6 +398,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
                                  synapse_type=str_gpe_syn,
                                  receptor_type='proximal.GABAA+GABAB')
 
+    all_proj['STR']['GPE'] = str_gpe_INH
 
     #---------------------------------------------------------------------------
     # NOISE -> GPE (excitatory)
@@ -401,6 +418,7 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
 
     ############################################################################
     # TO STN
+    print("{} start phase: STN AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
     # GPe -> STN (inhibitory)
@@ -436,6 +454,8 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
                         synapse_type=gpe_stn_syn,
                         receptor_type='proximal.GABAA+GABAB')
 
+    all_proj['GPE']['STN'] = gpe_stn_INH
+
     #---------------------------------------------------------------------------
     # CTX -> STN (excitatory)
 
@@ -470,6 +490,8 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
                         synapse_type=ctx_stn_syn,
                         receptor_type='distal.AMPA+NMDA')
 
+    all_proj['CTX']['STN'] = ctx_stn_EXC
+
     #---------------------------------------------------------------------------
     # STN -> STN (excitatory)
 
@@ -503,15 +525,12 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
                         synapse_type=stn_stn_syn,
                         receptor_type='distal.AMPA+NMDA')
 
-    #---------------------------------------------------------------------------
-    # Plot connectivity matrix ('O' is connection, ' ' is no connection)
-    if mpi_rank == 0:
-        for prj in [stn_gpe_EXC, gpe_stn_INH]:
-            print(u"{} connectivity matrix: \n".format(prj) + connection_plot(prj))
+    all_proj['STN']['STN'] = stn_stn_EXC
 
     ############################################################################
     # RECORDING
     ############################################################################
+    print("{} start phase: RECORDING.".format(mpi_rank))
 
     traces_allpops = {
         'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
@@ -526,47 +545,92 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
     for pop in all_pops.values():
         pop.record(['spikes'], sampling_interval=.05)
 
-
+    
     ############################################################################
-    # INITIALIZE + RUN
+    # INITIALIZE & SIMULATE
     ############################################################################
+    print("{} start phase: SIMULATE.".format(mpi_rank))
 
     # Set physiological conditions
     h.celsius = 36.0
     h.set_aCSF(4) # Hoc function defined in Gillies code
-
-    print("CVode state: {}".format(sim.state.cvode.active()))
+    
+    # Simulation statistics
     num_segments = sum((sec.nseg for sec in h.allsec()))
     num_cell = sum((1 for sec in h.allsec()))
     print("Will simulate {} cells ({} segments) for {} seconds on MPI rank {}.".format(
             num_cell, num_segments, sim_dur, mpi_rank))
-    
     tstart = time.time()
+
     # sim.run() -> pyNN.common.control.run()
     # sim.state.run() -> pyNN.neuron.simulator._State.run()
 
     report_interval = 50.0 # (ms) simulation time
+    tlast = tstart
     while sim.state.t < sim_dur:
-        print("Simulated {} ms. Advancing next {} ms ...".format(sim.state.t,
-              report_interval))
         sim.run(report_interval)
+        if mpi_rank == 0:
+            tnow = time.time()
+            t_elapsed = tnow - tstart
+            t_stepdur = tnow - tlast
+            tlast = tnow
+            print("Simulation time is {} of {} ms."
+                  "\nCPU time elapsed is {} s, last step took {} s".format(
+                  sim.state.t, sim_dur, t_elapsed, t_stepdur))
 
     tstop = time.time()
     cputime = tstop - tstart
-    
-    print("Simulated {} segments for {} ms in {} ms CPU time".format(
+    nprint("Simulated {} segments for {} ms in {} ms CPU time".format(
             num_segments, sim.state.tstop, cputime))
+
+
+    ############################################################################
+    # WRITE PARAMETERS
+    ############################################################################
+    print("{} start phase: INTEGRITY CHECK.".format(mpi_rank))
+
+    # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
+    #       - cannot perform any gather() operations before initializing MPI transfer
+    #       - must do gather() operations on all nodes
+    for pre_pop, post_pops in all_proj.iteritems():
+        for post_pop, proj in post_pops.iteritems():
+
+            # Plot connectivity matrix ('O' is connection, ' ' is no connection)
+            conn_matrix = connection_plot(proj)
+            nprint("{}->{} connectivity matrix: \n".format(proj.pre.label, 
+                   proj.post.label) + connection_plot(proj))
+
+            # This does an mpi gather() on all the parameters
+            params = np.array(proj.get(["delay", "weight"], format="list"))
+            mind = min(params[:,2])
+            maxd = max(params[:,2])
+            minw = min(params[:,3])
+            maxw = max(params[:,3])
+            nprint("Error check for projection {pre}->{post}:\n"
+                  "    - min delay = {mind}\n"
+                  "    - max delay = {maxd}\n"
+                  "    - min weight = {minw}\n"
+                  "    - max weight = {maxw}\n".format(
+                    pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
+                    minw=minw, maxw=maxw))
+
+    # TODO: write synapse and cell parameters to file, e.g. JSON
+
 
     ############################################################################
     # PLOTTING
     ############################################################################
-    if mpi_rank==0 and output is not None:
+    if output is not None:
         outdir, extension = output.split('*')
+        # Some fileformats seem to take issue with non-existing directories
+        # if not os.path.exists(outdir):
+        #     os.makedirs(outdir)
 
+        # gather() so execute on each rank
         for pop in all_pops.values():
             pop.write_data(
                 "{dir}{label}{ext}".format(dir=outdir, label=pop.label, ext=extension),
-                variables='all', annotations={'script_name': __file__})
+                variables='all', gather=True, annotations={'script_name': __file__})
     
     if mpi_rank==0 and with_gui:
         # Only plot on one process, and if GUI available
@@ -576,43 +640,6 @@ def run_simple_net(ncell_per_pop=30, sim_dur=500.0, export_locals=True,
         }
         analysis.plot_population_signals(pop_neo_data)
 
-        # import matplotlib.pyplot as plt
-
-        # # Plot spikes
-        # fig_spikes, axes_spikes = plt.subplots(len(all_pops), 1)
-        # fig_spikes.suptitle('Spikes for each population')
-
-        # for i_pop, pop in enumerate(all_pops.values()):
-
-        #     pop_data = pop.get_data() # Neo Block object
-        #     segment = pop_data.segments[0] # segment = all data with common time basis
-
-        #     ax = axes_spikes[i_pop]
-        #     for spiketrain in segment.spiketrains:
-        #         y = np.ones_like(spiketrain) * spiketrain.annotations['source_id']
-        #         ax.plot(spiketrain, y, '.')
-        #         ax.set_ylabel(pop.label)
-
-
-        #     for signal in segment.analogsignals:
-        #         # one figure per trace type
-        #         fig, axes = plt.subplots(signal.shape[1], 1)
-        #         fig.suptitle("Population {} - trace {}".format(
-        #                         pop.label, signal.name))
-
-        #         # signal matrix has one cell signal per column
-        #         time_vec = signal.times
-        #         y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
-
-        #         for i_cell in range(signal.shape[1]):
-        #             ax = axes[i_cell]
-        #             label = "cell {}".format(signal.annotations['source_ids'][i_cell])
-        #             ax.plot(time_vec, signal[:, i_cell], label=label)
-        #             ax.set_ylabel(y_label)
-        #             ax.legend()
-
-        # plt.show(block=False)
-
     if export_locals:
         globals().update(locals())
 
@@ -621,7 +648,6 @@ if __name__ == '__main__':
     # Parse arguments passed to `python model.py [args]`
     import argparse
     from datetime import datetime
-    import os.path
 
     parser = argparse.ArgumentParser(description='Run basal ganglia network simulation')
 
@@ -639,7 +665,7 @@ if __name__ == '__main__':
                         dest='with_gui',
                         action='store_false',
                         help='Enable graphical output')
-    parser.set_defaults(with_gui=True)
+    parser.set_defaults(with_gui=False)
 
     parser.add_argument('-o', '--output', nargs='?', type=str,
                         default=None,
@@ -653,8 +679,7 @@ if __name__ == '__main__':
     outspec = parsed_dict['output']
     if outspec is None:
         timestamp = time.time()
-        outspec = ('~/storage/{stamp}_pop{ncell}_dur{dur}/'
-            '*_{stamp}_pop{ncell}_dur{dur}.h5'.format(
+        outspec = ('~/storage/*_{stamp}_pop{ncell}_dur{dur}.mat'.format(
             ncell=parsed_dict['ncell_per_pop'],
             dur=parsed_dict['sim_dur'],
             stamp=datetime.fromtimestamp(timestamp).strftime('%Y.%m.%d-%H.%M.%S')))

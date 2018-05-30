@@ -444,7 +444,7 @@ class GluSynapse(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
 
     default_parameters = {
         'weight':       1.0,
-        'delay':        None,
+        'delay':        0.5,
         'tau_r_AMPA':   0.2,
         'tau_d_AMPA':   1.7,
         'tau_r_NMDA':   0.29,
@@ -494,7 +494,7 @@ class GabaSynapse(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
 
     default_parameters = {
         'weight':     1.0,
-        'delay':     None,
+        'delay':      0.5,
         'tau_r_GABAA':   0.2,
         'tau_d_GABAA':   1.7,
         'tau_r_GABAB':   0.2,
