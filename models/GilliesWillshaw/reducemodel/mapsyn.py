@@ -15,7 +15,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 
 import gillies_model as gillies
 import redutils as redtools
-from common import conutils
+from common import configutil
 from redutils import getsecref, seg_index
 
 class SynInfo(object):
@@ -467,7 +467,7 @@ def map_synapses(rootref, allsecrefs, orig_syn_info, init_cell, Z_freq,
 		if len(getattr(syn_info, 'gbar_param_specs', [])) > 0:
 			for gbar_spec in syn_info.gbar_param_specs:
 
-				mechtype, mech_parname, mech_paridx = conutils.interpretParamSpec(gbar_spec)
+				mechtype, mech_parname, mech_paridx = configutil.interpretParamSpec(gbar_spec)
 				
 				if mechtype == 'syn':
 					target = mapped_syn

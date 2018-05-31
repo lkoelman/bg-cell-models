@@ -8,19 +8,47 @@ import re
 import json
 
 
+def parse_json_file(filename, nonstrict=True):
+    """
+    Parse JSON file to dict.
+
+    @param      nonstrict: bool
+
+                If True, the json file can contain non strictly valid JSON
+                including comments and extraneous commas. For the full list
+                of allowed deviations, see function `validate_minify_json()`
+    """
+    with open(filename, 'r') as json_file:
+        json_string = json_file.read()
+        return parse_json_string(json_string, nonstrict=nonstrict)
+
+
+def parse_json_string(string, nonstrict=True):
+    """
+    Parse JSON string to dict.
+
+    @param      nonstrict: bool
+
+                If True, the json string can contain non strictly valid JSON
+                including comments and extraneous commas. For the full list
+                of allowed deviations, see function `validate_minify_json()`
+    """
+    if nonstrict:
+        string = validate_minify_json(string)
+    return json.loads(string)
+
+
 def load_json_nonstrict(filename):
     """
+    (DEPRECATED)
+
     Same as json.load(filename) except the json file can contain
     non strictly valid JSON.
 
     For the things that are allowed in non-strict JSON, see function
     `validate_minify_json`.
     """
-    with open(filename) as json_file:
-        invalid_json = json_file.read()
-        valid_json = validate_minify_json(invalid_json)
-        deserialized_dict = json.loads(valid_json)
-        return deserialized_dict
+    return parse_json_file(filename, nonstrict=True)
 
 
 def validate_minify_json(string):

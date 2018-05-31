@@ -14,7 +14,7 @@ h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 from .. import redutils
-from common import conutils
+from common import configutil
 from common.nrnutil import getsecref, seg_index
 from common.treeutils import subtree_has_node
 from common.stdutil import isclose
@@ -563,7 +563,7 @@ def map_synapses(
         if len(getattr(syn_info, 'gbar_param_specs', [])) > 0:
             for gbar_spec in syn_info.gbar_param_specs:
 
-                mechtype, mech_parname, mech_paridx = conutils.interpretParamSpec(gbar_spec)
+                mechtype, mech_parname, mech_paridx = configutil.interpretParamSpec(gbar_spec)
                 
                 if mechtype == 'syn':
                     target = mapped_syn
