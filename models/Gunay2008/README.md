@@ -130,7 +130,7 @@ Gunay, Edgerton, and Jaeger (2008). _Channel Density Distributions Explain Spiki
 
 ### Hendrickson (2011)
 
-For model at https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
+For model at [ModelDB:127728](https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728)
 "Comparison of full and reduced globus pallidus models (Hendrickson 2010)" see:
   
 + main script in `/articleCode/scripts/genesisScripts/GP1axonless_full_synaptic.g`
@@ -147,7 +147,7 @@ For model at https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=127728
 
 ### Edgerton (2010)
 
-For model at https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=136315
+For model at [ModelDB:136315](https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=136315)
 "Globus pallidus neuron models with differing dendritic Na channel expression 
 (Edgerton et al., 2010)", see: 
 

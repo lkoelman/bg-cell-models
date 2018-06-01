@@ -41,6 +41,19 @@ Our custom PyNN classes have only been tested with PyNN 0.9.2 (git commit
 (commit `7d7c65be0bff3a9832d1d5dec3f4ba1c8906fa75`).
 
 
+## Installation using Pip / setuptools
+
+Install editable version (symlink to this directory):
+
+```sh
+pip install -e path_to_repo
+# or alternatively:
+python setup.py develop
+
+# Build NMODL files automatically:
+python setup.py build_mechs
+```
+
 ## Installation using PYTHONPATH
 
 This will make the module globally available by adding it to the `PYTHONPATH` environment variable.
@@ -66,13 +79,7 @@ source activate
 jupyter notebook
 ```
 
-## Installation using Pip
 
-TODO
-
-```sh
-pip install -e ./bg-cell-models
-```
 
 --------------------------------------------------------------------------------
 # Install Supporting Tools (optional)
@@ -84,10 +91,16 @@ NEURON Syntax definitions for Hoc and NMODL languages [for Sublime Text](https:/
 
 ## nb_conda
 
-Allows you to select specific conda environment as Jupyter kernel.
+Allows you to select a conda environment as Jupyter kernel.
 
 ```sh
 conda install nb_conda
+```
+
+To enable an environment as a kernel, install the module ipykernel in it:
+
+```sh
+conda install -n my_environment ipykernel
 ```
 
 ## nbstripout
