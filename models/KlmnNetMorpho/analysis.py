@@ -10,7 +10,7 @@ import neo.io
 # import common.analysis as sigplot
 
 
-def read_populaton_segments(outputs, is_directory=True, i_segment=0):
+def read_populaton_segments(outputs, is_directory=True, i_segment=0, read_ext=None):
     """
     Read Neo IO data into a dictionary mapping the population label
     to the first segment.
@@ -25,10 +25,15 @@ def read_populaton_segments(outputs, is_directory=True, i_segment=0):
 
 
     @see    http://neo.readthedocs.io/en/latest/io.html
+
+    @return     pops_segments : dict[str, neo.Segment]
+                Mapping of population label to data segment.
     """
     if is_directory:
         filenames = os.listdir(outputs)
         pop_files = [os.path.join(outputs, f) for f in filenames]
+        if read_ext is not None:
+            pop_files = [f for f in pop_files if f.endswith(read_ext)]
     else:
         pop_files = outputs
     pops_segments = {}
@@ -52,7 +57,7 @@ def read_populaton_segments(outputs, is_directory=True, i_segment=0):
     return pops_segments
 
 
-def plot_population_signals(pops_segments):
+def plot_population_spikes(pops_segments):
     """
     Plot all recorded signals for each population.
 
@@ -79,28 +84,72 @@ def plot_population_signals(pops_segments):
                     color=pop_spike_colors[i_pop % 5])
             ax.set_ylabel(pop_label)
 
+        i_pop += 1
 
+    plt.show(block=False)
+
+
+def plot_population_signals(pops_segments, max_num_signals=20, time_range=None):
+    """
+    Plot all recorded signals for each population.
+
+    @param      pops_segments : Dict[str, neo.Segment]
+                Mapping from population label to data segment
+    """
+
+    i_pop = 0
+    for pop_label, segment in pops_segments.items():
+
+        # one  separate figure per trace type
         for signal in segment.analogsignals:
-            # one figure per trace type
-            fig, axes = plt.subplots(signal.shape[1], 1)
+            # NOTE: 'signal' is matrix[t, signal_id] with one signal per column
+
+            # Make one axis per signal
+            num_signals = min(signal.shape[1], max_num_signals)
+            fig, axes = plt.subplots(num_signals, 1)
             fig.suptitle("Population {} - trace {}".format(
                             pop_label, signal.name))
 
-            # signal matrix has one cell signal per column
             time_vec = signal.times
-            y_label = "{} ({})".format(signal.name, signal.units._dimensionality.string)
-
-            for i_cell in range(signal.shape[1]):
+            if time_range is None:
+                i_start = 0
+                i_stop = time_vec.size
+            else:
+                i_after, = np.where(signal.times >= time_range[0])
+                i_beyond, = np.where(signal.times >= time_range[1])
+                i_start = i_after[0]
+                i_stop = time_vec.size if len(i_beyond)==0 else i_beyond[0]+1
+                
+            for i_cell in range(num_signals):
                 ax = axes[i_cell]
                 if 'source_ids' in signal.annotations:
                     label = "id {}".format(signal.annotations['source_ids'][i_cell])
                 else:
                     label = "cell {}".format(i_cell)
                 
-                ax.plot(time_vec, signal[:, i_cell], label=label)
-                ax.set_ylabel(y_label)
+                ax.plot(time_vec[i_start:i_stop], signal[i_start:i_stop, i_cell], label=label)
+                ax.set_ylabel("{} ({})".format(
+                    signal.name, signal.units._dimensionality.string))
                 ax.legend()
 
         i_pop += 1
 
     plt.show(block=False)
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Plot simulation data')
+
+    parser.add_argument('-d', '--data', nargs=1, type=str,
+                        metavar='/path/to/config.json',
+                        dest='output_path',
+                        help='Output file or directory')
+
+    args = parser.parse_args() # Namespace object
+    parsed_dict = vars(args) # Namespace to dict
+
+    # Read and plot the data
+    pops_segments = read_populaton_segments(parsed_dict['output_path'])
+    plot_population_spikes(pops_segments)
+    plot_population_signals(pops_segments)
