@@ -534,6 +534,8 @@ if __name__ == '__main__':
     
     # Post process output specifier
     out_basedir = parsed_dict['output']
+    if out_basedir is None or out_basedir == '': # shell can pass empty string
+        out_basedir = '~/storage'
     job_id = parsed_dict.pop('job_id')[0]
     time_now = time.time()
     timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d-%H.%M.%S')

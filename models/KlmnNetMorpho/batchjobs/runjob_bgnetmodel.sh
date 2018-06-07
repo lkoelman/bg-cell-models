@@ -59,7 +59,7 @@ module load intel-mpi gcc anaconda
 source activate localpy27
 
 # Prepare commands to be executed
-if [-z "${outdir+set}" ]; then
+if [ -z "$outdir" ]; then
     outdir="~/storage"
 fi
 model_dir=/home/people/15203008/workspace/bgcellmodels/models/KlmnNetMorpho/
