@@ -70,7 +70,12 @@ model_config="${model_dir}${config_file}"
 mpi_command="mpirun -n 24 python ${model} \
 -n ${ncell} -d ${dur} \
 -ng -p -c ${model_config} -o ${outdir} -id ${PBS_JOBID}"
-
+if [-n "$report" ]; then
+    # redirect stdout and stderr to file during execution
+    mpi_command="${mpi_command} > \
+>(tee -a ${outdir}/${PBS_JOBID}_stdout.log) \
+2> >(tee -a ${outdir}/${PBS_JOBID}_stderr.log >&2)"
+fi
 # Sanity check
 echo -e "
 Executing script with following inputs:
