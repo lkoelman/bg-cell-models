@@ -199,7 +199,8 @@ def run_simple_net(
         """
         def sequence_gen():
             burst_gen = make_oscillatory_bursts(
-                T_burst, dur_burst, f_intra, f_inter, rng=np_seeded_rng)
+                T_burst, dur_burst, f_intra, f_inter,
+                rng=np_seeded_rng, max_dur=sim_dur)
             bursty_spikes = np.fromiter(burst_gen, float)
             return Sequence(bursty_spikes)
         if hasattr(i, "__len__"):
@@ -226,7 +227,8 @@ def run_simple_net(
         """
         def sequence_gen():
             burst_gen = make_variable_bursts(
-                T_burst, dur_burst, f_intra, f_inter, rng=np_seeded_rng)
+                T_burst, dur_burst, f_intra, f_inter,
+                rng=np_seeded_rng, max_dur=sim_dur)
             bursty_spikes = np.fromiter(burst_gen, float)
             return Sequence(bursty_spikes)
         if hasattr(i, "__len__"):

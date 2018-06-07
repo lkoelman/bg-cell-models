@@ -23,3 +23,12 @@ See UML diagrams in `extensions/pynn/PyNN_UML_diagrams.html` and the classes
 defined in the Python source files in that directory. The diagrams clarify where
 our custom classes hook into the PyNN machinery for setting up and running
 the simulation.
+
+# Testing configuration files
+
+1. Run without MPI using `ipython` and `%run model_parameterized.py ...`
+  to debug any errors
+
+2. Run with MPI for short duration (100 ms) to debug any MPI mistakes
+
+3. Run full simulation
