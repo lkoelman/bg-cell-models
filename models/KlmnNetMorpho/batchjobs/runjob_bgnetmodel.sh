@@ -25,13 +25,16 @@
 
 # Defines the path to be used for the standard output stream of the batch job.
 # The default output is <job_name.job_number> which is pretty clear
-## PBS -o ./output_bgnetmodel.log
+## PBS -o ./output_bgnetmodel.o.log
+# Same for standard error stream:
+## PBS -e ./output_bgnetmodel.e.log
 
 # E-mail on begin (b), abort (a) and end (e) of job
 #PBS -m bae
 
 # E-mail address of recipient
 #PBS -M lucas.koelman@ucdconnect.ie
+
 
 ################################################################################
 # JOB SCRIPT
@@ -40,7 +43,8 @@
 # Execute using:
 # >>> qsub runjob_lucastest.sh -l walltime=00:45:00 \
 # >>> -v ncell=100,dur=10000,\
-# >>> config=~/workspace/bgcellmodels/models/KlmnNetMorpho/configs/simple_config.json
+# >>> config=~/workspace/bgcellmodels/models/KlmnNetMorpho/configs/simple_config.json,
+# >>> outdir=~/storage,id=with_DA_depleted_1
 
 
 echo -e "
@@ -55,12 +59,17 @@ module load intel-mpi gcc anaconda
 source activate localpy27
 
 # Prepare commands to be executed
+if [-z "${outdir+set}" ]; then
+    outdir="~/storage"
+fi
 model_dir=/home/people/15203008/workspace/bgcellmodels/models/KlmnNetMorpho/
 model_script=model_parameterized.py
 model="${model_dir}${model_script}"
 config_file="configs/${config}"
 model_config="${model_dir}${config_file}"
-mpi_command="mpirun -n 24 python ${model} -n ${ncell} -d ${dur} -ng -p -c ${model_config}"
+mpi_command="mpirun -n 24 python ${model} \
+-n ${ncell} -d ${dur} \
+-ng -p -c ${model_config} -o ${outdir} -id ${PBS_JOBID}"
 
 # Sanity check
 echo -e "
@@ -68,6 +77,7 @@ Executing script with following inputs:
 
 - ncell = ${ncell}
 - dur = ${dur}
+- outdir = ${outdir}
 
 The final command (following '> ') is:
 

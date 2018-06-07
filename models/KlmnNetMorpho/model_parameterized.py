@@ -19,8 +19,8 @@ USAGE
 
 To run using MPI, you can use the following command:
 
->>> mpiexec -np 8 python model_parameterized.py -n numcell -d simdur \
->>> -ng -o outdir/*.mat -c ~/workspace/simple_config.json
+>>> mpirun -n 8 python model_parameterized.py -n numcell -d simdur \
+>>> -ng -o ~/storage -c ~/workspace/simple_config.json -id test1
 
 """
 from __future__ import print_function
@@ -55,7 +55,7 @@ import models.Gunay2008.gunay_pynn_model as gunay
 #from cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from cellpopdata.cellpopdata import CellConnector
 
-from common.spikelib import make_oscillatory_bursts
+from common.spikelib import make_oscillatory_bursts, make_variable_bursts
 from common.configutil import eval_params
 from common.stdutil import getdictvals
 from common import logutils, fileutils
@@ -102,7 +102,7 @@ def run_simple_net(
 
     h = sim.h
     seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
-    numpy_rng = np.random.RandomState(seed)
+    np_seeded_rng = np.random.RandomState(seed)
 
 
     ############################################################################
@@ -191,13 +191,15 @@ def run_simple_net(
     T_burst, dur_burst, f_intra, f_inter = get_pop_parameters(
         'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter')
     
-    def spiketimes_for_pop(i):
+    def spiketimes_for_ctx(i):
         """
-        PyNN wants a Sequence generator
+        Generate spike times for Cortex cell i.
+
+        (taken from PyNN examples -> returns pyNN.Sequence generator)
         """
         def sequence_gen():
             burst_gen = make_oscillatory_bursts(
-                T_burst, dur_burst, f_intra, f_inter, rng=numpy_rng)
+                T_burst, dur_burst, f_intra, f_inter, rng=np_seeded_rng)
             bursty_spikes = np.fromiter(burst_gen, float)
             return Sequence(bursty_spikes)
         if hasattr(i, "__len__"):
@@ -208,17 +210,33 @@ def run_simple_net(
 
     pop_ctx = sim.Population(
                     ncell_per_pop,
-                    sim.SpikeSourceArray(spike_times=spiketimes_for_pop),
+                    sim.SpikeSourceArray(spike_times=spiketimes_for_ctx),
                     label='CTX')
 
 
     # STR spike sources
-    base_rate, num_combined = get_pop_parameters('STR', 'firing_rate', 'num_poisson_combined')
-    str_combined_firing_rate = base_rate * num_combined
+    T_burst, dur_burst, f_intra, f_inter = get_pop_parameters(
+        'STR', 'T_burst', 'dur_burst', 'f_intra', 'f_inter')
+
+    def spiketimes_for_str(i):
+        """
+        Generate spike times for Striatum cell i.
+
+        (taken from PyNN examples -> returns pyNN.Sequence generator)
+        """
+        def sequence_gen():
+            burst_gen = make_variable_bursts(
+                T_burst, dur_burst, f_intra, f_inter, rng=np_seeded_rng)
+            bursty_spikes = np.fromiter(burst_gen, float)
+            return Sequence(bursty_spikes)
+        if hasattr(i, "__len__"):
+            return [sequence_gen() for j in i]
+        else:
+            return sequence_gen()
     
     pop_str = sim.Population(
                     ncell_per_pop, 
-                    sim.SpikeSourcePoisson(rate=str_combined_firing_rate),
+                    sim.SpikeSourceArray(spike_times=spiketimes_for_str),
                     label='STR')
 
 
@@ -380,7 +398,8 @@ def run_simple_net(
     print("Will simulate {} cells ({} segments) for {} seconds on MPI rank {}.".format(
             num_cell, num_segments, sim_dur, mpi_rank))
     tstart = time.time()
-    progress_file = os.path.expanduser('~/storage/{}_sim_progress.log'.format(
+    outdir, filespec = os.path.split(output)
+    progress_file = os.path.join(outdir, '{}_sim_progress.log'.format(
         datetime.fromtimestamp(tstart).strftime('%Y.%m.%d-%H.%M.%S')))
 
     report_interval = 50.0 # (ms) simulation time
@@ -447,10 +466,6 @@ def run_simple_net(
     ############################################################################
     if output is not None:
         outdir, extension = output.split('*')
-        # Some fileformats seem to take issue with non-existing directories
-        # if not os.path.exists(outdir):
-        #     os.makedirs(outdir)
-
         # gather() so execute on each rank
         for pop in all_pops.values():
             pop.write_data(
@@ -491,10 +506,11 @@ if __name__ == '__main__':
                         help='Enable graphical output')
     parser.set_defaults(with_gui=False)
 
-    parser.add_argument('-o', '--output', nargs='?', type=str,
-                        default=None,
+    parser.add_argument('-o', '--outdir', nargs='?', type=str,
+                        default='~/storage/',
                         dest='output',
-                        help='Output destination in format \'/outdir/*.ext\'')
+                        help='Output destination in format \'/outdir/*.ext\''
+                             ' or /path/to/outdir/ with trailing slash')
 
     parser.add_argument('-p', '--progress',
                         dest='report_progress', action='store_true',
@@ -506,18 +522,42 @@ if __name__ == '__main__':
                         dest='config_file',
                         help='Configuration file in JSON format')
 
+    parser.add_argument('-id', '--identifier', nargs=1, type=str,
+                        metavar='<job identifer>',
+                        dest='job_id',
+                        help='Job identifier to tag the simulation')
+
     args = parser.parse_args() # Namespace object
     parsed_dict = vars(args) # Namespace to dict
     
     # Post process output specifier
-    outspec = parsed_dict['output']
-    if outspec is None:
-        timestamp = time.time()
-        outspec = ('~/storage/*_{stamp}_pop{ncell}_dur{dur}.mat'.format(
-            ncell=parsed_dict['ncell_per_pop'],
-            dur=parsed_dict['sim_dur'],
-            stamp=datetime.fromtimestamp(timestamp).strftime('%Y.%m.%d-%H.%M.%S')))
-    parsed_dict['output'] = os.path.expanduser(outspec)
+    out_basedir = parsed_dict['output']
+    job_id = parsed_dict.pop('job_id')[0]
+    time_now = time.time()
+    timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d-%H.%M.%S')
+
+    # Default output directory
+    out_subdir = '{stamp}_pop-{ncell}_dur-{dur}_job-{job_id}'.format(
+                                            ncell=parsed_dict['ncell_per_pop'],
+                                            dur=parsed_dict['sim_dur'],
+                                            stamp=timestamp,
+                                            job_id=job_id)
+
+    # File names for data files
+    filespec = '*_{stamp}_pop-{ncell}_dur-{dur}_job-{job_id}.mat'.format(
+                                            ncell=parsed_dict['ncell_per_pop'],
+                                            dur=parsed_dict['sim_dur'],
+                                            stamp=timestamp,
+                                            job_id=job_id)
+    
+    # Make output directory if non-existing
+    out_basedir = os.path.expanduser(out_basedir)
+    if not os.path.isdir(out_basedir):
+        os.mkdir(out_basedir)
+    out_fulldir = os.path.join(out_basedir, out_subdir)
+    if not os.path.isdir(out_fulldir):
+        os.mkdir(out_fulldir)
+    parsed_dict['output'] = os.path.join(out_fulldir, filespec)
 
     # Parse config JSON file to dict
     config_file = os.path.expanduser(parsed_dict.pop('config_file')[0])
