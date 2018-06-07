@@ -57,8 +57,8 @@ def make_oscillatory_bursts(
     # Blend ISIs from two negexp distributions centered at intra- and
     # inter-burst firing rate, respectively
     T_intra, T_inter = 1e3/f_intra, 1e3/f_inter
-    intra_ISIs = rng.exponential(T_intra, size=int(5*max_dur/T_intra))
-    inter_ISIs = rng.exponential(T_inter, size=int(5*max_dur/T_inter))
+    intra_ISIs = rng.exponential(T_intra, size=max(10, int(5*max_dur/T_intra)))
+    inter_ISIs = rng.exponential(T_inter, size=max(10, int(5*max_dur/T_inter)))
     t = 0.0
     i_inter, i_intra = 0, 0
     while t < max_dur:
@@ -112,18 +112,18 @@ def make_variable_bursts(
     """
     if rng is None:
         rng = np.random
-
     # Blend ISIs from two negexp distributions centered at intra- and
     # inter-burst firing rate, respectively
     T_intra, T_inter = 1e3/f_intra, 1e3/f_inter
     
     # Pre-sample with safety margin of 5 (times faster than mean)
-    burst_IBIs = rng.exponential(T_burst, size=int(5*max_dur/T_burst))
-    burst_durs = rng.exponential(dur_burst, size=int(5*max_dur/dur_burst))
+    max_num_burst = int(5*max_dur/T_burst)
+    burst_IBIs = rng.exponential(T_burst, size=max(10, max_num_burst))
+    burst_durs = rng.exponential(dur_burst, size=max(10, max_num_burst))
     max_num_intra = int(5 * np.sum(burst_durs) / T_intra)
     max_num_inter = int(5 * np.sum(burst_IBIs) / T_inter)
-    intra_ISIs = rng.exponential(T_intra, size=max_num_intra)
-    inter_ISIs = rng.exponential(T_inter, size=max_num_inter)
+    intra_ISIs = rng.exponential(T_intra, size=max(10, max_num_intra))
+    inter_ISIs = rng.exponential(T_inter, size=max(10, max_num_inter))
     
     t_start_burst = burst_IBIs[0]
     t_end_burst = t_start_burst + burst_durs[0]
