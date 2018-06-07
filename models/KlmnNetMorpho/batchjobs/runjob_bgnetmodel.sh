@@ -58,36 +58,51 @@ The job name is                         $PBS_JOBNAME
 module load intel-mpi gcc anaconda
 source activate localpy27
 
-# Prepare commands to be executed
+# Get all the paths
 if [ -z "$outdir" ]; then
     outdir="~/storage"
 fi
-model_dir=/home/people/15203008/workspace/bgcellmodels/models/KlmnNetMorpho/
+
+model_dir="${HOME}/workspace/bgcellmodels/models/KlmnNetMorpho/"
 model_script=model_parameterized.py
 model="${model_dir}${model_script}"
 config_file="configs/${config}"
 model_config="${model_dir}${config_file}"
+
+# Command to be evaluated
 mpi_command="mpirun -n 24 python ${model} \
 -n ${ncell} -d ${dur} \
 -ng -p -c ${model_config} -o ${outdir} -id ${PBS_JOBID}"
-if [-n "$report" ]; then
-    # redirect stdout and stderr to file during execution
+
+# redirect stdout and stderr to file during execution
+if [ -n "$report" ]; then
     mpi_command="${mpi_command} > \
->(tee -a ${outdir}/${PBS_JOBID}_stdout.log) \
-2> >(tee -a ${outdir}/${PBS_JOBID}_stderr.log >&2)"
+>(tee -a ${HOME}/storage/${PBS_JOBID}_stdout.log) \
+2> >(tee -a ${HOME}/storage/${PBS_JOBID}_stderr.log >&2)"
 fi
+
+cd $model_dir
+
 # Sanity check
 echo -e "
+--------------------------------------------------------------------------------
 Executing script with following inputs:
 
 - ncell = ${ncell}
 - dur = ${dur}
 - outdir = ${outdir}
 
+--------------------------------------------------------------------------------
 The final command (following '> ') is:
 
 > $mpi_command
 
+--------------------------------------------------------------------------------
+Version information for model code:
+
+$(git log -1)
+
+--------------------------------------------------------------------------------
 The contents of the model configuration file is:
 
 "
@@ -100,5 +115,4 @@ Model output follows below line:
 "
 
 # Evaluate our command
-cd $model_dir
 eval $mpi_command
