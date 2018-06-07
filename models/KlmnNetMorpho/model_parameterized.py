@@ -30,6 +30,12 @@ from datetime import datetime
 
 import numpy as np
 
+# MPI support
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+mpi_size = comm.Get_size()
+mpi_rank = comm.Get_rank()
+
 # PyNN library
 import pyNN.neuron as sim
 from pyNN import space
@@ -64,6 +70,14 @@ from common import logutils, fileutils
 logutils.setLogLevel('quiet', ['bpop_ext'])
 
 
+def nprint(*args, **kwargs):
+    """
+    Print only on host with rank 0.
+    """
+    if mpi_rank == 0:
+        print(*args, **kwargs)
+
+
 def run_simple_net(
         ncell_per_pop   = 30,
         sim_dur         = 500.0,
@@ -86,8 +100,7 @@ def run_simple_net(
                 key 'simulation' for simulation parameters.
     """
 
-    mpi_rank = sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, 
-                         use_cvode=False)
+    sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, use_cvode=False)
     if mpi_rank == 0:
         init_logging(logfile=None, debug=True)
     
@@ -108,13 +121,6 @@ def run_simple_net(
     ############################################################################
     # LOCAL FUNCTIONS
     ############################################################################
-
-    def nprint(*args, **kwargs):
-        """
-        Print only on host with rank 0.
-        """
-        if mpi_rank == 0:
-            print(*args, **kwargs)
 
     params_global_context = globals()
 
@@ -426,8 +432,12 @@ def run_simple_net(
 
     tstop = time.time()
     cputime = tstop - tstart
-    nprint("Simulated {} segments for {} ms in {} ms CPU time".format(
-            num_segments, sim.state.tstop, cputime))
+    each_num_segments = comm.gather(num_segments, root=0)
+    if mpi_rank == 0:
+        # only rank 0 receives broadcast result
+        total_num_segments = sum(each_num_segments)
+        print("Simulated {} segments for {} ms in {} ms CPU time".format(
+                total_num_segments, sim.state.tstop, cputime))
 
 
     ############################################################################
@@ -538,9 +548,10 @@ if __name__ == '__main__':
         out_basedir = '~/storage'
     job_id = parsed_dict.pop('job_id')[0]
     time_now = time.time()
-    timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d-%H.%M.%S')
+    timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d')
 
     # Default output directory
+    # NOTE: don't use timestamp -> mpi ranks will make different filenames
     out_subdir = '{stamp}_pop-{ncell}_dur-{dur}_job-{job_id}'.format(
                                             ncell=parsed_dict['ncell_per_pop'],
                                             dur=parsed_dict['sim_dur'],
@@ -554,12 +565,14 @@ if __name__ == '__main__':
                                             stamp=timestamp,
                                             job_id=job_id)
     
-    # Make output directory if non-existing
+    # Make output directory if non-existing, but only on one host
     out_basedir = os.path.expanduser(out_basedir)
-    if not os.path.isdir(out_basedir):
+    if not os.path.isdir(out_basedir) and mpi_rank == 0:
         os.mkdir(out_basedir)
+
+    # Don't make directory with variable timestamp -> mpi ranks will make different
     out_fulldir = os.path.join(out_basedir, out_subdir)
-    if not os.path.isdir(out_fulldir):
+    if not os.path.isdir(out_fulldir) and mpi_rank == 0:
         os.mkdir(out_fulldir)
     parsed_dict['output'] = os.path.join(out_fulldir, filespec)
 
