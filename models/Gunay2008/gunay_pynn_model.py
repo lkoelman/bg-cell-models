@@ -86,7 +86,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         """
         Initialize synapses on this neuron.
 
-        @override   EphysModelWrapper.memb_init()
+        @override   EphysModelWrapper._init_synapses()
         """
         # Sample each region uniformly and place synapses there
         soma = self.icell.soma[0]
@@ -130,6 +130,10 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         for seg_index in distal_indices:
             syn = h.GLUsyn(distal_segments[seg_index])
             dist_glu_syns.append(dotdict(synapse=syn, used=0, mechanism='GLUsyn'))
+
+
+    def _update_position(self, xyz):
+        pass
 
 
     def get_threshold(self):

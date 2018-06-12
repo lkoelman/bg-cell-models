@@ -89,7 +89,9 @@ class TraceSpecRecorder(Recorder):
 
 
     def _record(self, variable, new_ids, sampling_interval=None):
-        """Add the cells in `new_ids` to the set of recorded cells."""
+        """
+        Add the cells in `new_ids` to the set of recorded cells.
+        """
         if variable == 'spikes':
             for id in new_ids:
                 if id._cell.rec is not None:
@@ -134,6 +136,9 @@ class TraceSpecRecorder(Recorder):
         elif trace_spec == 'spikes':
             cell.rec.record(cell.spike_times)
             return # was implemented in _record() -> don't execute rest of body
+
+        elif trace_spec == 'lfp':
+            hoc_var = cell.lfp # pointer must be set in cell model
         
         elif isinstance(trace_spec, str):
             source, var_name = self._resolve_variable(cell, trace_spec)

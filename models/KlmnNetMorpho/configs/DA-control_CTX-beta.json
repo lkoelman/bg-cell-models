@@ -167,6 +167,7 @@
 // =============================================================================
     "STN": {
         "v_init": -63.0,
+        "calculate_lfp": false,
         "grid_dx": {
             "statement": "grid_dx",
             "locals": null, // null/None means from surrounding context
@@ -279,7 +280,7 @@
                     "tau_r_AMPA":   1.0, // [ms] rise time
                     "tau_d_AMPA":   4.0, // [ms] decay time
                     // NMDA receptor
-                    "gmax_NMDA":    7-3, // [uS], adjusted for U1
+                    "gmax_NMDA":    7e-3, // [uS], adjusted for U1
                     "tau_r_NMDA":   3.7,    // [ms] rise time
                     "tau_d_NMDA":   80.0,   // [ms] decay time
                 }

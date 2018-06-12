@@ -31,6 +31,9 @@ from extensions.pynn.ephys_locations import SomaDistanceRangeLocation
 from common.stdutil import dotdict
 from common import treeutils, logutils
 
+import lfpsim
+
+
 # Debug messages
 logutils.setLogLevel('quiet', [
     'bluepyopt.ephys.parameters', 
@@ -87,6 +90,14 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     # _ephys_locations = define_locations()
     regions = ['proximal', 'distal']
 
+    parameter_names = [
+        'calculate_lfp',
+        'lfp_sigma_extracellular',
+        'lfp_electrode_x',
+        'lfp_electrode_y',
+        'lfp_electrode_z',
+    ]
+
 
     def instantiate(self, sim=None):
         """
@@ -121,7 +132,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         """
         Initialize synapses on this neuron.
 
-        @override   EphysModelWrapper.memb_init()
+        @override   EphysModelWrapper._init_synapses()
         """
         # Sample each region uniformly and place synapses there
         soma = self.icell.soma[0]
@@ -167,6 +178,58 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
             dist_glu_syns.append(dotdict(synapse=syn, used=0, mechanism='GLUsyn'))
 
 
+    def _init_lfp(self):
+        """
+        Initialize LFP sources for this cell.
+
+        @pre        Named parameter 'lfp_electrode_coords' must be passed
+                    to cell
+
+        @return     lfp_tracker : nrn.POINT_PROCESS
+                    Object with recordable variable 'summed' that represents 
+                    the cell's summed LFP contributions
+        """
+        if not self.calculate_lfp:
+            self.lfp = None
+        else:
+            # define_shape() called in _update_position()
+            # h.define_shape(sec=self.icell.soma[0])
+            coords = h.Vector([self.lfp_electrode_x, 
+                               self.lfp_electrode_y,
+                               self.lfp_electrode_z])
+            sigma = self.lfp_sigma_extracellular
+
+            # Insert mechanisms for LFP calculation
+            self.lfp_summator = h.insert_lfp_summator(self.source_section)
+            h.add_lfp_sources(self.lfp_summator, "PSA", sigma, coords, 
+                              self.icell.somatic, self.icell.basal)
+            self.lfp = self.lfp_summator._ref_summed # recordable variable
+
+
+    def _update_position(self, xyz):
+        """
+        Called when the cell's position is changed, e.g. when changing 
+        the space/structure of the parent Population.
+
+        @effect     Adds xyz to all coordinates of the root sections and then
+                    calls h.define_shape() so that whole tree is translated.
+        """
+        if self.calculate_lfp:
+            # translate the root section and re-define shape to translate entire cell
+            source_ref = h.SectionRef(sec=self.source_section)
+            root_sec = source_ref.root # pushes section
+            h.pop_section()
+
+            # initial define shape to make sure 3D info is present
+            h.define_shape(sec=root_sec)
+
+            for i in range(int(h.n3d(sec=root_sec))):
+                h.pt3dchange(i, xyz[0], xyz[1], xyz[2], h.diam3d(i, sec=root_sec))
+
+            # redefine shape to translate tree based on updated root position
+            h.define_shape(sec=root_sec)
+
+
     def get_threshold(self):
         """
         Get spike threshold for soma membrane potential (used for NetCon)
@@ -183,9 +246,17 @@ class StnCellType(ephys_pynn.EphysCellType):
     # The encapsualted model available as class attribute 'model'
     model = StnCellModel
 
-    default_parameters = {}
+    default_parameters = {
+        'calculate_lfp': False,
+        'lfp_sigma_extracellular': 0.3,
+        'lfp_electrode_x': 100.0,
+        'lfp_electrode_y': 100.0,
+        'lfp_electrode_z': 100.0,
+        # 'lfp_electrode_coords': [100.0, 100.0, 100.0]
+    }
     # extra_parameters = {}
     # default_initial_values = {'v': -65.0}
+    # recordable = ['spikes', 'v', 'lfp']
 
     # Combined with self.model.regions by EphysCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',

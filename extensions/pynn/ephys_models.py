@@ -71,7 +71,7 @@ class EphysCellType(NativeCellType):
     units = UnitFetcherPlaceHolder()
 
 
-    def __init__(self, extra_receptors=None):
+    def __init__(self, **kwargs):
         """
         The instantated cell type is passed to Population.
 
@@ -84,7 +84,8 @@ class EphysCellType(NativeCellType):
                     updated with each receptor in 'with_receptors' for every
                     cell location/region.
         """
-        super(EphysCellType, self).__init__()
+        extra_receptors = kwargs.pop('extra_receptors', None)
+        super(EphysCellType, self).__init__(**kwargs)
 
         # Combine receptors defined on the cell type with regions
         # defined on the model class
@@ -124,7 +125,7 @@ class CellModelMeta(type):
         # Process mechanism variables declared in class definition
         # modified_bases = tuple(list(new_class_bases) + [ephys.models.CellModel])
         
-        parameter_names = [] # for pyNN
+        parameter_names = new_class_namespace.get("parameter_names", [])
         
         for e_param in new_class_namespace.get("_ephys_parameters", []):
             param_name = e_param.name
@@ -199,11 +200,10 @@ class EphysModelWrapper(ephys.models.CellModel):
     this class instantiates the cell in its __init__ method.
 
 
-    @note   Called by ID._build_cell(...) defined in
+    @note   Called by ID._build_cell() defined in
                 https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
             
-            Retrieved from Population.cell_type.model, instantiated as
-            model(**cell_parameters) and assigned to ID._cell
+            ID._cell = Population.cell_type.model(**cell_parameters)
 
 
     @see    Based on definition of SimpleNeuronType and standardized cell types in:
@@ -337,9 +337,9 @@ class EphysModelWrapper(ephys.models.CellModel):
 
         # NOTE: default params will be passed by pyNN Population
         for param_name, param_value in kwargs.iteritems():
-            # Ephys parameters already set in instantiate()
-            if (param_name in self.params) and \
-                (self.params[param_name].value == param_value):
+            # - self.params are the Ephys parameters
+            # - these are already set in instantiate() so don't set again
+            if (param_name in self.params) and (self.params[param_name].value == param_value):
                 continue
             elif param_name in self.parameter_names:
                 setattr(self, param_name, param_value)
@@ -360,7 +360,10 @@ class EphysModelWrapper(ephys.models.CellModel):
         self.spike_times = h.Vector(0) # see pyNN.neuron.recording.Recorder._record()
         self.traces = {}
         self.recording_time = False
-        # self.parameter_names = ... set in metaclass
+        # self.parameter_names = (set in subclass body & metaclass)
+
+        # NOTE: _init_lfp() is called by our custom Population class after
+        #       updating each cell's position
 
 
     def memb_init(self):
@@ -399,6 +402,44 @@ class EphysModelWrapper(ephys.models.CellModel):
                     { region: {receptors: list({ 'synapse':syn, 'used':int }) } }
         """
         raise NotImplementedError("Subclass should place synapses in dendritic tree.")
+
+
+    def _init_lfp(self):
+        """
+        Initialize LFP sources for this cell.
+        Override in subclass to implement this.
+
+        @return     lfp_tracker : nrn.POINT_PROCESS
+                    Object with recordable variable that represents the cell's
+                    summed LFP contributions
+        """
+        return None
+
+
+    def _update_position(self, xyz):
+        """
+        Called when the cell's position is changed, e.g. when changing 
+        the space/structure of the parent Population.
+
+        @effect     Adds xyz to all coordinates of the root sections and then
+                    calls h.define_shape() so that whole tree is translated.
+        """
+
+        # # translate the root section and re-define shape to translate entire cell
+        # source_ref = h.SectionRef(sec=self.source_section)
+        # root_sec = source_ref.root # pushes section
+        # h.pop_section()
+
+        # # initial define shape to make sure 3D info is present
+        # h.define_shape(sec=root_sec)
+
+        # for i in range(int(h.n3d(sec=root_sec))):
+        #     h.pt3dchange(i, xyz[0], xyz[1], xyz[2], h.diam3d(i, sec=root_sec))
+
+        # # redefine shape to translate tree based on updated root position
+        # h.define_shape(sec=root_sec)
+
+        raise NotImplementedError("Subclass should update cell position.")
 
 
     def get_synapse_list(self, region, receptors):

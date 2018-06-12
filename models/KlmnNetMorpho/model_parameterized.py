@@ -44,9 +44,12 @@ from pyNN.utility import init_logging # connection_plot is bugged
 
 # Custom PyNN extensions
 from extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
-from extensions.pynn.recording import TraceSpecRecorder
 from extensions.pynn.utility import connection_plot
-sim.Population._recorder_class = TraceSpecRecorder
+from extensions.pynn.populations import Population
+
+# Monkey-patching of pyNN.neuron.Population class
+# from extensions.pynn.recording import TraceSpecRecorder
+# sim.Population._recorder_class = TraceSpecRecorder
 
 # Custom NEURON mechanisms
 script_dir = os.path.dirname(__file__)
@@ -162,17 +165,19 @@ def run_simple_net(
     print("{} start phase: POPULATIONS.".format(mpi_rank))
 
     # STN cell population
-    stn_dx, = get_pop_parameters('STN', 'grid_dx')
+    stn_dx, calculate_lfp = get_pop_parameters('STN', 'grid_dx', 'calculate_lfp')
     stn_grid = space.Line(x0=0.0, dx=stn_dx,
                           y=0.0, z=0.0)
     
-    stn_type = gillies.StnCellType()
+    stn_type = gillies.StnCellType(
+                        calculate_lfp=calculate_lfp,
+                        lfp_sigma_extracellular=0.3)
 
     ncell_stn = ncell_per_pop
-    pop_stn = sim.Population(ncell_stn, 
-                             cellclass=stn_type, 
-                             label='STN',
-                             structure=stn_grid)
+    pop_stn = Population(ncell_stn, 
+                         cellclass=stn_type, 
+                         label='STN',
+                         structure=stn_grid)
     
     pop_stn.initialize(v=-63.0)
 
@@ -185,10 +190,10 @@ def run_simple_net(
     gpe_type = gunay.GPeCellType()
 
     ncell_gpe = ncell_per_pop
-    pop_gpe = sim.Population(ncell_gpe, 
-                             cellclass=gpe_type,
-                             label='GPE',
-                             structure=gpe_grid)
+    pop_gpe = Population(ncell_gpe, 
+                         cellclass=gpe_type,
+                         label='GPE',
+                         structure=gpe_grid)
 
     pop_gpe.initialize(v=-63.0)
 
@@ -216,10 +221,10 @@ def run_simple_net(
             return sequence_gen()
     
 
-    pop_ctx = sim.Population(
-                    ncell_per_pop,
-                    sim.SpikeSourceArray(spike_times=spiketimes_for_ctx),
-                    label='CTX')
+    pop_ctx = Population(
+                ncell_per_pop,
+                sim.SpikeSourceArray(spike_times=spiketimes_for_ctx),
+                label='CTX')
 
 
     # STR spike sources
@@ -243,18 +248,18 @@ def run_simple_net(
         else:
             return sequence_gen()
     
-    pop_str = sim.Population(
-                    ncell_per_pop, 
-                    sim.SpikeSourceArray(spike_times=spiketimes_for_str),
-                    label='STR')
+    pop_str = Population(
+                ncell_per_pop, 
+                sim.SpikeSourceArray(spike_times=spiketimes_for_str),
+                label='STR')
 
 
     # Noise sources
     # noise_gpe = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=50.0),
     #                 label='NOISE')
 
-    all_pops = {pop.label : pop for pop in [pop_gpe, pop_stn, pop_ctx, pop_str]}
-    all_proj = {pop.label : {} for pop in [pop_gpe, pop_stn, pop_ctx, pop_str]}
+    all_pops = {pop.label : pop for pop in Population.all_populations}
+    all_proj = {pop.label : {} for pop in Population.all_populations}
 
     ############################################################################
     # CONNECTIONS
@@ -390,6 +395,9 @@ def run_simple_net(
 
     for pop in all_pops.values():
         pop.record(['spikes'], sampling_interval=.05)
+
+    if calculate_lfp:
+        pop_stn.record('lfp', sampling_interval=.05)
 
     
     ############################################################################
