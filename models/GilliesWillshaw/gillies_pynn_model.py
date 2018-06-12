@@ -224,7 +224,8 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
             h.define_shape(sec=root_sec)
 
             for i in range(int(h.n3d(sec=root_sec))):
-                h.pt3dchange(i, xyz[0], xyz[1], xyz[2], h.diam3d(i, sec=root_sec))
+                diam = h.diam3d(i, sec=root_sec)
+                h.pt3dchange(i, xyz[0], xyz[1], xyz[2], diam, sec=root_sec)
 
             # redefine shape to translate tree based on updated root position
             h.define_shape(sec=root_sec)

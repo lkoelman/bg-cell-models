@@ -397,7 +397,7 @@ def run_simple_net(
         pop.record(['spikes'], sampling_interval=.05)
 
     if calculate_lfp:
-        pop_stn.record('lfp', sampling_interval=.05)
+        pop_stn.record(['lfp'], sampling_interval=.05)
 
     
     ############################################################################

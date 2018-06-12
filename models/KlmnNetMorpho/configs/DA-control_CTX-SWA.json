@@ -167,7 +167,7 @@
 // =============================================================================
     "STN": {
         "v_init": -63.0,
-        "calculate_lfp": false,
+        "calculate_lfp": true,
         "grid_dx": {
             "statement": "grid_dx",
             "locals": null, // null/None means from surrounding context
