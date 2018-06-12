@@ -27,9 +27,10 @@
         // Beta centered at 20 Hz
         // 50ms between triplets/doublets at 150 Hz?
         "T_burst": 50.0,
-        "dur_burst": 20.0,
+        "dur_burst": 10.0,
         "f_intra": 150.0,
         "f_inter": 5.0,
+        "synchronous": true,
     },
 // =============================================================================
 // STR Population Parameters
@@ -274,11 +275,11 @@
                     "tau_rec":      200.0, // [ms] recovery from STD
                     "tau_facil":    800.0, // [ms] recovery from facilitation
                     // AMPA receptor
-                    "gmax_AMPA":    13.76e-3, // [uS], adjusted for U1
+                    "gmax_AMPA":    7e-3, // [uS], adjusted for U1
                     "tau_r_AMPA":   1.0, // [ms] rise time
                     "tau_d_AMPA":   4.0, // [ms] decay time
                     // NMDA receptor
-                    "gmax_NMDA":    14e-3, // [uS], adjusted for U1
+                    "gmax_NMDA":    7e-3, // [uS], adjusted for U1
                     "tau_r_NMDA":   3.7,    // [ms] rise time
                     "tau_d_NMDA":   80.0,   // [ms] decay time
                 }

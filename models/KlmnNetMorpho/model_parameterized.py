@@ -194,8 +194,8 @@ def run_simple_net(
 
 
     # CTX spike sources
-    T_burst, dur_burst, f_intra, f_inter = get_pop_parameters(
-        'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter')
+    T_burst, dur_burst, f_intra, f_inter, synchronous = get_pop_parameters(
+        'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'synchronous')
     
     def spiketimes_for_ctx(i):
         """
@@ -203,8 +203,9 @@ def run_simple_net(
 
         (taken from PyNN examples -> returns pyNN.Sequence generator)
         """
+        spike_gen = make_oscillatory_bursts if synchronous else make_variable_bursts
         def sequence_gen():
-            burst_gen = make_oscillatory_bursts(
+            burst_gen = spike_gen(
                 T_burst, dur_burst, f_intra, f_inter,
                 rng=np_seeded_rng, max_dur=sim_dur)
             bursty_spikes = np.fromiter(burst_gen, float)

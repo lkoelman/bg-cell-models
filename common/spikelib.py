@@ -63,13 +63,21 @@ def make_oscillatory_bursts(
     i_inter, i_intra = 0, 0
     while t < max_dur:
         j = t // T_burst # we are in the j-th cycle
-        if j*T_burst <= t < (j*T_burst) + dur_burst:
+        t0_cycle = j * T_burst
+        in_burst = (t0_cycle <= t < (t0_cycle + dur_burst))
+        if in_burst:
             t += intra_ISIs[i_intra]
             i_intra += 1
             yield t
         else:
-            t += inter_ISIs[i_inter]
-            i_inter += 1
+            # Make sure we don't overshoot next burst period
+            end_cycle = t0_cycle + T_burst 
+            if t + inter_ISIs[i_inter] < (end_cycle + 0.5*dur_burst):
+                t += inter_ISIs[i_inter]
+                i_inter += 1
+            else:
+                # if ISI overshot burst period: pick time in first half of next burst
+                t = end_cycle + 0.5*dur_burst*rng.uniform(0,1)
             yield t
 
 
@@ -156,4 +164,24 @@ def make_variable_bursts(
             t_start_burst += burst_IBIs[i_IBI]
             continue
             
-            
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+
+    # Test synchronized bursts
+    T_burst, dur_burst, f_intra, f_inter = 50.0, 10.0, 150.0, 5.0
+    num_spiketrains = 10
+    fig, ax = plt.subplots()
+    for i in range(num_spiketrains):
+
+        burst_gen = make_oscillatory_bursts(
+                        T_burst, dur_burst, f_intra, f_inter,
+                        rng=np.random, max_dur=5e3)
+        
+        spiketimes = np.fromiter(burst_gen, float)
+
+        y_vec = np.ones_like(spiketimes) * i
+        ax.plot(spiketimes, y_vec, marker='|', linestyle='', snap=True)
+
+    ax.set_title("Synchronous bursts")
+    ax.grid(True)
+    plt.show(block=False)
