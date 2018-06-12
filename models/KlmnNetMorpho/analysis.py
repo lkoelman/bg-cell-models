@@ -146,10 +146,31 @@ if __name__ == '__main__':
                         dest='output_path',
                         help='Output file or directory')
 
+    parser.add_argument('-e', '--ext', nargs=1, type=str,
+                        metavar='.ext',
+                        dest='extension',
+                        default=['.mat'],
+                        help='File extension, e.g. .mat')
+
+    parser.add_argument('-n', '--nsig', nargs=1, type=int,
+                        metavar='<max_num_signals>',
+                        default=[10],
+                        dest='nsig', help='Number of signal to plot')
+
+    parser.add_argument('-t', '--trange', nargs=2, type=float,
+                        default=[1e3, 5e3],
+                        dest='trange', help='Time interval to plot')
+
     args = parser.parse_args() # Namespace object
     parsed_dict = vars(args) # Namespace to dict
 
     # Read and plot the data
-    pops_segments = read_populaton_segments(parsed_dict['output_path'])
+    pops_segments = read_populaton_segments(
+        parsed_dict['output_path'][0],
+        read_ext=parsed_dict['extension'][0])
+    
     plot_population_spikes(pops_segments)
-    plot_population_signals(pops_segments)
+    plot_population_signals(
+        pops_segments, 
+        max_num_signals=parsed_dict['nsig'][0],
+        time_range=parsed_dict['trange'])

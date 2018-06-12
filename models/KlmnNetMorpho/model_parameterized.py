@@ -252,7 +252,7 @@ def run_simple_net(
     # noise_gpe = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=50.0),
     #                 label='NOISE')
 
-    all_pops = {pop.label : pop for pop in [pop_gpe, pop_stn, pop_ctx]}
+    all_pops = {pop.label : pop for pop in [pop_gpe, pop_stn, pop_ctx, pop_str]}
     all_proj = {pop.label : {} for pop in [pop_gpe, pop_stn, pop_ctx, pop_str]}
 
     ############################################################################
