@@ -201,7 +201,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
             # Insert mechanisms for LFP calculation
             self.lfp_summator = h.insert_lfp_summator(self.source_section)
-            h.add_lfp_sources(self.lfp_summator, "PSA", sigma, coords, 
+            h.add_lfp_sources(self.lfp_summator, True, "PSA", sigma, coords, 
                               self.icell.somatic, self.icell.basal)
             self.lfp = self.lfp_summator._ref_summed # recordable variable
 

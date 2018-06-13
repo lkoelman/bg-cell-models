@@ -103,24 +103,6 @@ def run_simple_net(
                 key 'simulation' for simulation parameters.
     """
 
-    sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, use_cvode=False)
-    if mpi_rank == 0:
-        init_logging(logfile=None, debug=True)
-    
-
-    print("""\nRunning net on MPI rank {} with following settings:
-    - ncell_per_pop = {}
-    - sim_dur = {}
-    - output = {}""".format(mpi_rank, ncell_per_pop, sim_dur, output))
-    
-    print("\nThis is node {} ({} of {})\n".format(
-          sim.rank(), sim.rank() + 1, sim.num_processes()))
-
-    h = sim.h
-    seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
-    np_seeded_rng = np.random.RandomState(seed)
-
-
     ############################################################################
     # LOCAL FUNCTIONS
     ############################################################################
@@ -158,6 +140,35 @@ def run_simple_net(
         con_pvals = eval_params(con_params, params_global_context, local_context)
         return connector_class(**con_pvals)
 
+
+    ############################################################################
+    # SIMULATOR SETUP
+    ############################################################################
+
+    sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, use_cvode=False)
+    if mpi_rank == 0:
+        init_logging(logfile=None, debug=True)
+    
+
+    print("""\nRunning net on MPI rank {} with following settings:
+    - ncell_per_pop = {}
+    - sim_dur = {}
+    - output = {}""".format(mpi_rank, ncell_per_pop, sim_dur, output))
+    
+    print("\nThis is node {} ({} of {})\n".format(
+          sim.rank(), sim.rank() + 1, sim.num_processes()))
+
+    h = sim.h
+
+    # Set random generator seed
+    seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
+    np_seeded_rng = np.random.RandomState(seed)
+    
+    # Set NEURON integrator/solver options
+    calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
+    if calculate_lfp:
+        sim.state.cvode.use_fast_imem(True)
+
     ############################################################################
     # POPULATIONS
     ############################################################################
@@ -165,15 +176,18 @@ def run_simple_net(
     print("{} start phase: POPULATIONS.".format(mpi_rank))
 
     # STN cell population
-    stn_dx, calculate_lfp = get_pop_parameters('STN', 'grid_dx', 'calculate_lfp')
+    stn_dx, = get_pop_parameters('STN', 'grid_dx')
     stn_grid = space.Line(x0=0.0, dx=stn_dx,
                           y=0.0, z=0.0)
+    ncell_stn = ncell_per_pop
     
     stn_type = gillies.StnCellType(
                         calculate_lfp=calculate_lfp,
-                        lfp_sigma_extracellular=0.3)
+                        lfp_sigma_extracellular=0.3,
+                        lfp_electrode_x=stn_dx*ncell_stn*0.5,
+                        lfp_electrode_y=0.0,
+                        lfp_electrode_z=500.0)
 
-    ncell_stn = ncell_per_pop
     pop_stn = Population(ncell_stn, 
                          cellclass=stn_type, 
                          label='STN',
