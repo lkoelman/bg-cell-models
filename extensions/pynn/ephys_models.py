@@ -413,7 +413,7 @@ class EphysModelWrapper(ephys.models.CellModel):
                     Object with recordable variable that represents the cell's
                     summed LFP contributions
         """
-        return None
+        pass
 
 
     def _update_position(self, xyz):
@@ -424,21 +424,6 @@ class EphysModelWrapper(ephys.models.CellModel):
         @effect     Adds xyz to all coordinates of the root sections and then
                     calls h.define_shape() so that whole tree is translated.
         """
-
-        # # translate the root section and re-define shape to translate entire cell
-        # source_ref = h.SectionRef(sec=self.source_section)
-        # root_sec = source_ref.root # pushes section
-        # h.pop_section()
-
-        # # initial define shape to make sure 3D info is present
-        # h.define_shape(sec=root_sec)
-
-        # for i in range(int(h.n3d(sec=root_sec))):
-        #         diam = h.diam3d(i, sec=root_sec)
-        #         h.pt3dchange(i, xyz[0], xyz[1], xyz[2], diam, sec=root_sec)
-
-        # # redefine shape to translate tree based on updated root position
-        # h.define_shape(sec=root_sec)
 
         raise NotImplementedError("Subclass should update cell position.")
 

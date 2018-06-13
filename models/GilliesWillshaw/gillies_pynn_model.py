@@ -217,18 +217,25 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         if self.calculate_lfp:
             # translate the root section and re-define shape to translate entire cell
             source_ref = h.SectionRef(sec=self.source_section)
-            root_sec = source_ref.root # pushes section
-            h.pop_section()
+            root_sec = source_ref.root
+            # root_sec = self.icell.soma[0]
+            root_sec.push() # 3D functions operate on CAS
 
             # initial define shape to make sure 3D info is present
             h.define_shape(sec=root_sec)
+            root_origin = [h.x3d(0), h.y3d(0), h.z3d(0)]
 
-            for i in range(int(h.n3d(sec=root_sec))):
-                diam = h.diam3d(i, sec=root_sec)
-                h.pt3dchange(i, xyz[0], xyz[1], xyz[2], diam, sec=root_sec)
+            # Translate each point of root_sec so that first point is at xyz
+            for i in range(int(h.n3d())):
+                h.pt3dchange(i,
+                    xyz[0]-root_origin[0]+h.x3d(i),
+                    xyz[1]-root_origin[1]+h.y3d(i),
+                    xyz[2]-root_origin[2]+h.z3d(i),
+                    h.diam3d(i))
 
             # redefine shape to translate tree based on updated root position
             h.define_shape(sec=root_sec)
+            h.pop_section()
 
 
     def get_threshold(self):
