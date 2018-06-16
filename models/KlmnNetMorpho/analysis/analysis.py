@@ -10,7 +10,7 @@ import neo.io
 # import common.analysis as sigplot
 
 
-def read_populaton_segments(outputs, is_directory=True, i_segment=0, read_ext=None):
+def read_population_segments(outputs, is_directory=True, i_segment=0, read_ext=None):
     """
     Read Neo IO data into a dictionary mapping the population label
     to the first segment.
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     parsed_dict = vars(args) # Namespace to dict
 
     # Read and plot the data
-    pops_segments = read_populaton_segments(
+    pops_segments = read_population_segments(
         parsed_dict['output_path'][0],
         read_ext=parsed_dict['extension'][0])
     

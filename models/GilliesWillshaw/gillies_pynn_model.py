@@ -23,8 +23,7 @@ os.chdir(script_dir)
 h.xopen("gillies_createcell.hoc") # instantiates all functions & data structures on Hoc object
 os.chdir(prev_cwd)
 
-# from pyNN.standardmodels import StandardCellType
-from pyNN.neuron.cells import NativeCellType
+import pyNN.neuron as sim
 
 import extensions.pynn.ephys_models as ephys_pynn
 from extensions.pynn.ephys_locations import SomaDistanceRangeLocation
@@ -128,6 +127,13 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
             h.ion_style("ca_ion",3,2,1,1,1, sec=sec)
 
 
+    def get_threshold(self):
+        """
+        Get spike threshold for soma membrane potential (used for NetCon)
+        """
+        return -10.0
+
+
     def _init_synapses(self):
         """
         Initialize synapses on this neuron.
@@ -178,6 +184,44 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
             dist_glu_syns.append(dotdict(synapse=syn, used=0, mechanism='GLUsyn'))
 
 
+    def _update_position(self, xyz):
+        """
+        Called when the cell's position is changed, e.g. when changing 
+        the space/structure of the parent Population.
+
+        @effect     Adds xyz to all coordinates of the root sections and then
+                    calls h.define_shape() so that whole tree is translated.
+        """
+        if self.calculate_lfp:
+            # translate the root section and re-define shape to translate entire cell
+            # source_ref = h.SectionRef(sec=self.source_section)
+            # root_sec = source_ref.root
+            root_sec = self.icell.soma[0]
+            # root_sec.push() # 3D functions operate on CAS
+
+            def get_coordinate(i, sec):
+                return [h.x3d(i, sec=sec), h.y3d(i, sec=sec), h.z3d(i, sec=sec)]
+
+            # initial define shape to make sure 3D info is present
+            h.define_shape(sec=root_sec)
+            # root_origin = get_coordinate(0, root_sec)
+
+            # FIXME: uncomment cell position update after test
+            # # Translate each point of root_sec so that first point is at xyz
+            # for i in range(int(h.n3d(sec=root_sec))):
+            #     old_xyz = get_coordinate(i, root_sec)
+            #     old_diam = h.diam3d(i, sec=root_sec)
+            #     h.pt3dchange(i,
+            #         xyz[0]-root_origin[0]+old_xyz[0],
+            #         xyz[1]-root_origin[1]+old_xyz[0],
+            #         xyz[2]-root_origin[2]+old_xyz[0],
+            #         old_diam)
+
+            # # redefine shape to translate tree based on updated root position
+            # h.define_shape(sec=root_sec)
+            # # h.pop_section()
+
+
     def _init_lfp(self):
         """
         Initialize LFP sources for this cell.
@@ -191,58 +235,66 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         """
         if not self.calculate_lfp:
             self.lfp = None
-        else:
-            # define_shape() called in _update_position()
-            # h.define_shape(sec=self.icell.soma[0])
-            coords = h.Vector([self.lfp_electrode_x, 
-                               self.lfp_electrode_y,
-                               self.lfp_electrode_z])
-            sigma = self.lfp_sigma_extracellular
+            return
+        
+        # define_shape() called in _update_position()
+        # h.define_shape(sec=self.icell.soma[0])
+        coords = h.Vector([self.lfp_electrode_x, 
+                           self.lfp_electrode_y,
+                           self.lfp_electrode_z])
+        sigma = self.lfp_sigma_extracellular
 
-            # Insert mechanisms for LFP calculation
-            self.lfp_summator = h.insert_lfp_summator(self.source_section)
-            h.add_lfp_sources(self.lfp_summator, True, "PSA", sigma, coords, 
-                              self.icell.somatic, self.icell.basal)
-            self.lfp = self.lfp_summator._ref_summed # recordable variable
+        # Method A: using LFP summator object (FIXME: MPI problems)
+        self.lfp_tracker = h.LfpTracker(
+                                self.icell.soma[0], True, "PSA", sigma, 
+                                coords, self.icell.somatic, self.icell.basal)
+        # self.lfp_summator = self.lfp_tracker.summator
+        # self.lfp = self.lfp_summator._ref_summed
 
-
-    def _update_position(self, xyz):
-        """
-        Called when the cell's position is changed, e.g. when changing 
-        the space/structure of the parent Population.
-
-        @effect     Adds xyz to all coordinates of the root sections and then
-                    calls h.define_shape() so that whole tree is translated.
-        """
-        if self.calculate_lfp:
-            # translate the root section and re-define shape to translate entire cell
-            source_ref = h.SectionRef(sec=self.source_section)
-            root_sec = source_ref.root
-            # root_sec = self.icell.soma[0]
-            root_sec.push() # 3D functions operate on CAS
-
-            # initial define shape to make sure 3D info is present
-            h.define_shape(sec=root_sec)
-            root_origin = [h.x3d(0), h.y3d(0), h.z3d(0)]
-
-            # Translate each point of root_sec so that first point is at xyz
-            for i in range(int(h.n3d())):
-                h.pt3dchange(i,
-                    xyz[0]-root_origin[0]+h.x3d(i),
-                    xyz[1]-root_origin[1]+h.y3d(i),
-                    xyz[2]-root_origin[2]+h.z3d(i),
-                    h.diam3d(i))
-
-            # redefine shape to translate tree based on updated root position
-            h.define_shape(sec=root_sec)
-            h.pop_section()
+        # Method B: using PointerVector like in NetPyne
+        # self.lfp_contrib_seclists = [self.icell.somatic, self.icell.basal]
+        # num_lfp_segments = sum((sec.nseg for sl in self.lfp_contrib_seclists for sec in sl))
+        # self.lfp_imemb_ptr = h.PtrVector(num_lfp_segments)
+        # self.lfp_imemb_ptr.ptr_update_callback(self._set_imemb_ptr)
+        # self.lfp_imemb_vec = h.Vector(num_lfp_segments)
+        # self.lfp_imemb_factors = h.calc_lfp_factors(True, "PSA", sigma, coords, 
+        #     self.icell.somatic, self.icell.basal).as_numpy()
+        # self.traces['lfp'] = np.empty(int(sim.state.duration/sim.state.rec_dt))
 
 
-    def get_threshold(self):
-        """
-        Get spike threshold for soma membrane potential (used for NetCon)
-        """
-        return -10.0
+#    def _set_imemb_ptr(self):
+#        """
+#        Update pointers to segment i_membrane_ variable.
+#        """
+#        # TODO: write function in lfp_lib.hoc that keeps pointers coherent
+#        i_seg = 0
+#        for seclist in self.lfp_contrib_seclists:
+#            for sec in seclist:
+#                for seg in sec:
+#                    self.lfp_imemb_ptr.pset(i_seg, seg._ref_i_membrane_)
+#                    i_seg += 1
+#
+#
+#    def _get_imemb_vec(self):
+#        """
+#        Get vector of membrane currents at this time.
+#
+#        @return     imemb_vec : numpy.array
+#                    Array with membrane current values for all tracked segments.
+#        """
+#        # The variable values pointed to by the PtrVector are copied into the destination Vector.
+#        self.lfp_imemb_ptr.gather(self.lfp_imemb_vec)
+#        return self.lfp_imemb_vec.as_numpy()
+#
+#
+#    def _calculate_lfp(self):
+#        """
+#        Calculate total LFP for cell from its membrance current contributions.
+#        """
+#        i_membs = self._get_imemb_vec()
+#        save_step = int(sim.state.t / sim.state.rec_dt)
+#        self.traces['lfp'][save_step-1] = np.dot(i_membs, self.lfp_imemb_factors)
+
 
 
 class StnCellType(ephys_pynn.EphysCellType):

@@ -364,6 +364,7 @@ class EphysModelWrapper(ephys.models.CellModel):
 
         # NOTE: _init_lfp() is called by our custom Population class after
         #       updating each cell's position
+        # self._init_lfp()
 
 
     def memb_init(self):

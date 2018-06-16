@@ -103,6 +103,13 @@ def run_simple_net(
                 key 'simulation' for simulation parameters.
     """
 
+    # TODO: try non-random STN->GPE and GPE->STN projection patterns
+    # TODO: save connectivity matrices to file
+    # TODO: add units to recordings
+    # TODO: fix bugged LFP signal
+    #       - try not moving STN cells, all on same location and same distance
+    #         to electrode as in notebook
+
     ############################################################################
     # LOCAL FUNCTIONS
     ############################################################################
@@ -111,7 +118,7 @@ def run_simple_net(
 
     def get_pop_parameters(pop, *param_names):
         """
-        Get parameter for population.
+        Get parameter for population from config dict.
         """
         local_context = config[pop].get('local_context', {})
         param_specs = getdictvals(config[pop], *param_names, as_dict=True)
@@ -159,6 +166,9 @@ def run_simple_net(
           sim.rank(), sim.rank() + 1, sim.num_processes()))
 
     h = sim.h
+    sim.state.duration = sim_dur # not used by PyNN, only by our custom funcs
+    sim.state.rec_dt = 0.05
+    finit_handlers = []
 
     # Set random generator seed
     seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
@@ -168,6 +178,7 @@ def run_simple_net(
     calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
     if calculate_lfp:
         sim.state.cvode.use_fast_imem(True)
+        sim.state.cvode.cache_efficient(True)
 
     ############################################################################
     # POPULATIONS
@@ -183,10 +194,11 @@ def run_simple_net(
     
     stn_type = gillies.StnCellType(
                         calculate_lfp=calculate_lfp,
-                        lfp_sigma_extracellular=0.3,
-                        lfp_electrode_x=stn_dx*ncell_stn*0.5,
-                        lfp_electrode_y=0.0,
-                        lfp_electrode_z=500.0)
+                        lfp_sigma_extracellular=0.3)
+    # FIXME: set electrode coordinates
+                        # lfp_electrode_x=100.0,
+                        # lfp_electrode_y=100.0,
+                        # lfp_electrode_z=100.0
 
     pop_stn = Population(ncell_stn, 
                          cellclass=stn_type, 
@@ -274,6 +286,17 @@ def run_simple_net(
 
     all_pops = {pop.label : pop for pop in Population.all_populations}
     all_proj = {pop.label : {} for pop in Population.all_populations}
+
+    # Register LFP calculation callbacks if manual calculation
+    # if calculate_lfp:
+    #     def init_lfp_calculation():
+    #         """
+    #         Initialize the LFP calculation (events must be added after finitialize().
+    #         """
+    #         lfp_rec_dt = sim.state.rec_dt
+    #         for t in np.arange(lfp_rec_dt, sim.state.duration+lfp_rec_dt, lfp_rec_dt):
+    #             sim.state.cvode.event(t, pop_stn.calculate_lfp)
+    #     finit_handlers.append(h.FInitializeHandler(0, init_lfp_calculation))
 
     ############################################################################
     # CONNECTIONS
@@ -492,8 +515,6 @@ def run_simple_net(
                   "    - max weight = {maxw}\n".format(
                     pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
                     minw=minw, maxw=maxw))
-
-    # TODO: write synapse and cell parameters to file, e.g. JSON
 
 
     ############################################################################

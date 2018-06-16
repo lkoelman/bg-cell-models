@@ -138,7 +138,12 @@ class TraceSpecRecorder(Recorder):
             return # was implemented in _record() -> don't execute rest of body
 
         elif trace_spec == 'lfp':
-            hoc_var = cell.lfp # pointer must be set in cell model
+            vec = h.Vector()
+            pp = cell.lfp_tracker.summator
+            hoc_ref = cell.lfp_tracker.summator._ref_summed
+            vec.record(pp, hoc_ref, self.sampling_interval)
+            cell.traces[trace_name] = vec
+            recorded = True
         
         elif isinstance(trace_spec, str):
             source, var_name = self._resolve_variable(cell, trace_spec)
@@ -230,12 +235,12 @@ class TraceSpecRecorder(Recorder):
                 hoc_ptr = getattr(seg, '_ref_'+spec['var'])
             
             # find a POINT_PROCESS in segment to improve efficiency
-            seg_pps = seg.point_processes()
-            if any(seg_pps):
-                pp = seg_pps[0]
-            else:
-                pp = h.PointProcessMark(seg)
-                pp_marker = pp
+            # seg_pps = seg.point_processes()
+            # if any(seg_pps):
+            #     pp = seg_pps[0]
+            # else:
+            pp = h.PointProcessMark(seg)
+            pp_marker = pp
         
 
         elif 'pointp' in spec: # hoc_obj is POINT_PROCESS
