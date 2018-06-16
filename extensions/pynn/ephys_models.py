@@ -59,8 +59,37 @@ def make_valid_attr_name(name):
 
 
 class UnitFetcherPlaceHolder(dict):
+    """
+    At the moment there isn't really a robust way to get the correct
+    units for all variables. 
+
+    This can be set explicity for each possible variable that is recordable
+    from the cell type, but with our custom TraceSpecRecorder the variable name 
+    can be anything.
+    """
     def __getitem__(self, key):
-        return 'V'
+        """
+        Return units according to trace naming convention.
+
+        @return     units : str
+                    Unit string accepted by 'Quantities' python package
+        """
+        if key.lower().startswith('v'):
+            return 'mV'
+        elif key.lower().startswith('isyn'):
+            return 'nA'
+        elif key.lower().startswith('gsyn'):
+            return 'uS' # can also be nS but this is for our GABAsyn/GLUsyn
+        elif key.lower().startswith('i'):
+            return 'mA/cm^2' # membrane currents of density mechanisms
+        elif key.lower().startswith('g'):
+            return 'S/cm^2' # membrane conductances of density mechanisms
+        elif key.lower().startswith('lfp'):
+            return 'nV' # LFP calculator mechanism 'LfpSumStep'
+        elif key == 'spikes':
+            return 'ms'
+        else:
+            return 'dimensionless'
 
 
 class EphysCellType(NativeCellType):
@@ -68,6 +97,8 @@ class EphysCellType(NativeCellType):
     PyNN native cell type that has Ephys model as 'model' attribute.
     """
     # TODO: units property with __getitem__ implemented
+
+    # Population.find_units() queries this for units
     units = UnitFetcherPlaceHolder()
 
 

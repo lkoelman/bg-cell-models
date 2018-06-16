@@ -105,10 +105,6 @@ def run_simple_net(
 
     # TODO: try non-random STN->GPE and GPE->STN projection patterns
     # TODO: save connectivity matrices to file
-    # TODO: add units to recordings
-    # TODO: fix bugged LFP signal
-    #       - try not moving STN cells, all on same location and same distance
-    #         to electrode as in notebook
 
     ############################################################################
     # LOCAL FUNCTIONS

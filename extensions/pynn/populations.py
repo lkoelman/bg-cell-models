@@ -60,11 +60,12 @@ class Population(NrnPopulation):
                     cell_id._cell._init_lfp()
 
 
-    def calculate_lfp(self):
-        """
-        Calculate LFP contribution for each cell.
-        """
-        for (cell_id, is_local) in zip(self.all_cells, self._mask_local):
-            if is_local:
-                cell_id._cell._set_imemb_ptr()
-                cell_id._cell._calculate_lfp()
+    # def calculate_lfp(self):
+    #     """
+    #     Calculate LFP contribution for each cell.
+    #     Only used in manual LFP calculation.
+    #     """
+    #     for (cell_id, is_local) in zip(self.all_cells, self._mask_local):
+    #         if is_local:
+    #             cell_id._cell._set_imemb_ptr()
+    #             cell_id._cell._calculate_lfp()

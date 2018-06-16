@@ -112,7 +112,7 @@ class TraceSpecRecorder(Recorder):
         @param      cell : ID._cell
                     Instantiated cell model (CellType.model(**params))
 
-        @param      variable : tuple(str, <str or dict>)
+        @param      variable : str OR tuple(str, <str or dict>)
                     A trace specifier consisting of the trace name as first
                     element and full trace specification as second element.
         """
