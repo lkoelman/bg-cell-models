@@ -8,7 +8,8 @@ def connection_plot(projection, positive='O', zero='.', empty=' ', spacer=''):
     """
     Fixed version of same method in pyNN/utility/__init__.py
     """
-    connection_array = numpy.array(projection.get('weight', format='array'))
+    connection_array = numpy.array(projection.get('weight', format='array',
+                                gather='all', multiple_synapses='sum'))
     # connection_array = np.nan_to_num(connection_array) # also replaces inf and -inf
     nan_mask = numpy.isnan(connection_array)
     connection_array[nan_mask] = -1.0

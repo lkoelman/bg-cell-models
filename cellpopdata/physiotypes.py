@@ -5,38 +5,8 @@ Classes describing the ontology of Basal Ganglia physiology and histology.
 @date       12/07/2017
 """
 
-from enum import Enum, IntEnum, unique
-
-class IntEnumDescriptor(IntEnum):
-
-    def to_str(self):
-        """
-        Convert Enum instance to string
-        """
-        return self.name.lower()
-
-    @classmethod
-    def from_str(cls, descr):
-        """
-        Get Enum instance from string.
-        """
-        return cls._member_map_[descr.upper()]
-
-    @classmethod
-    def get(cls, descr):
-        """
-        Get Enum instance from description.
-        """
-        if isinstance(descr, cls):
-            return descr
-        elif isinstance(descr, str):
-            return cls.from_str(descr)
-        else:
-            raise ValueError("Cannot convert {} to class {}".format(
-                    descr, cls))
-
-    to_descr = to_str
-    from_descr = from_str
+from enum import unique
+from common.stdutil import IntEnumDescriptor
 
 
 @unique

@@ -4,12 +4,14 @@ Connectity patterns used in Basal Ganglia modeling literature.
 @author     Lucas Koelman
 """
 
-from enum import IntEnum, unique
+from enum import unique
 import numpy as np
+
+from common.stdutil import IntEnumDescriptor
 
 
 @unique
-class ConnectivityPattern(IntEnum):
+class ConnectivityPattern(IntEnumDescriptor):
     """
     Named connectivity patterns between STN and GPe populations
     """
@@ -142,7 +144,7 @@ def make_divergent_pattern_rt2004(num_cell, num_target, sep, offset, rng):
     return conn_list
 
 
-def make_connection_list(pattern, num_cell, rng=None):
+def make_connection_list(pattern, num_cell, min_pre=None, rng=None):
     """
     Make connection lists based on named connectivity pattern.
 
@@ -162,6 +164,8 @@ def make_connection_list(pattern, num_cell, rng=None):
     if rng is None:
         rng = np.random
 
+    pattern = ConnectivityPattern.get(pattern) # accept strings
+
     #===========================================================================
     # Kumaravelu (2016)
     if pattern == ConnectivityPattern.Kumaravelu2016_OneToOne_Intra:
@@ -170,47 +174,47 @@ def make_connection_list(pattern, num_cell, rng=None):
     elif pattern == ConnectivityPattern.Kumaravelu2016_TwoToOne_IntraAdj:
         tar = range(num_cell)
         src_rel = [0,1] # relative channel numbers
-        conn_list = make_convergent_pattern(tar, src_rel)
+        conn_list = make_convergent_pattern(tar, src_rel, num_cell)
     
     elif pattern == ConnectivityPattern.Kumaravelu2016_TwoToSome_StnGpi:
         tar = rng.choice(range(num_cell), int(0.5*num_cell), 
                                replace=False) # pick 50% of target layer randomly
         src_rel = [0,-1]
-        conn_list = make_convergent_pattern(tar, src_rel)
+        conn_list = make_convergent_pattern(tar, src_rel, num_cell)
     
     elif pattern == ConnectivityPattern.Kumaravelu2016_TwoToSome_StnGpe:
         # See comment above
         tar = rng.choice(range(num_cell), int(0.2*num_cell), replace=False) # pick 20% of target layer randomly
         src_rel = [0,-1]
-        conn_list = make_convergent_pattern(tar, src_rel)
+        conn_list = make_convergent_pattern(tar, src_rel, num_cell)
     
     elif pattern == ConnectivityPattern.Kumaravelu2016_GpeGpe:
         # to left adjacent channel and second right neighbour
         src = range(num_cell)
         tar_rel = [-1,2]
-        conn_list = make_divergent_pattern(src, tar_rel)
+        conn_list = make_divergent_pattern(src, tar_rel, num_cell)
     
     #===========================================================================
     # So (2012)
     elif pattern == ConnectivityPattern.So2012_FromSTN:
         src = range(num_cell)
         tar_rel = [0,1]
-        conn_list = make_divergent_pattern(src, tar_rel)
+        conn_list = make_divergent_pattern(src, tar_rel, num_cell)
     
     elif pattern == ConnectivityPattern.So2012_GpeGpe:
         src = range(num_cell)
         tar_rel = [-1,2]
-        conn_list = make_divergent_pattern(src, tar_rel)
+        conn_list = make_divergent_pattern(src, tar_rel, num_cell)
     
     elif pattern == ConnectivityPattern.So2012_GpeGpi: # same as GpeGpe
         src = range(num_cell)
         tar_rel = [-1,2]
-        conn_list = make_divergent_pattern(src, tar_rel)
+        conn_list = make_divergent_pattern(src, tar_rel, num_cell)
     
     elif pattern == ConnectivityPattern.So2012_GpeStn:
         src = range(num_cell)
         tar_rel = [-1,0]
-        conn_list = make_divergent_pattern(src, tar_rel)
+        conn_list = make_divergent_pattern(src, tar_rel, num_cell)
     
     #===========================================================================
     # Rubin & Terman (2002)
@@ -289,8 +293,19 @@ def make_connection_list(pattern, num_cell, rng=None):
         #     [12,9],[12,13], [13,12], [14,12],[14,15], [15,10],[15,14]]
         conn_list = make_divergent_pattern_rt2004(num_cell, [1, 3], [3, 5], [-5, -1], rng)
 
-    
     else:
         ValueError('Unknown connection pattern <{0}>'.format(pattern))
+
+    # Duplicate projections if minimum number of inputs is requested for each
+    # post-synaptic cell.
+    if min_pre is not None:
+        for j in range(num_cell):
+            inputs = [proj for proj in conn_list if proj[1] == j]
+            num_inputs = len(inputs)
+            num_extra = min_pre - num_inputs
+            while num_inputs > 0 and num_extra > 0:
+                # keep duplicating until we have enough inputs
+                conn_list.append(inputs[num_extra % num_inputs])
+                num_extra -= 1
     
     return conn_list

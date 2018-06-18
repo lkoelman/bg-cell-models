@@ -224,7 +224,7 @@ setup(
     #
     extras_require={  # Optional
         'optimisation': ['BluePyOpt', 'cython', 'numba', 'elephant', 'PySpike'],
-        'network': ['PyNN', 'BluePyOpt'],
+        'network': ['PyNN', 'BluePyOpt', 'nixio'],
         'devtools': ['nb_conda', 'nbstripout', 'jupyter_contrib_nbextensions'],
     },
 

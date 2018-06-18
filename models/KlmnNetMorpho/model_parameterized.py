@@ -58,6 +58,7 @@ sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses')
 # Custom cell models
 import models.GilliesWillshaw.gillies_pynn_model as gillies
 import models.Gunay2008.gunay_pynn_model as gunay
+from cellpopdata.connectivity import ConnectivityPattern, make_connection_list
 
 # Our physiological parameters
 # from cellpopdata.physiotypes import Populations as PopID
@@ -79,6 +80,14 @@ def nprint(*args, **kwargs):
     """
     if mpi_rank == 0:
         print(*args, **kwargs)
+
+
+#def connection_list_pynn(pattern, pop_size, min_pre):
+#    """
+#    Make connection list suitable for PyNN FromListConnector.
+#    """
+#    conn_list = make_connection_list(pattern, pop_size, min_pre)
+#    # make modifications
 
 
 def run_simple_net(
@@ -111,6 +120,7 @@ def run_simple_net(
     ############################################################################
 
     params_global_context = globals()
+    params_local_context = locals() # capture function arguments
 
     def get_pop_parameters(pop, *param_names):
         """
@@ -136,11 +146,12 @@ def run_simple_net(
         """
         Make Connector object from config dict
         """
-        local_context = config[post].get('local_context', {})
+        config_locals = config[post].get('local_context', {})
         con_type, con_params = getdictvals(config[post][pre]['connector'],
                                            'name', 'parameters')
         connector_class = getattr(sim, con_type)
-        con_pvals = eval_params(con_params, params_global_context, local_context)
+        con_pvals = eval_params(con_params, params_global_context,
+                               [params_local_context, config_locals])
         return connector_class(**con_pvals)
 
 
@@ -499,30 +510,38 @@ def run_simple_net(
                    proj.post.label) + connection_plot(proj))
 
             # This does an mpi gather() on all the parameters
-            params = np.array(proj.get(["delay", "weight"], format="list"))
-            mind = min(params[:,2])
-            maxd = max(params[:,2])
-            minw = min(params[:,3])
-            maxw = max(params[:,3])
+            pre_post_params = np.array(proj.get(["delay", "weight"], format="list", 
+                                       gather='all', multiple_synapses='sum'))
+            mind = min(pre_post_params[:,2])
+            maxd = max(pre_post_params[:,2])
+            minw = min(pre_post_params[:,3])
+            maxw = max(pre_post_params[:,3])
             nprint("Error check for projection {pre}->{post}:\n"
-                  "    - min delay = {mind}\n"
-                  "    - max delay = {maxd}\n"
-                  "    - min weight = {minw}\n"
-                  "    - max weight = {maxw}\n".format(
+                  "    - delay  [min, max] = [{mind}, {maxd}]\n"
+                  "    - weight [min, max] = [{minw}, {maxw}]\n".format(
                     pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
                     minw=minw, maxw=maxw))
 
 
     ############################################################################
-    # PLOTTING
+    # PLOT & SAVE DATA
     ############################################################################
     if output is not None:
+        import neo.io
         outdir, extension = output.split('*')
-        # gather() so execute on each rank
-        for pop in all_pops.values():
-            pop.write_data(
-                "{dir}{label}{ext}".format(dir=outdir, label=pop.label, ext=extension),
-                variables='all', gather=True, annotations={'script_name': __file__})
+        if extension.endswith('h5'):
+            IOClass = neo.io.NixIO
+        elif extension.endswith('mat'):
+            IOClass = neo.io.NeoMatlabIO
+        elif extension.endswith('npz'):
+            IOClass = neo.io.PyNNNumpyIO
+        else:
+            IOClass = str # let PyNN guess from extension
+        for pop in all_pops.values(): # gather() so execute on each rank
+            outfile =  "{dir}{label}{ext}".format(dir=outdir, label=pop.label, ext=extension)
+            io = IOClass(outfile)
+            pop.write_data(io, variables='all', gather=True, 
+                               annotations={'script_name': __file__})
     
     if mpi_rank==0 and with_gui:
         # Only plot on one process, and if GUI available
@@ -599,6 +618,7 @@ if __name__ == '__main__':
                                             job_id=job_id)
 
     # File names for data files
+    # Default output format is hdf5 / NIX io
     filespec = '*_{stamp}_pop-{ncell}_dur-{dur}_job-{job_id}.mat'.format(
                                             ncell=parsed_dict['ncell_per_pop'],
                                             dur=parsed_dict['sim_dur'],

@@ -22,6 +22,7 @@ from copy import copy, deepcopy
 import bluepyopt.ephys as ephys
 from pyNN.neuron import state as nrn_state, h
 from pyNN.neuron.cells import NativeCellType
+import quantities as pq
 
 ephys_nrn_sim = None
 
@@ -57,6 +58,9 @@ def make_valid_attr_name(name):
     """
     return name.replace(".", "_")
 
+
+# Define additional units not recognized by quantities module
+pq.UnitQuantity('nanovolt', pq.V * 1e-9, symbol='nV')
 
 class UnitFetcherPlaceHolder(dict):
     """

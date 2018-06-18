@@ -1,3 +1,12 @@
+"""
+General Python utility functions, additions to the standard library.
+
+@author     Lucas Koelman
+"""
+
+from enum import IntEnum
+
+
 class dotdict(dict):
     """
     dot.notation access to dictionary attributes.
@@ -13,6 +22,38 @@ class Bunch(object):
     """
     def __init__(self, **kwds):
         self.__dict__.update(kwds)
+
+
+class IntEnumDescriptor(IntEnum):
+
+    def to_str(self):
+        """
+        Convert Enum instance to string
+        """
+        return self.name.lower()
+
+    @classmethod
+    def from_str(cls, descr):
+        """
+        Get Enum instance from string.
+        """
+        return cls._member_map_[descr.upper()]
+
+    @classmethod
+    def get(cls, descr):
+        """
+        Get Enum instance from description.
+        """
+        if isinstance(descr, cls):
+            return descr
+        elif isinstance(descr, str):
+            return cls.from_str(descr)
+        else:
+            raise ValueError("Cannot convert {} to class {}".format(
+                    descr, cls))
+
+    to_descr = to_str
+    from_descr = from_str
 
 
 def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
@@ -67,11 +108,20 @@ def eval_context(**context):
 
     # None means copy 
     locals_dict = context.get("locals", None)
-    if locals_dict is None:
-        locals_dict = context.get("caller_locals", {}) # if default is None it will use the ones from this module
+    
+    # 'caller_locals' can be either a dict or a list of candidate dicts
+    if not isinstance(locals_dict, dict):
+        caller_locals = context.get("caller_locals", {})
+        if isinstance(caller_locals, dict):
+            locals_dict = caller_locals
+        else: # accumulate passed dicts, with override!
+            locals_dict = {}
+            for ldict in caller_locals:
+                locals_dict.update(ldict)
+
 
     globals_dict = context.get("globals", None)
-    if globals_dict is None:
+    if not isinstance(globals_dict, dict):
         globals_dict = context.get("caller_globals", {}) # if default is None it will use the ones from this module
 
 
