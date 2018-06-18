@@ -82,14 +82,6 @@ def nprint(*args, **kwargs):
         print(*args, **kwargs)
 
 
-#def connection_list_pynn(pattern, pop_size, min_pre):
-#    """
-#    Make connection list suitable for PyNN FromListConnector.
-#    """
-#    conn_list = make_connection_list(pattern, pop_size, min_pre)
-#    # make modifications
-
-
 def run_simple_net(
         ncell_per_pop   = 30,
         sim_dur         = 500.0,
@@ -600,6 +592,12 @@ if __name__ == '__main__':
 
     args = parser.parse_args() # Namespace object
     parsed_dict = vars(args) # Namespace to dict
+
+    # Parse config JSON file to dict
+    config_file = os.path.expanduser(parsed_dict.pop('config_file')[0])
+    config_name, ext = os.path.splitext(os.path.basename(config_file))
+    sim_config = fileutils.parse_json_file(config_file, nonstrict=True)
+    parsed_dict['config'] = sim_config
     
     # Post process output specifier
     out_basedir = parsed_dict['output']
@@ -611,11 +609,10 @@ if __name__ == '__main__':
 
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames
-    out_subdir = '{stamp}_pop-{ncell}_dur-{dur}_job-{job_id}'.format(
-                                            ncell=parsed_dict['ncell_per_pop'],
-                                            dur=parsed_dict['sim_dur'],
+    out_subdir = '{stamp}_job-{job_id}_{config_name}'.format(
                                             stamp=timestamp,
-                                            job_id=job_id)
+                                            job_id=job_id,
+                                            config_name=config_name)
 
     # File names for data files
     # Default output format is hdf5 / NIX io
@@ -635,11 +632,6 @@ if __name__ == '__main__':
     if not os.path.isdir(out_fulldir) and mpi_rank == 0:
         os.mkdir(out_fulldir)
     parsed_dict['output'] = os.path.join(out_fulldir, filespec)
-
-    # Parse config JSON file to dict
-    config_file = os.path.expanduser(parsed_dict.pop('config_file')[0])
-    sim_config = fileutils.parse_json_file(config_file, nonstrict=True)
-    parsed_dict['config'] = sim_config
     
     
     # Run the simulation

@@ -52,7 +52,7 @@ def read_population_segments(outputs, is_directory=True, i_segment=0, read_ext=N
 
         if pop_label in pops_segments:
             raise ValueError("Duplicate population labels in files")
-        pops_segments[pop_label] = blocks[0].segments[0]
+        pops_segments[pop_label] = blocks[0].segments[i_segment]
 
     return pops_segments
 

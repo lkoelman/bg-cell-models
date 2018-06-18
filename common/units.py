@@ -5,19 +5,53 @@ NEURON unit interopability using 'Pint' package.
 """
 
 import re
-import pint
-ureg = pint.UnitRegistry()
-Q_ = Quantity = ureg.Quantity
-QuantityType = pint.quantity._Quantity # Base class
-
 from neuron import h
 
-# Define NEURON units that are not in pint's default units
-# TODO: check/add full list of NMODL/modlunit units
-ureg.define('Ohm = ohm')
-ureg.define('mho = 1/ohm')
-ureg.define('cm2 = cm^2')
-ureg.define('m2 = m^2')
+
+def set_units_module(module_name='pint'):
+    global QUANTITY_TYPE, GET_UNITS_FUNC, CONVERT_UNITS_FUNCNAME
+    global DIMENSIONALITY_ERROR, UNITS_MODULE_NAME, PINT_IMPORTED, QUANTITIES_IMPORTED
+
+    if module_name == 'pint':
+
+        import pint
+        PINT_IMPORTED = True
+
+        ureg = pint.UnitRegistry()
+        QUANTITY_TYPE= ureg.Quantity
+        # QUANTITY_BASE = pint.quantity._Quantity # Base class
+        GET_UNITS_FUNC = ureg
+        CONVERT_UNITS_FUNCNAME = 'to'
+        DIMENSIONALITY_ERROR = pint.errors.DimensionalityError
+
+        # Define NEURON units that are not in pint's default units
+        # TODO: add full list of NMODL/modlunit units
+        ureg.define('Ohm = ohm')
+        ureg.define('mho = 1/ohm')
+        ureg.define('cm2 = cm^2')
+        ureg.define('m2 = m^2')
+
+    elif module_name == 'quantities':
+
+        import quantities as pq
+
+        QUANTITIES_IMPORTED = True
+        QUANTITY_TYPE = pq.Quantity
+        GET_UNITS_FUNC = pq.unit_registry.__getitem__
+        CONVERT_UNITS_FUNCNAME = 'rescale'
+        DIMENSIONALITY_ERROR = ValueError
+
+        pq.UnitQuantity('nanovolt', pq.V * 1e-9, symbol='nV')
+        pq.UnitQuantity('nanoAmpere', pq.A * 1e-9, symbol='nA')
+        pq.UnitQuantity('mho', 1 / pq.Ohm, symbol='mho')
+        pq.UnitQuantity('cm2', pq.cm ** 2, symbol='cm2')
+        pq.UnitQuantity('m2', pq.m ** 2, symbol='m2')
+
+    else:
+        raise ValueError('Units module "{}" not supported'.format(module_name))
+
+    UNITS_MODULE_NAME = module_name
+    print("Using units module '{}'".format(UNITS_MODULE_NAME))
 
 
 def get_nrn_units(nrn_obj, attr, hoc_classname=None):
@@ -58,7 +92,14 @@ def get_nrn_units(nrn_obj, attr, hoc_classname=None):
 
     units_nodash = nrn_units.replace('-', '*')
     units_exponents = re.sub(r'([a-zA-Z]+)(\d)',r'\1^\2', units_nodash)
-    target_units = ureg(units_exponents)
+    
+    try:
+        make_units_func = GET_UNITS_FUNC
+    except NameError:
+        set_units_module()
+        make_units_func = GET_UNITS_FUNC
+
+    target_units = make_units_func(units_exponents)
     return target_units
 
 
@@ -103,7 +144,7 @@ def to_nrn_units(quantity, nrn_obj, attr, hoc_classname=None):
         > value = converted_quantity.magnitude
     """
     target_units = get_nrn_units(nrn_obj, attr, hoc_classname)
-    return quantity.to(target_units)
+    return getattr(quantity, 'CONVERT_UNITS_FUNCNAME')(target_units)
 
 
 def compatible_units(nrn_obj, attr, quantity, hoc_classname=None):
@@ -120,7 +161,7 @@ def compatible_units(nrn_obj, attr, quantity, hoc_classname=None):
     """
     try:
         to_nrn_units(quantity, nrn_obj, attr, hoc_classname)
-    except pint.errors.DimensionalityError:
+    except DIMENSIONALITY_ERROR:
         return True
     else:
         return False
