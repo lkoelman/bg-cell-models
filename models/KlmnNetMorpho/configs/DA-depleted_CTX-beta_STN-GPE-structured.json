@@ -31,6 +31,7 @@
         "f_intra": 150.0,
         "f_inter": 5.0,
         "synchronous": true,
+        "synchronized_fraction": 1.0,
     },
 // =============================================================================
 // STR Population Parameters
@@ -264,13 +265,15 @@
 // -----------------------------------------------------------------------------
         "STN": {
             "connector": {
-                "name": "DistanceDependentProbabilityConnector",
+                "name": "FromListConnector",
                 "parameters": {
-                    "allow_self_connections": false,
-                    "d_expression": {
-                        "statement": "\"d < ({grid_dx} * 6 / 2.0 + 5.0)\"",
-                        "do_format": true,
-                        "locals": null, // copy locals from surrounding context
+                    "conn_list": {
+                        "statement": "make_stn_lateral_connlist(ncell_per_pop, num_adjacent, lateral_projecting, np_seeded_rng)",
+                        "locals": {
+                            "num_adjacent": 3, // number of lateral targets on each side
+                            "lateral_projecting": 1.0 // fraction of STN neurons that project laterally
+                        },
+                        "globals": null, // use script globals
                     },
                 },
             },

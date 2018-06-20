@@ -58,7 +58,8 @@ sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses')
 # Custom cell models
 import models.GilliesWillshaw.gillies_pynn_model as gillies
 import models.Gunay2008.gunay_pynn_model as gunay
-from cellpopdata.connectivity import ConnectivityPattern, make_connection_list
+from cellpopdata.connectivity import (
+    ConnectivityPattern, make_connection_list, make_divergent_pattern)
 
 # Our physiological parameters
 # from cellpopdata.physiotypes import Populations as PopID
@@ -80,6 +81,30 @@ def nprint(*args, **kwargs):
     """
     if mpi_rank == 0:
         print(*args, **kwargs)
+
+
+def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
+    """
+    Make connection list for STN lateral connectivity.
+
+    @param  pop_size : int
+            Number of cells in STN population.
+
+    @param  fraction : float
+            Fraction of STN neurons that project laterally to neighbors.
+
+    @param  num_adjacent : int
+            Number of neighbors on each side to project to.
+
+    @param  rng : numpy.Random
+            Random number generator.
+
+    @return conn_list : list(list[int, int])
+            Connection list with [source, target] pairs.
+    """
+    source_ids = rng.choice(range(pop_size), int(fraction*pop_size), replace=False)
+    targets_relative = range(1, num_adjacent+1) + range(-1, -num_adjacent-1, -1)
+    return make_divergent_pattern(source_ids, targets_relative, pop_size)
 
 
 def run_simple_net(
@@ -106,6 +131,32 @@ def run_simple_net(
 
     # TODO: try non-random STN->GPE and GPE->STN projection patterns
     # TODO: save connectivity matrices to file
+
+    ############################################################################
+    # SIMULATOR SETUP
+    ############################################################################
+
+    sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, use_cvode=False)
+    if mpi_rank == 0:
+        init_logging(logfile=None, debug=True)
+    
+
+    print("""\nRunning net on MPI rank {} with following settings:
+    - ncell_per_pop = {}
+    - sim_dur = {}
+    - output = {}""".format(mpi_rank, ncell_per_pop, sim_dur, output))
+    
+    print("\nThis is node {} ({} of {})\n".format(
+          sim.rank(), sim.rank() + 1, sim.num_processes()))
+
+    h = sim.h
+    sim.state.duration = sim_dur # not used by PyNN, only by our custom funcs
+    sim.state.rec_dt = 0.05
+    finit_handlers = []
+
+    # Set random generator seed
+    seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
+    np_seeded_rng = np.random.RandomState(seed)
 
     ############################################################################
     # LOCAL FUNCTIONS
@@ -145,33 +196,6 @@ def run_simple_net(
         con_pvals = eval_params(con_params, params_global_context,
                                [params_local_context, config_locals])
         return connector_class(**con_pvals)
-
-
-    ############################################################################
-    # SIMULATOR SETUP
-    ############################################################################
-
-    sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, use_cvode=False)
-    if mpi_rank == 0:
-        init_logging(logfile=None, debug=True)
-    
-
-    print("""\nRunning net on MPI rank {} with following settings:
-    - ncell_per_pop = {}
-    - sim_dur = {}
-    - output = {}""".format(mpi_rank, ncell_per_pop, sim_dur, output))
-    
-    print("\nThis is node {} ({} of {})\n".format(
-          sim.rank(), sim.rank() + 1, sim.num_processes()))
-
-    h = sim.h
-    sim.state.duration = sim_dur # not used by PyNN, only by our custom funcs
-    sim.state.rec_dt = 0.05
-    finit_handlers = []
-
-    # Set random generator seed
-    seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
-    np_seeded_rng = np.random.RandomState(seed)
     
     # Set NEURON integrator/solver options
     calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
@@ -224,26 +248,41 @@ def run_simple_net(
 
 
     # CTX spike sources
-    T_burst, dur_burst, f_intra, f_inter, synchronous = get_pop_parameters(
-        'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'synchronous')
-    
-    def spiketimes_for_ctx(i):
+    T_burst, dur_burst, f_intra, f_inter = get_pop_parameters(
+        'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter')
+    synchronous, sync_fraction = get_pop_parameters(
+        'CTX', 'synchronous', 'synchronized_fraction')
+
+
+    def spiketimes_for_ctx(cell_indices):
         """
         Generate spike times for Cortex cell i.
 
-        (taken from PyNN examples -> returns pyNN.Sequence generator)
+        @param  cell_indices : list(int)
+                Local indices of cells (NOT index in entire population)
         """
-        spike_gen = make_oscillatory_bursts if synchronous else make_variable_bursts
-        def sequence_gen():
-            burst_gen = spike_gen(
-                T_burst, dur_burst, f_intra, f_inter,
-                rng=np_seeded_rng, max_dur=sim_dur)
-            bursty_spikes = np.fromiter(burst_gen, float)
-            return Sequence(bursty_spikes)
-        if hasattr(i, "__len__"):
-            return [sequence_gen() for j in i]
+        if synchronous:
+            make_bursts = make_oscillatory_bursts
         else:
-            return sequence_gen()
+            make_bursts = make_variable_bursts
+
+        # Some cells don't burst but fire at inter-burst firing rate
+        synchronized_cells = np_seeded_rng.choice(
+            cell_indices, int(sync_fraction * len(cell_indices)))
+        assert len(cell_indices) > 1
+
+        spiketimes_for_index = []
+        for i in cell_indices:
+            if i in synchronized_cells:
+                burst_gen = make_bursts(T_burst, dur_burst, f_intra, f_inter,
+                                        rng=np_seeded_rng, max_dur=sim_dur)
+                spiketimes = Sequence(np.fromiter(burst_gen, float))
+            else:
+                number = int(2 * sim_dur * f_inter / 1e3)
+                spiketimes = Sequence(np.add.accumulate(
+                    np_seeded_rng.exponential(1e3/f_inter, size=number)))
+            spiketimes_for_index.append(spiketimes)
+        return spiketimes_for_index
     
 
     pop_ctx = Population(
@@ -256,7 +295,7 @@ def run_simple_net(
     T_burst, dur_burst, f_intra, f_inter = get_pop_parameters(
         'STR', 'T_burst', 'dur_burst', 'f_intra', 'f_inter')
 
-    def spiketimes_for_str(i):
+    def spiketimes_for_str(cell_indices):
         """
         Generate spike times for Striatum cell i.
 
@@ -268,8 +307,8 @@ def run_simple_net(
                 rng=np_seeded_rng, max_dur=sim_dur)
             bursty_spikes = np.fromiter(burst_gen, float)
             return Sequence(bursty_spikes)
-        if hasattr(i, "__len__"):
-            return [sequence_gen() for j in i]
+        if hasattr(cell_indices, "__len__"):
+            return [sequence_gen() for j in cell_indices]
         else:
             return sequence_gen()
     

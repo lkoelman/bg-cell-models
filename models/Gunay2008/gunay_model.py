@@ -29,6 +29,7 @@ import neuron
 import bluepyopt.ephys as ephys
 
 from common import units, fileutils
+units.set_units_module('pint')
 h = neuron.h
 
 # Load NEURON libraries, mechanisms

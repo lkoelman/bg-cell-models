@@ -54,6 +54,15 @@ def set_units_module(module_name='pint'):
     print("Using units module '{}'".format(UNITS_MODULE_NAME))
 
 
+def Quantity(*args, **kwargs):
+    try:
+        make_quantity = QUANTITY_TYPE
+    except NameError:
+        set_units_module()
+        make_quantity = QUANTITY_TYPE
+    return make_quantity(*args, **kwargs)
+
+
 def get_nrn_units(nrn_obj, attr, hoc_classname=None):
     """
     Get units of NEURON variable as a pint.Quantity object.
@@ -144,7 +153,7 @@ def to_nrn_units(quantity, nrn_obj, attr, hoc_classname=None):
         > value = converted_quantity.magnitude
     """
     target_units = get_nrn_units(nrn_obj, attr, hoc_classname)
-    return getattr(quantity, 'CONVERT_UNITS_FUNCNAME')(target_units)
+    return getattr(quantity, CONVERT_UNITS_FUNCNAME)(target_units)
 
 
 def compatible_units(nrn_obj, attr, quantity, hoc_classname=None):
