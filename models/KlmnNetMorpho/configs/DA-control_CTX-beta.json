@@ -176,7 +176,7 @@
         // Local variables for this context / level of nesting (used in other statements)
         "local_context": {
             "grid_dx": 50.0,
-            "frac_lateral_projecting": 1.0, // fraction of STN neurons that project laterally
+            "frac_lateral_projecting": 1.0,
             "num_lateral_projections": 3, // number of lateral targets on each side
         },
 // GPE -> STN Projection
@@ -262,7 +262,7 @@
                 "name": "FromListConnector",
                 "parameters": {
                     "conn_list": {
-                        "statement": "make_stn_lateral_connlist(ncell_per_pop, num_lateral_projections, frac_lateral_projecting, np_seeded_rng)",
+                        "statement": "make_stn_lateral_connlist(ncell_per_pop, num_lateral_projections, frac_lateral_projecting, shared_rng)",
                         "locals": null, // use enclosing locals
                         "globals": null, // use script globals
                     },

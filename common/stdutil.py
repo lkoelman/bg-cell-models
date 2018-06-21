@@ -101,23 +101,31 @@ def eval_context(**context):
                 Third argument to eval(). If None, use 'caller_locals' if it
                 is given, else use empty dict {}.
 
+    @param      caller_locals : dict OR list(dic)
+                Dicts containing local variables to be used as third argument
+                to 'eval()'. Dicts entries be updated (with override) in order
+                of appearance and finally with 'locals' argument if not None. 
+
     @return     result of eval() of statement with given locals and globals.
     """
 
     stmt = context["statement"]
 
     # None means copy 
-    locals_dict = context.get("locals", None)
+    context_locals = context.get("locals", None)
     
     # 'caller_locals' can be either a dict or a list of candidate dicts
-    if not isinstance(locals_dict, dict):
-        caller_locals = context.get("caller_locals", {})
-        if isinstance(caller_locals, dict):
-            locals_dict = caller_locals
-        else: # accumulate passed dicts, with override!
-            locals_dict = {}
-            for ldict in caller_locals:
-                locals_dict.update(ldict)
+    caller_locals = context.get("caller_locals", {})
+    if isinstance(caller_locals, dict):
+        locals_dict = dict(caller_locals)
+    else: # accumulate passed dicts, with override!
+        locals_dict = {}
+        for ldict in caller_locals:
+            locals_dict.update(ldict)
+
+    # Final update must be context locals to ensure that keys are not overridden
+    if context_locals is not None:
+        locals_dict.update(context_locals)
 
 
     globals_dict = context.get("globals", None)
