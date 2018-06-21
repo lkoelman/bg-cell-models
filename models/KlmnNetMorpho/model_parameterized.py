@@ -154,9 +154,11 @@ def run_simple_net(
     sim.state.rec_dt = 0.05
     finit_handlers = []
 
-    # Set random generator seed
-    seed = sim.state.mpi_rank + sim.state.native_rng_baseseed
-    np_seeded_rng = np.random.RandomState(seed)
+    # One random generator that is shared and should yield same results
+    # for each MPI rank, and one with unique results.
+    shared_rng = np.random.RandomState(sim.state.native_rng_baseseed)
+    rank_rng = np.random.RandomState(sim.state.mpi_rank + sim.state.native_rng_baseseed)
+
 
     ############################################################################
     # LOCAL FUNCTIONS
@@ -267,20 +269,20 @@ def run_simple_net(
             make_bursts = make_variable_bursts
 
         # Some cells don't burst but fire at inter-burst firing rate
-        synchronized_cells = np_seeded_rng.choice(
-            cell_indices, int(sync_fraction * len(cell_indices)))
+        synchronized_cells = rank_rng.choice(
+            cell_indices, int(sync_fraction * len(cell_indices)), replace=False)
         assert len(cell_indices) > 1
 
         spiketimes_for_index = []
         for i in cell_indices:
             if i in synchronized_cells:
                 burst_gen = make_bursts(T_burst, dur_burst, f_intra, f_inter,
-                                        rng=np_seeded_rng, max_dur=sim_dur)
+                                        rng=rank_rng, max_dur=sim_dur)
                 spiketimes = Sequence(np.fromiter(burst_gen, float))
             else:
                 number = int(2 * sim_dur * f_inter / 1e3)
                 spiketimes = Sequence(np.add.accumulate(
-                    np_seeded_rng.exponential(1e3/f_inter, size=number)))
+                    rank_rng.exponential(4 * 1e3/f_inter, size=number)))
             spiketimes_for_index.append(spiketimes)
         return spiketimes_for_index
     
@@ -304,7 +306,7 @@ def run_simple_net(
         def sequence_gen():
             burst_gen = make_variable_bursts(
                 T_burst, dur_burst, f_intra, f_inter,
-                rng=np_seeded_rng, max_dur=sim_dur)
+                rng=rank_rng, max_dur=sim_dur)
             bursty_spikes = np.fromiter(burst_gen, float)
             return Sequence(bursty_spikes)
         if hasattr(cell_indices, "__len__"):
@@ -537,8 +539,8 @@ def run_simple_net(
 
             # Plot connectivity matrix ('O' is connection, ' ' is no connection)
             conn_matrix = connection_plot(proj)
-            nprint("{}->{} connectivity matrix: \n".format(proj.pre.label, 
-                   proj.post.label) + connection_plot(proj))
+            nprint("{}->{} connectivity matrix (dim[0,1] = [src,target]: \n".format(
+                proj.pre.label, proj.post.label) + connection_plot(proj))
 
             # This does an mpi gather() on all the parameters
             pre_post_params = np.array(proj.get(["delay", "weight"], format="list", 
