@@ -19,6 +19,7 @@
         "duration": 10000,
         "timestep": 0.025,
         "cells_per_population": 100,
+        "shared_rng_seed": 151985012,
     },
 // =============================================================================
 // CTX Population Parameters

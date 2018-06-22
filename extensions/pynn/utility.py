@@ -7,6 +7,10 @@ import numpy
 def connection_plot(projection, positive='O', zero='.', empty=' ', spacer=''):
     """
     Fixed version of same method in pyNN/utility/__init__.py
+
+    @return     utf_plot, matrix : tuple(unicode, np.array)
+                Tuple containing the connection matrix in UTF-8 format and as
+                raw connection weights.
     """
     connection_array = numpy.array(projection.get('weight', format='array',
                                 gather='all', multiple_synapses='sum'))
@@ -20,4 +24,5 @@ def connection_plot(projection, positive='O', zero='.', empty=' ', spacer=''):
     image[connection_array == 0] = zero
     # numpy.seterr(**old_settings)  # restore original floating point error settings
     image[nan_mask] = empty
-    return '\n'.join([spacer.join(row) for row in image])
+    utf_plot = '\n'.join([spacer.join(row) for row in image])
+    return utf_plot, connection_array

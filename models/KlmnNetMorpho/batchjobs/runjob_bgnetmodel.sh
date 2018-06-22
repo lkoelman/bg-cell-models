@@ -42,7 +42,7 @@
 
 # Execute using:
 # >>> qsub runjob_lucastest.sh -l walltime=00:45:00 \
-# >>> -v ncell=100,dur=10000,\
+# >>> -v ncell=100,dur=10000,seed=15203008,\
 # >>> config=~/workspace/bgcellmodels/models/KlmnNetMorpho/configs/simple_config.json,
 # >>> outdir=~/storage,id=with_DA_depleted_1
 
@@ -79,6 +79,10 @@ if [ -n "$report" ]; then
     mpi_command="${mpi_command} > \
 >(tee -a ${HOME}/storage/${PBS_JOBID}_stdout.log) \
 2> >(tee -a ${HOME}/storage/${PBS_JOBID}_stderr.log >&2)"
+fi
+
+if [ -n "$seed" ]; then
+    mpi_command="${mpi_command} -s ${seed}"
 fi
 
 cd $model_dir

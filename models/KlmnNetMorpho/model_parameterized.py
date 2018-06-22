@@ -114,7 +114,8 @@ def run_simple_net(
         with_gui        = True,
         output          = None,
         report_progress = None,
-        config          = None):
+        config          = None,
+        seed            = None):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
@@ -154,10 +155,23 @@ def run_simple_net(
     sim.state.rec_dt = 0.05
     finit_handlers = []
 
-    # One random generator that is shared and should yield same results
+    # Make one random generator that is shared and should yield same results
     # for each MPI rank, and one with unique results.
-    shared_rng = np.random.RandomState(sim.state.native_rng_baseseed)
-    rank_rng = np.random.RandomState(sim.state.mpi_rank + sim.state.native_rng_baseseed)
+    # - The shared (parallel-safe) RNGs should be used in functions that are
+    #   executed on all ranks, like instantiating Population and Projection
+    #   objects.
+    # - The default RNG for Connectors is NumpyRNG(seed=151985012)
+    if seed is None:
+        seed = config['simulation']['shared_rng_seed']
+    shared_seed = seed # original: 151985012
+    rank_seed = sim.state.native_rng_baseseed + sim.state.mpi_rank
+    # RNGs that can be passed to PyNN objects like Connector subclasses
+    shared_rng_pynn = sim.NumpyRNG(seed=shared_seed)
+    rank_rng_pynn = sim.NumpyRNG(seed=rank_seed)
+    # Raw Numpy RNGs (numpy.random.RandomState) to be used in our own functions
+    shared_rng = shared_rng_pynn.rng
+    rank_rng = rank_rng_pynn.rng
+    
 
 
     ############################################################################
@@ -377,7 +391,8 @@ def run_simple_net(
     gpe_gpe_space = space.Space(periodic_boundaries=((0, x_max), None, None))
 
     # Connect to four neighboring neurons (N_PRE=8)
-    gpe_gpe_connector = connector_from_config('GPE', 'GPE') # TODO: space??
+    gpe_gpe_connector = connector_from_config('GPE', 'GPE')
+    gpe_gpe_connector.rng = shared_rng_pynn
     
 
     # Synapse type
@@ -395,6 +410,7 @@ def run_simple_net(
     # STR -> GPE (inhibitory)
 
     str_gpe_connector = connector_from_config('STR', 'GPE')
+    str_gpe_connector.rng = shared_rng_pynn
 
     str_gpe_syn = synapse_from_config('STR', 'GPE')
 
@@ -413,6 +429,7 @@ def run_simple_net(
     # GPe -> STN (inhibitory)
 
     gpe_stn_connector = connector_from_config('GPE', 'STN')
+    gpe_stn_connector.rng = shared_rng_pynn
 
     gpe_stn_syn = synapse_from_config('GPE', 'STN')
 
@@ -431,6 +448,7 @@ def run_simple_net(
     ctx_stn_syn = synapse_from_config('CTX', 'STN')
 
     ctx_stn_connector = connector_from_config('CTX', 'STN')
+    ctx_stn_connector.rng = shared_rng_pynn
 
     ctx_stn_EXC = sim.Projection(
                         pop_ctx, pop_stn,
@@ -446,6 +464,7 @@ def run_simple_net(
     stn_stn_syn = synapse_from_config('STN', 'STN')
 
     stn_stn_connector = connector_from_config('STN', 'STN')
+    stn_stn_connector.rng = shared_rng_pynn
 
     stn_stn_EXC = sim.Projection(
                         pop_stn, pop_stn,
@@ -534,13 +553,15 @@ def run_simple_net(
     # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
     #       - cannot perform any gather() operations before initializing MPI transfer
     #       - must do gather() operations on all nodes
+    saved_params = {}
     for pre_pop, post_pops in all_proj.iteritems():
+        saved_params.setdefault(pre_pop, {})
         for post_pop, proj in post_pops.iteritems():
 
             # Plot connectivity matrix ('O' is connection, ' ' is no connection)
-            conn_matrix = connection_plot(proj)
+            utf_matrix, float_matrix = connection_plot(proj)
             nprint("{}->{} connectivity matrix (dim[0,1] = [src,target]: \n".format(
-                proj.pre.label, proj.post.label) + connection_plot(proj))
+                proj.pre.label, proj.post.label) + utf_matrix)
 
             # This does an mpi gather() on all the parameters
             pre_post_params = np.array(proj.get(["delay", "weight"], format="list", 
@@ -555,11 +576,18 @@ def run_simple_net(
                     pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
                     minw=minw, maxw=maxw))
 
+            # Append to saved dictionary
+            proj_params = saved_params[pre_pop].setdefault(post_pop, {})
+            proj_params['conn_matrix'] = float_matrix
+            proj_params['weight_delay_list'] = pre_post_params
+
+
 
     ############################################################################
     # PLOT & SAVE DATA
     ############################################################################
     if output is not None:
+        # Save all recorded traces
         import neo.io
         outdir, extension = output.split('*')
         if extension.endswith('h5'):
@@ -575,6 +603,12 @@ def run_simple_net(
             io = IOClass(outfile)
             pop.write_data(io, variables='all', gather=True, 
                                annotations={'script_name': __file__})
+        # Save projection parameters
+        import pickle
+        extension = extension[:-4] + '.pkl'
+        params_outfile = "{dir}pop-parameters{ext}".format(dir=outdir, ext=extension)
+        with open(params_outfile, 'wb') as fout:
+            pickle.dump(saved_params, fout)
     
     if mpi_rank==0 and with_gui:
         # Only plot on one process, and if GUI available
@@ -599,6 +633,9 @@ if __name__ == '__main__':
 
     parser.add_argument('-n', '--ncell', nargs='?', type=int, default=30,
                         dest='ncell_per_pop', help='Number of cells per population')
+
+    parser.add_argument('-s', '--seed', nargs='?', type=int, default=None,
+                        dest='seed', help='Seed for random number generator')
 
     parser.add_argument('-g', '--gui',
                         dest='with_gui',
@@ -674,6 +711,7 @@ if __name__ == '__main__':
         os.mkdir(out_fulldir)
     parsed_dict['output'] = os.path.join(out_fulldir, filespec)
     
+    print("Got parsed dict: ", parsed_dict)
     
     # Run the simulation
     run_simple_net(**parsed_dict)
