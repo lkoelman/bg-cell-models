@@ -115,7 +115,8 @@ def run_simple_net(
         output          = None,
         report_progress = None,
         config          = None,
-        seed            = None):
+        seed            = None,
+        calculate_lfp   = None):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
@@ -213,8 +214,11 @@ def run_simple_net(
                                [params_local_context, config_locals])
         return connector_class(**con_pvals)
     
+    # LFP calculation: command line args get priority over config
+    if calculate_lfp is None:
+        calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
+    
     # Set NEURON integrator/solver options
-    calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
     if calculate_lfp:
         sim.state.cvode.use_fast_imem(True)
         sim.state.cvode.cache_efficient(True)
@@ -636,6 +640,14 @@ if __name__ == '__main__':
 
     parser.add_argument('-s', '--seed', nargs='?', type=int, default=None,
                         dest='seed', help='Seed for random number generator')
+
+    parser.add_argument('--lfp',
+                        dest='calculate_lfp', action='store_true',
+                        help='Calculate Local Field Potential.')
+    parser.add_argument('--no-lfp',
+                        dest='calculate_lfp', action='store_false',
+                        help='Calculate Local Field Potential.')
+    parser.set_defaults(calculate_lfp=None)
 
     parser.add_argument('-g', '--gui',
                         dest='with_gui',

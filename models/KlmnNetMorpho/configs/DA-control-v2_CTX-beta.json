@@ -97,9 +97,9 @@
                 "name": "DistanceDependentProbabilityConnector",
                 "parameters": {
                     "allow_self_connections": false,
-                    // TODO: make p < 1 for neighbors within distance
                     "d_expression": {
-                        "statement": "\"0.5 * float(d < ({grid_dx} * 6 / 2.0 + 5.0))\"",
+                        // NOTE: arg d is numpy array
+                        "statement": "\"0.5 * (d < ({grid_dx} * 6 / 2.0 + 5.0))\"",
                         "do_format": true,
                         "locals": null, // copy locals from surrounding context
                     },
