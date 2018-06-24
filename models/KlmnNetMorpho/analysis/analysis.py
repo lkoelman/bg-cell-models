@@ -137,6 +137,124 @@ def plot_population_signals(pops_segments, max_num_signals=20, time_range=None):
     plt.show(block=False)
 
 
+def conn_matrix_from_text(
+        str_mat, 
+        char_pos='O', char_zero='.', char_empty=' ',
+        val_pos=1.0, val_zero=0.0, val_empty=0.0):
+    """
+    Convert printed connectivity matrix to numpy array.
+
+    @param  str_mat : str OR unicode
+            String representing connectivity matrix with rows separated
+            by line breaks.
+    """
+    str_rows = str_mat.splitlines()
+    utf_mat = np.array([[ch for ch in row] for row in str_rows], dtype=unicode)
+    
+    float_mat = np.zeros_like(utf_mat, dtype=float)
+    float_mat[utf_mat == char_zero] = val_zero
+    float_mat[utf_mat == char_pos] = val_pos
+    float_mat[utf_mat == char_empty] = val_empty
+    return float_mat
+
+
+def plot_connectivity_matrix(
+        pop_size, str_mat=None, fpath=None, seaborn=True,
+        pop0='A', pop1='B'):
+    """
+    Plot connectivity matrix given as string.
+    """
+    if fpath is not None:
+        with open(fpath, 'r') as fmat:
+            str_mat = fmat.read()
+    elif not isinstance(str_mat, (str, unicode)):
+        print("Please provide either matrix in string format or file path.")
+    
+    
+
+    W = conn_matrix_from_text(str_mat)
+
+    if seaborn:
+        # Only looks good for small population size
+        import seaborn as sns
+        sns.set(style="white")
+
+        # Set up the matplotlib figure
+        f, ax = plt.subplots()
+
+        # Generate a custom diverging colormap
+        cmap = sns.diverging_palette(220, 10, as_cmap=True)
+
+        # Draw the heatmap with the mask and correct aspect ratio
+        sns.heatmap(W,
+                    xticklabels=range(pop_size),
+                    yticklabels=range(pop_size),
+                    mask=None, cmap=cmap, center=0,
+                    square=True, linewidths=.5, cbar_kws={"shrink": .5})
+
+        plt.yticks(rotation=0)
+        plt.title("Weight matrix")
+        plt.show(block=False)
+    else:
+        from matplotlib import patches
+        px = py = pop_size / 10
+
+        # Create plot
+        fig, ax = plt.subplots(figsize=(8,6))
+        # # fig.subplots_adjust(left=0.02) # Less space on left
+        # fig.subplots_adjust(right=0.98) # Less space on right
+        # fig.subplots_adjust(top=0.96) # Less space on bottom
+        # # fig.subplots_adjust(bottom=0.02) # Less space on bottom
+        # fig.subplots_adjust(wspace=0) # More space between
+        # fig.subplots_adjust(hspace=0) # More space between
+
+        # Plot matrix as image
+        colormap = plt.get_cmap('Oranges') # see https://matplotlib.org/examples/color/colormaps_reference.html
+        plt.imshow(W, interpolation='none', cmap=colormap)
+
+        # Plot grid lines
+        y_popsize, x_popsize = W.shape
+        y_nticks = y_popsize/py + 1
+        x_nticks = x_popsize/px + 1
+        yticks_pos = np.arange(y_nticks)*py
+        xticks_pos = np.arange(x_nticks)*px
+        for p in yticks_pos:
+            # Plot gridlines (population boundaries)
+            # plt.plot(np.array([0, x_popsize])-0.5, 
+            #          np.array([p, p])-0.5,
+            #          'k-', linewidth=1.0, snap=True)
+            # plt.plot(np.array([p, p])-0.5,
+            #          np.array([0, y_popsize])-0.5, 
+            #          'k-', linewidth=1.0, snap=True)
+            # Add rectangles on diagonal
+            ax.add_patch(patches.Rectangle((p-0.5, p-0.5),
+                                            px, # Width
+                                            py, # Height
+                                            facecolor="none",
+                                            edgecolor='g',
+                                            linewidth="1"))
+        # Grid instead of manual gridlines
+        plt.grid(True)
+
+        # Configure the x and y axis
+        ax.set_xticks(xticks_pos-0.5)
+        ax.set_yticks(yticks_pos-0.5)
+        ax.set_xticklabels(xticks_pos)
+        ax.set_yticklabels(yticks_pos)
+        ax.xaxis.set_ticks_position('top')
+
+        ax.set_xlabel('{} cell index'.format(pop1))
+        ax.set_ylabel('{} cell index'.format(pop0))
+        
+        plt.xlim(-0.5, x_popsize - 0.5)
+        plt.ylim(y_popsize - 0.5 ,-0.5)
+
+        # Add color bar to measure weights
+        plt.clim(0, abs(W).max())
+        plt.colorbar()
+        plt.show(block=False)
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Plot simulation data')
