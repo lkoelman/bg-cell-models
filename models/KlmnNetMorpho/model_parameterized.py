@@ -376,7 +376,8 @@ def run_simple_net(
     # STN -> GPE (excitatory)
 
     stn_gpe_connector = connector_from_config('STN', 'GPE')
-
+    stn_gpe_connector.rng = shared_rng_pynn
+    
     stn_gpe_syn = synapse_from_config('STN', 'GPE')
     
 
