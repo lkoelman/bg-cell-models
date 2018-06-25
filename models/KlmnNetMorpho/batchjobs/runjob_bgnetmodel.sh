@@ -71,8 +71,9 @@ model_config="${model_dir}${config_file}"
 
 # Command to be evaluated
 mpi_command="mpirun -n 24 python ${model} \
--n ${ncell} -d ${dur} \
--ng -p -c ${model_config} -o ${outdir} -id ${PBS_JOBID}"
+--ncell ${ncell} --dur ${dur} \
+--no-gui --progress --config ${model_config} \
+--outdir ${outdir} -id ${PBS_JOBID}"
 
 # redirect stdout and stderr to file during execution
 if [ -n "$report" ]; then
@@ -81,8 +82,14 @@ if [ -n "$report" ]; then
 2> >(tee -a ${HOME}/storage/${PBS_JOBID}_stderr.log >&2)"
 fi
 
+# if we got a variable 'seed' using `qsub -v`: override config seed
 if [ -n "$seed" ]; then
-    mpi_command="${mpi_command} -s ${seed}"
+    mpi_command="${mpi_command} --seed ${seed}"
+fi
+
+# if we got a variable 'burst' using `qsub -v`: override config burst frequency
+if [ -n "$burst" ]; then
+    mpi_command="${mpi_command} --burst ${burst}"
 fi
 
 cd $model_dir

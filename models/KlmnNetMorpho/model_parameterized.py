@@ -116,7 +116,8 @@ def run_simple_net(
         report_progress = None,
         config          = None,
         seed            = None,
-        calculate_lfp   = None):
+        calculate_lfp   = None,
+        burst_frequency = None):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
@@ -273,6 +274,10 @@ def run_simple_net(
     synchronous, sync_fraction = get_pop_parameters(
         'CTX', 'synchronous', 'synchronized_fraction')
 
+    # Command line args can override Beta frequency from config
+    if burst_frequency is not None:
+        T_burst = 1.0 / burst_frequency * 1e3
+
 
     def spiketimes_for_ctx(cell_indices):
         """
@@ -377,7 +382,7 @@ def run_simple_net(
 
     stn_gpe_connector = connector_from_config('STN', 'GPE')
     stn_gpe_connector.rng = shared_rng_pynn
-    
+
     stn_gpe_syn = synapse_from_config('STN', 'GPE')
     
 
@@ -641,6 +646,9 @@ if __name__ == '__main__':
 
     parser.add_argument('-s', '--seed', nargs='?', type=int, default=None,
                         dest='seed', help='Seed for random number generator')
+
+    parser.add_argument('-b', '--burst', nargs='?', type=float, default=None,
+                        dest='burst_frequency', help='Beta bursting frequency')
 
     parser.add_argument('--lfp',
                         dest='calculate_lfp', action='store_true',
