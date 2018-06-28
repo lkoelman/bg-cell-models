@@ -294,7 +294,6 @@ def run_simple_net(
         # Some cells don't burst but fire at inter-burst firing rate
         synchronized_cells = rank_rng.choice(
             cell_indices, int(sync_fraction * len(cell_indices)), replace=False)
-        assert len(cell_indices) > 1
 
         spiketimes_for_index = []
         for i in cell_indices:
@@ -596,7 +595,7 @@ def run_simple_net(
     ############################################################################
     # PLOT & SAVE DATA
     ############################################################################
-    if output is not None:
+    if output is not None: # MPI::gather operations => execute on each rank
         # Save all recorded traces
         import neo.io
         outdir, extension = output.split('*')
@@ -608,18 +607,23 @@ def run_simple_net(
             IOClass = neo.io.PyNNNumpyIO
         else:
             IOClass = str # let PyNN guess from extension
-        for pop in all_pops.values(): # gather() so execute on each rank
+        for pop in all_pops.values():
             outfile =  "{dir}{label}{ext}".format(dir=outdir, label=pop.label, ext=extension)
             io = IOClass(outfile)
             pop.write_data(io, variables='all', gather=True, 
                                annotations={'script_name': __file__})
+
+    if mpi_rank==0 and output is not None:
+        outdir, extension = output.split('*')
+
         # Save projection parameters
         import pickle
         extension = extension[:-4] + '.pkl'
         params_outfile = "{dir}pop-parameters{ext}".format(dir=outdir, ext=extension)
         with open(params_outfile, 'wb') as fout:
             pickle.dump(saved_params, fout)
-    
+
+
     if mpi_rank==0 and with_gui:
         # Only plot on one process, and if GUI available
         import analysis
