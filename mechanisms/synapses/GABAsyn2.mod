@@ -31,17 +31,18 @@ CREDITS
 USAGE
 -----
 
-- Set Tmax so that the peak Tmax*(B_GABAB-A_GABAB) = 1.0
-    
-    + this can be tested by copying time constants from GABA-B to GABA-A,
-      setting gmax_GABAA=1, and observing g_GABAA
 
-    + this is to make the max transmitter concentration equal to the simulations
-      by Destexhe et al.
+- Find the peak value of the G-protein concentration for the maximum pre-synaptic
+  firing rate
 
+    + This can be tested by using the same rise and decay time constants for
+      GABA-A as used in GABA-B, setting gmax_GABAA to 1, and plotting the
+      time course of g_GABAA when stimulating at the max presynaptic rate
 
-- Set theta_R and sigma_R so that the sigmoid reaches its saturation level
-  for only in the upper region of R values (plot R values).
++ Set KD (half-maximum of sigmoid describing Hill kinetics) to between
+  2-3 times the peak G-protein concentration.
+
+  + Depending on how many spikes you want to yield significant rise in g_GABAB
 
 
 ENDCOMMENT
@@ -59,7 +60,7 @@ NEURON {
     RANGE tau_rec, tau_facil, U1
 
     RANGE G : state variables for GABAB-B dynamics
-    RANGE K3, K4, KD, Tmax, n : parameters for GABA-B dynamics
+    RANGE K3, K4, KD, n : parameters for GABA-B dynamics
 
     NONSPECIFIC_CURRENT i
 }
@@ -105,7 +106,6 @@ PARAMETER {
     K4  = 0.033 (/ms)       : rate of G-protein decay
     KD  = 100               : dissociation constant of K+ channel
     n   = 4                 : nb of binding sites of G-protein on K+
-    Tmax = 1.0 (mM)         : peak neurotransmitter concentration
 }
 
 : Declaration of state variables 
@@ -238,13 +238,11 @@ DERIVATIVE odes {
     : ==========================================================================
     : GABA-B signaling cascade
 
-    : Consider Tsodyks-Markram synapse activation as bound/activated receptor
+    : Consider Tsodyks-Markram synapse activation (B-A) as bound receptor
     : fraction including desensitization
-    : WARNING: Tmax must be set so that max(Tmax*(B_GABAB-A_GABAB)) == 1 
-    :          for the maximum pre-synaptic firing rate.
-    : R = Tmax*(B_GABAB-A_GABAB)
+
     : G-protein production rate is proportional to bound receptor fraction.
-    G' = K3 * Tmax*(B_GABAB-A_GABAB) - K4 * G
+    G' = K3 * (B_GABAB-A_GABAB) - K4 * G
 }
 
 
