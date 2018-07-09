@@ -23,9 +23,9 @@ import interpolation as interp
 from redutils import get_sec_props_obj
 from cluster import Cluster, assign_topology_attrs
 
-from common import treeutils
-from common.treeutils import getsecref, seg_index, interp_seg, next_segs
-from common.electrotonic import calc_lambda, measure_transfer_impedance as measure_Zin, segs_at_dX
+from bgcellmodels.common import treeutils
+from bgcellmodels.common.treeutils import getsecref, seg_index, interp_seg, next_segs
+from bgcellmodels.common.electrotonic import calc_lambda, measure_transfer_impedance as measure_Zin, segs_at_dX
 
 from neuron import h
 

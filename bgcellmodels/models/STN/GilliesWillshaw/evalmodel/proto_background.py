@@ -33,7 +33,7 @@ from proto_common import (
     rec_Vm, rec_spikes
 )
 
-from common import logutils
+from bgcellmodels.common import logutils
 logger = logutils.getBasicLogger(name='stn_protos')
 # from IPython.config import Application
 # logger = Application.instance().log 

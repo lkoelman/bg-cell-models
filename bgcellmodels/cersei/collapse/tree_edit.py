@@ -11,8 +11,8 @@ logger = logging.getLogger(logname) # create logger for this module
 
 from neuron import h
 
-from common.nrnutil import getsecref, seg_index
-from common.treeutils import next_segs
+from bgcellmodels.common.nrnutil import getsecref, seg_index
+from bgcellmodels.common.treeutils import next_segs
 
 import redutils
 

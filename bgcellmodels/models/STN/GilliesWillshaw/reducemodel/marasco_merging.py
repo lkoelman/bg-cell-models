@@ -9,7 +9,7 @@ import math
 PI = math.pi
 
 # Our modules
-from common.nrnutil import getsecref, seg_index
+from bgcellmodels.common.nrnutil import getsecref, seg_index
 from redutils import EqProps
 
 

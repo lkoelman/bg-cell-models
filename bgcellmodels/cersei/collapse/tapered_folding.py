@@ -17,10 +17,10 @@ h = neuron.h
 h.load_file("stdlib.hoc") # Load the standard library
 
 # Own modules
-from common.treeutils import subtree_topology
-from common.nrnutil import ExtSecRef, getsecref
-from common.stdutil import isclose
-from common.electrotonic import calc_min_nseg_hines
+from bgcellmodels.common.treeutils import subtree_topology
+from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
+from bgcellmodels.common.stdutil import isclose
+from bgcellmodels.common.electrotonic import calc_min_nseg_hines
 
 import cluster
 import redutils

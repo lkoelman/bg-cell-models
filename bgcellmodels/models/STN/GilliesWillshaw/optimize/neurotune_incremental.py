@@ -21,7 +21,7 @@ from neurotune import evaluators
 from neurotune import controllers
 
 # Own modules
-from common import analysis as recording
+from bgcellmodels.common import analysis as recording
 import marasco_foldbased as marasco
 
 

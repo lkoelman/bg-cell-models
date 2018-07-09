@@ -13,14 +13,14 @@ import numpy as np
 # from pyNN.standardmodels import StandardCellType
 from pyNN.neuron.cells import NativeCellType
 
-import extensions.pynn.ephys_models as ephys_pynn
-from extensions.pynn.ephys_locations import SomaDistanceRangeLocation
+import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn
+from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
 
 import gunay_model
 
 # Debug messages
-from common.stdutil import dotdict
-from common import logutils, treeutils
+from bgcellmodels.common.stdutil import dotdict
+from bgcellmodels.common import logutils, treeutils
 logutils.setLogLevel('quiet', ['bluepyopt.ephys.parameters', 'bluepyopt.ephys.mechanisms'])
 
 

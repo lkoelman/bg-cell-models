@@ -19,7 +19,7 @@ from cellpopdata import (
 )
 from proto_common import pick_random_segments
 
-from common import logutils
+from bgcellmodels.common import logutils
 logger = logutils.getBasicLogger(name='stn_protos')
 
 

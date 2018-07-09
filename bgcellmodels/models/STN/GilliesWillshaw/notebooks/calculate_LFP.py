@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
-from common import analysis, units, morphology, treeutils
-import models.GilliesWillshaw.gillies_pynn_model as gillies_model
+from bgcellmodels.common import analysis, units, morphology, treeutils
+import bgcellmodels.models.STN.GilliesWillshaw.gillies_pynn_model as gillies_model
 import neuron; h = neuron.h
 import bluepyopt.ephys as ephys
 

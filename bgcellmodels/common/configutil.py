@@ -6,7 +6,7 @@ Utilities for connecting neurons.
 """
 
 import re
-from common.stdutil import eval_context
+from bgcellmodels.common.stdutil import eval_context
 
 
 def destructure_param_spec(spec):

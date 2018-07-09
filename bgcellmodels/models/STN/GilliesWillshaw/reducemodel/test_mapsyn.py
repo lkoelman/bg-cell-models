@@ -17,7 +17,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 import gillies_model as gillies
 import marasco_foldbased as marasco
 import mapsyn
-from common import analysis
+from bgcellmodels.common import analysis
 
 
 def test_map_synapses(export_locals=False):

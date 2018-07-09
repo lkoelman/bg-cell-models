@@ -17,10 +17,10 @@ h.load_file("stdlib.hoc") # Load the standard library
 
 # Own modules
 import redutils, tree_edit as treeops
-import common.electrotonic as electro
+import bgcellmodels.common.electrotonic as electro
 import logging, common.logutils as logutils
-from common.nrnutil import ExtSecRef, seg_index
-from common.treeutils import subtree_topology
+from bgcellmodels.common.nrnutil import ExtSecRef, seg_index
+from bgcellmodels.common.treeutils import subtree_topology
 import cluster as clutools
 from cluster import Cluster
 import interpolation as interp

@@ -8,11 +8,11 @@ import sympy.physics.units as sympy_units
 
 Expr = sympy.Expr
 
-from common.units import QuantityType
-from common import logutils
+from bgcellmodels.common.units import QuantityType
+from bgcellmodels.common import logutils
 logger = logutils.getBasicLogger('symtypes')
 
-import common.units as pint_units
+import bgcellmodels.common.units as pint_units
 
 
 # class SymbolicQuantity(sympy.Symbol):

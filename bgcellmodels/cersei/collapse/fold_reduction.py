@@ -7,8 +7,8 @@ Object-oriented interface for various compartmental cell reduction methods.
 
 from abc import abstractmethod, ABCMeta
 
-from common.nrnutil import ExtSecRef, getsecref
-from common.treeutils import check_tree_constraints
+from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
+from bgcellmodels.common.treeutils import check_tree_constraints
 from neuron import h
 
 from fold_algorithm import ReductionMethod

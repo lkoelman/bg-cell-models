@@ -7,7 +7,7 @@ Extensions to Ephys.locations module
 """
 
 from neuron import h
-from common import treeutils
+from bgcellmodels.common import treeutils
 
 from bluepyopt.ephys.locations import Location
 from bluepyopt.ephys.serializer import DictMixin

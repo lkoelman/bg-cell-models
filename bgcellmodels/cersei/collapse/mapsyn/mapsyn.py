@@ -14,11 +14,11 @@ h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
 from .. import redutils
-from common import configutil
-from common.nrnutil import getsecref, seg_index
-from common.treeutils import subtree_has_node
-from common.stdutil import isclose
-from common.electrotonic import (
+from bgcellmodels.common import configutil
+from bgcellmodels.common.nrnutil import getsecref, seg_index
+from bgcellmodels.common.treeutils import subtree_has_node
+from bgcellmodels.common.stdutil import isclose
+from bgcellmodels.common.electrotonic import (
     measure_voltage_transfer, measure_current_transfer, 
     measure_transfer_impedance, measure_input_impedance
 )

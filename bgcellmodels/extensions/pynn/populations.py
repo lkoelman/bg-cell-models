@@ -3,7 +3,7 @@ Modifications to PyNN Population class.
 """
 
 from pyNN.neuron import Population as NrnPopulation
-from extensions.pynn.recording import TraceSpecRecorder
+from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
 
 # Monkey-patching of pyNN.neuron.Population class
 # pyNN.neuron.Population._recorder_class = TraceSpecRecorder

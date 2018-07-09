@@ -26,7 +26,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 import gillies_model as gillies
 
 # Plotting & recording
-from common import analysis
+from bgcellmodels.common import analysis
 
 # Physiological parameters
 import cellpopdata

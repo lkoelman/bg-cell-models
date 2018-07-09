@@ -127,7 +127,7 @@ def calc_score_instantaneous_rate(self, efel_trace, trace_check):
 
     self._setup_efel()
     import efel
-    from common.analysis import numpy_avg_rate_simple
+    from bgcellmodels.common.analysis import numpy_avg_rate_simple
     import numpy as np
 
     # Calculate spike times from response

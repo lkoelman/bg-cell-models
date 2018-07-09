@@ -43,12 +43,12 @@ from pyNN.parameters import Sequence
 from pyNN.utility import init_logging # connection_plot is bugged
 
 # Custom PyNN extensions
-from extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
-from extensions.pynn.utility import connection_plot
-from extensions.pynn.populations import Population
+from bgcellmodels.extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
+from bgcellmodels.extensions.pynn.utility import connection_plot
+from bgcellmodels.extensions.pynn.populations import Population
 
 # Monkey-patching of pyNN.neuron.Population class
-# from extensions.pynn.recording import TraceSpecRecorder
+# from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
 # sim.Population._recorder_class = TraceSpecRecorder
 
 # Custom NEURON mechanisms
@@ -56,8 +56,8 @@ script_dir = os.path.dirname(__file__)
 sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses'))
 
 # Custom cell models
-import models.GilliesWillshaw.gillies_pynn_model as gillies
-import models.Gunay2008.gunay_pynn_model as gunay
+import bgcellmodels.models.STN.GilliesWillshaw.gillies_pynn_model as gillies
+import import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
 from cellpopdata.connectivity import (
     ConnectivityPattern, make_connection_list, make_divergent_pattern)
 
@@ -66,10 +66,10 @@ from cellpopdata.connectivity import (
 #from cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from cellpopdata.cellpopdata import CellConnector
 
-from common.spikelib import make_oscillatory_bursts, make_variable_bursts
-from common.configutil import eval_params
-from common.stdutil import getdictvals
-from common import logutils, fileutils
+from bgcellmodels.common.spikelib import make_oscillatory_bursts, make_variable_bursts
+from bgcellmodels.common.configutil import eval_params
+from bgcellmodels.common.stdutil import getdictvals
+from bgcellmodels.common import logutils, fileutils
 
 # Debug messages
 logutils.setLogLevel('quiet', ['bpop_ext'])

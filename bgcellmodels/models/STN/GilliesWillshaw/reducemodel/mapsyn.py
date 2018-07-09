@@ -15,7 +15,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 
 import gillies_model as gillies
 import redutils as redtools
-from common import configutil
+from bgcellmodels.common import configutil
 from redutils import getsecref, seg_index
 
 class SynInfo(object):

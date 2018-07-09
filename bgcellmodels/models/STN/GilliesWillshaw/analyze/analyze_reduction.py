@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from neuron import h
 
 # Own modules
-from common import electrotonic
+from bgcellmodels.common import electrotonic
 from reducemodel.redutils import ExtSecRef, getsecref
 
 import gillies_model

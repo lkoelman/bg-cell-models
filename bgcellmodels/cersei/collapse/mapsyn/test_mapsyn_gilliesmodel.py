@@ -9,7 +9,7 @@ os.chdir(gillies_model_dir)
 # Python standard library
 import pprint
 pp = pprint.PrettyPrinter(indent=2)
-from common import logutils
+from bgcellmodels.common import logutils
 
 # BluePyOpt
 import bluepyopt.ephys as ephys

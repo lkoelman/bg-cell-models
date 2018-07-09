@@ -29,7 +29,7 @@ Src = ParameterSource
 
 import synmechs
 
-from common.configutil import interpretParamSpec
+from bgcellmodels.common.configutil import interpretParamSpec
 
 import logging
 logging.basicConfig(format='%(levelname)s@%(filename)s:%(lineno)s>%(message)s',

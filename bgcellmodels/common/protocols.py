@@ -9,7 +9,7 @@ import numpy as np
 import neuron, nrn
 h = neuron.h
 
-from common import analysis, treeutils, logutils
+from bgcellmodels.common import analysis, treeutils, logutils
 logger = logutils.getBasicLogger(name='protocols')
 
 @unique

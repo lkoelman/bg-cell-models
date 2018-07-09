@@ -7,7 +7,7 @@ import inspect, functools
 import sympy
 import numpy as np
 
-import common.units as pint_units
+import bgcellmodels.common.units as pint_units
 
 from symtypes import QuantitativeExpr
 # NOTE:
@@ -42,7 +42,7 @@ nodim = ureg('dimensionless')
 v = sympy.symbols('v')
 # Vm = v * mV
 
-from common import logutils
+from bgcellmodels.common import logutils
 logger = logutils.getBasicLogger('mechanism')
 
 # TODO: find good way to combine symbolic expressions and units.

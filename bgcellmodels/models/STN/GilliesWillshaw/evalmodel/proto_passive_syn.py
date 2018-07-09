@@ -28,7 +28,7 @@ from proto_common import (
 )
 
 # Plotting
-from common import analysis
+from bgcellmodels.common import analysis
 
 ################################################################################
 # Interface functions

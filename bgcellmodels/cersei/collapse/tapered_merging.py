@@ -12,9 +12,9 @@ from copy import deepcopy
 import functools
 
 # Our modules
-from common.treeutils import next_segs
-from common.nrnutil import seg_xmin, seg_xmax, getsecref
-from common.electrotonic import seg_lambda, calc_lambda_AC
+from bgcellmodels.common.treeutils import next_segs
+from bgcellmodels.common.nrnutil import seg_xmin, seg_xmax, getsecref
+from bgcellmodels.common.electrotonic import seg_lambda, calc_lambda_AC
 import redutils
 
 from numpy import interp

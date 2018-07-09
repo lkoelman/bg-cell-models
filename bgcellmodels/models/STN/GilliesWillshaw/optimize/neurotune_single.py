@@ -28,7 +28,7 @@ import pyelectro, neurotune
 from pyelectro import analysis
 from neurotune import optimizers, evaluators
 
-from common import analysis as recording
+from bgcellmodels.common import analysis as recording
 import reduce_bush_sejnowski as bush
 
 # Print which modules we are using

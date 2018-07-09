@@ -35,9 +35,9 @@ from pyNN.utility import init_logging # connection_plot # broken method
 from pyNN.parameters import Sequence
 
 # Custom PyNN extensions
-from extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
-from extensions.pynn.recording import TraceSpecRecorder
-from extensions.pynn.utility import connection_plot
+from bgcellmodels.extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
+from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
+from bgcellmodels.extensions.pynn.utility import connection_plot
 sim.Population._recorder_class = TraceSpecRecorder
 
 # Custom NEURON mechanisms
@@ -45,16 +45,16 @@ script_dir = os.path.dirname(__file__)
 sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses'))
 
 # Custom cell models
-import models.GilliesWillshaw.gillies_pynn_model as gillies
-import models.Gunay2008.gunay_pynn_model as gunay
+import bgcellmodels.models.STN.GilliesWillshaw.gillies_pynn_model as gillies
+import import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
 
 # Our physiological parameters
 # from cellpopdata.physiotypes import Populations as PopID
 #from cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from cellpopdata.cellpopdata import CellConnector
 
-from common.spikelib import make_oscillatory_bursts
-from common import logutils
+from bgcellmodels.common.spikelib import make_oscillatory_bursts
+from bgcellmodels.common import logutils
 
 # Debug messages
 logutils.setLogLevel('quiet', ['bpop_ext'])

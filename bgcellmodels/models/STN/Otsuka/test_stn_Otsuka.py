@@ -10,7 +10,7 @@ from neuron import h
 nrn = neuron
 hoc = h
 
-from common import analysis
+from bgcellmodels.common import analysis
 import collections
 
 # Load NEURON mechanisms

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import neo.io
 
-# import common.analysis as sigplot
+# import bgcellmodels.common.analysis as sigplot
 
 
 def read_population_segments(outputs, is_directory=True, i_segment=0, read_ext=None):

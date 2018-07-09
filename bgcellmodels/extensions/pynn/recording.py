@@ -12,7 +12,7 @@ from pyNN.neuron.recording import Recorder, recordable_pattern
 import neuron
 h = neuron.h
 
-from common import nrnutil
+from bgcellmodels.common import nrnutil
 
 logger = recording.logger
 
@@ -29,7 +29,7 @@ class TraceSpecRecorder(Recorder):
     -----
 
         >>> from pyNN.neuron import Population
-        >>> from extensions.pynn.recording import TraceSpecRecorder
+        >>> from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
         >>> Population._recorder_class = TraceSpecRecorder
         >>> ... (recording setup code)
     """

@@ -12,7 +12,7 @@ import re
 import pyNN.neuron
 from pyNN.neuron.simulator import Connection, state, h
 from pyNN.standardmodels import synapses, build_translations
-from common import nrnutil
+from bgcellmodels.common import nrnutil
 
 #    The call graph for creating Connections is:
 #

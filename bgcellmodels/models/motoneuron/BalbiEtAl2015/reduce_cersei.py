@@ -10,9 +10,9 @@ sys.path.append(pkg_root)
 
 import cersei.collapse.redutils as redutils
 import cersei.collapse.cluster as cluster
-import common.logutils as logutils
-import common.treeutils as treeutils
-from common.nrnutil import ExtSecRef, getsecref
+import bgcellmodels.common.logutils as logutils
+import bgcellmodels.common.treeutils as treeutils
+from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
 from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
 
 import balbi_model

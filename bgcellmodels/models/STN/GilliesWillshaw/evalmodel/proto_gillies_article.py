@@ -9,7 +9,7 @@ import collections
 import neuron
 h = neuron.h
 
-from common import analysis
+from bgcellmodels.common import analysis
 
 import gillies_model as gillies
 from cellpopdata import StnModel

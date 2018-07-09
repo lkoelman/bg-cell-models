@@ -7,7 +7,7 @@ Connectity patterns used in Basal Ganglia modeling literature.
 from enum import unique
 import numpy as np
 
-from common.stdutil import IntEnumDescriptor
+from bgcellmodels.common.stdutil import IntEnumDescriptor
 
 
 @unique

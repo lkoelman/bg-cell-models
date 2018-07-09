@@ -12,7 +12,7 @@ h = neuron.h
 
 # Our own modules
 import redutils
-from common.nrnutil import ExtSecRef, get_range_var
+from bgcellmodels.common.nrnutil import ExtSecRef, get_range_var
 
 # Enable logging
 import logging

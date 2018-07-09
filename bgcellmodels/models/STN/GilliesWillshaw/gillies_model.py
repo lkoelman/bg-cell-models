@@ -14,7 +14,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 
 import matplotlib.pyplot as plt
 
-from common.nrnutil import ExtSecRef, getsecref
+from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
 from reducemodel import redutils
 
 # Load NEURON mechanisms

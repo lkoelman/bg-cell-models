@@ -17,8 +17,8 @@ import bluepyopt as bpop
 import bluepyopt.ephys as ephys
 
 # Our custom BluePyOpt modules
-import extensions.bluepyopt.bpop_extensions as bpop_extensions
-from extensions.bluepyopt.bpop_cellmodels import StnFullModel, StnReducedModel
+import bgcellmodels.extensions.bluepyopt.bpop_extensions as bpop_extensions
+from bgcellmodels.extensions.bluepyopt.bpop_cellmodels import StnFullModel, StnReducedModel
 
 import bpop_protocols_stn as StnProtocols
 from bpop_protocols_stn import BpopProtocolWrapper

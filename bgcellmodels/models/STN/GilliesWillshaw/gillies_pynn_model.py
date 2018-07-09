@@ -25,10 +25,10 @@ os.chdir(prev_cwd)
 
 import pyNN.neuron as sim
 
-import extensions.pynn.ephys_models as ephys_pynn
-from extensions.pynn.ephys_locations import SomaDistanceRangeLocation
-from common.stdutil import dotdict
-from common import treeutils, logutils
+import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn
+from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
+from bgcellmodels.common.stdutil import dotdict
+from bgcellmodels.common import treeutils, logutils
 
 import lfpsim
 

@@ -17,11 +17,11 @@ logger = logging.getLogger(logname) # create logger for this module
 import numpy as np
 from neuron import h
 
-from common.nrnutil import (
+from bgcellmodels.common.nrnutil import (
     getsecref, seg_index, seg_xmin, seg_xmax,
     copy_ion_styles, get_ion_styles, set_ion_styles, ion_styles_bits_to_dict)
-from common.treeutils import subtreeroot, dfs_iter_tree_stack
-from common.electrotonic import seg_lambda
+from bgcellmodels.common.treeutils import subtreeroot, dfs_iter_tree_stack
+from bgcellmodels.common.electrotonic import seg_lambda
 
 # Load NEURON function libraries
 h.load_file("stdlib.hoc") # Load the standard library

@@ -20,8 +20,8 @@ logger = logging.getLogger(logname) # create logger for this module
 import neuron
 from neuron import h
 
-from common.treeutils import *
-from common.electrotonic import *
+from bgcellmodels.common.treeutils import *
+from bgcellmodels.common.electrotonic import *
 
 # Load NEURON function libraries
 h.load_file("stdlib.hoc") # Load the standard library

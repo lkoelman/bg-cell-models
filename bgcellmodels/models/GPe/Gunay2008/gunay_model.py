@@ -28,7 +28,7 @@ from math import pi as PI
 import neuron
 import bluepyopt.ephys as ephys
 
-from common import units, fileutils
+from bgcellmodels.common import units, fileutils
 units.set_units_module('pint')
 h = neuron.h
 
@@ -39,12 +39,12 @@ neuron.load_mechanisms(NRN_MECH_PATH)
 h.load_file("stdlib.hoc")
 h.load_file("stdrun.hoc")
 
-from common.electrotonic import calc_min_nseg_hines, calc_lambda_AC
-import extensions.bluepyopt.bpop_locations as ext_locations
-from extensions.bluepyopt.bpop_parameters import NrnSegmentParameter
+from bgcellmodels.common.electrotonic import calc_min_nseg_hines, calc_lambda_AC
+import bgcellmodels.extensions.bluepyopt.bpop_locations as ext_locations
+from bgcellmodels.extensions.bluepyopt.bpop_parameters import NrnSegmentParameter
 
 # Debug messages
-from common import logutils
+from bgcellmodels.common import logutils
 logger = logutils.getBasicLogger('gunay')
 logutils.setLogLevel('quiet', ['gunay'])
 

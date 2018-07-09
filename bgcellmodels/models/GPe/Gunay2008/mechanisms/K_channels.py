@@ -100,7 +100,7 @@ def plot_IV_curves():
     """
     Plot I-V curves for K channel mechanisms
     """
-    from common.channel_analysis import ivcurve
+    from bgcellmodels.common.channel_analysis import ivcurve
 
     from matplotlib import pyplot as plt
     import neuron

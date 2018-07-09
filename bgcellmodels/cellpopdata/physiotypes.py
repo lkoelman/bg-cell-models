@@ -6,7 +6,7 @@ Classes describing the ontology of Basal Ganglia physiology and histology.
 """
 
 from enum import unique
-from common.stdutil import IntEnumDescriptor
+from bgcellmodels.common.stdutil import IntEnumDescriptor
 
 
 @unique

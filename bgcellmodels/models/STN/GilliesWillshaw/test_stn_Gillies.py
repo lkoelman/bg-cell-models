@@ -32,8 +32,8 @@ from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
-from common import analysis
-from common.analysis import rec_currents_activations, plot_currents_activations
+from bgcellmodels.common import analysis
+from bgcellmodels.common.analysis import rec_currents_activations, plot_currents_activations
 
 from reducemodel import (
 	analyze_reduction,

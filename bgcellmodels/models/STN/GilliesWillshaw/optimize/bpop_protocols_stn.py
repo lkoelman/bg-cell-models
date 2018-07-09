@@ -16,8 +16,8 @@ import collections
 
 import bluepyopt.ephys as ephys
 
-from extensions.bluepyopt.bpop_extensions import PhysioProtocol, NrnSpaceClamp
-from extensions.bluepyopt.bpop_protocol_ext import SelfContainedProtocol
+from bgcellmodels.extensions.bluepyopt.bpop_extensions import PhysioProtocol, NrnSpaceClamp
+from bgcellmodels.extensions.bluepyopt.bpop_protocol_ext import SelfContainedProtocol
 
 from evalmodel import (
 	proto_common, proto_background, proto_simple_syn

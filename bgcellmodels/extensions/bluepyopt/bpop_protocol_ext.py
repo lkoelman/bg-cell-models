@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger('bpop_ext')
 
 import collections
-from common import analysis
+from bgcellmodels.common import analysis
 
 
 class SelfContainedProtocol(ephys.protocols.SweepProtocol):
