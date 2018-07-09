@@ -150,7 +150,7 @@ setup(
     # $ pip install sampleproject
     #
     # And where it will live on PyPI: https://pypi.org/project/sampleproject/
-    name='BasalGangliaModels', 
+    name='bgcellmodels', 
     version='0.1.0',
 
     # This is a one-line description or tagline of what your project does. This

@@ -14,5 +14,5 @@ include *.ipynb
 
 # Include the data files
 # recursive-include data *
-include models/GilliesWillshaw/sth-data/*
-include models/Gunay2008/morphology/*
+include bgcellmodels/models/STN/GilliesWillshaw/sth-data/*
+include bgcellmodels/models/GPe/Gunay2008/morphology/*
