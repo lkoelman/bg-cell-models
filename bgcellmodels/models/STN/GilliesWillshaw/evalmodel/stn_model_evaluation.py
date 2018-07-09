@@ -29,15 +29,14 @@ import gillies_model as gillies
 from bgcellmodels.common import analysis
 
 # Physiological parameters
-import cellpopdata
-from cellpopdata import (
+import bgcellmodels.cellpopdata as cpd
+from bgcellmodels.cellpopdata import (
     StnModel,
     PhysioState,
     Populations,
     NTReceptors as NTR,
     ParameterSource as Cit
 )
-cpd = cellpopdata
 Pop = Populations
 
 # Experimental protocols
@@ -491,7 +490,7 @@ class StnModelEvaluator(object):
                         'RNG_data'
                         ...
         """
-        if isinstance(pre_pop, cellpopdata.Populations):
+        if isinstance(pre_pop, cpd.Populations):
             pre_pop = pre_pop.name.lower()
         
         return self.model_data[model]['inputs'].get(pre_pop, None)

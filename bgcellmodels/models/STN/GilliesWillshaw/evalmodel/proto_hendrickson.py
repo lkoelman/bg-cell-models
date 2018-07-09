@@ -10,7 +10,7 @@ import neuron
 h = neuron.h
 
 # Physiological parameters
-from cellpopdata import (
+from bgcellmodels.cellpopdata import (
         PhysioState,
         Populations as Pop,
         NTReceptors as NTR,

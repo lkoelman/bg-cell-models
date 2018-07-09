@@ -24,7 +24,7 @@ from evalmodel import (
 )
 from evalmodel.proto_common import StimProtocol
 
-import cellpopdata as cpd
+import bgcellmodels.cellpopdata as cpd
 Pop = cpd.Populations
 NTR = cpd.NTReceptors
 Ref = cpd.ParameterSource
@@ -121,7 +121,7 @@ def connector_getter(setup_kwargs):
 	"""
 	Function to get CellConnector for stimulation protocol setup functions.
 	"""
-	import cellpopdata as cpd
+	import bgcellmodels.cellpopdata as cpd
 	physio_state = setup_kwargs['physio_state']
 	rng = setup_kwargs['rng']
 	return cpd.CellConnector(physio_state, rng)

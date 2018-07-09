@@ -31,7 +31,7 @@ import bluepyopt.ephys as ephys
 
 import gillies_model
 from reducemodel import redutils, reduce_cell
-import cellpopdata as cpd
+import bgcellmodels.cellpopdata as cpd
 
 
 import logging

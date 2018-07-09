@@ -323,7 +323,7 @@ class SynapseFromDB(pyNN.neuron.StaticSynapse):
     USAGE
     -----
 
-        >>> from cellpopdata import cellpopdata
+        >>> from bgcellmodels.cellpopdata import cellpopdata
         >>> params_db = cellpopdata.Cellconnector(...)
         >>> syn = SynapseFromDB(parameter_database=params_db)
         >>> proj = sim.Projection(pop_stn, pop_gpe, connector, db_syn,

@@ -46,12 +46,12 @@ sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses')
 
 # Custom cell models
 import bgcellmodels.models.STN.GilliesWillshaw.gillies_pynn_model as gillies
-import import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
+import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
 
 # Our physiological parameters
-# from cellpopdata.physiotypes import Populations as PopID
-#from cellpopdata.physiotypes import ParameterSource as ParamSrc
-# from cellpopdata.cellpopdata import CellConnector
+# from bgcellmodels.cellpopdata.physiotypes import Populations as PopID
+#from bgcellmodels.cellpopdata.physiotypes import ParameterSource as ParamSrc
+# from bgcellmodels.cellpopdata.cellpopdata import CellConnector
 
 from bgcellmodels.common.spikelib import make_oscillatory_bursts
 from bgcellmodels.common import logutils

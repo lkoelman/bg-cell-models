@@ -17,9 +17,8 @@ h.load_file("stdrun.hoc") # Load the standard run library
 from . import analysis
 
 # Physiological parameters
-import cellpopdata
-from cellpopdata import PhysioState, Populations
-cpd = cellpopdata
+import bgcellmodels.cellpopdata as cpd
+from bgcellmodels.cellpopdata import PhysioState, Populations
 Pop = Populations
 
 # Logging
@@ -220,7 +219,7 @@ class CellEvaluator(object):
                         'RNG_data'
                         ...
         """
-        if isinstance(pre_pop, cellpopdata.Populations):
+        if isinstance(pre_pop, cpd.Populations):
             pre_pop = pre_pop.name.lower()
         
         return self.model_data[model]['inputs'].get(pre_pop, None)

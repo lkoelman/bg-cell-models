@@ -12,7 +12,7 @@ h = neuron.h
 from bgcellmodels.common import analysis
 
 import gillies_model as gillies
-from cellpopdata import StnModel
+from bgcellmodels.cellpopdata import StnModel
 from proto_common import StimProtocol, EvaluationStep, register_step
 
 ################################################################################

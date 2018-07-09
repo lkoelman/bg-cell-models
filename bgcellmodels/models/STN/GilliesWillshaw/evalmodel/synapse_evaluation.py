@@ -6,7 +6,7 @@ Analyze PSP frequency contents for accurate synaptic mapping.
 @date		11/09/2017
 """
 
-from cellpopdata import StnModel
+from bgcellmodels.cellpopdata import StnModel
 from proto_common import StimProtocol
 from stn_model_evaluation import run_protocol
 

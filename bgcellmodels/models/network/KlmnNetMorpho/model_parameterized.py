@@ -22,6 +22,13 @@ To run using MPI, you can use the following command:
 >>> mpirun -n 8 python model_parameterized.py -n numcell -d simdur \
 >>> -ng -o ~/storage -c ~/workspace/simple_config.json -id test1
 
+
+NOTES
+-----
+
+- It may look like some imports are not used but they may be called dynamically
+  using eval() based on the config file.
+
 """
 from __future__ import print_function
 import time
@@ -41,6 +48,7 @@ import pyNN.neuron as sim
 from pyNN import space
 from pyNN.parameters import Sequence
 from pyNN.utility import init_logging # connection_plot is bugged
+import neo.io
 
 # Custom PyNN extensions
 from bgcellmodels.extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
@@ -52,19 +60,18 @@ from bgcellmodels.extensions.pynn.populations import Population
 # sim.Population._recorder_class = TraceSpecRecorder
 
 # Custom NEURON mechanisms
-script_dir = os.path.dirname(__file__)
-sim.simulator.load_mechanisms(os.path.join('..', '..', 'mechanisms', 'synapses'))
+from bgcellmodels.mechanisms import synapses # loads MOD files
 
 # Custom cell models
 import bgcellmodels.models.STN.GilliesWillshaw.gillies_pynn_model as gillies
-import import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
-from cellpopdata.connectivity import (
+import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
+from bgcellmodels.cellpopdata.connectivity import (
     ConnectivityPattern, make_connection_list, make_divergent_pattern)
 
 # Our physiological parameters
-# from cellpopdata.physiotypes import Populations as PopID
-#from cellpopdata.physiotypes import ParameterSource as ParamSrc
-# from cellpopdata.cellpopdata import CellConnector
+# from bgcellmodels.cellpopdata.physiotypes import Populations as PopID
+#from bgcellmodels.cellpopdata.physiotypes import ParameterSource as ParamSrc
+# from bgcellmodels.cellpopdata.cellpopdata import CellConnector
 
 from bgcellmodels.common.spikelib import make_oscillatory_bursts, make_variable_bursts
 from bgcellmodels.common.configutil import eval_params
@@ -105,6 +112,34 @@ def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
     source_ids = rng.choice(range(pop_size), int(fraction*pop_size), replace=False)
     targets_relative = range(1, num_adjacent+1) + range(-1, -num_adjacent-1, -1)
     return make_divergent_pattern(source_ids, targets_relative, pop_size)
+
+
+def write_population_data(pop, output, suffix, gather=True, clear=True):
+    """
+    Write recorded data for Population to file.
+
+    @param  output : str
+            Output path including asterisk as placeholder: "/path/to/*.ext"
+
+    @note   gathers data from MPI nodes so should be executed on all ranks.
+    """
+    if output is None:
+        return 
+    outdir, extension = output.split('*')
+    # Get Neo IO writer for file format associated with extension
+    if extension.endswith('h5'):
+        IOClass = neo.io.NixIO
+    elif extension.endswith('mat'):
+        IOClass = neo.io.NeoMatlabIO
+    elif extension.endswith('npz'):
+        IOClass = neo.io.PyNNNumpyIO
+    else:
+        IOClass = str # let PyNN guess from extension
+    outfile =  "{dir}{label}{suffix}{ext}".format(dir=outdir,
+                    label=pop.label, suffix=suffix, ext=extension)
+    io = IOClass(outfile)
+    pop.write_data(io, variables='all', gather=gather, clear=clear, 
+                       annotations={'script_name': __file__})
 
 
 def run_simple_net(
@@ -189,6 +224,7 @@ def run_simple_net(
         pvals = eval_params(param_specs, params_global_context, local_context)
         return getdictvals(pvals, *param_names)
 
+
     def synapse_from_config(pre, post):
         """
         Make Synapse object from config dict
@@ -199,6 +235,7 @@ def run_simple_net(
         syn_class = synapse_types[syn_type]
         syn_pvals = eval_params(syn_params, params_global_context, local_context)
         return syn_class(**syn_pvals)
+
 
     def connector_from_config(pre, post):
         """
@@ -211,6 +248,7 @@ def run_simple_net(
         con_pvals = eval_params(con_params, params_global_context,
                                [params_local_context, config_locals])
         return connector_class(**con_pvals)
+
     
     # LFP calculation: command line args get priority over config
     if calculate_lfp is None:
@@ -520,17 +558,33 @@ def run_simple_net(
     outdir, filespec = os.path.split(output)
     progress_file = os.path.join(outdir, '{}_sim_progress.log'.format(
         datetime.fromtimestamp(tstart).strftime('%Y.%m.%d-%H.%M.%S')))
+    report_interval = 50.0 # (ms) in simulator time
+    last_report_time = tstart
 
-    report_interval = 50.0 # (ms) simulation time
-    tlast = tstart
+    # Times for writing out data to file
+    # FIXME: set write times
+    transient_period = 100.0 # (ms) period including transients
+    steady_period = sim_dur - transient_period
+    max_write_interval = 200.0 # (ms)
+    homogenize_intervals = False
+    if homogenize_intervals:
+        write_interval = steady_period / (steady_period // max_write_interval + 1)
+    else:
+        write_interval = max_write_interval
+    write_times = list(reversed(np.arange(transient_period, sim_dur+write_interval,
+                                          write_interval)))
+    last_write_time = 0.0
+    
+    # SIMULATE
     while sim.state.t < sim_dur:
         sim.run(report_interval)
         
+        # Report simulation progress
         if mpi_rank == 0:
             tnow = time.time()
             t_elapsed = tnow - tstart
-            t_stepdur = tnow - tlast
-            tlast = tnow
+            t_stepdur = tnow - last_report_time
+            last_report_time = tnow
             # ! No newlines in progress report - passed to shell
             progress = ("Simulation time is {} of {} ms. "
                         "CPU time elapsed is {} s, last step took {} s".format(
@@ -541,6 +595,15 @@ def run_simple_net(
                 stamp = datetime.fromtimestamp(tnow).strftime('%Y-%m-%d@%H:%M:%S')
                 os.system("echo [{}]: {} >> {}".format(stamp, progress, progress_file))
 
+        # Write recorded data
+        if sim.state.t >= write_times[-1]:
+            suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
+            for pop in all_pops.values():
+                write_population_data(pop, output, suffix, gather=True, clear=True)
+            write_times.pop()
+            last_write_time = sim.state.t
+
+    # Report simulation statistics
     tstop = time.time()
     cputime = tstop - tstart
     each_num_segments = comm.gather(num_segments, root=0)
@@ -549,6 +612,11 @@ def run_simple_net(
         total_num_segments = sum(each_num_segments)
         print("Simulated {} segments for {} ms in {} ms CPU time".format(
                 total_num_segments, sim.state.tstop, cputime))
+
+    # Final write of recorded variables
+    suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
+    for pop in all_pops.values():
+        write_population_data(pop, output, suffix, gather=True, clear=True)
 
 
     ############################################################################
@@ -588,28 +656,7 @@ def run_simple_net(
             proj_params['weight_delay_list'] = pre_post_params
 
 
-
-    ############################################################################
-    # PLOT & SAVE DATA
-    ############################################################################
-    if output is not None: # MPI::gather operations => execute on each rank
-        # Save all recorded traces
-        import neo.io
-        outdir, extension = output.split('*')
-        if extension.endswith('h5'):
-            IOClass = neo.io.NixIO
-        elif extension.endswith('mat'):
-            IOClass = neo.io.NeoMatlabIO
-        elif extension.endswith('npz'):
-            IOClass = neo.io.PyNNNumpyIO
-        else:
-            IOClass = str # let PyNN guess from extension
-        for pop in all_pops.values():
-            outfile =  "{dir}{label}{ext}".format(dir=outdir, label=pop.label, ext=extension)
-            io = IOClass(outfile)
-            pop.write_data(io, variables='all', gather=True, 
-                               annotations={'script_name': __file__})
-
+    # Write model parameters 
     if mpi_rank==0 and output is not None:
         outdir, extension = output.split('*')
 
@@ -620,6 +667,9 @@ def run_simple_net(
         with open(params_outfile, 'wb') as fout:
             pickle.dump(saved_params, fout)
 
+    ############################################################################
+    # PLOT DATA
+    ############################################################################
 
     if mpi_rank==0 and with_gui:
         # Only plot on one process, and if GUI available
