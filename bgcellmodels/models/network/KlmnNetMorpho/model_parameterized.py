@@ -132,9 +132,6 @@ def run_simple_net(
                 key 'simulation' for simulation parameters.
     """
 
-    # TODO: try non-random STN->GPE and GPE->STN projection patterns
-    # TODO: save connectivity matrices to file
-
     ############################################################################
     # SIMULATOR SETUP
     ############################################################################

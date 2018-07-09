@@ -43,9 +43,9 @@ BASEDIR = os.path.dirname(os.path.abspath(__file__))
 
 # Build NMODL mechanisms
 nmodl_mechanism_dirs = [
-    'mechanisms/synapses',
-    'models/GilliesWillshaw/mechanisms',
-    'models/Gunay2008/mechanisms'
+    'bgcellmodels/mechanisms/synapses',
+    'bgcellmodels/models/STN/GilliesWillshaw/mechanisms',
+    'bgcellmodels/models/GPe/Gunay2008/mechanisms'
 ]
 
 class Build_NMODL(BuildCommand):
@@ -204,7 +204,7 @@ setup(
 
     # You can just specify package directories manually here if your project is
     # simple. Or you can use find_packages().
-    packages=['common', 'models', 'cellpopdata', 'extensions', 'cersei'],
+    packages=['bgcellmodels'],
     # packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
 
     # This field lists other packages that your project depends on to run.
@@ -235,8 +235,8 @@ setup(
     # MANIFEST.in as well.
     package_data={  # Optional
         'bgcellmodels': [
-            'models/GilliesWillshaw/sth-data/*',
-            'models/Gunay2008/morphology/*'
+            'bgcellmodels/models/STN/GilliesWillshaw/sth-data/*',
+            'bgcellmodels/models/GPe/Gunay2008/morphology/*'
         ],
     },
 
