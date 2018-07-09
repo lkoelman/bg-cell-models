@@ -152,7 +152,9 @@ def run_simple_net(
         config          = None,
         seed            = None,
         calculate_lfp   = None,
-        burst_frequency = None):
+        burst_frequency = None,
+        transient_period = None,
+        max_write_interval = None):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
@@ -562,10 +564,11 @@ def run_simple_net(
     last_report_time = tstart
 
     # Times for writing out data to file
-    # FIXME: set write times
-    transient_period = 100.0 # (ms) period including transients
+    if transient_period is None:
+        transient_period = 1000.0 # (ms)
     steady_period = sim_dur - transient_period
-    max_write_interval = 200.0 # (ms)
+    if max_write_interval is None:
+        max_write_interval = 10e3 # (ms)
     homogenize_intervals = False
     if homogenize_intervals:
         write_interval = steady_period / (steady_period // max_write_interval + 1)
@@ -596,7 +599,7 @@ def run_simple_net(
                 os.system("echo [{}]: {} >> {}".format(stamp, progress, progress_file))
 
         # Write recorded data
-        if sim.state.t >= write_times[-1]:
+        if abs(sim.state.t - write_times[-1]) <= 5.0:
             suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
             for pop in all_pops.values():
                 write_population_data(pop, output, suffix, gather=True, clear=True)
@@ -700,6 +703,15 @@ if __name__ == '__main__':
 
     parser.add_argument('-b', '--burst', nargs='?', type=float, default=None,
                         dest='burst_frequency', help='Beta bursting frequency')
+
+    parser.add_argument('-wi', '--write-interval', nargs='?', type=float, default=None,
+                        dest='max_write_interval',
+                        help='Interval between successive write out of recording data')
+
+    parser.add_argument('-tp', '--transient-period', nargs='?', type=float, default=None,
+                        dest='transient_period',
+                        help=('Duration of transient period at start of simulation. ' 
+                              'First data write-out is after transient period'))
 
     parser.add_argument('--lfp',
                         dest='calculate_lfp', action='store_true',
