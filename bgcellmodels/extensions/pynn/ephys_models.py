@@ -160,6 +160,7 @@ class CellModelMeta(type):
         # Process mechanism variables declared in class definition
         # modified_bases = tuple(list(new_class_bases) + [ephys.models.CellModel])
         
+        # Parameter names defined in class namespace (not Ephys parameters)
         parameter_names = new_class_namespace.get("parameter_names", [])
         
         for e_param in new_class_namespace.get("_ephys_parameters", []):
@@ -372,11 +373,12 @@ class EphysModelWrapper(ephys.models.CellModel):
 
         # NOTE: default params will be passed by pyNN Population
         for param_name, param_value in kwargs.iteritems():
-            # - self.params are the Ephys parameters
-            # - these are already set in instantiate() so don't set again
+            # self.params are the Ephys parameters : these are already set in 
+            # instantiate() so don't set them again
             if (param_name in self.params) and (self.params[param_name].value == param_value):
                 continue
             elif param_name in self.parameter_names:
+                # PyNN parameters become attributes or passed to property with same name
                 setattr(self, param_name, param_value)
 
         # Synapses will map the mechanism name to the synapse object

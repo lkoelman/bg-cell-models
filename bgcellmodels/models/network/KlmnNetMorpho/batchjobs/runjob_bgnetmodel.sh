@@ -63,11 +63,11 @@ if [ -z "$outdir" ]; then
     outdir="~/storage"
 fi
 
-model_dir="${HOME}/workspace/bgcellmodels/models/KlmnNetMorpho/"
+model_dir="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/KlmnNetMorpho"
 model_script=model_parameterized.py
-model="${model_dir}${model_script}"
+model="${model_dir}/${model_script}"
 config_file="configs/${config}"
-model_config="${model_dir}${config_file}"
+model_config="${model_dir}/${config_file}"
 
 # Command to be evaluated
 mpi_command="mpirun -n 24 python ${model} \

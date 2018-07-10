@@ -4,17 +4,22 @@ COMMENT
 
 Brief Description:
 
-GABAA and GABAB receptor conductance using a dual-exponential profile
-and incorporating Tsodyks-Markram short-term dynamics.
+GABAA and receptor conductance using a dual-exponential profile
+and incorporating Tsodyks-Markram short-term dynamics. GABA-B is implemented
+based on a signaling cascade proposed by Destexhe et al with the bound receptor
+fraction represented by the the Tsodyks-Markram conductance variable.
 
-For details on GABA-B signaling cascade and its parameters, see the article:
-    
-    Destexhe, Alain, Zachary F. Mainen, and Terrence J. Sejnowski. "Kinetic 
-    models of synaptic transmission." Methods in neuronal modeling 2 (1998): 1-25.
+Signaling cascade:
 
-and the associated model file 'gagab3.mod' obtainable at 
-http://cns.iaf.cnrs-gif.fr/alain_demos.html
-under package "Kinetic Models of Synaptic Transmission (zip format) "
+For the GABA-B signaling cascade, the Tsodyks-Markram conductance variable 
+is interpreted as the bound receptor concentration, including effects of 
+desensitization (corresponding to state variable 'R' in Destexhe's GABA-B 
+signaling cascade model, see Destexhe, Alain, Zachary F. Mainen, and Terrence J.
+Sejnowski. "Kinetic models of synaptic transmission." Methods in neuronal 
+modeling 2 (1998): 1-25). The G-protein production and decay are modeled in the
+same way, and the the final GABA-B conductance is a sigmoid representing Hill
+kinetics applied to the G-protein concentration. The parameters of the sigmoid
+and G-protein production and decay rates have been adjusted.
 
 
 CREDITS
@@ -23,6 +28,7 @@ CREDITS
 - Tsodyks-Markram model based on `TsodyksMarkram_AMPA_NMDA.mod` by E. Muller at BBP/EPFL
 
 - GABA-B signaling cascade model based on `gabab.mod` by A. Destexhe
+  obtainable at http://cns.iaf.cnrs-gif.fr/alain_demos.html
 
 - Integration of GABA-B signaling cascade in Tsodyks-Markram synapse + 
   addition of sigmoidal threshold on bound recptor fraction by Lucas Koelman
@@ -32,17 +38,16 @@ USAGE
 -----
 
 
-- Find the peak value of the G-protein concentration for the maximum pre-synaptic
+1. Find the peak value of the G-protein concentration for the maximum pre-synaptic
   firing rate
 
-    + This can be tested by using the same rise and decay time constants for
-      GABA-A as used in GABA-B, setting gmax_GABAA to 1, and plotting the
-      time course of g_GABAA when stimulating at the max presynaptic rate
+    - record state variable 'G' and plot it
 
-+ Set KD (half-maximum of sigmoid describing Hill kinetics) to between
-  2-3 times the peak G-protein concentration.
 
-  + Depending on how many spikes you want to yield significant rise in g_GABAB
+2. Set KD (half-maximum of sigmoid describing Hill kinetics) to between
+  1.5-3 times the peak G-protein concentration.
+
+    - Depending on how many spikes you want to result in a significant rise in g_GABAB
 
 
 ENDCOMMENT

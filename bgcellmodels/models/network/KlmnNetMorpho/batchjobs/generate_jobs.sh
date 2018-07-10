@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
 
-model_dir="${HOME}/workspace/bgcellmodels/models/KlmnNetMorpho"
+model_dir="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/KlmnNetMorpho"
 job_script="${model_dir}/batchjobs/runjob_bgnetmodel.sh"
 
 # Config files you want to repeat with different seeds

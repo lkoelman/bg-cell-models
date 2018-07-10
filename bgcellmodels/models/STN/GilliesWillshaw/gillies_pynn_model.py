@@ -74,6 +74,8 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     - instantiated using Population.cell_type.model(**parameters) 
       and assigned to ID._cell
 
+        - parameters are those passed to the CellType on creation
+
     - !!! Don't forget to set initial ion concentrations globally.
 
 
@@ -90,12 +92,18 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     regions = ['proximal', 'distal']
 
     parameter_names = [
+        # 'GABA_synapse_mechanism',
+        # 'GLU_synapse_mechanism',
         'calculate_lfp',
         'lfp_sigma_extracellular',
         'lfp_electrode_x',
         'lfp_electrode_y',
         'lfp_electrode_z',
     ]
+
+    # FIXME: workaround, so far PyNN only allows numerical parameters
+    GABA_synapse_mechanism = 'GABAsyn'
+    GLU_synapse_mechanism = 'GLUsyn'
 
 
     def instantiate(self, sim=None):
@@ -173,15 +181,21 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         self._synapses['proximal'] = prox_syns = {}
         self._synapses['distal'] = dist_syns = {}
 
+        # Get constuctors for NEURON synapse mechanisms
+        make_gaba_syn = getattr(h, self.GABA_synapse_mechanism)
+        make_glu_syn = getattr(h, self.GLU_synapse_mechanism)
+
         prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
         for seg_index in proximal_indices:
-            syn = h.GABAsyn(proximal_segments[seg_index])
-            prox_gaba_syns.append(dotdict(synapse=syn, used=0, mechanism='GABAsyn'))
+            syn = make_gaba_syn(proximal_segments[seg_index])
+            prox_gaba_syns.append(dotdict(synapse=syn, used=0,
+                mechanism=self.GABA_synapse_mechanism))
         
         dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
         for seg_index in distal_indices:
-            syn = h.GLUsyn(distal_segments[seg_index])
-            dist_glu_syns.append(dotdict(synapse=syn, used=0, mechanism='GLUsyn'))
+            syn = make_glu_syn(distal_segments[seg_index])
+            dist_glu_syns.append(dotdict(synapse=syn, used=0,
+                mechanism=self.GLU_synapse_mechanism))
 
 
     def _update_position(self, xyz):
@@ -244,57 +258,10 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
                            self.lfp_electrode_z])
         sigma = self.lfp_sigma_extracellular
 
-        # Method A: using LFP summator object (FIXME: MPI problems)
+        # Method A: using LFP summator object
         self.lfp_tracker = h.LfpTracker(
                                 self.icell.soma[0], True, "PSA", sigma, 
                                 coords, self.icell.somatic, self.icell.basal)
-        # self.lfp_summator = self.lfp_tracker.summator
-        # self.lfp = self.lfp_summator._ref_summed
-
-        # Method B: using PointerVector like in NetPyne
-        # self.lfp_contrib_seclists = [self.icell.somatic, self.icell.basal]
-        # num_lfp_segments = sum((sec.nseg for sl in self.lfp_contrib_seclists for sec in sl))
-        # self.lfp_imemb_ptr = h.PtrVector(num_lfp_segments)
-        # self.lfp_imemb_ptr.ptr_update_callback(self._set_imemb_ptr)
-        # self.lfp_imemb_vec = h.Vector(num_lfp_segments)
-        # self.lfp_imemb_factors = h.calc_lfp_factors(True, "PSA", sigma, coords, 
-        #     self.icell.somatic, self.icell.basal).as_numpy()
-        # self.traces['lfp'] = np.empty(int(sim.state.duration/sim.state.rec_dt))
-
-
-#    def _set_imemb_ptr(self):
-#        """
-#        Update pointers to segment i_membrane_ variable.
-#        """
-#        # TODO: write function in lfp_lib.hoc that keeps pointers coherent
-#        i_seg = 0
-#        for seclist in self.lfp_contrib_seclists:
-#            for sec in seclist:
-#                for seg in sec:
-#                    self.lfp_imemb_ptr.pset(i_seg, seg._ref_i_membrane_)
-#                    i_seg += 1
-#
-#
-#    def _get_imemb_vec(self):
-#        """
-#        Get vector of membrane currents at this time.
-#
-#        @return     imemb_vec : numpy.array
-#                    Array with membrane current values for all tracked segments.
-#        """
-#        # The variable values pointed to by the PtrVector are copied into the destination Vector.
-#        self.lfp_imemb_ptr.gather(self.lfp_imemb_vec)
-#        return self.lfp_imemb_vec.as_numpy()
-#
-#
-#    def _calculate_lfp(self):
-#        """
-#        Calculate total LFP for cell from its membrance current contributions.
-#        """
-#        i_membs = self._get_imemb_vec()
-#        save_step = int(sim.state.t / sim.state.rec_dt)
-#        self.traces['lfp'][save_step-1] = np.dot(i_membs, self.lfp_imemb_factors)
-
 
 
 class StnCellType(ephys_pynn.EphysCellType):
@@ -307,6 +274,8 @@ class StnCellType(ephys_pynn.EphysCellType):
     model = StnCellModel
 
     default_parameters = {
+        # 'GABA_synapse_mechanism': 'GABAsyn',
+        # 'GLU_synapse_mechanism': 'GLUsyn',
         'calculate_lfp': False,
         'lfp_sigma_extracellular': 0.3,
         'lfp_electrode_x': 100.0,

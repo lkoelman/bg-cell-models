@@ -51,7 +51,7 @@ from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
 
 # Custom PyNN extensions
-from bgcellmodels.extensions.pynn.connection import GluSynapse, GabaSynapse # , SynapseFromDB
+from bgcellmodels.extensions.pynn.connection import GluSynapse, GabaSynapse, GabaSynTmHill
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
 
@@ -268,7 +268,7 @@ def run_simple_net(
     print("{} start phase: POPULATIONS.".format(mpi_rank))
 
     # STN cell population
-    stn_dx, = get_pop_parameters('STN', 'grid_dx')
+    stn_dx, gaba_mech = get_pop_parameters('STN', 'grid_dx', 'GABA_mechanism')
     stn_grid = space.Line(x0=0.0, dx=stn_dx,
                           y=0.0, z=0.0)
     ncell_stn = ncell_per_pop
@@ -276,6 +276,10 @@ def run_simple_net(
     stn_type = gillies.StnCellType(
                         calculate_lfp=calculate_lfp,
                         lfp_sigma_extracellular=0.3)
+
+    # Workaround because PyNN only allows numerical parameters
+    stn_type.model.GABA_synapse_mechanism = gaba_mech
+
     # FIXME: set electrode coordinates
                         # lfp_electrode_x=100.0,
                         # lfp_electrode_y=100.0,
@@ -290,11 +294,12 @@ def run_simple_net(
 
 
     # GPe cell population
-    gpe_dx, = get_pop_parameters('GPE', 'grid_dx')
+    gpe_dx, gaba_mech = get_pop_parameters('GPE', 'grid_dx', 'GABA_mechanism')
     gpe_grid = space.Line(x0=0.0, dx=gpe_dx,
                           y=1e6, z=0.0)
 
     gpe_type = gunay.GPeCellType()
+    gpe_type.model.GABA_synapse_mechanism = gaba_mech # workaround for string parameter
 
     ncell_gpe = ncell_per_pop
     pop_gpe = Population(ncell_gpe, 
@@ -403,10 +408,11 @@ def run_simple_net(
 
     # see notes in original model.py (non-parameterized)
 
-    # Allowed synapse types
+    # Allowed synapse types (for creation from config file)
     synapse_types = {
         "GluSynapse": GluSynapse,
         "GabaSynapse": GabaSynapse,
+        "GabaSynTmHill" : GabaSynTmHill,
     }
 
     ############################################################################

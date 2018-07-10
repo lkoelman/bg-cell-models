@@ -63,7 +63,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     _param_locations = gunay_model.define_locations(
                         'config/locations.json')
 
-    
+    # Ephys parameters will automaticall by converted to PyNN parameters
     _ephys_parameters = gunay_model.define_parameters(
                             'config/params_gunay2008_GENESIS.json',
                             'config/map_params_gunay2008_v2.json',
@@ -71,8 +71,18 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
     # _ephys_locations = define_synapse_locations()
     regions = ['proximal', 'distal']
+
+    # Our custom PyNN parameters
+    # parameter_names = [
+    #     'GABA_synapse_mechanism',
+    #     'GLU_synapse_mechanism',
+    # ]
+
+    # FIXME: workaround, so far PyNN only allows numerical parameters
+    GABA_synapse_mechanism = 'GABAsyn'
+    GLU_synapse_mechanism = 'GLUsyn'
     
-    
+
     def memb_init(self):
         """
         Initialization function required by PyNN.
@@ -121,15 +131,21 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         self._synapses['proximal'] = prox_syns = {}
         self._synapses['distal'] = dist_syns = {}
 
+        # Get constuctors for NEURON synapse mechanisms
+        make_gaba_syn = getattr(h, self.GABA_synapse_mechanism)
+        make_glu_syn = getattr(h, self.GLU_synapse_mechanism)
+
         prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
         for seg_index in proximal_indices:
-            syn = h.GABAsyn(proximal_segments[seg_index])
-            prox_gaba_syns.append(dotdict(synapse=syn, used=0, mechanism='GABAsyn'))
+            syn = make_gaba_syn(proximal_segments[seg_index])
+            prox_gaba_syns.append(dotdict(synapse=syn, used=0,
+                mechanism=self.GABA_synapse_mechanism))
         
         dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
         for seg_index in distal_indices:
-            syn = h.GLUsyn(distal_segments[seg_index])
-            dist_glu_syns.append(dotdict(synapse=syn, used=0, mechanism='GLUsyn'))
+            syn = make_glu_syn(distal_segments[seg_index])
+            dist_glu_syns.append(dotdict(synapse=syn, used=0,
+                mechanism=self.GLU_synapse_mechanism))
 
 
     def _update_position(self, xyz):
@@ -172,13 +188,20 @@ class GPeCellType(ephys_pynn.EphysCellType):
     # The encapsualted model available as class attribute 'model'
     model = GPeCellModel
 
-    # TODO: to build interface properties: put generic things extracted from
-    #       the Ephys CellModel in the encapsulated class, and put rest here.
+    # Defaults for our custom PyNN parameters
+    # default_parameters = {
+    #     'GABA_synapse_mechanism': 'GABAsyn',
+    #     'GLU_synapse_mechanism': 'GLUsyn',
+    # }
+
+    # Defaults for Ephys parameters
     default_parameters = {
         # ephys_model.params.values are ephys.Parameter objects
         # ephys_param.name is same as key in ephys_model.params
         p.name.replace(".", "_"): p.value for p in model._ephys_parameters
     }
+
+    
 
     # extra_parameters = {}
     # default_initial_values = {'v': -65.0}

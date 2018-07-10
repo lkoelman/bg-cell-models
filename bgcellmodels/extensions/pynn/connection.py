@@ -279,9 +279,10 @@ class ConnectionNrnWrapped(Connection):
         NOTES
         -----
 
-        In PyNN.neuron.simulator.py, this is solved by generating properties
-        for each attribute of the associated synapse type and weight adjuster.
-        We catch it in this method instead.
+        In PyNN.neuron.simulator.py, this is solved by generating Connector
+        properties for each attribute of the associated synapse type 
+        and weight adjuster. We catch the property assignments in this method
+        so we don't have to create explicit properties.
         """
         if hasattr(self, 'synapse_type') and name in self.synapse_type.get_parameter_names():
             pinfo = self.synapse_type.translations[name]
@@ -506,6 +507,68 @@ class GabaSynapse(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
         'tau_rec':      200.0,
         'tau_facil':    200.0,
         'U1':           0.5,
+    }
+
+    def _get_minimum_delay(self):
+        return state.min_delay
+
+
+class GabaSynTmHill(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
+    """
+    Tsodyks-Markram synapse for GABA-A and GABA-B receptors with GABA-B
+    conductance expressed as hill function applied to Tsodyks-Markram
+    conductance variable.
+    
+    @see    mechanism GABAsyn2.mod
+    """
+
+    connection_type = ConnectionNrnWrapped
+    model = 'GABAsyn2' # defined in GABAsyn.mod
+
+    # PyNN internal name to NEURON name
+    translations = build_translations(
+        # NetCon parameters
+        ('weight', 'weight'),
+        ('delay', 'delay'),
+        # Conductance time course
+        ('gmax_GABAA', 'gmax_GABAA'),     # Weight conversion factor (from nS to uS)
+        ('gmax_GABAB', 'gmax_GABAB'),     # Weight conversion factor (from nS to uS)
+        ('tau_r_GABAA', 'tau_r_GABAA'),   # Dual-exponential conductance profile
+        ('tau_d_GABAA', 'tau_d_GABAA'),   # IMPORTANT: tau_r < tau_d
+        ('tau_r_GABAB', 'tau_r_GABAB'),   # Dual-exponential conductance profile
+        ('tau_d_GABAB', 'tau_d_GABAB'),    # IMPORTANT: tau_r < tau_d
+        # Short-term Depression/Facilitation
+        ('tau_rec', 'tau_rec'),         # time constant of recovery from depression
+        ('tau_facil', 'tau_facil'),     # time constant of facilitation
+        ('U1', 'U1'),                   # baseline release probability
+        # Reversal potentials
+        ('Erev_GABAA', 'Erev_GABAA'),                     # GABAA and GABAB reversal potential
+        ('Erev_GABAB', 'Erev_GABAB'),                   # Initial concentration of mg2+
+        # GABA-B signaling cascade
+        ('K3', 'K3'),
+        ('K4', 'K4'),
+        ('KD', 'KD'),
+        ('n', 'n'),
+    )
+
+    default_parameters = {
+        'weight':       1.0,
+        'delay':        0.5,
+        'tau_r_GABAA':  0.2,
+        'tau_d_GABAA':  1.7,
+        'tau_r_GABAB':  0.2,
+        'tau_d_GABAB':  1.7,
+        'Erev_GABAA':   -80.0,
+        'Erev_GABAB':   -95.0,
+        'gmax_GABAA':   0.001,
+        'gmax_GABAB':   0.001,
+        'tau_rec':      200.0,
+        'tau_facil':    200.0,
+        'U1':           0.5,
+        'K3':           0.098,
+        'K4':           0.033,
+        'KD':           100.0,
+        'n':            4,
     }
 
     def _get_minimum_delay(self):
