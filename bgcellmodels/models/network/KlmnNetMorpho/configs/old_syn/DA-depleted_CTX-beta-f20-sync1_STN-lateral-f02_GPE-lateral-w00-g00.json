@@ -1,0 +1,284 @@
+// Configuration file for Basal Ganglia network simulation.
+// Parameters can be specified in format:
+// "param_name": {
+//     "statement": "a + b - c(lol)",
+//     "do_format": false,
+//     "locals": {
+//         "a": 6,
+//         "b": 50.0,
+//     },
+//     "globals": {}, // null to copy globals or {} for specific values
+// },
+//
+{
+// =============================================================================
+// Global Simulation Parameters
+// =============================================================================
+    // Global simulation parameters
+    "simulation": {
+        "duration": 10000,
+        "timestep": 0.025,
+        "cells_per_population": 100,
+        "shared_rng_seed": 151985012,
+    },
+// =============================================================================
+// CTX Population Parameters
+// =============================================================================
+    "CTX": {
+        // Beta centered at 20 Hz
+        // 50ms between triplets/doublets at 150 Hz?
+        "T_burst": 50.0,
+        "dur_burst": 10.0,
+        "f_intra": 150.0,
+        "f_inter": 5.0,
+        "synchronous": true,
+        "synchronized_fraction": 1.0,
+    },
+// =============================================================================
+// STR Population Parameters
+// =============================================================================
+    "STR": {
+        // Parameters of simple Poisson spike generator
+        // "firing_rate": 1.0,         // (Hz) firing rate of single neuron
+        // "num_poisson_combined": 3,  // number of Poisson spikers to combine using additive property
+        // Parameters of STR burst pattern representing movement-related pauses
+        // sent to GPE.
+        "T_burst": 1000.0,
+        "dur_burst": 50.0,
+        "f_intra": 140.0,
+        // "f_inter": 3.0,             // (Control) 1 Hz * 3 combined Poisson generators
+        "f_inter": 18.0,               // (DA-depleted) 6.5 Hz * 3 combined Poisson generators
+    },
+// =============================================================================
+// GPE Population Parameters
+// =============================================================================
+    "GPE": {
+        "v_init": -63.0,
+        "grid_dx": {
+            "statement": "grid_dx",
+            "locals": null, // null/None means from surrounding context
+        },
+        // Local variables for this context / level of nesting (used in other statements)
+        "local_context": {
+            "grid_dx": 50.0,
+        },
+// STN -> GPE Projection
+// -----------------------------------------------------------------------------
+        "STN": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 10,
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        2.0, // [ms] delay from literature
+                    "U1":           0.1, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    800.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA":    0.025e-2, // [uS], adjusted for U1
+                    "tau_r_AMPA":   1.0, // [ms] rise time
+                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA":    0.025e-2, // [uS], adjusted for U1
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                },
+            },
+        },
+// GPE -> GPE Projection
+// -----------------------------------------------------------------------------
+        "GPE": {
+            "connector": {
+                "name": "DistanceDependentProbabilityConnector",
+                "parameters": {
+                    "allow_self_connections": false,
+                    "d_expression": {
+                        // NOTE: arg d is numpy array
+                        "statement": "\"0.5 * (d < ({grid_dx} * 6 / 2.0 + 5.0))\"",
+                        "do_format": true,
+                        "locals": null, // copy locals from surrounding context
+                    },
+                },
+            },
+            "synapse": {
+                "name": "GabaSynapse",
+                "parameters": {
+                    "weight": 0.0,
+                    "delay":        0.5, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      400.0, // [ms] recovery from STD
+                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA":    0.0,
+                    "tau_r_GABAA":   2.0, // [ms] rise time
+                    "tau_d_GABAA":   5.0, // [ms] decay time
+                    // GABA-B receptor
+                    "gmax_GABAB":    0.0, // [uS], adjusted for U1
+                    "tau_r_GABAB":   5.0,   // [ms] rise time initial species of signaling cascade
+                    "tau_d_GABAB":   10.0,  // [ms] decay time initial species of signaling cascade
+                },
+            },
+        },
+// STR -> GPE Projection
+// -----------------------------------------------------------------------------
+        "STR": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 22 // = 66/num_poisson_combined
+                },
+            },
+            "synapse": {
+                "name": "GabaSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        5.0, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      400.0, // [ms] recovery from STD
+                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA":    1e-3, // [uS], adjusted for U1
+                    "tau_r_GABAA":   2.0, // [ms] rise time
+                    "tau_d_GABAA":   5.0, // [ms] decay time
+                    // GABA-B receptor
+                    "gmax_GABAB":    0.0, // [uS], adjusted for U1
+                    "tau_r_GABAB":   5.0,   // [ms] rise time initial species of signaling cascade
+                    "tau_d_GABAB":   10.0,  // [ms] decay time initial species of signaling cascade
+                }
+            }
+        },
+    },
+// =============================================================================
+// STN Population Parameters
+// =============================================================================
+    "STN": {
+        "v_init": -63.0,
+        "calculate_lfp": true,
+        "grid_dx": {
+            "statement": "grid_dx",
+            "locals": null, // null/None means from surrounding context
+        },
+        // Local variables for this context / level of nesting (used in other statements)
+        "local_context": {
+            "grid_dx": 50.0,
+            "frac_lateral_projecting": 0.2,
+            "num_lateral_projections": 3, // number of lateral targets on each side
+        },
+// GPE -> STN Projection
+// -----------------------------------------------------------------------------
+        "GPE": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 8
+                },
+            },
+            "synapse": {
+                "name": "GabaSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        4.0, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      17300.0, // [ms] recovery from STD
+                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA": {
+                        "statement": "1.5 * gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 1750e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAA":   2.0, // [ms] rise time
+                    "tau_d_GABAA":   6.0, // [ms] decay time
+                    // GABA-B receptor
+                    "gmax_GABAB":    35e-3, // [uS], adjusted for U1
+                    "tau_r_GABAB":   5.0,   // [ms] rise time initial species of signaling cascade
+                    "tau_d_GABAB":   10.0,  // [ms] decay time initial species of signaling cascade
+                }
+            }
+        },
+// CTX -> STN Projection
+// -----------------------------------------------------------------------------
+        "CTX": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 14
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        5.9, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.1, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    800.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA": {
+                        "statement": "1.5 * gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 13.76e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_AMPA":   1.0, // [ms] rise time
+                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA": {
+                        "statement": "1.5 * gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 14e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                }
+            }
+        },
+// STN -> STN Projection
+// -----------------------------------------------------------------------------
+        "STN": {
+            "connector": {
+                "name": "FromListConnector",
+                "parameters": {
+                    "conn_list": {
+                        "statement": "make_stn_lateral_connlist(ncell_per_pop, num_lateral_projections, frac_lateral_projecting, shared_rng)",
+                        "locals": null, // use enclosing locals
+                        "globals": null, // use script globals
+                    },
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        0.5, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.1, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    800.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA":    7e-3, // [uS], adjusted for U1
+                    "tau_r_AMPA":   1.0, // [ms] rise time
+                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA":    7e-3, // [uS], adjusted for U1
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                }
+            }
+        },
+    },
+}
