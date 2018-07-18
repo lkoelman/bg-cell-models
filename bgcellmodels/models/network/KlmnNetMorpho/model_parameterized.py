@@ -580,7 +580,11 @@ def run_simple_net(
         write_interval = steady_period / (steady_period // max_write_interval + 1)
     else:
         write_interval = max_write_interval
-    write_times = list(reversed(np.arange(transient_period, sim_dur+write_interval,
+    if transient_period == 0:
+        first_write_time = write_interval
+    else:
+        first_write_time = transient_period
+    write_times = list(reversed(np.arange(first_write_time, sim_dur+write_interval,
                                           write_interval)))
     last_write_time = 0.0
     
