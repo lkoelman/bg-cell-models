@@ -20,8 +20,8 @@ Or, equivalently:
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
 
-# Custom build steps. You can either inherit from the base class 
-# distutils.cmd.Command or from one of the built-in classes: 
+# Custom build steps. You can either inherit from the base class
+# distutils.cmd.Command or from one of the built-in classes:
 # distutils.command.build<''/'_clib'/'_ext'/'_py'/'_scripts'>
 from distutils.command.build import build as BuildCommand
 # from distutils.cmd import Command as BuildCommand
@@ -87,14 +87,11 @@ class Build_NMODL(BuildCommand):
         """
         Run our custom build step
         """
-
-        BuildCommand.run(self)
-
         if getattr(self, 'nrnivmodl_path', False):
             nrnivmodl = self.nrnivmodl_path
         else:
             nrnivmodl = self._find_executable("nrnivmodl")
-        
+
         if nrnivmodl:
             print("nrnivmodl found at", nrnivmodl)
 
@@ -103,13 +100,13 @@ class Build_NMODL(BuildCommand):
                 # run `nrnivmodl` on our directory
                 result, stdout = self._run_sys_command(nrnivmodl, os.path.join(
                     BASEDIR, mech_dir))
-            
+
                 if result != 0:
                     print("Unable to compile NMODL files in {dir}. Output was:\n"
                           "\t{output}".format(dir=mech_dir, output=stdout))
                 else:
                     print("Successfully compiled NMODL files in {}.".format(mech_dir))
-        
+
         else:
             print("Unable to find nrnivmodl. "
                   "You will have to compile NEURON .mod files manually.")
@@ -150,7 +147,7 @@ setup(
     # $ pip install sampleproject
     #
     # And where it will live on PyPI: https://pypi.org/project/sampleproject/
-    name='bgcellmodels', 
+    name='bgcellmodels',
     version='0.1.0',
 
     # This is a one-line description or tagline of what your project does. This
@@ -169,7 +166,7 @@ setup(
     # This should be your name or the name of the organization which owns the
     # project.
     author='Lucas Koelman',
-    author_email='lucas.koelman@ucdconnect.ie', 
+    author_email='lucas.koelman@ucdconnect.ie',
 
     # Classifiers help users find your project by categorizing it.
     # For a list of valid classifiers, see https://pypi.org/classifiers/
@@ -188,7 +185,7 @@ setup(
         # Pick your license as you wish
         'License :: OSI Approved :: GNU Lesser General Public '
         'License v3 (LGPLv3)',
-        
+
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         'Programming Language :: Python :: 2.7',
@@ -250,7 +247,7 @@ setup(
 
     # Extra build steps defined as subclasses of distutils.cmd.Command:
     # These are invoked as `python setup.py <key>`
-    cmdclass={'build_mechs': Build_NMODL},
+    cmdclass={'mechanisms': Build_NMODL},
 
     # List additional URLs that are relevant to your project as a dict.
     #
