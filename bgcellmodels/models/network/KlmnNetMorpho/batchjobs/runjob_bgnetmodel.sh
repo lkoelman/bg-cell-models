@@ -75,22 +75,21 @@ mpi_command="mpirun -n 24 python ${model} \
 --no-gui --progress --config ${model_config} \
 --outdir ${outdir} -id ${PBS_JOBID}"
 
-# redirect stdout and stderr to file during execution
-if [ -n "$report" ]; then
-    mpi_command="${mpi_command} > \
->(tee -a ${HOME}/storage/${PBS_JOBID}_stdout.log) \
-2> >(tee -a ${HOME}/storage/${PBS_JOBID}_stderr.log >&2)"
-fi
+# Optional arguments passed to python script
+opt_names=("seed" "burst" "write-interval" "transient-period")
+for optname in "${opt_names[@]}"; do
+    if [ -n "${!optname}" ]; then
+        mpi_command="${mpi_command} --${optname} ${!optname}"
+    fi
+done
 
-# if we got a variable 'seed' using `qsub -v`: override config seed
-if [ -n "$seed" ]; then
-    mpi_command="${mpi_command} --seed ${seed}"
-fi
-
-# if we got a variable 'burst' using `qsub -v`: override config burst frequency
-if [ -n "$burst" ]; then
-    mpi_command="${mpi_command} --burst ${burst}"
-fi
+# Optional flags passed to python script
+flag_names=("lfp" "no-lfp")
+for flagname in "${flag_names[@]}"; do
+    if [ -n "${!flagname}" ]; then
+        mpi_command="${mpi_command} --${flagname}"
+    fi
+done
 
 cd $model_dir
 
