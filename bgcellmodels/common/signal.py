@@ -9,6 +9,31 @@ h = neuron.h
 import numpy as np
 
 
+def spike_indices(vrec, thresh, loc='onset'):
+    """
+    Calculate
+    
+    @param  vrec : np.array
+            membrane voltage
+    
+    @param threshold : float
+            spike threshold
+
+    @param  loc : str
+            'onset' : time of spike onset, i.e. where threshold is first reached
+            'offset' : time of spike offset, i.e. where v dips below threshold
+    """
+    thresholded = np.array((vrec - thresh) >= 0, dtype=float)
+    i_onset = np.where(np.diff(thresholded) == 1)[0] + 1
+    i_offset = np.where(np.diff(thresholded) == -1)[0] + 1
+    if loc == 'onset':
+        return i_onset
+    elif loc == 'offset':
+        return i_offset
+    else:
+        raise ValueError("Unrecognized value for argument 'loc' : {}".format(loc))
+
+
 def numpy_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):
     """ 
     Sum peri-stimulus spike histograms (PSTH) of spike trains
