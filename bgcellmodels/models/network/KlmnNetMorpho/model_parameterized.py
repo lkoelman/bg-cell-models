@@ -311,8 +311,8 @@ def run_simple_net(
 
 
     # CTX spike sources
-    T_burst, dur_burst, f_intra, f_inter = get_pop_parameters(
-        'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter')
+    T_burst, dur_burst, f_intra, f_inter, f_background = get_pop_parameters(
+        'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'f_background')
     synchronous, sync_fraction = get_pop_parameters(
         'CTX', 'synchronous', 'synchronized_fraction')
 
@@ -340,13 +340,18 @@ def run_simple_net(
         spiketimes_for_index = []
         for i in cell_indices:
             if i in synchronized_cells:
+                # Spiketimes for bursting cells
                 burst_gen = make_bursts(T_burst, dur_burst, f_intra, f_inter,
                                         rng=rank_rng, max_dur=sim_dur)
                 spiketimes = Sequence(np.fromiter(burst_gen, float))
             else:
-                number = int(2 * sim_dur * f_inter / 1e3)
-                spiketimes = Sequence(np.add.accumulate(
-                    rank_rng.exponential(4 * 1e3/f_inter, size=number)))
+                # Spiketimes for background activity
+                number = int(2 * sim_dur * f_background / 1e3)
+                if number == 0:
+                    spiketimes = Sequence([])
+                else:
+                    spiketimes = Sequence(np.add.accumulate(
+                        rank_rng.exponential(1e3/f_background, size=number)))
             spiketimes_for_index.append(spiketimes)
         return spiketimes_for_index
     

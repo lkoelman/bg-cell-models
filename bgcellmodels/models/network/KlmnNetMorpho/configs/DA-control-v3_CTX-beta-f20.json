@@ -31,6 +31,7 @@
         "dur_burst": 10.0,
         "f_intra": 150.0,
         "f_inter": 5.0,
+        "f_background": 5.0, // mean firing rate of non-bursting neurons
         "synchronous": true,
         "synchronized_fraction": 0.5, // fraction bursting, rest will fire at f_inter
     },
