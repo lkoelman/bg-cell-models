@@ -18,7 +18,7 @@
 
 # Working directory where submitted script will be executed ($PBS_O_INITDIR)
 # This must be a full path.
-#PBS -d /home/people/15203008/workspace/bgcellmodels/models/KlmnNetMorpho
+#PBS -d /home/people/15203008/workspace/bgcellmodels/bgcellmodels/models/network/KlmnNetMorpho
 
 # Specifies the jobname. The default name is the script name (basename)
 ## PBS -N BG_network_model
@@ -72,6 +72,7 @@ model_config="${model_dir}/${config_file}"
 # Command to be evaluated
 mpi_command="mpirun -n 24 python ${model} \
 --ncell ${ncell} --dur ${dur} \
+--transient-period 0.0 --write-interval 27e3 \
 --no-gui --progress --config ${model_config} \
 --outdir ${outdir} -id ${PBS_JOBID}"
 
