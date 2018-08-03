@@ -7,11 +7,11 @@ to the corresponding output directory of simulation.
 
 import sys, os, re, shutil
 
-logs_dir = sys.argv[1]
-if logs_dir in ('-h', '--help') or len(sys.argv) < 3:
+if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
     print("usage: python copy_logs.py /path/to/logsdir /path/to/simdirs")
     sys.exit(1)
 else:
+    logs_dir = sys.argv[1]
     out_dir = sys.argv[2]
 
 outdir_contents = [os.path.join(out_dir, f) for f in os.listdir(out_dir)]

@@ -353,9 +353,10 @@ def test_stn_pynn_population(export_locals=True):
 
 if __name__ == '__main__':
     # test_stn_cells_multiple()
-    test_stn_pynn_population()
+    # test_stn_pynn_population()
 
     # Make single cell
+    import bluepyopt.ephys as ephys
     cell = StnCellModel()
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
     icell = cell.instantiate(sim=nrnsim)

@@ -73,7 +73,7 @@ def stn_cell_gillies():
     Initialize Gillies & Willshaw cell model
     """
     if not hasattr(h, 'SThcell'):
-        h.xopen("createcell.hoc")
+        neuron.h.load_file(os.path.join(script_dir, 'createcell.hoc'))
     else:
         print("Gillies STN cell already exists. Cannot create more than one instance.")
     
