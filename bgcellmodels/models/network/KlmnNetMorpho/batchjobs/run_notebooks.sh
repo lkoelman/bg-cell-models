@@ -39,7 +39,7 @@ lpfreqs=($(for ((i=0;i<num_outputs;i++)); do echo 20; done))
 
 # Parameter sweep
 sweep_name="f_burst_ctx"
-sweep=($(for ((i=0;i<num_outputs;i++)); do echo 1; done))
+sweep=(5 7 9 11 13 15 17 19 21 23 25 27 29 31 50)
 
 cd $nb_dir
 
@@ -62,7 +62,7 @@ for ((i=0;i<num_outputs;i++)); do
 hpfreq = ${hpfreq}
 lpfreq = ${lpfreq}
 sweep_var_name = \"${sweep_name}\"
-sweep_var_value = \"${sweep[i]}\""
+sweep_var_value = ${sweep[i]}"
     echo -e "${pyscript}" > ${conffile} # (quote preserves newlines)
 
     # Execute notebook
