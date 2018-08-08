@@ -91,6 +91,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     # _ephys_locations = define_locations()
     regions = ['proximal', 'distal']
 
+    # Must define 'default_parameters' in associated cell type
     parameter_names = [
         # 'GABA_synapse_mechanism',
         # 'GLU_synapse_mechanism',
@@ -104,6 +105,20 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     # FIXME: workaround, so far PyNN only allows numerical parameters
     GABA_synapse_mechanism = 'GABAsyn'
     GLU_synapse_mechanism = 'GLUsyn'
+
+    # Related to PyNN properties
+    gleak_name = 'gpas_STh'
+    tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
+
+
+    def __init__(self, *args, **kwargs):
+        """
+        Set default parameters.
+        """
+        super(StnCellModel, self).__init__(*args, **kwargs)
+        self._tau_m_scale = 1.0
+        # self._base_cm = {}
+        # self._base_gl = {}
 
 
     def instantiate(self, sim=None):
@@ -281,7 +296,7 @@ class StnCellType(ephys_pynn.EphysCellType):
         'lfp_electrode_x': 100.0,
         'lfp_electrode_y': 100.0,
         'lfp_electrode_z': 100.0,
-        # 'lfp_electrode_coords': [100.0, 100.0, 100.0]
+        'tau_m_scale': 1.0,
     }
     # extra_parameters = {}
     # default_initial_values = {'v': -65.0}

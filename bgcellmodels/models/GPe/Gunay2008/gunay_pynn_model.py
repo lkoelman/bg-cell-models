@@ -73,6 +73,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     regions = ['proximal', 'distal']
 
     # Our custom PyNN parameters
+    # Must define 'default_parameters' in associated cell type
     # parameter_names = [
     #     'GABA_synapse_mechanism',
     #     'GLU_synapse_mechanism',
@@ -81,6 +82,10 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     # FIXME: workaround, so far PyNN only allows numerical parameters
     GABA_synapse_mechanism = 'GABAsyn'
     GLU_synapse_mechanism = 'GLUsyn'
+
+    # Related to PyNN properties
+    gleak_name = 'gpas_STh'
+    tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
     
 
     def memb_init(self):
@@ -189,19 +194,19 @@ class GPeCellType(ephys_pynn.EphysCellType):
     model = GPeCellModel
 
     # Defaults for our custom PyNN parameters
-    # default_parameters = {
-    #     'GABA_synapse_mechanism': 'GABAsyn',
-    #     'GLU_synapse_mechanism': 'GLUsyn',
-    # }
+    default_parameters = {
+        # 'GABA_synapse_mechanism': 'GABAsyn',
+        # 'GLU_synapse_mechanism': 'GLUsyn',
+        'tau_m_scale': 1.0,
+    }
 
     # Defaults for Ephys parameters
-    default_parameters = {
+    default_parameters.update({
         # ephys_model.params.values are ephys.Parameter objects
         # ephys_param.name is same as key in ephys_model.params
         p.name.replace(".", "_"): p.value for p in model._ephys_parameters
-    }
+    })
 
-    
 
     # extra_parameters = {}
     # default_initial_values = {'v': -65.0}

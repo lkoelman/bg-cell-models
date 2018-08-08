@@ -17,6 +17,7 @@ https://github.com/apdavison/BluePyOpt/blob/pynn-models/bluepyopt/ephys_pyNN/mod
 """
 import re
 import itertools
+import math
 from copy import copy, deepcopy
 
 import bluepyopt.ephys as ephys
@@ -373,12 +374,14 @@ class EphysModelWrapper(ephys.models.CellModel):
 
         # NOTE: default params will be passed by pyNN Population
         for param_name, param_value in kwargs.iteritems():
-            # self.params are the Ephys parameters : these are already set in 
-            # instantiate() so don't set them again
             if (param_name in self.params) and (self.params[param_name].value == param_value):
+                # self.params are the Ephys parameters : these are already set
+                # in `self.instantiate()` so don't set them again
                 continue
             elif param_name in self.parameter_names:
-                # PyNN parameters become attributes or passed to property with same name
+                # self.parameter_names is a list defined in the subclass body.
+                # Ephys parameters are also added to to this list (see metaclass).
+                # User is responsible for handling parameters in subclass methods.
                 setattr(self, param_name, param_value)
 
         # Synapses will map the mechanism name to the synapse object
@@ -626,3 +629,50 @@ class EphysModelWrapper(ephys.models.CellModel):
         else:
             # assume target is a secarray
             return getattr(icell, sec_name)[sec_index]
+
+
+    def _set_tau_m_scale(self, value):
+        """
+        Setter for parameter 'tau_m'. Sets membrane time constant.
+
+        @pre    Subclass must define attributes 'gleak_name' and
+                'tau_m_scaled_regions'.
+        """
+        if not hasattr(self, '_tau_m_scale'):
+            self._tau_m_scale = 1.0
+        if value == self._tau_m_scale:
+            return
+
+        # Divide scale factor over Rm and Cm
+        cm_factor = math.sqrt(value)
+        gl_factor = 1.0 / math.sqrt(value)
+        
+        # If not yet scaled, save the base values for g_leak and cm
+        # if self._tau_m_scale == 1.0:
+        #     for region_name in scaled_regions:
+        #         if region_name == 'all':
+        #             continue
+        #         sl = list(getattr(self.icell, region_name))
+        #         self._base_gl[region_name] = sum((getattr(sec, self.gleak_name) for sec in sl)) / len(sl)
+        #         self._base_cm[region_name] = sum((sec.cm for sec in sl)) / len(sl)
+
+        # Scale tau_m in all compartments
+        for region_name in self.tau_m_scaled_regions:
+            for sec in getattr(self.icell, region_name):
+                for seg in sec:
+                    setattr(seg, self.gleak_name, gl_factor * getattr(seg, self.gleak_name))
+                    seg.cm = cm_factor * seg.cm
+        
+        self._tau_m_scale = value
+
+
+    def _get_tau_m_scale(self):
+        """
+        Getter for parameter 'tau_m'. Get average membrane time constant.
+        """
+        if not hasattr(self, '_tau_m_scale'):
+            self._tau_m_scale = 1.0
+        return self._tau_m_scale
+
+
+    tau_m_scale = property(fget=_get_tau_m_scale, fset=_set_tau_m_scale)
