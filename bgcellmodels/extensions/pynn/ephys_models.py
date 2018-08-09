@@ -381,7 +381,7 @@ class EphysModelWrapper(ephys.models.CellModel):
                 # self.params are the Ephys parameters : these are already set
                 # in `self.instantiate()` so don't set them again
                 continue
-            elif param_name in self.parameter_names:
+            elif (param_name in self.parameter_names) or param_name.endswith('_scale'):
                 # self.parameter_names is a list defined in the subclass body.
                 # Ephys parameters are also added to to this list (see metaclass).
                 # User is responsible for handling parameters in subclass methods.
@@ -750,7 +750,7 @@ class EphysModelWrapper(ephys.models.CellModel):
         mechname = matches.groups()[0]
 
         # Finally, scale range variable
-        for region_name in self.rangevar_scaled_regions.get(varname, 'all'):
+        for region_name in self.rangevar_scaled_regions.get(varname, ['all']):
             # If no regions defined, use SectionList 'all' containing all sections
             for sec in getattr(self.icell, region_name):
                 if not h.ismembrane(mechname, sec=sec):

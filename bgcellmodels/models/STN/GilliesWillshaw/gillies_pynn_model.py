@@ -23,21 +23,18 @@ os.chdir(script_dir)
 h.xopen("gillies_createcell.hoc") # instantiates all functions & data structures on Hoc object
 os.chdir(prev_cwd)
 
-import pyNN.neuron as sim
-
 import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
 from bgcellmodels.common.stdutil import dotdict
-from bgcellmodels.common import treeutils, logutils
+from bgcellmodels.common import treeutils #, logutils
 
-import lfpsim
-
+import lfpsim # loads Hoc functions
 
 # Debug messages
-logutils.setLogLevel('quiet', [
-    'bluepyopt.ephys.parameters', 
-    'bluepyopt.ephys.mechanisms', 
-    'bluepyopt.ephys.morphologies'])
+# logutils.setLogLevel('quiet', [
+#     'bluepyopt.ephys.parameters', 
+#     'bluepyopt.ephys.mechanisms', 
+#     'bluepyopt.ephys.morphologies'])
 
 
 def define_locations():
@@ -126,6 +123,8 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     gleak_name = 'gpas_STh'
     tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
     rangevar_scaled_regions = {}
+    for rangevar in rangevar_names:
+        parameter_names.append(rangevar + '_scale')
 
 
     def instantiate(self, sim=None):
@@ -295,6 +294,7 @@ class StnCellType(ephys_pynn.EphysCellType):
     # The encapsualted model available as class attribute 'model'
     model = StnCellModel
 
+    # NOTE: default_parameters is used to make 'schema' for checking & converting datatypes
     default_parameters = {
         # 'GABA_synapse_mechanism': 'GABAsyn',
         # 'GLU_synapse_mechanism': 'GLUsyn',
@@ -312,6 +312,16 @@ class StnCellType(ephys_pynn.EphysCellType):
     # Combined with self.model.regions by EphysCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
+
+    def get_schema(self):
+        """
+        Get mapping of parameter names to allowed parameter types.
+        """
+        # Avoids specifying default values for each scale parameter and
+        # thereby calling the property setter for each of them
+        schema = super(StnCellType, self).get_schema()
+        schema.update({v+'_scale': float for v in self.model.rangevar_names})
+        return schema
 
 
     def can_record(self, variable):

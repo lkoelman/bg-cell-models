@@ -20,7 +20,7 @@ import gunay_model
 
 # Debug messages
 from bgcellmodels.common.stdutil import dotdict
-from bgcellmodels.common import logutils, treeutils
+from bgcellmodels.common import treeutils #, logutils
 
 # logutils.setLogLevel('quiet', [
 #     'bluepyopt.ephys.parameters',
@@ -106,6 +106,8 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     gleak_name = 'gmax_leak'
     tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
     rangevar_scaled_regions = {}
+    for rangevar in rangevar_names:
+        parameter_names.append(rangevar + '_scale')
     
 
     def memb_init(self):
@@ -234,6 +236,16 @@ class GPeCellType(ephys_pynn.EphysCellType):
     # Combined with self.model.regions by EphysCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
+
+    def get_schema(self):
+        """
+        Get mapping of parameter names to allowed parameter types.
+        """
+        # Avoids specifying default values for each scale parameter and
+        # thereby calling the property setter for each of them
+        schema = super(GPeCellType, self).get_schema()
+        schema.update({v+'_scale': float for v in self.model.rangevar_names})
+        return schema
 
 
     def can_record(self, variable):

@@ -85,7 +85,11 @@ from bgcellmodels.common.stdutil import getdictvals
 from bgcellmodels.common import logutils, fileutils
 
 # Debug messages
-logutils.setLogLevel('quiet', ['bpop_ext'])
+logutils.setLogLevel('quiet', [
+    'bpop_ext',
+    'bluepyopt.ephys.parameters', 
+    'bluepyopt.ephys.mechanisms', 
+    'bluepyopt.ephys.morphologies'])
 
 
 def nprint(*args, **kwargs):
@@ -637,8 +641,6 @@ def run_simple_net(
                 write_population_data(pop, output, suffix, gather=True, clear=True)
             write_times.pop()
             last_write_time = sim.state.t
-    globals().update(locals())
-    raise Exception('breakpoint')
 
     # Report simulation statistics
     tstop = time.time()
