@@ -6,9 +6,10 @@ File handling utilities.
 
 import re
 import json
+import collections
 
 
-def parse_json_file(filename, nonstrict=True):
+def parse_json_file(filename, nonstrict=True, ordered=False):
     """
     Parse JSON file to dict.
 
@@ -20,10 +21,11 @@ def parse_json_file(filename, nonstrict=True):
     """
     with open(filename, 'r') as json_file:
         json_string = json_file.read()
-        return parse_json_string(json_string, nonstrict=nonstrict)
+        return parse_json_string(
+                    json_string, nonstrict=nonstrict, ordered=ordered)
 
 
-def parse_json_string(string, nonstrict=True):
+def parse_json_string(string, nonstrict=True, ordered=False):
     """
     Parse JSON string to dict.
 
@@ -35,7 +37,11 @@ def parse_json_string(string, nonstrict=True):
     """
     if nonstrict:
         string = validate_minify_json(string)
-    return json.loads(string)
+    if ordered:
+        object_pairs_hook = collections.OrderedDict
+    else:
+        object_pairs_hook = None
+    return json.loads(string, object_pairs_hook=object_pairs_hook)
 
 
 def load_json_nonstrict(filename):
