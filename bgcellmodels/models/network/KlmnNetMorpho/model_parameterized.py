@@ -22,6 +22,12 @@ To run using MPI, you can use the following command:
 >>> mpirun -n 8 python model_parameterized.py -n numcell -d simdur \
 >>> -ng -o ~/storage -c ~/workspace/simple_config.json -id test1
 
+To do a test run using IPython, use something like:
+
+>>> %run model_parameterized.py --ncell 25 --dur 500 --transient-period 0.0 \
+>>> --write-interval 1000 --no-gui -id test1 \
+>>> --config myconfig.json --outdir ~/storage
+
 
 NOTES
 -----
@@ -226,6 +232,13 @@ def run_simple_net(
         pvals = eval_params(param_specs, params_global_context, local_context)
         return getdictvals(pvals, *param_names)
 
+    def get_cell_parameters(pop):
+        """
+        Get PyNN cell parameters as dictionary of numerical values.
+        """
+        local_context = config[pop].get('local_context', {})
+        param_specs = config[pop].get('PyNN_cell_parameters', {})
+        return eval_params(param_specs, params_global_context, local_context)
 
     def synapse_from_config(pre, post):
         """
@@ -237,7 +250,6 @@ def run_simple_net(
         syn_class = synapse_types[syn_type]
         syn_pvals = eval_params(syn_params, params_global_context, local_context)
         return syn_class(**syn_pvals)
-
 
     def connector_from_config(pre, post):
         """
@@ -267,23 +279,22 @@ def run_simple_net(
     # Define each cell population with its cell type, number of cells
     print("{} start phase: POPULATIONS.".format(mpi_rank))
 
-    # STN cell population
+    #---------------------------------------------------------------------------
+    # STN POPULATION
     stn_dx, gaba_mech = get_pop_parameters('STN', 'grid_dx', 'GABA_mechanism')
     stn_grid = space.Line(x0=0.0, dx=stn_dx,
                           y=0.0, z=0.0)
     ncell_stn = ncell_per_pop
     
+    # FIXME: set electrode coordinates
+    stn_cell_params = get_cell_parameters('STN')
     stn_type = gillies.StnCellType(
                         calculate_lfp=calculate_lfp,
-                        lfp_sigma_extracellular=0.3)
+                        lfp_sigma_extracellular=0.3,
+                        **stn_cell_params)
 
     # Workaround because PyNN only allows numerical parameters
     stn_type.model.GABA_synapse_mechanism = gaba_mech
-
-    # FIXME: set electrode coordinates
-                        # lfp_electrode_x=100.0,
-                        # lfp_electrode_y=100.0,
-                        # lfp_electrode_z=100.0
 
     pop_stn = Population(ncell_stn, 
                          cellclass=stn_type, 
@@ -293,12 +304,14 @@ def run_simple_net(
     pop_stn.initialize(v=-63.0)
 
 
-    # GPe cell population
+    #---------------------------------------------------------------------------
+    # GPE POPULATION
     gpe_dx, gaba_mech = get_pop_parameters('GPE', 'grid_dx', 'GABA_mechanism')
     gpe_grid = space.Line(x0=0.0, dx=gpe_dx,
                           y=1e6, z=0.0)
 
-    gpe_type = gunay.GPeCellType()
+    gpe_cell_params = get_cell_parameters('GPE')
+    gpe_type = gunay.GPeCellType(**gpe_cell_params)
     gpe_type.model.GABA_synapse_mechanism = gaba_mech # workaround for string parameter
 
     ncell_gpe = ncell_per_pop
@@ -309,6 +322,8 @@ def run_simple_net(
 
     pop_gpe.initialize(v=-63.0)
 
+    #---------------------------------------------------------------------------
+    # CTX POPULATION
 
     # CTX spike sources
     T_burst, dur_burst, f_intra, f_inter, f_background = get_pop_parameters(
@@ -354,13 +369,15 @@ def run_simple_net(
                         rank_rng.exponential(1e3/f_background, size=number)))
             spiketimes_for_index.append(spiketimes)
         return spiketimes_for_index
-    
+
 
     pop_ctx = Population(
                 ncell_per_pop,
                 sim.SpikeSourceArray(spike_times=spiketimes_for_ctx),
                 label='CTX')
 
+    #---------------------------------------------------------------------------
+    # STR POPULATION
 
     # STR spike sources
     T_burst, dur_burst, f_intra, f_inter = get_pop_parameters(
@@ -620,6 +637,8 @@ def run_simple_net(
                 write_population_data(pop, output, suffix, gather=True, clear=True)
             write_times.pop()
             last_write_time = sim.state.t
+    globals().update(locals())
+    raise Exception('breakpoint')
 
     # Report simulation statistics
     tstop = time.time()

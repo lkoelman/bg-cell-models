@@ -93,6 +93,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
     # Must define 'default_parameters' in associated cell type
     parameter_names = [
+        # See workaround for non-numerical parameters
         # 'GABA_synapse_mechanism',
         # 'GLU_synapse_mechanism',
         'calculate_lfp',
@@ -100,25 +101,31 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         'lfp_electrode_x',
         'lfp_electrode_y',
         'lfp_electrode_z',
+        'tau_m_scale',
     ]
 
-    # FIXME: workaround, so far PyNN only allows numerical parameters
+    # FIXME: workaround: set directly as property on the class because
+    # PyNN only allows numerical parameters
     GABA_synapse_mechanism = 'GABAsyn'
     GLU_synapse_mechanism = 'GLUsyn'
 
     # Related to PyNN properties
+    _mechs_params_dict = {
+        'STh':  ['gpas'],
+        'Na':   ['gna'],
+        'NaL':  ['gna'],
+        'KDR':  ['gk'],
+        'Kv31': ['gk'],
+        'sKCa': ['gk'],
+        'Ih':   ['gk'],
+        'CaT':  ['gcaT'],
+        'HVA':  ['gcaL', 'gcaN'],
+        'Cacum':[],
+    }
+    rangevar_names = [p+'_'+m for m,params in _mechs_params_dict.iteritems() for p in params]
     gleak_name = 'gpas_STh'
     tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
-
-
-    def __init__(self, *args, **kwargs):
-        """
-        Set default parameters.
-        """
-        super(StnCellModel, self).__init__(*args, **kwargs)
-        self._tau_m_scale = 1.0
-        # self._base_cm = {}
-        # self._base_gl = {}
+    rangevar_scaled_regions = {}
 
 
     def instantiate(self, sim=None):

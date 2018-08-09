@@ -2,8 +2,9 @@
 // Parameters can be specified in format:
 // "param_name": {
 //     "statement": "a + b - c(lol)",
-//     "do_format": false,
-//     "locals": {
+//     "do_format": false, // if true, statement must contain format specs, and
+//                         // substitutions will be made from parent contexts
+//     "locals": {         // used in Python eval()
 //         "a": 6,
 //         "b": 50.0,
 //     },
@@ -63,6 +64,10 @@
         // Local variables for this context / level of nesting (used in other statements)
         "local_context": {
             "grid_dx": 50.0,
+        },
+        // Numerical parameters passed to the PyNN cell type
+        "PyNN_cell_parameters": {
+            // "tau_m_scale": 1.0
         },
 // STN -> GPE Projection
 // -----------------------------------------------------------------------------
@@ -178,6 +183,10 @@
             "grid_dx": 50.0,
             "frac_lateral_projecting": 0.2,
             "num_lateral_projections": 3, // number of lateral targets on each side
+        },
+        // Numerical parameters passed to the PyNN cell type
+        "PyNN_cell_parameters": {
+            // "tau_m_scale": 1.0
         },
 // GPE -> STN Projection
 // -----------------------------------------------------------------------------

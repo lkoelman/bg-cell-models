@@ -25,6 +25,9 @@ from pyNN.neuron import state as nrn_state, h
 from pyNN.neuron.cells import NativeCellType
 import quantities as pq
 
+import logging
+logger = logging.getLogger('ephys_models')
+
 ephys_nrn_sim = None
 
 rng_structural_variability = h.Random(
@@ -383,6 +386,8 @@ class EphysModelWrapper(ephys.models.CellModel):
                 # Ephys parameters are also added to to this list (see metaclass).
                 # User is responsible for handling parameters in subclass methods.
                 setattr(self, param_name, param_value)
+            else:
+                logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
 
         # Synapses will map the mechanism name to the synapse object
         # and is set by our custom Connection class
@@ -642,10 +647,6 @@ class EphysModelWrapper(ephys.models.CellModel):
             self._tau_m_scale = 1.0
         if value == self._tau_m_scale:
             return
-
-        # Divide scale factor over Rm and Cm
-        cm_factor = math.sqrt(value)
-        gl_factor = 1.0 / math.sqrt(value)
         
         # If not yet scaled, save the base values for g_leak and cm
         # if self._tau_m_scale == 1.0:
@@ -656,11 +657,25 @@ class EphysModelWrapper(ephys.models.CellModel):
         #         self._base_gl[region_name] = sum((getattr(sec, self.gleak_name) for sec in sl)) / len(sl)
         #         self._base_cm[region_name] = sum((sec.cm for sec in sl)) / len(sl)
 
+        # Extract the mechanism name
+        matches = re.search(r'.+_([a-zA-Z0-9]+)$', self.gleak_name)
+        gleak_mech = matches.groups()[0]
+
         # Scale tau_m in all compartments
         for region_name in self.tau_m_scaled_regions:
             for sec in getattr(self.icell, region_name):
+                # If section has passive conductance: distribute scale factor 
+                # over Rm (gleak) and Cm
+                distribute_scale = h.ismembrane(gleak_mech, sec=sec)
+                if distribute_scale:
+                    cm_factor = math.sqrt(value)
+                    gl_factor = 1.0 / math.sqrt(value)
+                else:
+                    cm_factor = value
                 for seg in sec:
-                    setattr(seg, self.gleak_name, gl_factor * getattr(seg, self.gleak_name))
+                    if distribute_scale:
+                        setattr(seg, self.gleak_name, 
+                                gl_factor * getattr(seg, self.gleak_name))
                     seg.cm = cm_factor * seg.cm
         
         self._tau_m_scale = value
@@ -676,3 +691,73 @@ class EphysModelWrapper(ephys.models.CellModel):
 
 
     tau_m_scale = property(fget=_get_tau_m_scale, fset=_set_tau_m_scale)
+
+    # Ion channel & RANGE variable scaling.
+    # - ion channel scaling can be implemented in general way by overriding
+    # __getattr__ and __setattr__, and defining a dict that gives the scaled
+    # SectionLists per ion channel.
+    # - Alternatively, you can make/modify an Ephys parameter.
+
+    def __getattr__(self, name):
+        """
+        Allow getting and setting of arbitrary NEURON RANGE variables.
+
+        @pre    Subclass must define attribute 'rangevar_names'
+        """
+        matches = re.search(r'^(\w+)_scale$', name)
+        if (matches is None) or (not any(
+                [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
+            return super(EphysModelWrapper, self).__getattr__(name)
+        
+        # search for NEURON RANGE variable to be scaled
+        varname = matches.groups()[0]
+        private_attr_name = '_' + varname + '_scale'
+
+        # Only if it has been scaled before does the scale attribute exist
+        if not hasattr(self, private_attr_name):
+            return 1.0 # not scaled
+        else:
+            # Call will bypass this method if attribute exists
+            return getattr(self, private_attr_name)
+
+
+    def __setattr__(self, name, value):
+        """
+        Allow getting and setting of arbitrary NEURON RANGE variables.
+
+        @pre    Subclass must define attribute 'rangevar_names'
+        """
+        matches = re.search(r'^(\w+)_scale$', name)
+        if (matches is None) or (not any(
+                [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
+            return super(EphysModelWrapper, self).__setattr__(name, value)
+        
+        varname = matches.groups()[0]
+        private_attr_name = '_' + varname + '_scale'
+
+        if not hasattr(self, private_attr_name):
+            old_scale = 1.0
+        else:
+            old_scale = getattr(self, private_attr_name)
+        if value == old_scale:
+            return # scale is already correct
+
+        # Extract the mechanism name
+        matches = re.search(r'.+_([a-zA-Z0-9]+)$', varname)
+        if matches is None:
+            raise ValueError('Could not extract NEURON mechanism name '
+                             'from RANGE variable name {}'.format(varname))
+        mechname = matches.groups()[0]
+
+        # Finally, scale range variable
+        for region_name in self.rangevar_scaled_regions.get(varname, 'all'):
+            # If no regions defined, use SectionList 'all' containing all sections
+            for sec in getattr(self.icell, region_name):
+                if not h.ismembrane(mechname, sec=sec):
+                    continue
+                for seg in sec:
+                    setattr(seg, varname, value * getattr(seg, varname))
+        
+        setattr(self, private_attr_name, value)
+            
+

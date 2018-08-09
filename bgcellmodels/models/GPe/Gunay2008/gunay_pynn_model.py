@@ -11,7 +11,7 @@ from neuron import h
 import numpy as np
 
 # from pyNN.standardmodels import StandardCellType
-from pyNN.neuron.cells import NativeCellType
+# from pyNN.neuron.cells import NativeCellType
 
 import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
@@ -21,7 +21,10 @@ import gunay_model
 # Debug messages
 from bgcellmodels.common.stdutil import dotdict
 from bgcellmodels.common import logutils, treeutils
-logutils.setLogLevel('quiet', ['bluepyopt.ephys.parameters', 'bluepyopt.ephys.mechanisms'])
+
+# logutils.setLogLevel('quiet', [
+#     'bluepyopt.ephys.parameters',
+#     'bluepyopt.ephys.mechanisms'])
 
 
 def define_synapse_locations():
@@ -74,18 +77,35 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
     # Our custom PyNN parameters
     # Must define 'default_parameters' in associated cell type
-    # parameter_names = [
-    #     'GABA_synapse_mechanism',
-    #     'GLU_synapse_mechanism',
-    # ]
+    parameter_names = [
+        # See workaround for non-numerical parameters
+        # 'GABA_synapse_mechanism',
+        # 'GLU_synapse_mechanism',
+        'tau_m_scale',
+    ]
 
     # FIXME: workaround, so far PyNN only allows numerical parameters
     GABA_synapse_mechanism = 'GABAsyn'
     GLU_synapse_mechanism = 'GLUsyn'
 
     # Related to PyNN properties
-    gleak_name = 'gpas_STh'
+    _mechs_params_dict = {
+        'HCN':      ['gmax'],
+        'leak':     ['gmax'],
+        'NaF':      ['gmax'],
+        'NaP':      ['gmax'],
+        'Kv2':      ['gmax'],
+        'Kv3':      ['gmax'],
+        'Kv4f':     ['gmax'],
+        'Kv4s':     ['gmax'],
+        'KCNQ':     ['gmax'],
+        'SK':       ['gmax'],
+        'CaH':      ['gmax'],
+    }
+    rangevar_names = [p+'_'+m for m,params in _mechs_params_dict.iteritems() for p in params]
+    gleak_name = 'gmax_leak'
     tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
+    rangevar_scaled_regions = {}
     
 
     def memb_init(self):
