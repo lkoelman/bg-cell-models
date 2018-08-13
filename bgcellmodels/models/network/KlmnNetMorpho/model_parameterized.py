@@ -71,8 +71,10 @@ from bgcellmodels.mechanisms import synapses # loads MOD files
 # Custom cell models
 import bgcellmodels.models.STN.GilliesWillshaw.gillies_pynn_model as gillies
 import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
-from bgcellmodels.cellpopdata.connectivity import (
-    ConnectivityPattern, make_connection_list, make_divergent_pattern)
+import bgcellmodels.cellpopdata.connectivity as connectivity # for use in config files
+ConnectivityPattern = connectivity.ConnectivityPattern
+make_connection_list = connectivity.make_connection_list
+make_divergent_pattern = connectivity.make_divergent_pattern
 
 # Our physiological parameters
 # from bgcellmodels.cellpopdata.physiotypes import Populations as PopID

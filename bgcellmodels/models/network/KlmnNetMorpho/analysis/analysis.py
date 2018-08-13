@@ -159,20 +159,22 @@ def conn_matrix_from_text(
 
 
 def plot_connectivity_matrix(
-        pop_size, str_mat=None, fpath=None, seaborn=True,
-        pop0='A', pop1='B'):
+        float_mat=None, str_mat=None, 
+        fpath=None, seaborn=False,
+        pop_size=10, pop0='A', pop1='B'):
     """
     Plot connectivity matrix given as string.
     """
     if fpath is not None:
         with open(fpath, 'r') as fmat:
             str_mat = fmat.read()
+
+    if float_mat is not None:
+        W = float_mat
     elif not isinstance(str_mat, (str, unicode)):
         print("Please provide either matrix in string format or file path.")
-    
-    
-
-    W = conn_matrix_from_text(str_mat)
+    else:
+        W = conn_matrix_from_text(str_mat)
 
     if seaborn:
         # Only looks good for small population size
@@ -197,7 +199,7 @@ def plot_connectivity_matrix(
         plt.show(block=False)
     else:
         from matplotlib import patches
-        px = py = pop_size / 10
+        px = py = pop_size / 10.0
 
         # Create plot
         fig, ax = plt.subplots(figsize=(8,6))

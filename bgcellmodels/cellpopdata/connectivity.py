@@ -4,10 +4,42 @@ Connectity patterns used in Basal Ganglia modeling literature.
 @author     Lucas Koelman
 """
 
+from __future__ import division
 from enum import unique
 import numpy as np
+from   scipy.linalg import circulant
 
 from bgcellmodels.common.stdutil import IntEnumDescriptor
+
+
+def adjacency_to_list(adj_mat, src_dim=0, threshold=0):
+    """
+    Convert adjacency matrix to list connection list.
+
+    @param      adj_mat : np.array
+                Two-dimensional adjacency matrix
+
+    @param      src_dim : int
+                Dimension of adjacency matrix that corresponds to source
+                population.
+
+    @param      threshold : float
+                Threshold value for connections in adjacency matrix.
+
+    @return     conn_list : list(list<int, int>)
+                List of pairs [i, j] where i is the cell index in source population
+                and j the cell index in target population
+    """
+    if src_dim == 1:
+        adj_mat = adj_mat.T # transpose
+    elif src_dim != 0:
+        raise ValueError("Source dimensions must be either '0' or '1'.")
+    if adj_mat.ndim != 2:
+        raise ValueError("Adjacency matrix must be two-dimensional array.")
+    
+    src_target_ids = np.where(adj_mat > threshold)
+    conn_list = zip(*src_target_ids)
+    return conn_list
 
 
 @unique
@@ -309,3 +341,85 @@ def make_connection_list(pattern, num_cell, min_pre=None, rng=None):
                 num_extra -= 1
     
     return conn_list
+
+###############################################################################
+# Watts-Strogatz Small-World network
+###############################################################################
+
+# Implementation Copyright Francis Song, see http://www.nervouscomputer.com/hfs/super-simple-watts-strogatz/
+ 
+def _distance_matrix(L):
+    Dmax = L//2
+ 
+    D  = range(Dmax+1)
+    D += D[-2+(L%2):0:-1]
+ 
+    return circulant(D)/Dmax
+ 
+def _pd(d, p0, beta):
+    return beta*p0 + (d <= p0)*(1-beta)
+ 
+
+def watts_strogatz(L, p0, beta, directed=False, rngseed=1):
+    """
+    Watts-Strogatz model of a small-world network
+ 
+    This generates the full adjacency matrix, which is not a good way to store
+    things if the network is sparse.
+
+    License
+    -------
+
+    Copyright Francis Song, see http://www.nervouscomputer.com/hfs/super-simple-watts-strogatz/
+ 
+
+    Parameters
+    ----------
+    L        : int
+               Number of nodes.
+ 
+    p0       : float
+               Edge density. If K is the average degree then p0 = K/(L-1).
+               For directed networks "degree" means out- or in-degree.
+ 
+    beta     : float
+               "Rewiring probability."
+ 
+    directed : bool
+               Whether the network is directed or undirected.
+ 
+    rngseed  : int
+               Seed for the random number generator.
+ 
+
+    Returns
+    -------
+    A        : (L, L) array
+               Adjacency matrix of a WS (potentially) small-world network.
+    """
+    rng = np.random.RandomState(rngseed)
+ 
+    d = _distance_matrix(L)
+    p = _pd(d, p0, beta)
+ 
+    if directed:
+        A = 1*(rng.random_sample(p.shape) < p)
+        np.fill_diagonal(A, 0)
+    else:
+        upper = np.triu_indices(L, 1)
+ 
+        A          = np.zeros_like(p, dtype=int)
+        A[upper]   = 1*(rng.rand(len(upper[0])) < p[upper])
+        A.T[upper] = A[upper]
+ 
+    return A
+
+
+def small_world_list(L, p0, beta, directed=False, rngseed=1):
+    """
+    Watts-Strogatz small-world network as connection list.
+
+    @see    watts_strogatz() for meaning of parameters
+    """
+    adj_mat = watts_strogatz(L, p0, beta, directed, rngseed)
+    return adjacency_to_list(adj_mat)

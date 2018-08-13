@@ -710,66 +710,77 @@ def test_plotRaster():
     plotRaster(trace_dict, timeRange=(0,2000))
 
 
-
-def plot_connectivity_matrix(self, W, px, py):
+def plot_connectivity_matrix(
+        W, px=10, py=10, 
+        pop0='A', pop1='B', 
+        cmap='Oranges', show=True):
     """
-    Plot matrix of connection strengths as image.
+    Plot connectivity matrix given as string.
 
     @param  W : np.array
             2D matrix containing connection weights
 
-    @param  px : int
-            Number of cells per (sub)population in x-dimension of W
-
-    @param  py : int
-            Number of cells per (sub)population in y-dimension of W
+    @param  px, py : int
+            Number of cells per (sub)population in 1st/2nd dimension of W.
+            Used to draw gridlines.
     """
     from matplotlib import patches
 
     # Create plot
-    figh = plt.figure(figsize=(8,6))
-    # figh.subplots_adjust(left=0.02) # Less space on left
-    figh.subplots_adjust(right=0.98) # Less space on right
-    figh.subplots_adjust(top=0.96) # Less space on bottom
-    # figh.subplots_adjust(bottom=0.02) # Less space on bottom
-    figh.subplots_adjust(wspace=0) # More space between
-    figh.subplots_adjust(hspace=0) # More space between
-    h = plt.axes()
+    fig, ax = plt.subplots(figsize=(8,6))
+    # # fig.subplots_adjust(left=0.02) # Less space on left
+    # fig.subplots_adjust(right=0.98) # Less space on right
+    # fig.subplots_adjust(top=0.96) # Less space on bottom
+    # # fig.subplots_adjust(bottom=0.02) # Less space on bottom
+    # fig.subplots_adjust(wspace=0) # More space between
+    # fig.subplots_adjust(hspace=0) # More space between
 
     # Plot matrix as image
-    plt.imshow(W, interpolation='none', cmap=plt.get_cmap('jet'))
+    colormap = plt.get_cmap(cmap) # see https://matplotlib.org/examples/color/colormaps_reference.html
+    plt.imshow(W, interpolation='none', cmap=colormap)
 
     # Plot grid lines
-    n_ycell, n_xcell = W.shape
-    n_ypop = n_ycell/py
-    n_xpop = n_xcell/px
-    ypops = np.arange(n_ypop)*py
-    xpops = np.arange(n_xpop)*px
-    for p in ypops:
+    y_popsize, x_popsize = W.shape
+    y_nticks = y_popsize/py + 1
+    x_nticks = x_popsize/px + 1
+    yticks_pos = np.arange(y_nticks)*py
+    xticks_pos = np.arange(x_nticks)*px
+    for p in yticks_pos:
         # Plot gridlines (population boundaries)
-        plt.plot(np.array([0, n_xcell])-0.5, np.array([p, p])-0.5, 'k-')
-        plt.plot(np.array([p, p])-0.5, np.array([0, n_ycell])-0.5, 'k-')
+        # plt.plot(np.array([0, x_popsize])-0.5, 
+        #          np.array([p, p])-0.5,
+        #          'k-', linewidth=1.0, snap=True)
+        # plt.plot(np.array([p, p])-0.5,
+        #          np.array([0, y_popsize])-0.5, 
+        #          'k-', linewidth=1.0, snap=True)
         # Add rectangles on diagonal
-        h.add_patch(patches.Rectangle((p-0.5, p-0.5),
+        ax.add_patch(patches.Rectangle((p-0.5, p-0.5),
                                         px, # Width
                                         py, # Height
                                         facecolor="none",
-                                        edgecolor='y',
+                                        edgecolor='g',
                                         linewidth="1"))
-    # Make pretty
-    h.set_xticks(xpops-0.5)
-    h.set_yticks(ypops-0.5)
-    h.set_xticklabels(range(n_xpop))
-    h.set_yticklabels(range(n_ypop))
-    h.xaxis.set_ticks_position('top')
+    # Grid instead of manual gridlines
+    plt.grid(True)
+
+    # Configure the x and y axis
+    ax.set_xticks(xticks_pos-0.5)
+    ax.set_yticks(yticks_pos-0.5)
+    ax.set_xticklabels(xticks_pos)
+    ax.set_yticklabels(yticks_pos)
+    ax.xaxis.set_ticks_position('top')
+
+    ax.set_xlabel('{} cell index'.format(pop1))
+    ax.set_ylabel('{} cell index'.format(pop0))
     
-    plt.xlim(-0.5, n_xcell - 0.5)
-    plt.ylim(n_ycell - 0.5 ,-0.5)
+    plt.xlim(-0.5, x_popsize - 0.5)
+    plt.ylim(y_popsize - 0.5 ,-0.5)
 
     # Add color bar to measure weights
     plt.clim(0, abs(W).max())
     plt.colorbar()
-
+    if show:
+        plt.show(block=False)
 
 if __name__ == '__main__':
     test_plotRaster()
