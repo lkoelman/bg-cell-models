@@ -703,11 +703,16 @@ class EphysModelWrapper(ephys.models.CellModel):
         Allow getting and setting of arbitrary NEURON RANGE variables.
 
         @pre    Subclass must define attribute 'rangevar_names'
+
+        @note   __getattr__ is called as last resort and the default behavior
+                is to raise AttributeError
         """
         matches = re.search(r'^(\w+)_scale$', name)
         if (matches is None) or (not any(
                 [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
-            return super(EphysModelWrapper, self).__getattr__(name)
+            # return super(EphysModelWrapper, self).__getattr__(name)
+            # raise AttributeError
+            return self.__getattribute__(name)
         
         # search for NEURON RANGE variable to be scaled
         varname = matches.groups()[0]
@@ -723,7 +728,9 @@ class EphysModelWrapper(ephys.models.CellModel):
 
     def __setattr__(self, name, value):
         """
-        Allow getting and setting of arbitrary NEURON RANGE variables.
+        Allow scaling of any NEURON RANGE variables by intercepting
+        assignments to attributes of the format '<rangevar>_scale', i.e.
+        any NEURON range variable names suffixed by '_scale'.
 
         @pre    Subclass must define attribute 'rangevar_names'
         """
