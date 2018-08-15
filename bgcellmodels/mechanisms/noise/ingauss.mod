@@ -25,6 +25,9 @@ Python example:
 >>> rng.uniform(0, 1)
 
 >>> stim = h.InGauss(sec(0.5))
+>>> stim.delay = 0
+>>> stim.per = 0.05
+>>> stim.dur = 1e9
 >>> stim.mean = 0
 >>> stim.stdev = 1
 >>> stim.noiseFromRandom(rng)
@@ -41,7 +44,7 @@ NEURON {
     POINT_PROCESS InGauss
     NONSPECIFIC_CURRENT i
     RANGE mean, stdev
-    RANGE del, dur
+    RANGE delay, dur, per
     THREADSAFE : true only if every instance has its own distinct Random
     POINTER donotuse
 }
@@ -51,27 +54,28 @@ UNITS {
 }
 
 PARAMETER {
-    del (ms) : delay until noise starts
-    dur (ms) <0, 1e9> : duration of noise
+    delay = 0 (ms) : delay until noise starts
+    dur = 1e9 (ms) <0, 1e9> : duration of noise
     mean = 0 (nA)
     stdev = 1 (nA)
+    per (ms) : period of noise refresh, fixed to dt in Ted Carnevale's code
 }
 
 ASSIGNED {
     dt (ms)
     on
-    per (ms)
+    : per (ms)
     ival (nA)
     i (nA)
     donotuse
 }
 
 INITIAL {
-    per = dt
+    : per = dt
     on = 0
     ival = 0
     i = 0
-    net_send(del, 1)
+    net_send(delay, 1)
 }
 
 PROCEDURE seed(x) {

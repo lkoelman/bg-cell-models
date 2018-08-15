@@ -19,7 +19,7 @@ Python example:
 >>> rng.MCellRan4(high_index, low_index)
 >>> rng.uniform(0, 1)   # distribution MUST be set to uniform(0,1)
 
->>> sec.insert('noise')
+>>> sec.insert('mgauss')
 >>> for seg in sec:
 >>>     seg.noiseFromRandom_noise(rng)
 >>>     seg.mean_noise = 0
@@ -44,7 +44,7 @@ UNITS {
 }
 
 NEURON {
-    SUFFIX noise
+    SUFFIX mgauss
     NONSPECIFIC_CURRENT i
     RANGE mean, stdev
     THREADSAFE          : true only if every instance has its own distinct Random

@@ -1,5 +1,5 @@
 """
-Synapse mechanisms for NEURON.
+Noise mechanisms for NEURON.
 
 Mechanisms are loaded into NEURON when module is imported.
 """

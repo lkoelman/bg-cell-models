@@ -143,6 +143,8 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         cell_idx = int(cell_idx)
         self.icell = h.SThcells[cell_idx]
 
+        # TODO: Insert membrane noise
+
 
     def memb_init(self):
         """
