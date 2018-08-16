@@ -15,12 +15,12 @@ import numpy as np
 
 import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
+import pyNN.neuron as nrnsim
+
+from bgcellmodels.common.stdutil import dotdict
+from bgcellmodels.common import treeutils, nrnutil #, logutils
 
 import gunay_model
-
-# Debug messages
-from bgcellmodels.common.stdutil import dotdict
-from bgcellmodels.common import treeutils #, logutils
 
 # logutils.setLogLevel('quiet', [
 #     'bluepyopt.ephys.parameters',
@@ -82,6 +82,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         # 'GABA_synapse_mechanism',
         # 'GLU_synapse_mechanism',
         'tau_m_scale',
+        'membrane_noise_std',
     ]
 
     # FIXME: workaround, so far PyNN only allows numerical parameters
@@ -110,13 +111,54 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         parameter_names.append(rangevar + '_scale')
     
 
+    def instantiate(self, sim=None):
+        """
+        Instantiate cell in simulator
+
+        @override       ephys.models.CellModel.instantiate()
+                        
+                        Since the wrapped model is a pure Hoc model completely
+                        defined by its Hoc template, i.e. without ephys
+                        morphology, parameters, or mechanisms definitions,
+                        we have to override instantiate().
+        """
+
+        super(GPeCellModel, self).instantiate(sim)
+
+        # Adjust compartment dimensions like in GENESIS code
+        gunay_model.fix_comp_dimensions(self)
+
+        # Insert membrane noise
+        if self.membrane_noise_std > 0:
+            # Configure RNG to generate independent stream of random numbers.
+            num_picks = int(nrnsim.state.duration / nrnsim.state.dt)
+            rng, init_rng = nrnutil.independent_random_stream(
+                                    num_picks, nrnsim.state.mcellran4_rng_indices,
+                                    start_low_index=nrnsim.state.rank_rng_seed)
+            rng.normal(0, 1)
+            self.noise_rng = rng
+            self.noise_rng_init = init_rng
+
+            soma = self.icell.soma[0]
+            stim = h.ingauss2(soma(0.5))
+            std_scale =  1e-2 * sum((seg.area() for seg in soma)) # [mA/cm2] to [nA]
+            stim.mean = 0.0
+            stim.stdev = self.membrane_noise_std * std_scale
+            stim.noiseFromRandom(rng)
+        else:
+            def fdummy():
+                pass
+            self.noise_rng = None
+            self.noise_rng_init = fdummy
+
+
     def memb_init(self):
         """
         Initialization function required by PyNN.
 
         @override     EphysModelWrapper.memb_init()
         """
-        gunay_model.fix_comp_dimensions(self)
+        self.noise_rng_init()
 
 
     def _init_synapses(self):
@@ -155,20 +197,20 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
         # Fill synapse lists
         self._synapses = {}
-        self._synapses['proximal'] = prox_syns = {}
-        self._synapses['distal'] = dist_syns = {}
+        self._synapses['proximal'] = {}
+        self._synapses['distal'] = {}
 
         # Get constuctors for NEURON synapse mechanisms
         make_gaba_syn = getattr(h, self.GABA_synapse_mechanism)
         make_glu_syn = getattr(h, self.GLU_synapse_mechanism)
 
-        prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
+        self._synapses['proximal'][('GABAA', 'GABAB')] = prox_gaba_syns = []
         for seg_index in proximal_indices:
             syn = make_gaba_syn(proximal_segments[seg_index])
             prox_gaba_syns.append(dotdict(synapse=syn, used=0,
                 mechanism=self.GABA_synapse_mechanism))
         
-        dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
+        self._synapses['distal'][('AMPA', 'NMDA')] = dist_glu_syns = []
         for seg_index in distal_indices:
             syn = make_glu_syn(distal_segments[seg_index])
             dist_glu_syns.append(dotdict(synapse=syn, used=0,
@@ -220,6 +262,7 @@ class GPeCellType(ephys_pynn.EphysCellType):
         # 'GABA_synapse_mechanism': 'GABAsyn',
         # 'GLU_synapse_mechanism': 'GLUsyn',
         'tau_m_scale': 1.0,
+        'membrane_noise_std': 0.0,
     }
 
     # Defaults for Ephys parameters

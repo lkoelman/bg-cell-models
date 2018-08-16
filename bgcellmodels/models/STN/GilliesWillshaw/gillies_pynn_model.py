@@ -26,8 +26,8 @@ os.chdir(prev_cwd)
 import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
 from bgcellmodels.common.stdutil import dotdict
-from bgcellmodels.common import treeutils #, logutils
-
+from bgcellmodels.common import treeutils, nrnutil #, logutils
+import pyNN.neuron as nrnsim
 import lfpsim # loads Hoc functions
 
 # Debug messages
@@ -99,6 +99,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         'lfp_electrode_y',
         'lfp_electrode_z',
         'tau_m_scale',
+        'membrane_noise_std',
     ]
 
     # FIXME: workaround: set directly as property on the class because
@@ -143,7 +144,28 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         cell_idx = int(cell_idx)
         self.icell = h.SThcells[cell_idx]
 
-        # TODO: Insert membrane noise
+        # Insert membrane noise
+        if self.membrane_noise_std > 0:
+            # Configure RNG to generate independent stream of random numbers.
+            num_picks = int(nrnsim.state.duration / nrnsim.state.dt)
+            rng, init_rng = nrnutil.independent_random_stream(
+                                    num_picks, nrnsim.state.mcellran4_rng_indices,
+                                    start_low_index=nrnsim.state.rank_rng_seed)
+            rng.normal(0, 1)
+            self.noise_rng = rng
+            self.noise_rng_init = init_rng
+
+            soma = self.icell.soma[0]
+            stim = h.ingauss2(soma(0.5))
+            std_scale =  1e-2 * sum((seg.area() for seg in soma)) # [mA/cm2] to [nA]
+            stim.mean = 0.0
+            stim.stdev = self.membrane_noise_std * std_scale
+            stim.noiseFromRandom(rng)
+        else:
+            def fdummy():
+                pass
+            self.noise_rng = None
+            self.noise_rng_init = fdummy
 
 
     def memb_init(self):
@@ -156,6 +178,8 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
             h.ion_style("na_ion",1,2,1,0,1, sec=sec)
             h.ion_style("k_ion",1,2,1,0,1, sec=sec)
             h.ion_style("ca_ion",3,2,1,1,1, sec=sec)
+
+        self.noise_rng_init()
 
 
     def get_threshold(self):
@@ -306,6 +330,7 @@ class StnCellType(ephys_pynn.EphysCellType):
         'lfp_electrode_y': 100.0,
         'lfp_electrode_z': 100.0,
         'tau_m_scale': 1.0,
+        'membrane_noise_std': 0.0,
     }
     # extra_parameters = {}
     # default_initial_values = {'v': -65.0}
@@ -392,5 +417,5 @@ if __name__ == '__main__':
     # Make single cell
     import bluepyopt.ephys as ephys
     cell = StnCellModel()
-    nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
-    icell = cell.instantiate(sim=nrnsim)
+    sim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
+    icell = cell.instantiate(sim=sim)

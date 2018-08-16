@@ -46,8 +46,9 @@ import numpy as np
 # MPI support
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
-mpi_size = comm.Get_size()
-mpi_rank = comm.Get_rank()
+mpi_size = comm.Get_size() # number of processes
+mpi_rank = comm.Get_rank() # rank of current process
+WITH_MPI = mpi_size > 1
 
 # PyNN library
 import pyNN.neuron as sim
@@ -66,7 +67,7 @@ from bgcellmodels.extensions.pynn.populations import Population
 # sim.Population._recorder_class = TraceSpecRecorder
 
 # Custom NEURON mechanisms
-from bgcellmodels.mechanisms import synapses # loads MOD files
+from bgcellmodels.mechanisms import synapses, noise # loads MOD files
 
 # Custom cell models
 import bgcellmodels.models.STN.GilliesWillshaw.gillies_pynn_model as gillies
@@ -201,6 +202,7 @@ def run_simple_net(
     h = sim.h
     sim.state.duration = sim_dur # not used by PyNN, only by our custom funcs
     sim.state.rec_dt = 0.05
+    sim.state.mcellran4_rng_indices = {} # Keep track of MCellRan4 indices for independent random streams.
     finit_handlers = []
 
     # Make one random generator that is shared and should yield same results
@@ -212,7 +214,7 @@ def run_simple_net(
     if seed is None:
         seed = config['simulation']['shared_rng_seed']
     shared_seed = seed # original: 151985012
-    rank_seed = sim.state.native_rng_baseseed + sim.state.mpi_rank
+    sim.state.rank_rng_seed = rank_seed = sim.state.native_rng_baseseed + sim.state.mpi_rank
     # RNGs that can be passed to PyNN objects like Connector subclasses
     shared_rng_pynn = sim.NumpyRNG(seed=shared_seed)
     rank_rng_pynn = sim.NumpyRNG(seed=rank_seed)
@@ -270,14 +272,14 @@ def run_simple_net(
         return connector_class(**con_pvals)
 
     
-    # LFP calculation: command line args get priority over config
+    # LFP calculation: command line args get priority over config file
     if calculate_lfp is None:
         calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
     
     # Set NEURON integrator/solver options
     if calculate_lfp:
         sim.state.cvode.use_fast_imem(True)
-        sim.state.cvode.cache_efficient(True)
+    sim.state.cvode.cache_efficient(True) # necessary for lfp, also 33% reduction in simulation time
 
     ############################################################################
     # POPULATIONS
@@ -588,7 +590,7 @@ def run_simple_net(
     # Simulation statistics
     num_segments = sum((sec.nseg for sec in h.allsec()))
     num_cell = sum((1 for sec in h.allsec()))
-    print("Will simulate {} cells ({} segments) for {} seconds on MPI rank {}.".format(
+    print("Will simulate {} sections ({} compartments) for {} seconds on MPI rank {}.".format(
             num_cell, num_segments, sim_dur, mpi_rank))
     tstart = time.time()
     outdir, filespec = os.path.split(output)

@@ -364,17 +364,6 @@ class EphysModelWrapper(ephys.models.CellModel):
             mechs=getattr(self, '_ephys_mechanisms', None),
             params=params)
 
-        self.sim = ephys_sim_from_pynn()
-        self.instantiate(sim=self.sim)
-
-        # Add locations / regions
-        # self.locations = {}
-        # for static_loc in self._ephys_locations:
-        #     loc = copy(static_loc)
-        #     # loc.sim = self.sim
-        #     # loc.icell = self.icell
-        #     self.locations[make_valid_attr_name(loc.name)] = loc
-
         # NOTE: default params will be passed by pyNN Population
         for param_name, param_value in kwargs.iteritems():
             if (param_name in self.params) and (self.params[param_name].value == param_value):
@@ -388,6 +377,17 @@ class EphysModelWrapper(ephys.models.CellModel):
                 setattr(self, param_name, param_value)
             else:
                 logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
+
+        self.sim = ephys_sim_from_pynn()
+        self.instantiate(sim=self.sim)
+
+        # Add locations / regions
+        # self.locations = {}
+        # for static_loc in self._ephys_locations:
+        #     loc = copy(static_loc)
+        #     # loc.sim = self.sim
+        #     # loc.icell = self.icell
+        #     self.locations[make_valid_attr_name(loc.name)] = loc
 
         # Synapses will map the mechanism name to the synapse object
         # and is set by our custom Connection class
