@@ -67,7 +67,7 @@
         },
         // Numerical parameters passed to the PyNN cell type
         "PyNN_cell_parameters": {
-            // "tau_m_scale": 1.0
+            "membrane_noise_std": 0.1, // 0.1 calibrated empirically based on Vm trace
         },
 // STN -> GPE Projection
 // -----------------------------------------------------------------------------
@@ -186,7 +186,7 @@
         },
         // Numerical parameters passed to the PyNN cell type
         "PyNN_cell_parameters": {
-            // "tau_m_scale": 1.0
+            "membrane_noise_std": 0.0075, // 0.0075 calibrated empirically based on Vm trace
         },
 // GPE -> STN Projection
 // -----------------------------------------------------------------------------

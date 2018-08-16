@@ -64,6 +64,10 @@
         "local_context": {
             "grid_dx": 50.0,
         },
+        // Numerical parameters passed to the PyNN cell type
+        "PyNN_cell_parameters": {
+            "membrane_noise_std": 0.1, // 0.1 calibrated empirically based on Vm trace
+        },
 // STN -> GPE Projection
 // -----------------------------------------------------------------------------
         "STN": {
@@ -178,6 +182,10 @@
             "grid_dx": 50.0,
             "frac_lateral_projecting": 0.2,
             "num_lateral_projections": 3, // number of lateral targets on each side
+        },
+        // Numerical parameters passed to the PyNN cell type
+        "PyNN_cell_parameters": {
+            "membrane_noise_std": 0.0075, // 0.0075 calibrated empirically based on Vm trace
         },
 // GPE -> STN Projection
 // -----------------------------------------------------------------------------

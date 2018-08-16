@@ -472,7 +472,7 @@ def create_cell():
     """
     Instantiate GPe cell in NEURON simulator.
     """
-    cell = define_cell()
+    cell = define_cell(MODEL_GUNAY2008_AXONLESS)
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
     cell.instantiate(sim=nrnsim)
