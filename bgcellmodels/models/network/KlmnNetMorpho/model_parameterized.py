@@ -835,7 +835,5 @@ if __name__ == '__main__':
         os.mkdir(out_fulldir)
     parsed_dict['output'] = os.path.join(out_fulldir, filespec)
     
-    print("Got parsed dict: ", parsed_dict)
-    
     # Run the simulation
     run_simple_net(**parsed_dict)

@@ -140,7 +140,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
             self.noise_rng_init = init_rng
 
             soma = self.icell.soma[0]
-            stim = h.ingauss2(soma(0.5))
+            self.noise_stim = stim = h.ingauss2(soma(0.5))
             std_scale =  1e-2 * sum((seg.area() for seg in soma)) # [mA/cm2] to [nA]
             stim.mean = 0.0
             stim.stdev = self.membrane_noise_std * std_scale
