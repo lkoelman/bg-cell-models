@@ -259,7 +259,7 @@ def run_simple_net(
         syn_pvals = eval_params(syn_params, params_global_context, local_context)
         return syn_class(**syn_pvals)
 
-    def connector_from_config(pre, post):
+    def connector_from_config(pre, post, rng=None):
         """
         Make Connector object from config dict
         """
@@ -269,7 +269,10 @@ def run_simple_net(
         connector_class = getattr(sim, con_type)
         con_pvals = eval_params(con_params, params_global_context,
                                [params_local_context, config_locals])
-        return connector_class(**con_pvals)
+        connector = connector_class(**con_pvals)
+        if rng is not None:
+            connector.rng = rng
+        return connector
 
     
     # LFP calculation: command line args get priority over config file
@@ -329,6 +332,19 @@ def run_simple_net(
                          structure=gpe_grid)
 
     pop_gpe.initialize(v=-63.0)
+
+    #---------------------------------------------------------------------------
+    # GPE SURROGATE POPULATION
+
+    num_gpe_surrogates, surr_rate = get_pop_parameters('GPE', 'num_surrogates',
+                                                      'surrogate_rate')
+    
+    if num_gpe_surrogates > 0:
+        pop_gpe_surrogate = Population(num_gpe_surrogates, 
+                                       sim.SpikeSourcePoisson(rate=surr_rate),
+                                       label='GpeSurrogate')
+    else:
+        pop_gpe_surrogate = None
 
     #---------------------------------------------------------------------------
     # CTX POPULATION
@@ -515,7 +531,6 @@ def run_simple_net(
 
     gpe_stn_syn = synapse_from_config('GPE', 'STN')
 
-    # TODO: GPE -> STN projection pattern
     gpe_stn_INH = sim.Projection(
                         pop_gpe, pop_stn,
                         connector=gpe_stn_connector,
@@ -523,6 +538,19 @@ def run_simple_net(
                         receptor_type='proximal.GABAA+GABAB')
 
     all_proj['GPE']['STN'] = gpe_stn_INH
+    
+    #---------------------------------------------------------------------------
+    # GpeSurrogate -> STN (inhibitory)
+
+    if pop_gpe_surrogate is not None:
+
+        gpesurr_stn_INH = sim.Projection(
+            pop_gpe_surrogate, pop_stn,
+            connector=connector_from_config('GpeSurrogate', 'STN', shared_rng_pynn),
+            synapse_type=synapse_from_config('GpeSurrogate', 'STN'),
+            receptor_type='proximal.GABAA+GABAB')
+
+        all_proj['GpeSurrogate']['STN'] = gpesurr_stn_INH
 
     #---------------------------------------------------------------------------
     # CTX -> STN (excitatory)

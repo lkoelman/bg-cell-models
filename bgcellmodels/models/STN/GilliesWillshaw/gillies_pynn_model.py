@@ -100,6 +100,9 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         'lfp_electrode_z',
         'tau_m_scale',
         'membrane_noise_std',
+        'max_num_gpe_syn',
+        'max_num_ctx_syn',
+        'max_num_stn_syn',
     ]
 
     # FIXME: workaround: set directly as property on the class because
@@ -212,9 +215,9 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         distal_segments = [seg for seg in uniform_segments if is_distal(seg)]
 
         # Synapses counts are fixed
-        num_gpe_syn = 10
-        num_ctx_syn = 30
-        num_stn_syn = 10
+        num_gpe_syn = self.max_num_gpe_syn
+        num_ctx_syn = self.max_num_ctx_syn
+        num_stn_syn = self.max_num_stn_syn
         rng = np.random # TODO: make from base seed + self ID
         
         proximal_indices = rng.choice(len(proximal_segments), 
@@ -331,6 +334,9 @@ class StnCellType(ephys_pynn.EphysCellType):
         'lfp_electrode_z': 100.0,
         'tau_m_scale': 1.0,
         'membrane_noise_std': 0.0,
+        'max_num_gpe_syn': 19,
+        'max_num_ctx_syn': 30,
+        'max_num_stn_syn': 10,
     }
     # extra_parameters = {}
     # default_initial_values = {'v': -65.0}

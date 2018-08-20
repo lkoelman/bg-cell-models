@@ -700,30 +700,34 @@ class EphysModelWrapper(ephys.models.CellModel):
 
     def __getattr__(self, name):
         """
-        Allow getting and setting of arbitrary NEURON RANGE variables.
+        Override getattr to support dynamic properties that are not
+        explicitly declared.
+
+        For now, scale factors for NEURON range variables can be set.
 
         @pre    Subclass must define attribute 'rangevar_names'
 
         @note   __getattr__ is called as last resort and the default behavior
                 is to raise AttributeError
         """
-        matches = re.search(r'^(\w+)_scale$', name)
-        if (matches is None) or (not any(
-                [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
+        matches_scale_factor = re.search(r'^(\w+)_scale$', name)
+        if (matches_scale_factor is not None) and (any(
+            [v.startswith(matches_scale_factor.groups()[0]) for v in self.rangevar_names])):
+        
+            # search for NEURON RANGE variable to be scaled
+            varname = matches_scale_factor.groups()[0]
+            private_attr_name = '_' + varname + '_scale'
+
+            # Only if it has been scaled before does the scale attribute exist
+            if not hasattr(self, private_attr_name):
+                return 1.0 # not scaled
+            else:
+                # Call will bypass this method if attribute exists
+                return getattr(self, private_attr_name)
+        else:
             # return super(EphysModelWrapper, self).__getattr__(name)
             # raise AttributeError
             return self.__getattribute__(name)
-        
-        # search for NEURON RANGE variable to be scaled
-        varname = matches.groups()[0]
-        private_attr_name = '_' + varname + '_scale'
-
-        # Only if it has been scaled before does the scale attribute exist
-        if not hasattr(self, private_attr_name):
-            return 1.0 # not scaled
-        else:
-            # Call will bypass this method if attribute exists
-            return getattr(self, private_attr_name)
 
 
     def __setattr__(self, name, value):
