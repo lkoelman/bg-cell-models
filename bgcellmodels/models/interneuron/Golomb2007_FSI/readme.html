@@ -1,0 +1,56 @@
+<html><pre>
+This is the readme for a NEURON implementation of a fast-spiking
+cortical interneuron model, which was implemented by N.T. Carnevale
+and V. Yamini.  Questions about this implementation may be addressed
+to ted dot carnevale at yale dot edu
+
+The conceptual model and the original, authoritative XPP
+implementation were developed by Golomb et al. (2007) and described in
+
+  Golomb D, Donner K, Shacham L, Shlosberg D, Amitai Y, Hansel D (2007).
+  Mechanisms of Firing Patterns in Fast-Spiking Cortical Interneurons. 
+  PLoS Comput Biol 3:e156.
+
+The XPP implementation's source code is available from ModelDB via
+accession number 97747, and may be retrieved from this URL:
+
+  http://senselab.med.yale.edu/modeldb/ShowModel.asp?model=97747
+
+
+Usage:
+
+Compile the mod files with mknrndll or nrnivmodl.
+
+Load the model into NEURON by typing
+  nrngui init_fig2c.hoc
+or double clicking on
+  init_fig2c.hoc
+
+Run the model by clicking on Init & Run in the RunControl panel.  This
+will reproduce the first 1000 ms of Fig. 2C from Golomb et al. (2007).
+The fidelity of the reproduction is demonstrated by a graph that
+overlays this simulation's membrane potential (red trace) on top of a
+black & white gif that was captured from Fig. 2C.
+
+Implementation notes:
+
+Golomb et al. specified all conductances and currents in density
+units, which is quite convenient for translation to a NEURON
+implementation.  However, NEURON's IClamp is a direct counterpart to a
+microelectrode attached to a current clamp, and as such it delivers a
+current that is specified in absolute units, i.e. nanoamps.  To
+replicate the published model with NEURON, the IClamp's amp parameter
+must be set to a value that produces the same membrane current density
+as the stimulus current described in the paper.
+
+This NEURON implementation uses a single compartment with surface area
+100 um2, so an injected current of 1 nA produces a current density of
+1 mA/cm2.  Figure 2C requires a stimulus current of 3.35 uA/cm2, which
+is equivalent to an IClamp with amp = 3.35/1000 = 0.00335 nA.
+
+20130415 NTC introduced tiny first order delay in nas's m so that simulations 
+with fixed dt > 0.02 ms would be stable.  With taum = 0.001 ms, fixed dt 
+simulations show slight differences in spike timing compared to the original 
+results, but adaptive integration produces results nearly identical to the 
+original published figure.  See nas.mod for details.
+
