@@ -20,7 +20,7 @@ UNITS {
 NEURON {
     SUFFIX Nam
     USEION na WRITE ina
-    RANGE gnabar, gna, minf, hinf, ah, Bh
+    RANGE gnabar, gna
 }
  
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
@@ -42,7 +42,8 @@ PARAMETER {
 }
  
 STATE {
-    m h
+    : m is always minf
+    h
 }
  
 ASSIGNED {
@@ -51,14 +52,13 @@ ASSIGNED {
     celsius (degC)
     minf
     hinf
-    ah
-    Bh
+    tauh
     gna
 }
  
 BREAKPOINT {
     SOLVE states METHOD cnexp
-    gna = gnabar * m^3 * h
+    gna = gnabar * minf^3 * h
     ina = gna * (v - ena)
   
 }
@@ -67,29 +67,40 @@ UNITSOFF
  
 INITIAL {
     rates(v)
-    m = minf
+    : m = minf
     h = hinf
 }
 
-DERIVATIVE states { : Computes states variable m and h at the current v and t.
+DERIVATIVE states {
     rates(v)
-    h' = phi * (ah*(1-h) - Bh*h)
+    : h' = phi * (ah*(1-h) - Bh*h)
+    h' = (hinf - h) / tauh
 }
  
-PROCEDURE rates(v) {  :Computes rate and other constants at current v.
-                      :Call once from HOC to initialize inf at resting v.
-    LOCAL am, Bm
-    TABLE minf, hinf, m, ah, Bh FROM -100 TO 100 WITH 400
+PROCEDURE rates(v) {
+    LOCAL am, Bm, ah, Bh
+    TABLE minf, hinf, tauh FROM -100 TO 100 WITH 400
+    : DEPEND Vam, Kam, Vbm, Kbm, Vah, Kah, Vbh, Kbh
         
-    am = (-0.1*(v-Vam)/Kam / (exp(-0.1 * (v-Vam)/Kam) - 1))
+    : am = (-0.1*(v-Vam)/Kam / (exp(-0.1 * (v-Vam)/Kam) - 1))
+    am = 1/Kam * vtrap(-0.1*(v-Vam), Kam)
     Bm = 4 * exp(-(v-Vbm)/Kbm)
     ah = 0.07 * exp(-(v-Vah)/Kah)
     Bh =  1 / (1 + exp(-0.1*(v-Vbh)/Kbh))
     
     minf = am / (am+Bm)
     hinf = ah / (ah+Bh)
-    
-    m = minf      
+    : tauh = 1 / (ah+Bh)
+    tauh = 1 / ((ah+Bh) * phi) : phi moved here from state equation
+}
+
+: Traps for 0 in denominator of rate eqns.
+FUNCTION vtrap(x,y) {  
+    if (fabs(x/y) < 1e-6) {
+            vtrap = y*(1 - x/y/2)
+    }else{
+            vtrap = x/(exp(x/y) - 1)
+    }
 }
  
 UNITSON

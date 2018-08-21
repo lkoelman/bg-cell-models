@@ -13,14 +13,14 @@ Phi =5 and no q10 or temp adjustment according to Bruno Delord 11/13/06
 ENDCOMMENT
  
 UNITS {
-        (mA) = (milliamp)
-        (mV) = (millivolt)
+    (mA) = (milliamp)
+    (mV) = (millivolt)
 }
  
 NEURON {
     SUFFIX Km
     USEION k WRITE ik
-    RANGE gkmbar, gkm, ninf, an, Bn
+    RANGE gkmbar, gkm
 }
  
 INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
@@ -29,8 +29,8 @@ PARAMETER {
     
     ek  = -90   (mV)
     gkmbar  = 0.006 (mho/cm2) : 6mS
-    phi = 5  < 0, 1e9 > : according to Bruno delord 11/13/06
-    Van   = -27 :NOT the original value from wang and Buzsaki
+    phi = 5 < 0, 1e9 > : according to Bruno delord 11/13/06
+    Van = -27 :NOT the original value from wang and Buzsaki
     Kan = 1
     Vbn = -37 :NOT the original value from wang and Buzsaki
     Kbn = 80
@@ -41,12 +41,11 @@ STATE {
 }
  
 ASSIGNED {
-    v  (mV)
-    ik (mA/cm2)
-    celsius     (degC)
+    v       (mV)
+    ik      (mA/cm2)
+    celsius (degC)
     ninf
-    an
-    Bn
+    taun
     gkm
 }
  
@@ -61,22 +60,36 @@ UNITSOFF
  
 INITIAL {
     rates(v)
-    n= ninf
+    n = ninf
 }
 
-DERIVATIVE states {  :Computes states variable n 
-    rates(v)      :             at the current v and dt.
-    n' = phi*(an*(1-n)-Bn*n)
+DERIVATIVE states {
+    rates(v)
+    : n' = phi*(an*(1-n)-Bn*n)
+    n' = (ninf - n) / taun
 
 }
  
-PROCEDURE rates(v) {  :Computes rate and other constants at current v.
-                      :Call once from HOC to initialize inf at resting v.
-    TABLE an, Bn, ninf FROM -100 TO 100 WITH 400
-    an = (-0.01*(v-Van)/Kan / (exp(-0.1*(v-Van)/Kan)-1))
+PROCEDURE rates(v) {
+    LOCAL an, Bn
+    TABLE ninf, taun FROM -100 TO 100 WITH 400
+
+    : an = (-0.01*(v-Van)/Kan / (exp(-0.1*(v-Van)/Kan)-1))
+    an = 0.1/Kan * vtrap(-0.1*(v-Van), Kan)
     Bn = 0.125*exp(-(v-Vbn)/Kbn)
+    
     ninf = an / (an+Bn)
+    taun = 1 / ((an+Bn) * phi)  
           
+}
+
+: Traps for 0 in denominator of rate eqns.
+FUNCTION vtrap(x,y) {  
+    if (fabs(x/y) < 1e-6) {
+            vtrap = y*(1 - x/y/2)
+    }else{
+            vtrap = x/(exp(x/y) - 1)
+    }
 }
  
 UNITSON

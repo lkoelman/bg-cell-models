@@ -9,12 +9,10 @@ conffile="${nb_dir}/nb_exec_conf.py"
 export NB_CONF_FILE=${conffile} # for subprocesses
 
 # List simulation output directories to analyze
-outputs_clipboard="/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/syn-v2_q5_sweep-gpe-gpe-ipsp/2018.08.02_job-780651.sonic-head_DA-depleted-v3_CTX-f0_GpeGpe-inh-x0.2
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/syn-v2_q5_sweep-gpe-gpe-ipsp/2018.08.02_job-780652.sonic-head_DA-depleted-v3_CTX-f0_GpeGpe-inh-x0.4
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/syn-v2_q5_sweep-gpe-gpe-ipsp/2018.08.02_job-780653.sonic-head_DA-depleted-v3_CTX-f0_GpeGpe-inh-x0.6
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/syn-v2_q5_sweep-gpe-gpe-ipsp/2018.08.02_job-780654.sonic-head_DA-depleted-v3_CTX-f0_GpeGpe-inh-x0.8
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/syn-v2_q5_sweep-gpe-gpe-ipsp/2018.08.02_job-780655.sonic-head_DA-depleted-v3_CTX-f0_GpeGpe-inh-x1.2
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/syn-v2_q5_sweep-gpe-gpe-ipsp/2018.08.02_job-780656.sonic-head_DA-depleted-v3_CTX-f0_GpeGpe-inh-x1.4"
+outputs_clipboard="/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q11_sweep-stn-gpe-gain/2018.08.17_job-782496.sonic-head_DA-depleted-v3_CTX-poisson-f5_STN_GPE-noise-loopgain-x0.0
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q11_sweep-stn-gpe-gain/2018.08.17_job-782495.sonic-head_DA-depleted-v3_CTX-f0_STN-GPE-noise-loopgain-x1.0
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q11_sweep-stn-gpe-gain/2018.08.17_job-782494.sonic-head_DA-depleted-v3_CTX-f0_STN_GPE-noise-loopgain-x0.0
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q11_sweep-stn-gpe-gain/2018.08.17_job-782493.sonic-head_DA-depleted-v3_CTX-f0_STN-GPE-noise-loopgain-base"
 readarray -t output_dirs <<< "${outputs_clipboard}"
 # output_dirs=(${outputs_clipboard//$'n'// }) # substitute newlines and make array
 # output_dirs=( \
@@ -33,8 +31,8 @@ hpfreqs=($(for ((i=0;i<num_outputs;i++)); do echo 5; done))
 lpfreqs=($(for ((i=0;i<num_outputs;i++)); do echo 20; done))
 
 # Parameter sweep
-sweep_name="gsyn_gpe_gpe"
-sweep=(0.2 0.4 0.6 0.8 1.2 1.4)
+sweep_name="gain_stn-gpe"
+sweep=(0.0 1.0 0.0 1.25)
 
 cd $nb_dir
 
@@ -61,7 +59,8 @@ sweep_var_value = ${sweep[i]}"
     echo -e "${pyscript}" > ${conffile} # (quote preserves newlines)
 
     # Execute notebook
-    nb_exec="jupyter nbconvert --execute --to notebook ${notebook} --output-dir=${outdir}"
+    # (timeout option is for notebook cell execution, default is 30 seconds)
+    nb_exec="jupyter nbconvert --ExecutePreprocessor.timeout=None --execute --to notebook ${notebook} --output-dir=${outdir}"
     echo -e "Executing notebook for output: ${outdir}"
     eval $nb_exec
 

@@ -52,7 +52,7 @@ proc init() {
         e_pas = -70
 
         insert KdFSI
-        gkd_KdFSI = 0.0001 // value in Corbit & Whalen (2016) code
+        gkd_KdFSI = 0.0001 // 1e-4 in Corbit & Whalen (2016), 3.9e-4 in Golomb (2007)
 
         insert KdrFSI
         gkdr_KdrFSI = 0.225
@@ -84,6 +84,30 @@ obfunc make_golomb_fsi_ref() { localobj cell_ref
     return cell_ref
 }
 
+/**
+ * Set conductances to make make cell exhibit delayed tonic firing.
+ */
+proc golomb_set_gbar_delayed_tonic() { localobj cell
+    cell = $o1
+    cell.soma[0].gkd_KdFSI = 3.9e-4
+}
+
+/**
+ * Set conductances according to make cell exhibit delayed stuttering.
+ */
+proc golomb_set_gbar_delayed_stuttering() { localobj cell
+    cell = $o1
+    cell.soma[0].gkd_KdFSI = 18e-4
+}
+
+/**
+ * Set conductances according to make cell exhibit tonic firing.
+ * Parameter values used by Corbit, Whalen (2016).
+ */
+proc golob_set_gbar_nondelayed_tonic() { localobj cell
+    cell = $o1
+    cell.soma[0].gkd_KdFSI = 1.0e-4
+}
 
 /**
  * Set error tolerance for adaptive integrator so results match those
