@@ -59,6 +59,8 @@ class MsnCellModel(ephys_pynn.EphysModelWrapper):
                         we have to override instantiate().
         """
         self.icell = h.MahonMSN()
+        for seg in self.icell.soma[0]:
+            seg.el_Leakm = -90 # Corbit (2016) changes -75 to -90
 
 
     def memb_init(self):

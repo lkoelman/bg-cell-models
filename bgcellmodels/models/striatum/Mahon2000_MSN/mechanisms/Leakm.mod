@@ -16,7 +16,7 @@ INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
 PARAMETER {
        
         gl = .000075 (mho/cm2) :0.075 mS
-        el = -90 (mV) : -75 mV in Mahon et al, -90 mV in Corbit et al.
+        el = -75 (mV) : -75 mV in Mahon et al, -90 mV in Corbit et al.
 }
   
 ASSIGNED {

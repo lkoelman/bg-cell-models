@@ -6,6 +6,7 @@ et al (2016) ([ModelDB: 227577](https://senselab.med.yale.edu/modeldb/ShowModel.
 # Modifications
 
 The NEURON mod files were downloaded from ModelDB (Mahon) model. Parameters
-were adapted according to the modifications decrived in Corbit, Whalen et al. (2016).
-Mod files were further adapted by adding function tables for the channel 
-opening/closing rates.
+were adapted according to the modifications decrived in Corbit, Whalen et al. (2016),
+i.e. reducing the reversal potential for the leak current from -75 to -90 mV
+parameter `seg.el_Leakm` for somatic segments). Mod files were further adapted 
+by adding function tables for the channel opening/closing rates.
