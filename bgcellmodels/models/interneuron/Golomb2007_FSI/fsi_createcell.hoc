@@ -69,7 +69,58 @@ proc init() {
     }
 }
 
+proc setparams_golomb2007() {
+    g_pas = 0.00025
+    e_pas = -70
+
+    gkd_KdFSI = 3.9e-4 // 1e-4 in Corbit & Whalen (2016), 3.9e-4 in Golomb (2007)
+    gkdr_KdrFSI = 0.225
+    gna_NasFSI = 0.1125
+
+    ek = -90
+    ena = 50
+}
+
+
+proc setparams_corbit2016() {
+    g_pas = 0.00025
+    e_pas = -70
+
+    gkd_KdFSI = 0.0001 // 1e-4 in Corbit & Whalen (2016), 3.9e-4 in Golomb (2007)
+    gkdr_KdrFSI = 0.225
+    gna_NasFSI = 0.1125
+
+    ek = -90
+    ena = 50
+}
+
+
+/**
+ * Set conductances to make make cell exhibit delayed tonic firing.
+ */
+proc set_gbar_delayed_tonic() {
+    soma[0].gkd_KdFSI = 3.9e-4
+}
+
+/**
+ * Set conductances according to make cell exhibit delayed stuttering.
+ */
+proc set_gbar_delayed_stuttering() { localobj cell
+    soma[0].gkd_KdFSI = 18e-4
+}
+
+/**
+ * Set conductances according to make cell exhibit tonic firing.
+ * Parameter values used by Corbit, Whalen (2016).
+ */
+proc set_gbar_nondelayed_tonic() { localobj cell
+    soma[0].gkd_KdFSI = 1.0e-4
+}
+
 endtemplate GolombFSI
+
+// Physiological parameters from article
+v_init_GolombFSI = -70.038
 
 
 /**
@@ -84,37 +135,14 @@ obfunc make_golomb_fsi_ref() { localobj cell_ref
     return cell_ref
 }
 
-/**
- * Set conductances to make make cell exhibit delayed tonic firing.
- */
-proc golomb_set_gbar_delayed_tonic() { localobj cell
-    cell = $o1
-    cell.soma[0].gkd_KdFSI = 3.9e-4
-}
-
-/**
- * Set conductances according to make cell exhibit delayed stuttering.
- */
-proc golomb_set_gbar_delayed_stuttering() { localobj cell
-    cell = $o1
-    cell.soma[0].gkd_KdFSI = 18e-4
-}
-
-/**
- * Set conductances according to make cell exhibit tonic firing.
- * Parameter values used by Corbit, Whalen (2016).
- */
-proc golob_set_gbar_nondelayed_tonic() { localobj cell
-    cell = $o1
-    cell.soma[0].gkd_KdFSI = 1.0e-4
-}
 
 /**
  * Set error tolerance for adaptive integrator so results match those
  * of fixed step integrator. See original author comments in nas.mod.
  */
-proc golomb_set_state_tolerances() { localobj cvode
-    cvode = new CVode(0)
+proc golomb_set_state_tolerances() { // localobj cvode
+    // NOTE: global variable 'cvode' seems to be created automatically by Hoc
+    // cvode = new CVode(0)
     // cvode.active(1)
     cvode.atolscale("v", 10)
     cvode.atolscale("m_NasFSI", 1)

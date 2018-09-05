@@ -18,7 +18,7 @@ create soma[1] // NEURON error if not created here, before init()
 // Named Sectionlists to conform to cell prototype required by BluePyOpt.Ephys
 // NOTE: objref are public by default
 // NOTE: 'this' is reserved and refers to object itself
-objref this, all, somatic, basal, apical, axonal, myelinated
+objref all, somatic, basal, apical, axonal, myelinated
 
 proc init() {
     create soma[1]
@@ -52,14 +52,53 @@ proc init() {
 }
 
 // /**
-//  * Destructor. Destroys circular reference to object ('this') so
-//  * that it will garbage collected.
+//  * Destructor. Destroys circular reference to 'this' so that
+//  * it will be garbage collected.
 //  */
 // proc destroy() {localobj nil
 //     // Add 'objref this' at beginning of template and
 //     // set CellRef = this in last line of init() procedure
 //     CellRef = nil
 // }
+
+
+/**
+ * Set parameters of Mahon MSN cell according to article Corbit, Whalen et. al.
+ * (2016). This changes the reversal potential for the leak current from
+ * -75 mV to -90 mV
+ *
+ * @param   $o1
+ *          Instance of MahonMSN template
+ */
+proc setparams_corbit2016() {
+    soma[0] {
+        gnasmbar_NaSm = 0.11e-3
+        gnapmbbar_NaPm = 0.02e-3
+        gkrpmbar_Krpm = 0.42e-3
+        gkasmbar_KAsm = 0.32e-3
+        gkafmbar_KAfm = 0.09e-3
+        gkirmbar_Kirm = 0.15e-3
+        gkmbar_Km = 6e-3
+        gnabar_Nam = 35e-3
+        gl_Leakm = 0.075e-3
+        el_Leakm = -90 // Only this is different from Mahon model
+    }
+}
+
+proc setparams_mahon2000() {
+    soma[0] {
+        gnasmbar_NaSm = 0.11e-3
+        gnapmbbar_NaPm = 0.02e-3
+        gkrpmbar_Krpm = 0.42e-3
+        gkasmbar_KAsm = 0.32e-3
+        gkafmbar_KAfm = 0.09e-3
+        gkirmbar_Kirm = 0.15e-3
+        gkmbar_Km = 6e-3
+        gnabar_Nam = 35e-3
+        gl_Leakm = 0.075e-3
+        el_Leakm = -75 // Only this is different from Corbit article
+    }
+}
 
 endtemplate MahonMSN
 
@@ -78,28 +117,4 @@ endtemplate MahonMSN
 obfunc make_mahon_msn_ref() { localobj cell_ref
     cell_ref = new MahonMSN()
     return cell_ref
-}
-
-
-/**
- * Set parameters of Mahon MSN cell according to article Corbit, Whalen et. al.
- * (2016). This changes the reversal potential for the leak current from
- * -75 mV to -90 mV
- *
- * @param   $o1
- *          Instance of MahonMSN template
- */
-proc msn_setparams_corbit2016() {
-    $o1.soma[0] {
-        gnasmbar_NaSm = 0.11e-3
-        gnapmbbar_NaPm = 0.02e-3
-        gkrpmbar_Krpm = 0.42e-3
-        gkasmbar_KAsm = 0.32e-3
-        gkafmbar_KAfm = 0.09e-3
-        gkirmbar_Kirm = 0.15e-3
-        gkmbar_Km = 6e-3
-        gnabar_Nam = 35e-3
-        gl_Leakm = 0.075e-3
-        el_Leakm = -90 // Only this is different from original model
-    }
 }
