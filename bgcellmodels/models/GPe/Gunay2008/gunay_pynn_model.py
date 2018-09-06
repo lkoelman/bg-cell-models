@@ -167,6 +167,9 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
         @override   EphysModelWrapper._init_synapses()
         """
+        # Indicate to Connector that we don't allow multiple NetCon per synapse
+        self.allow_synapse_reuse = False
+
         # Sample each region uniformly and place synapses there
         soma = self.icell.soma[0]
         synapse_spacing = 0.25
@@ -266,6 +269,67 @@ class GPeCellType(ephys_pynn.EphysCellType):
     }
 
     # Defaults for Ephys parameters
+    default_parameters.update({
+        # ephys_model.params.values are ephys.Parameter objects
+        # ephys_param.name is same as key in ephys_model.params
+        p.name.replace(".", "_"): p.value for p in model._ephys_parameters
+    })
+
+
+    # extra_parameters = {}
+    # default_initial_values = {'v': -65.0}
+    
+    # Combined with self.model.regions by EphysCellType constructor
+    receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
+                      'GABAA', 'GABAB', 'GABAA+GABAB']
+
+    def get_schema(self):
+        """
+        Get mapping of parameter names to allowed parameter types.
+        """
+        # Avoids specifying default values for each scale parameter and
+        # thereby calling the property setter for each of them
+        schema = super(GPeCellType, self).get_schema()
+        schema.update({v+'_scale': float for v in self.model.rangevar_names})
+        return schema
+
+
+    def can_record(self, variable):
+        """
+        Override or it uses pynn.neuron.record.recordable_pattern.match(variable)
+        """
+        return super(GPeCellType, self).can_record(variable)
+
+
+class ArkyCellType(ephys_pynn.EphysCellType):
+    """
+    GPe ArkyPallidal cell. It uses the same Gunay (2008) GPe cell model with
+    modified parameters to reduce sponaneous firing rate and rebound firing.
+
+    Sources
+    -------
+
+    Abdi, Mallet et al (2015) - Prototypical and Arkypallidal Neurons ...
+        - See abstract: weaker persistent Na current and rebound firing
+        - Fig. 7
+
+    Bogacz, Moraud, et al (2016) - Properties of Neurons in External ...
+        - Fig. 3
+    """
+
+    # The encapsualted model available as class attribute 'model'
+    model = GPeCellModel
+
+    # Defaults for our custom PyNN parameters
+    default_parameters = {
+        # 'GABA_synapse_mechanism': 'GABAsyn',
+        # 'GLU_synapse_mechanism': 'GLUsyn',
+        'tau_m_scale': 1.0,
+        'membrane_noise_std': 0.0,
+    }
+
+    # Defaults for Ephys parameters
+    # TODO: set NaP and rebound-burst params (soma/axon/dend)
     default_parameters.update({
         # ephys_model.params.values are ephys.Parameter objects
         # ephys_param.name is same as key in ephys_model.params

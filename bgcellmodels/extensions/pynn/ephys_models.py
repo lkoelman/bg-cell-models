@@ -19,6 +19,7 @@ import re
 import itertools
 import math
 from copy import copy, deepcopy
+from abc import ABCMeta, abstractmethod
 
 import bluepyopt.ephys as ephys
 from pyNN.neuron import state as nrn_state, h
@@ -103,12 +104,21 @@ class UnitFetcherPlaceHolder(dict):
 class EphysCellType(NativeCellType):
     """
     PyNN native cell type that has Ephys model as 'model' attribute.
+
+    Attributes
+    ----------
+
+    units : UnitFetcherPlaceHolder
+        Required by PyNN, celltype must have method units(varname) that
+        returns the units of recorded variables
+
+    receptor_types : list(str)
+        Required by Pynn: receptor types accepted by Projection constructor 
+        to population of this cell type.
     """
-    # TODO: units property with __getitem__ implemented
 
     # Population.find_units() queries this for units
     units = UnitFetcherPlaceHolder()
-
 
     def __init__(self, **kwargs):
         """
@@ -229,8 +239,319 @@ class CellModelMeta(type):
 #         setattr(new_class, 'myprop', property(fget=__get_func, fset=__set_func))
 
 
+class PynnCellModelBase(object):
+    """
+    Base functionality for our custom PyNN cell models.
 
-class EphysModelWrapper(ephys.models.CellModel):
+    This class implements all methods required to work with our custom
+    Connector and Recorder classes or marks them as abstract methods
+    for implementation in the subclass.
+    """
+    # FIXME: Problems with conflicting metaclass in subclass
+    # __metaclass__ = ABCMeta
+
+    def __init__(self, *args, **kwargs):
+        """
+        As opposed to the original CellModel class,
+        this class instantiates the cell in its __init__ method.
+
+        @param      **kwargs : dict(str, object)
+                    Parameter name, value pairs
+
+        @post       self.icell contains the instantiated Hoc cell model
+
+        """
+
+        # NOTE: default params will be passed by pyNN Population
+        for param_name, param_value in kwargs.iteritems():
+            if param_name in self.parameter_names:
+                # self.parameter_names is a list defined in the subclass body.
+                # User is responsible for handling parameters in subclass methods.
+                setattr(self, param_name, param_value)
+            else:
+                logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
+
+        # Create cell in NEURON (Sections, parameters)
+        self.instantiate()
+
+        # Make synapse data structure in format 
+        # {'region': {'receptors': list({ 'synapse':syn, 'used':int }) } }
+        self._init_synapses()
+
+        # Attributes required by PyNN
+        self.source_section = self.icell.soma[0]
+        self.source = self.icell.soma[0](0.5)._ref_v
+        
+        self.rec = h.NetCon(self.source, None,
+                            self.get_threshold(), 0.0, 0.0,
+                            sec=self.source_section)
+        self.spike_times = h.Vector(0) # see pyNN.neuron.recording.Recorder._record()
+        self.traces = {}
+        self.recording_time = False
+
+
+    # @abstractmethod
+    def memb_init(self):
+        """
+        Set initial values for all variables in this cell.
+
+        @override   memb_init() required by PyNN interface for cell models.
+        """
+        raise NotImplementedError("Please implement an initializer for your "
+                "custom cell model.")
+
+
+    # @abstractmethod
+    def get_threshold(self):
+        """
+        Get spike threshold for self.source variable (usually points to membrane
+        potential). This threshold is used when creating NetCon connections.
+
+        @override   get_threshold() required by pyNN interface for cell models.
+
+        @return     threshold : float
+        """
+        raise NotImplementedError("Please set the spike threshold for your "
+                                  "custom cell model.")
+
+
+    def _init_synapses(self):
+        """
+        Initialize synapse map.
+
+        By default it just creates an empty synapse map, but the subclass
+        can override this to create synapses upon cell creation.
+
+        @post       self._synapses is a nested dict with depth=2 and following
+                    structure:
+                    { region: {receptors: list({ 'synapse':syn, 'used':int }) } }
+        """
+        self._synapses = {region: {} for region in self.regions}
+
+
+    # @abstractmethod
+    def get_synapse(self, region, receptors, mark_used, **kwargs):
+        """
+        Get synapse in subcellular region for given receptors.
+        Called by Connector object to get synapse for new connection.
+
+        Parameters
+        ---------
+
+        @param      region : str
+                    Region descriptor.
+
+        @param      receptors : enumerable(str)
+                    Receptor descriptors.
+
+        @param      mark_used : bool
+                    Whether synapse is 'consumed' by caller and should be 
+                    marked as used.
+
+        @param      **kwargs
+                    (Unused) extra keyword arguments for use when overriding
+                    this method in a subclass.
+        
+        Returns
+        -------
+
+        @return     synapse, num_used : tuple(nrn.POINT_PROCESS, int)
+                    
+                    NEURON point process object that can serve as the
+                    target of a NetCon object, and the amount of times
+                    the synapse has been used before as the target
+                    of a NetCon.
+        """
+        raise NotImplementedError("Implement get_synapse() in subclass by "
+                                  "making use of any of the available methods. "
+                                  "E.g. get_existing_synapse(), ... ")
+
+
+    def make_new_synapse(self, receptors, segment):
+        """
+        Make a new synapse that implements given receptors in the
+        given segment.
+
+        @see    get_synapse() for documentation
+        """
+        # Get constuctors for NEURON synapse mechanisms
+        make_gaba_syn = getattr(h, self.GABA_synapse_mechanism)
+        make_glu_syn = getattr(h, self.GLU_synapse_mechanism)
+
+        # Simple method: just make new one
+        if all((rec in ('AMPA', 'NMDA') for rec in receptors)):
+            syn = make_glu_syn(segment)
+        elif all((rec in ('GABAA', 'GABAB') for rec in receptors)):
+            syn = make_gaba_syn(segment)
+        else:
+            raise ValueError("No synapse mechanism found that implementss all "
+                             "receptors {}".format(receptors))
+
+        return syn
+
+
+    def make_synmap_tree():
+        """
+        Initialize data structure that tracks location of synapses in
+        dendritic tree.
+        """
+        # Algorithm idea:
+        # - each section is a node of a tree datastructure
+        # - each node keeps its own length =L=, number of synapses =nsyn=, and region =region=
+        # - each node can query same properties for entire subtree by recursive descent
+        # - to find a section:
+        #     - query subtree =L=, =nsyn=, filter nodes using =region=
+        #         - no nodes with matching region: =L=0=
+        #     - descend to child branch where =nsyn/L= is smaller than subtree average
+        #     - if node's =nsyn/L= is smaller than stored average: stop
+        raise NotImplementedError()
+
+
+    def get_existing_synapse(self, region, receptors, mark_used):
+        """
+        Get existing synapse in region with given receptors.
+
+        This method is useful for cells that create all synapses upon
+        initialization.
+
+        @see    get_synapse() for documentation
+        """
+        syn_list = self.get_synapse_list(region, receptors)
+        if len(syn_list) == 0:
+            raise Exception("Could not find any synapses for "
+                "region '{}' and receptors'{}'".format(region, receptors))
+
+        min_used = min((meta.used for meta in syn_list))
+        metadata = next((meta for meta in syn_list if meta.used==min_used))
+        if mark_used:
+            metadata.used += 1 # increment used counter
+        return metadata.synapse, min_used
+
+
+    def get_synapse_list(self, region, receptors):
+        """
+        Get synapses in region that implements all given receptors.
+
+        @param      region : str
+                    Region descriptor.
+
+        @param      receptors : enumerable(str)
+                    Receptor descriptors.
+
+        @return     synapse_list : list(dict())
+                    List of synapse containers
+        """
+        return next((syns for recs, syns in self._synapses[region].items() if all(
+                        (ntr in recs for ntr in receptors))), [])
+
+
+    def get_synapses_by_mechanism(self, mechanism):
+        """
+        Get synapses of given NEURON mechanism.
+
+        @param      mechanism : str
+                    NEURON mechanism name
+
+        @return     synapse_list : list(dict())
+                    List of synapse containers
+        """
+        return sum((synlist for region in self._synapses.values() for recs, synlist in region.items()), [])
+
+
+    def resolve_synapses(self, spec):
+        """
+        Resolve string definition of a synapse or point process
+        on this cell (used by Recorder).
+
+        @param      spec : str
+                    
+                    Synapse specifier in format "mechanism_name[slice]" where
+                    'slice' as a slice expression like '::2' or integer.
+
+        @return     list(nrn.POINT_PROCESS)
+                    List of NEURON synapse objects.
+        """
+        matches = re.search(r'^(?P<mechname>\w+)(\[(?P<slice>[\d:]+)\])', spec)
+        mechname = matches.group('mechname')
+        slice_expr = matches.group('slice') # "i:j:k"
+        slice_parts = slice_expr.split(':') # ["i", "j", "k"]
+        slice_parts_valid = [int(i) if i!='' else None for i in slice_parts]
+        syn_metadata = self.get_synapses_by_mechanism(mechname)
+        synlist = [meta.synapse for meta in syn_metadata]
+        
+        if len(synlist) == 0:
+            return []
+        elif len(slice_parts) == 1: # zero colons
+            return [synlist[int(slice_parts_valid[0])]]
+        else: # at least one colon
+            slice_object = slice(*slice_parts_valid)
+            return synlist[slice_object]
+
+        # elif len(slice_parts) == 2: # one colon
+        #     start = slice_parts[0]
+        #     stop = slice_parts[1]
+        #     if start == stop == '':
+        #         return self.synlist[:]
+        #     elif start == '':
+        #         return self.synlist[:int(stop)]
+        #     elif stop == '':
+        #         return self.synlist[int(start):]
+        #     else:
+        #         return self.synlist[int(start):int(stop)]
+        # elif len(slice_parts) == 3: # two colons
+
+
+    def resolve_section(self, spec):
+        """
+        Resolve a section specification.
+
+        @return     nrn.Section
+                    The section intended by the given section specifier.
+
+
+        @param      spec : str
+                    
+                    Section specifier in the format 'section_container[index]',
+                    where 'section_container' is the name of a secarray, Section,
+                    or SectionList that is a public attribute of the icell,
+                    and the index part is optional.
+
+
+        @note       The default Section arrays for Ephys.CellModel are:
+                    'soma', 'dend', 'apic', 'axon', 'myelin'.
+                    
+                    The default SectionLists are:
+                    'somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all'
+
+                    If 'section_container' matches any of these names, it will
+                    be treated as such. If not, it will be treated as an indexable
+                    attribute of the icell instance.
+        """
+        matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>\d+)\])?', spec)
+        sec_name = matches.group('secname')
+        sec_index = matches.group('index')
+        icell = self.icell
+        
+        if sec_index is None:
+            return getattr(icell, sec_name)
+        else:
+            sec_index = int(sec_index)
+        
+        if sec_name in ['soma', 'dend', 'apic', 'axon', 'myelin']:
+            # target is a secarray
+            return getattr(icell, sec_name)[sec_index]
+        
+        elif sec_name in ['somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all']:
+            # target is a SectionList (does not support indexing)
+            seclist = getattr(icell, sec_name)
+            return next(itertools.islice(seclist, sec_index, sec_index + 1))
+        
+        else:
+            # assume target is a secarray
+            return getattr(icell, sec_name)[sec_index]
+
+
+class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
     """
     Subclass of Ephys CellModel that conforms to the interface required
     by the 'model' attribute of a PyNN CellType class.
@@ -241,9 +562,10 @@ class EphysModelWrapper(ephys.models.CellModel):
 
 
     @note   Called by ID._build_cell() defined in
-                https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
+            https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py
+            as follows:
             
-            ID._cell = Population.cell_type.model(**cell_parameters)
+                > ID._cell = Population.cell_type.model(**cell_parameters)
 
 
     @see    Based on definition of SimpleNeuronType and standardized cell types in:
@@ -280,63 +602,6 @@ class EphysModelWrapper(ephys.models.CellModel):
     """
 
     __metaclass__ = CellModelMeta
-
-    @staticmethod
-    def create_empty_cell(
-            template_name,
-            sim,
-            seclist_names=None,
-            secarray_names=None):
-        """
-        Create an empty cell in Neuron
-
-        @override   CellModel.create_empty_cell
-
-                    The original function tries to recreate the Hoc template every
-                    time so isn't suitable for instantiating multiple copies.
-        """
-        if not hasattr(sim.neuron.h, template_name):
-            template_string = ephys.models.CellModel.create_empty_template(
-                                                        template_name,
-                                                        seclist_names,
-                                                        secarray_names)
-            sim.neuron.h(template_string)
-
-        template_function = getattr(sim.neuron.h, template_name)
-
-        return template_function()
-
-
-    def instantiate(self, sim=None):
-        """
-        Instantiate cell in simulator
-
-        The default behaviour implemented here works for cells that have ephys
-        morphology, mechanism, and parameter definitions. If you want to use
-        a Hoc cell without these definitions, you should subclass to override
-        this behaviour.
-
-        @override       ephys.models.CellModel.instantiate()
-        """
-
-        # Instantiate NEURON cell
-        icell = self.create_empty_cell(
-                    self.name,
-                    sim=sim,
-                    seclist_names=self.seclist_names,
-                    secarray_names=self.secarray_names)
-
-        self.icell = icell
-        # icell.gid = self.gid # gid = int(ID) where ID._cell == self
-
-        self.morphology.instantiate(sim=sim, icell=icell)
-
-        for mechanism in self.mechanisms:
-            mechanism.instantiate(sim=sim, icell=icell)
-
-        for param in self.params.values():
-            param.instantiate(sim=sim, icell=icell)
-
 
     def __init__(self, *args, **kwargs):
         """
@@ -412,42 +677,71 @@ class EphysModelWrapper(ephys.models.CellModel):
         # self._init_lfp()
 
 
-    def memb_init(self):
+    @staticmethod
+    def create_empty_cell(
+            template_name,
+            sim,
+            seclist_names=None,
+            secarray_names=None):
         """
-        Set initial values for all variables in this cell.
+        Create an empty cell in Neuron
 
-        @override   Implements the memb_init() function that is part of the
-                    pyNN interface for cell models.
+        @override   CellModel.create_empty_cell
+
+                    The original function tries to recreate the Hoc template every
+                    time so isn't suitable for instantiating multiple copies.
         """
-        raise NotImplementedError("Please implement an initializer for your "
-                "custom cell model.")
+        if not hasattr(sim.neuron.h, template_name):
+            template_string = ephys.models.CellModel.create_empty_template(
+                                                        template_name,
+                                                        seclist_names,
+                                                        secarray_names)
+            sim.neuron.h(template_string)
+
+        template_function = getattr(sim.neuron.h, template_name)
+
+        return template_function()
 
 
-    def get_threshold(self):
+    def instantiate(self, sim=None):
         """
-        Get spike threshold for self.source variable (usually points to membrane
-        potential). This threshold is used when creating NetCon connections.
+        Instantiate cell in simulator
 
-        @override   Implements get_threshold() which belongs to the pyNN
-                    interface for cell models.
+        The default behaviour implemented here works for cells that have ephys
+        morphology, mechanism, and parameter definitions. If you want to use
+        a Hoc cell without these definitions, you should subclass to override
+        this behaviour.
 
-        @return     threshold : float
+        @override       ephys.models.CellModel.instantiate()
         """
-        raise NotImplementedError("Please set the spike threshold for your "
-                "custom cell model.")
+
+        # Instantiate NEURON cell
+        icell = self.create_empty_cell(
+                    self.name,
+                    sim=sim,
+                    seclist_names=self.seclist_names,
+                    secarray_names=self.secarray_names)
+
+        self.icell = icell
+        # icell.gid = self.gid # gid = int(ID) where ID._cell == self
+
+        self.morphology.instantiate(sim=sim, icell=icell)
+
+        for mechanism in self.mechanisms:
+            mechanism.instantiate(sim=sim, icell=icell)
+
+        for param in self.params.values():
+            param.instantiate(sim=sim, icell=icell)
 
 
-    def _init_synapses(self):
+    def get_synapse(self, region, receptors, mark_used, **kwargs):
         """
-        Initialize synapses on this neuron.
+        Get synapse in subcellular region for given receptors.
+        Called by Connector object to get synapse for new connection.
 
-        @pre        self._synapses is empty or unset
-
-        @post       self._synapses is a nested dict with depth=2 and following
-                    structure:
-                    { region: {receptors: list({ 'synapse':syn, 'used':int }) } }
+        @override   PynnCellModelBase.get_synapse()
         """
-        raise NotImplementedError("Subclass should place synapses in dendritic tree.")
+        return self.get_existing_synapse(region, receptors, mark_used)
 
 
     def _init_lfp(self):
@@ -472,168 +766,6 @@ class EphysModelWrapper(ephys.models.CellModel):
         """
 
         raise NotImplementedError("Subclass should update cell position.")
-
-
-    def get_synapse_list(self, region, receptors):
-        """
-        Return list of synapses in region that have given
-        neutotransmitter receptors.
-
-        @param      region : str
-                    Region descriptor.
-
-        @param      receptors : enumerable(str)
-                    Receptor descriptors.
-
-        @return     synapse_list : list(dict())
-                    List of synapse containers
-        """
-        return next((syns for recs, syns in self._synapses[region].items() if all(
-                        (ntr in recs for ntr in receptors))), [])
-
-
-    def get_synapses_by_mechanism(self, mechanism):
-        """
-        Get all synapses that are an instance of the given NEURON mechanism
-        name.
-
-        @param      mechanism : str
-                    NEURON mechanism name
-
-        @return     synapse_list : list(dict())
-                    List of synapse containers
-        """
-        return sum((synlist for region in self._synapses.values() for recs, synlist in region.items()), [])
-
-
-    def get_synapse(self, region, receptors, mark_used, **kwargs):
-        """
-        Get a synapse in cell region for given neurotransmitter
-        receptors.
-
-        @param      region : str
-                    Region descriptor.
-
-        @param      receptors : enumerable(str)
-                    Receptor descriptors.
-
-        @param      mark_used : bool
-                    Whether the synapse should be marked as used
-                    (targeted by a NetCon).
-
-        @param      **kwargs
-                    (Unused) extra keyword arguments for use when overriding
-                    this method in a subclass.
-
-        @return     synapse, num_used : tuple(nrn.POINT_PROCESS, int)
-                    NEURON point process object that can serve as the
-                    target of a NetCon object, and the amount of times
-                    the synapse has been used before as the target
-                    of a NetCon.
-        """
-        syn_list = self.get_synapse_list(region, receptors)
-        if len(syn_list) == 0:
-            raise Exception("Could not find any synapses for "
-                "region '{}' and receptors'{}'".format(region, receptors))
-
-        min_used = min((meta.used for meta in syn_list))
-        metadata = next((meta for meta in syn_list if meta.used==min_used))
-        if mark_used:
-            metadata.used += 1 # increment used counter
-        return metadata.synapse, min_used
-
-
-    def resolve_synapses(self, spec):
-        """
-        Resolve string definition of a synapse or point process
-        on this cell (used by Recorder).
-
-        @param      spec : str
-                    
-                    Synapse specifier in format "mechanism_name[slice]" where
-                    'slice' as a slice expression like '::2' or integer.
-
-        @return     list(nrn.POINT_PROCESS)
-                    List of NEURON synapse objects.
-        """
-        matches = re.search(r'^(?P<mechname>\w+)(\[(?P<slice>[\d:]+)\])', spec)
-        mechname = matches.group('mechname')
-        slice_expr = matches.group('slice') # "i:j:k"
-        slice_parts = slice_expr.split(':') # ["i", "j", "k"]
-        slice_parts_valid = [int(i) if i!='' else None for i in slice_parts]
-        syn_metadata = self.get_synapses_by_mechanism(mechname)
-        synlist = [meta.synapse for meta in syn_metadata]
-        
-        if len(synlist) == 0:
-            return []
-        elif len(slice_parts) == 1: # zero colons
-            return [synlist[int(slice_parts_valid[0])]]
-        else: # at least one colon
-            slice_object = slice(*slice_parts_valid)
-            return synlist[slice_object]
-
-        # elif len(slice_parts) == 2: # one colon
-        #     start = slice_parts[0]
-        #     stop = slice_parts[1]
-        #     if start == stop == '':
-        #         return self.synlist[:]
-        #     elif start == '':
-        #         return self.synlist[:int(stop)]
-        #     elif stop == '':
-        #         return self.synlist[int(start):]
-        #     else:
-        #         return self.synlist[int(start):int(stop)]
-        # elif len(slice_parts) == 3: # two colons
-
-
-    def resolve_section(self, spec):
-        """
-        Resolve a section specification.
-
-        @return     nrn.Section
-                    The section intended by the given section specifier.
-
-
-        @param      spec : str
-                    
-                    Section specifier in the format 'section_container[index]',
-                    where 'section_container' is the name of a secarray, Section,
-                    or SectionList that is a public attribute of the icell,
-                    and the index part is optional.
-
-
-        @note       The default secarray for an Ephys CellModel are:
-                    'soma', 'dend', 'apic', 'axon', 'myelin'.
-                    
-                    The default SectionLists are:
-                    'somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all'
-
-                    If 'section_container' matches any of these names, it will
-                    be treated as such. If not, it will be treated as an indexable
-                    attribute of the icell instance.
-        """
-        matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>\d+)\])?', spec)
-        sec_name = matches.group('secname')
-        sec_index = matches.group('index')
-        icell = self.icell
-        
-        if sec_index is None:
-            return getattr(icell, sec_name)
-        else:
-            sec_index = int(sec_index)
-        
-        if sec_name in ['soma', 'dend', 'apic', 'axon', 'myelin']:
-            # target is a secarray
-            return getattr(icell, sec_name)[sec_index]
-        
-        elif sec_name in ['somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all']:
-            # target is a SectionList (does not support indexing)
-            seclist = getattr(icell, sec_name)
-            return next(itertools.islice(seclist, sec_index, sec_index + 1))
-        
-        else:
-            # assume target is a secarray
-            return getattr(icell, sec_name)[sec_index]
 
 
     def _set_tau_m_scale(self, value):

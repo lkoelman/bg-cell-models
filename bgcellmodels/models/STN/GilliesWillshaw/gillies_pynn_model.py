@@ -86,6 +86,9 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     """
 
     # _ephys_locations = define_locations()
+
+    # Combined with celltype.receptors in EphysCellType constructor
+    # to make celltype.receptor_types in format 'region.receptor'
     regions = ['proximal', 'distal']
 
     # Must define 'default_parameters' in associated cell type
@@ -198,6 +201,9 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
         @override   EphysModelWrapper._init_synapses()
         """
+        # Indicate to Connector that we don't allow multiple NetCon per synapse
+        self.allow_synapse_reuse = False
+
         # Sample each region uniformly and place synapses there
         soma = self.icell.soma[0]
         synapse_spacing = 0.25

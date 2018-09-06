@@ -11,7 +11,7 @@ import numpy as np
 
 def spike_indices(vrec, thresh, loc='onset'):
     """
-    Calculate
+    Get spike indices in voltage trace.
     
     @param  vrec : np.array
             membrane voltage
@@ -32,6 +32,41 @@ def spike_indices(vrec, thresh, loc='onset'):
         return i_offset
     else:
         raise ValueError("Unrecognized value for argument 'loc' : {}".format(loc))
+
+
+def spike_times(v_rec, t_rec, v_th, loc='onset'):
+    """
+    Get spike times in voltage trace.
+    
+    @param  vrec : np.array
+            membrane voltage
+    
+    @param threshold : float
+            spike threshold
+
+    @param  loc : str
+            'onset' : time of spike onset, i.e. where threshold is first reached
+            'offset' : time of spike offset, i.e. where v dips below threshold
+    """
+    thresholded = np.array((v_rec - v_th) >= 0, dtype=float)
+    i_onset = np.where(np.diff(thresholded) == 1)[0] + 1
+    i_offset = np.where(np.diff(thresholded) == -1)[0] + 1
+    if loc == 'onset':
+        return t_rec[i_onset]
+    elif loc == 'offset':
+        return t_rec[i_offset]
+    else:
+        raise ValueError("Unrecognized value for argument 'loc' : {}".format(loc))
+
+
+def coefficient_of_variation(v_rec, t_rec, v_th):
+    """
+    Calculate coefficient of variation of spikes.
+    This is the ratio of the standard deviation and the mean of the ISIs.
+    """
+    t_spikes = spike_times(v_rec, t_rec, v_th, loc='onset')
+    isi_vals = np.diff(t_spikes)
+    return np.std(isi_vals) / np.mean(isi_vals)
 
 
 def numpy_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):

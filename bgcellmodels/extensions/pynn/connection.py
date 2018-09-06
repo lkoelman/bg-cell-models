@@ -249,7 +249,7 @@ class ConnectionNrnWrapped(Connection):
         # Ask cell for segment in target region
         synapse, used = post_cell.get_synapse(region, receptors, True)
         self.synapse = synapse
-        if used > 0:
+        if used > 0 and not post_cell.allow_synapse_reuse:
             raise Exception("No unused synapses on target cell {}".format(type(post_cell)))
         
         # Create NEURON NetCon

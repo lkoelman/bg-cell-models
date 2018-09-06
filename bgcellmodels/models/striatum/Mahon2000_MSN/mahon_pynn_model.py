@@ -20,9 +20,10 @@ os.chdir(script_dir)
 h.xopen("mahon_createcell.hoc") # instantiates all functions & data structures on Hoc object
 os.chdir(prev_cwd)
 
-import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn
+from bgcellmodels.extensions.pynn.ephys_models import (
+    PynnCellModelBase, EphysCellType)
 
-class MsnCellModel(ephys_pynn.EphysModelWrapper):
+class MsnCellModel(PynnCellModelBase):
     """
     Model class for Mahon/Corbit MSN cell.
 
@@ -30,12 +31,16 @@ class MsnCellModel(ephys_pynn.EphysModelWrapper):
     EXAMPLE
     -------
 
+    >>> from mahon_pynn_model import MsnCellModel
+    >>> MsnCellModel.GABA_synapse_mechanism = 'MyMechanism'
     >>> cell = MsnCellModel()
     >>> nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
     >>> icell = cell.instantiate(sim=nrnsim)
     
     """
 
+    # Combined with celltype.receptors in EphysCellType constructor
+    # to make celltype.receptor_types in format 'region.receptor'
     regions = ['proximal']
 
     # Must define 'default_parameters' in associated cell type
@@ -45,9 +50,10 @@ class MsnCellModel(ephys_pynn.EphysModelWrapper):
     # PyNN only allows numerical parameters
     GABA_synapse_mechanism = 'GABAsyn'
     GLU_synapse_mechanism = 'GLUsyn'
+    allow_synapse_reuse = False
 
 
-    def instantiate(self, sim=None):
+    def instantiate(self):
         """
         Instantiate cell in simulator
 
@@ -80,17 +86,19 @@ class MsnCellModel(ephys_pynn.EphysModelWrapper):
         return 0.0
 
 
-    def _init_synapses(self):
+    def get_synapse(self, region, receptors, mark_used, **kwargs):
         """
-        Initialize synapses on this neuron.
+        Get synapse in subcellular region for given receptors.
+        Called by Connector object to get synapse for new connection.
 
-        @override   EphysModelWrapper._init_synapses()
+        @override   PynnCellModelBase.get_synapse()
         """
-        pass # raise NotImplementedError() # TODO: add synapses on neuron model
+        return super(PynnCellModelBase, self).make_new_synapse(
+                receptors, self.icell.soma[0](0.5))
 
 
 
-class MsnCellType(ephys_pynn.EphysCellType):
+class MsnCellType(EphysCellType):
     """
     Encapsulates an MSN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -107,8 +115,7 @@ class MsnCellType(ephys_pynn.EphysCellType):
 
     # Combined with self.model.regions by EphysCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
-                      'GABAA', 'GABAB', 'GABAA+GABAB',
-                      'Exp2Syn']
+                      'GABAA', 'GABAB', 'GABAA+GABAB']
 
 
     def can_record(self, variable):
@@ -132,7 +139,7 @@ def test_msn_population(export_locals=True):
     cell_type = MsnCellType()
     p1 = nrn.Population(5, cell_type)
 
-    p1.initialize(v=-63.0)
+    p1.initialize(v=-77.4)
 
     # Stimulation electrode
     current_source = nrn.StepCurrentSource(times=[50.0, 110.0, 150.0, 210.0],
