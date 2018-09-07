@@ -32,7 +32,7 @@ class MsnCellModel(PynnCellModelBase):
     -------
 
     >>> from mahon_pynn_model import MsnCellModel
-    >>> MsnCellModel.GABA_synapse_mechanism = 'MyMechanism'
+    >>> MsnCellModel.default_GABA_mechanism = 'MyMechanism'
     >>> cell = MsnCellModel()
     >>> nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
     >>> icell = cell.instantiate(sim=nrnsim)
@@ -48,8 +48,8 @@ class MsnCellModel(PynnCellModelBase):
 
     # Workaround: set directly as property on the class because
     # PyNN only allows numerical parameters
-    GABA_synapse_mechanism = 'GABAsyn'
-    GLU_synapse_mechanism = 'GLUsyn'
+    default_GABA_mechanism = 'GABAsyn'
+    default_GLU_mechanism = 'GLUsyn'
     allow_synapse_reuse = False
 
 
@@ -94,7 +94,7 @@ class MsnCellModel(PynnCellModelBase):
         @override   PynnCellModelBase.get_synapse()
         """
         return super(PynnCellModelBase, self).make_new_synapse(
-                receptors, self.icell.soma[0](0.5))
+                receptors, self.icell.soma[0](0.5), **kwargs)
 
 
 

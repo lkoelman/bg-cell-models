@@ -9,10 +9,13 @@ conffile="${nb_dir}/nb_exec_conf.py"
 export NB_CONF_FILE=${conffile} # for subprocesses
 
 # List simulation output directories to analyze
-outputs_clipboard="/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q11_sweep-stn-gpe-gain/2018.08.17_job-782496.sonic-head_DA-depleted-v3_CTX-poisson-f5_STN_GPE-noise-loopgain-x0.0
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q11_sweep-stn-gpe-gain/2018.08.17_job-782495.sonic-head_DA-depleted-v3_CTX-f0_STN-GPE-noise-loopgain-x1.0
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q11_sweep-stn-gpe-gain/2018.08.17_job-782494.sonic-head_DA-depleted-v3_CTX-f0_STN_GPE-noise-loopgain-x0.0
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q11_sweep-stn-gpe-gain/2018.08.17_job-782493.sonic-head_DA-depleted-v3_CTX-f0_STN-GPE-noise-loopgain-base"
+outputs_clipboard="/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q14_sweep-gpe-surrogate-frac/2018.08.22_job-783224.sonic-head_DA-depleted-v3_CTX-f0_GPE-surrogates-frac0.0
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q14_sweep-gpe-surrogate-frac/2018.08.22_job-783359.sonic-head_DA-depleted-v3_CTX-f2.5-GPE-surrogates-frac0.0
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q14_sweep-gpe-surrogate-frac/2018.08.22_job-783360.sonic-head_DA-depleted-v3_CTX-f2.5-GPE-surrogates-frac0.1
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q14_sweep-gpe-surrogate-frac/2018.08.22_job-783361.sonic-head_DA-depleted-v3_CTX-f2.5-GPE-surrogates-frac0.2
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q14_sweep-gpe-surrogate-frac/2018.08.22_job-783362.sonic-head_DA-depleted-v3_CTX-f2.5-GPE-surrogates-frac0.5
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q14_sweep-gpe-surrogate-frac/2018.08.22_job-783363.sonic-head_DA-depleted-v3_CTX-f2.5-GPE-surrogates-frac0.75
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/q14_sweep-gpe-surrogate-frac/2018.08.22_job-783364.sonic-head_DA-depleted-v3_CTX-f2.5-GPE-surrogates-frac0.9"
 readarray -t output_dirs <<< "${outputs_clipboard}"
 # output_dirs=(${outputs_clipboard//$'n'// }) # substitute newlines and make array
 # output_dirs=( \
@@ -25,14 +28,14 @@ readarray -t output_dirs <<< "${outputs_clipboard}"
 # output_dirs=($(echo ${dir_contents})) # echo without quote turns newlines into spaces
 
 num_outputs=${#output_dirs[@]}
-# hpfreqs=(2  5  15  20  20  20)
+# hpfreqs=(3 5 5 5 5 5 5)
 hpfreqs=($(for ((i=0;i<num_outputs;i++)); do echo 5; done))
-# lpfreqs=(15 15 30  30  30  30)
+# lpfreqs=(20 20 20 20 20 20 20 20 20)
 lpfreqs=($(for ((i=0;i<num_outputs;i++)); do echo 20; done))
 
 # Parameter sweep
-sweep_name="gain_stn-gpe"
-sweep=(0.0 1.0 0.0 1.25)
+sweep_name="gpe_surrogate_frac"
+sweep=(0.0 0.0 0.1 0.2 0.5 0.75 0.9)
 
 cd $nb_dir
 

@@ -48,8 +48,8 @@ class GolombFsiModel(PynnCellModelBase):
 
     # Workaround: set directly as property on the class because
     # PyNN only allows numerical parameters
-    GABA_synapse_mechanism = 'GABAsyn'
-    GLU_synapse_mechanism = 'GLUsyn'
+    default_GABA_mechanism = 'GABAsyn'
+    default_GLU_mechanism = 'GLUsyn'
     allow_synapse_reuse = False
 
 
@@ -93,7 +93,7 @@ class GolombFsiModel(PynnCellModelBase):
         @override   PynnCellModelBase.get_synapse()
         """
         return super(PynnCellModelBase, self).make_new_synapse(
-                receptors, self.icell.soma[0](0.5))
+                receptors, self.icell.soma[0](0.5), **kwargs)
 
 
 

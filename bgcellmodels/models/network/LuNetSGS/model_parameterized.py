@@ -58,7 +58,8 @@ from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
 
 # Custom PyNN extensions
-from bgcellmodels.extensions.pynn.connection import GluSynapse, GabaSynapse, GabaSynTmHill
+from bgcellmodels.extensions.pynn.connection import (
+    GluSynapse, GabaSynapse, GabaSynTmHill, GABAAsynTM)
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
 
@@ -72,6 +73,9 @@ from bgcellmodels.mechanisms import synapses, noise # loads MOD files
 # Custom cell models
 import bgcellmodels.models.STN.GilliesWillshaw.gillies_pynn_model as gillies
 import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
+import bgcellmodels.models.striatum.Mahon2000_MSN.mahon_pynn_model as mahon
+import bgcellmodels.models.interneuron.Golomb2007_FSI.golomb_pynn_model as golomb
+
 import bgcellmodels.cellpopdata.connectivity as connectivity # for use in config files
 ConnectivityPattern = connectivity.ConnectivityPattern
 make_connection_list = connectivity.make_connection_list
@@ -156,7 +160,7 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
 
 
 def run_simple_net(
-        ncell_per_pop   = 30,
+        pop_scale       = 1.0,
         sim_dur         = 500.0,
         export_locals   = True,
         with_gui        = True,
@@ -192,9 +196,8 @@ def run_simple_net(
     
 
     print("""\nRunning net on MPI rank {} with following settings:
-    - ncell_per_pop = {}
     - sim_dur = {}
-    - output = {}""".format(mpi_rank, ncell_per_pop, sim_dur, output))
+    - output = {}""".format(mpi_rank, sim_dur, output))
     
     print("\nThis is node {} ({} of {})\n".format(
           sim.rank(), sim.rank() + 1, sim.num_processes()))
@@ -233,7 +236,7 @@ def run_simple_net(
 
     def get_pop_parameters(pop, *param_names):
         """
-        Get parameter for population from config dict.
+        Get population parameters from config and evaluate them.
         """
         local_context = config[pop].get('local_context', {})
         param_specs = getdictvals(config[pop], *param_names, as_dict=True)
@@ -290,70 +293,112 @@ def run_simple_net(
     # Define each cell population with its cell type, number of cells
     print("{} start phase: POPULATIONS.".format(mpi_rank))
 
-    #---------------------------------------------------------------------------
+    #===========================================================================
     # STN POPULATION
-    stn_dx, gaba_mech = get_pop_parameters('STN', 'grid_dx', 'GABA_mechanism')
+    stn_dx, = get_pop_parameters('STN', 'grid_dx')
     stn_grid = space.Line(x0=0.0, dx=stn_dx,
                           y=0.0, z=0.0)
-    ncell_stn = ncell_per_pop
+    ncell_stn = int(50.0 * pop_scale)
     
     # FIXME: set electrode coordinates
     stn_cell_params = get_cell_parameters('STN')
     stn_type = gillies.StnCellType(
                         calculate_lfp=calculate_lfp,
-                        lfp_sigma_extracellular=0.3,
                         **stn_cell_params)
-
-    # Workaround because PyNN only allows numerical parameters
-    stn_type.model.default_GABA_mechanism = gaba_mech
 
     pop_stn = Population(ncell_stn, 
                          cellclass=stn_type, 
                          label='STN',
                          structure=stn_grid)
-    
-    pop_stn.initialize(v=-63.0)
 
-
-    #---------------------------------------------------------------------------
+    #===========================================================================
     # GPE POPULATION
-    gpe_dx, gaba_mech = get_pop_parameters('GPE', 'grid_dx', 'GABA_mechanism')
+
+    # Get common parameters for GPE cells
+    gpe_dx, gaba_mech, gpe_pop_size, frac_proto, frac_arky = get_pop_parameters(
+        'GPE.all', 'grid_dx', 'GABA_mechanism', 'base_population_size',
+        'prototypic_fraction', 'arkypallidal_fraction')
+    
+    gpe_common_params = get_cell_parameters('GPE.all')
+
     gpe_grid = space.Line(x0=0.0, dx=gpe_dx,
                           y=1e6, z=0.0)
 
-    gpe_cell_params = get_cell_parameters('GPE')
-    gpe_type = gunay.GPeCellType(**gpe_cell_params)
-    gpe_type.model.default_GABA_mechanism = gaba_mech # workaround for string parameter
+    #---------------------------------------------------------------------------
+    # GPE Prototypic
+    
+    proto_type = gunay.GpeProtoCellType(**gpe_common_params)
 
-    ncell_gpe = ncell_per_pop
-    pop_gpe = Population(ncell_gpe, 
-                         cellclass=gpe_type,
-                         label='GPE',
-                         structure=gpe_grid)
-
-    pop_gpe.initialize(v=-63.0)
+    ncell_proto = int(gpe_pop_size * pop_scale * frac_proto)
+    pop_gpe_proto = Population(ncell_proto, 
+                               cellclass=proto_type,
+                               label='GPE.proto',
+                               structure=gpe_grid)
 
     #---------------------------------------------------------------------------
-    # GPE SURROGATE POPULATION
+    # GPE Arkypallidal
 
-    num_gpe_surrogates, surr_rate = get_pop_parameters('GPE', 'num_surrogates',
-                                                      'surrogate_rate')
+    arky_type = gunay.GpeArkyCellType(**gpe_common_params)
+
+    ncell_arky = int(gpe_pop_size * pop_scale * frac_arky)
+    pop_gpe_arky = Population(ncell_arky, 
+                              cellclass=arky_type,
+                              label='GPE.arky',
+                              structure=gpe_grid)
+
+    #---------------------------------------------------------------------------
+    # GPE Surrogate spike sources
+
+    num_gpe_surrogates, surr_rate = get_pop_parameters('GPE.all', 
+        'num_surrogates', 'surrogate_rate')
     
     if num_gpe_surrogates > 0:
         pop_gpe_surrogate = Population(num_gpe_surrogates, 
                                        sim.SpikeSourcePoisson(rate=surr_rate),
-                                       label='GpeSurrogate')
+                                       label='GPE.surrogate')
     else:
         pop_gpe_surrogate = None
 
     #---------------------------------------------------------------------------
+    # GPE Assembly (Proto + Arky)
+
+    asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_arky)
+    gpe_pop_size = asm_gpe.size
+
+    #===========================================================================
+    # STR.MSN POPULATION
+
+    msn_pop_size, = get_pop_parameters('STR.MSN', 'base_population_size')
+    msn_cell_params = get_cell_parameters('STR.MSN')
+
+    msn_type = mahon.MsnCellType(**msn_cell_params)
+    
+    pop_msn = Population(
+                int(msn_pop_size * pop_scale), 
+                cellclass=msn_type,
+                label='STR.MSN')
+
+    #===========================================================================
+    # STR.FSI POPULATION
+
+    fsi_pop_size, = get_pop_parameters('STR.FSI', 'base_population_size')
+    fsi_cell_params = get_cell_parameters('STR.FSI')
+
+    fsi_type = golomb.FsiCellType(**fsi_cell_params)
+    
+    pop_fsi = Population(
+                int(fsi_pop_size * pop_scale), 
+                cellclass=fsi_type,
+                label='STR.FSI')
+
+    #===========================================================================
     # CTX POPULATION
 
     # CTX spike sources
     T_burst, dur_burst, f_intra, f_inter, f_background = get_pop_parameters(
         'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'f_background')
-    synchronous, sync_fraction = get_pop_parameters(
-        'CTX', 'synchronous', 'synchronized_fraction')
+    synchronous, sync_fraction, ctx_pop_size = get_pop_parameters(
+        'CTX', 'synchronous', 'synchronized_fraction', 'base_population_size')
 
     # Command line args can override Beta frequency from config
     if burst_frequency is not None:
@@ -395,58 +440,20 @@ def run_simple_net(
         return spiketimes_for_index
 
 
-    pop_ctx = Population(
-                ncell_per_pop,
-                sim.SpikeSourceArray(spike_times=spiketimes_for_ctx),
-                label='CTX')
+    pop_ctx = Population(int(ctx_pop_size * pop_scale),
+                         sim.SpikeSourceArray(spike_times=spiketimes_for_ctx),
+                         label='CTX')
 
-    #---------------------------------------------------------------------------
-    # STR POPULATION
-
-    # STR spike sources
-    T_burst, dur_burst, f_intra, f_inter = get_pop_parameters(
-        'STR', 'T_burst', 'dur_burst', 'f_intra', 'f_inter')
-
-    def spiketimes_for_str(cell_indices):
-        """
-        Generate spike times for Striatum cell i.
-
-        (taken from PyNN examples -> returns pyNN.Sequence generator)
-        """
-        def sequence_gen():
-            burst_gen = make_variable_bursts(
-                T_burst, dur_burst, f_intra, f_inter,
-                rng=rank_rng, max_dur=sim_dur)
-            bursty_spikes = np.fromiter(burst_gen, float)
-            return Sequence(bursty_spikes)
-        if hasattr(cell_indices, "__len__"):
-            return [sequence_gen() for j in cell_indices]
-        else:
-            return sequence_gen()
-    
-    pop_str = Population(
-                ncell_per_pop, 
-                sim.SpikeSourceArray(spike_times=spiketimes_for_str),
-                label='STR')
-
-
-    # Noise sources
-    # noise_gpe = sim.Population(ncell_per_pop, sim.SpikeSourcePoisson(rate=50.0),
-    #                 label='NOISE')
+    #===========================================================================
 
     all_pops = {pop.label : pop for pop in Population.all_populations}
     all_proj = {pop.label : {} for pop in Population.all_populations}
 
-    # Register LFP calculation callbacks if manual calculation
-    # if calculate_lfp:
-    #     def init_lfp_calculation():
-    #         """
-    #         Initialize the LFP calculation (events must be added after finitialize().
-    #         """
-    #         lfp_rec_dt = sim.state.rec_dt
-    #         for t in np.arange(lfp_rec_dt, sim.state.duration+lfp_rec_dt, lfp_rec_dt):
-    #             sim.state.cvode.event(t, pop_stn.calculate_lfp)
-    #     finit_handlers.append(h.FInitializeHandler(0, init_lfp_calculation))
+    # NativeCellType is common base class for all NEURON cells
+    biophysical_pops = [pop for pop in Population.all_populations if isinstance(
+                        pop.celltype, sim.cells.NativeCellType)]
+    artificial_pops = [pop for pop in Population.all_populations if not isinstance(
+                        pop.celltype, sim.cells.NativeCellType)]
 
     ############################################################################
     # CONNECTIONS
@@ -459,145 +466,182 @@ def run_simple_net(
         "GluSynapse": GluSynapse,
         "GabaSynapse": GabaSynapse,
         "GabaSynTmHill" : GabaSynTmHill,
+        "GABAAsynTM": GABAAsynTM,
     }
 
     ############################################################################
-    # TO GPE
-    print("{} start phase: GPE AFFERENTS.".format(mpi_rank))
+    # ALL -> STR.MSN
+    print("{} starting phase: STR.MSN AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
-    # STN -> GPE (excitatory)
-
-    stn_gpe_connector = connector_from_config('STN', 'GPE')
-    stn_gpe_connector.rng = shared_rng_pynn
-
-    stn_gpe_syn = synapse_from_config('STN', 'GPE')
+    # CTX -> STR.MSN (excitatory)
     
+    ctx_msn_EXC = sim.Projection(pop_ctx, pop_msn, 
+        connector=connector_from_config('CTX', 'STR.MSN', rng=shared_rng_pynn),
+        synapse_type=synapse_from_config('CTX', 'STR.MSN'),
+        receptor_type='distal.AMPA+NMDA')
 
-    stn_gpe_EXC = sim.Projection(pop_stn, pop_gpe, 
-                                 connector=stn_gpe_connector,
-                                 synapse_type=stn_gpe_syn,
-                                 receptor_type='distal.AMPA+NMDA')
+    all_proj['CTX']['STR.MSN'] = ctx_msn_EXC
 
-    all_proj['STN']['GPE'] = stn_gpe_EXC
+    #---------------------------------------------------------------------------
+    # STR.MSN -> STR.MSN (inhibitory)
+    
+    msn_msn_INH = sim.Projection(pop_msn, pop_msn, 
+        connector=connector_from_config('STR.MSN', 'STR.MSN', rng=shared_rng_pynn),
+        synapse_type=synapse_from_config('STR.MSN', 'STR.MSN'),
+        receptor_type='proximal.GABAA')
+
+    all_proj['STR.MSN']['STR.MSN'] = msn_msn_INH
+
+    #---------------------------------------------------------------------------
+    # STR.FSI -> STR.MSN (inhibitory)
+    
+    fsi_msn_INH = sim.Projection(pop_fsi, pop_msn, 
+        connector=connector_from_config('STR.FSI', 'STR.MSN', rng=shared_rng_pynn),
+        synapse_type=synapse_from_config('STR.FSI', 'STR.MSN'),
+        receptor_type='proximal.GABAA')
+
+    all_proj['STR.FSI']['STR.MSN'] = fsi_msn_INH
+
+    ############################################################################
+    # ALL -> STR.FSI
+    print("{} starting phase: STR.FSI AFFERENTS.".format(mpi_rank))
+
+    #---------------------------------------------------------------------------
+    # CTX -> STR.FSI (excitatory)
+
+    ctx_fsi_EXC = sim.Projection(pop_ctx, pop_fsi, 
+        connector=connector_from_config('CTX', 'STR.FSI', rng=shared_rng_pynn),
+        synapse_type=synapse_from_config('CTX', 'STR.FSI'),
+        receptor_type='distal.AMPA+NMDA')
+
+    all_proj['CTX']['STR.FSI'] = ctx_fsi_EXC
+
+    #---------------------------------------------------------------------------
+    # STR.FSI -> STR.FSI (inhibitory)
+
+    fsi_fsi_INH = sim.Projection(pop_fsi, pop_fsi, 
+        connector=connector_from_config('STR.FSI', 'STR.FSI', rng=shared_rng_pynn),
+        synapse_type=synapse_from_config('STR.FSI', 'STR.FSI'),
+        receptor_type='proximal.GABAA')
+
+    all_proj['STR.FSI']['STR.FSI'] = fsi_fsi_INH
+
+    #---------------------------------------------------------------------------
+    # GPE -> STR.FSI (inhibitory)
+
+    gpe_fsi_INH = sim.Projection(pop_gpe_arky, pop_fsi, 
+        connector=connector_from_config('GPE.arky', 'STR.FSI', rng=shared_rng_pynn),
+        synapse_type=synapse_from_config('GPE.arky', 'STR.FSI'),
+        receptor_type='proximal.GABAA')
+
+    all_proj['GPE.arky']['STR.FSI'] = fsi_fsi_INH
+
+    ############################################################################
+    # ALL -> GPE
+    print("{} starting phase: GPE AFFERENTS.".format(mpi_rank))
+
+    #---------------------------------------------------------------------------
+    # STN -> GPE (excitatory)  
+
+    stn_gpe_EXC = sim.Projection(pop_stn, asm_gpe, 
+        connector=connector_from_config('STN', 'GPE.all', shared_rng_pynn),
+        synapse_type=synapse_from_config('STN', 'GPE.all'),
+        receptor_type='distal.AMPA+NMDA')
+
+    all_proj['STN']['GPE.all'] = stn_gpe_EXC
 
     #---------------------------------------------------------------------------
     # GPE -> GPE (inhibitory)
 
     # Distance-calculation: wrap-around in along x-axis
-    x_max = ncell_gpe * gpe_grid.dx
+    x_max = asm_gpe.size * gpe_grid.dx
     gpe_gpe_space = space.Space(periodic_boundaries=((0, x_max), None, None))
 
-    # Connect to four neighboring neurons (N_PRE=8)
-    gpe_gpe_connector = connector_from_config('GPE', 'GPE')
-    gpe_gpe_connector.rng = shared_rng_pynn
-    
+    gpe_gpe_INH = sim.Projection(asm_gpe, asm_gpe, 
+        connector=connector_from_config('GPE.all', 'GPE.all', shared_rng_pynn),
+        synapse_type=synapse_from_config('GPE.all', 'GPE.all'),
+        receptor_type='proximal.GABAA+GABAB',
+        space=gpe_gpe_space)
 
-    # Synapse type
-    gpe_gpe_syn = synapse_from_config('GPE', 'GPE')
-
-    gpe_gpe_INH = sim.Projection(pop_gpe, pop_gpe, 
-                                 connector=gpe_gpe_connector,
-                                 synapse_type=gpe_gpe_syn,
-                                 receptor_type='proximal.GABAA+GABAB',
-                                 space=gpe_gpe_space)
-
-    all_proj['GPE']['GPE'] = gpe_gpe_INH
+    all_proj['GPE.all']['GPE.all'] = gpe_gpe_INH
 
     #---------------------------------------------------------------------------
     # STR -> GPE (inhibitory)
 
-    str_gpe_connector = connector_from_config('STR', 'GPE')
-    str_gpe_connector.rng = shared_rng_pynn
+    str_gpe_INH = sim.Projection(pop_msn, pop_gpe_proto,
+        connector=connector_from_config('STR.MSN', 'GPE.proto', rng=shared_rng_pynn),
+        synapse_type=synapse_from_config('STR.MSN', 'GPE.proto'),
+        receptor_type='proximal.GABAA+GABAB')
 
-    str_gpe_syn = synapse_from_config('STR', 'GPE')
-
-    str_gpe_INH = sim.Projection(pop_str, pop_gpe,
-                                 connector=str_gpe_connector,
-                                 synapse_type=str_gpe_syn,
-                                 receptor_type='proximal.GABAA+GABAB')
-
-    all_proj['STR']['GPE'] = str_gpe_INH
+    all_proj['STR.MSN']['GPE.proto'] = str_gpe_INH
 
     ############################################################################
-    # TO STN
-    print("{} start phase: STN AFFERENTS.".format(mpi_rank))
+    # ALL -> STN
+    print("{} starting phase: STN AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
     # GPe -> STN (inhibitory)
 
-    gpe_stn_connector = connector_from_config('GPE', 'STN')
-    gpe_stn_connector.rng = shared_rng_pynn
+    gpe_proto_stn_INH = sim.Projection(
+        pop_gpe_proto, pop_stn,
+        connector=connector_from_config('GPE.proto', 'STN', rng=shared_rng_pynn),
+        synapse_type=synapse_from_config('GPE.proto', 'STN'),
+        receptor_type='proximal.GABAA+GABAB')
 
-    gpe_stn_syn = synapse_from_config('GPE', 'STN')
-
-    gpe_stn_INH = sim.Projection(
-                        pop_gpe, pop_stn,
-                        connector=gpe_stn_connector,
-                        synapse_type=gpe_stn_syn,
-                        receptor_type='proximal.GABAA+GABAB')
-
-    all_proj['GPE']['STN'] = gpe_stn_INH
+    all_proj['GPE.proto']['STN'] = gpe_proto_stn_INH
     
     #---------------------------------------------------------------------------
-    # GpeSurrogate -> STN (inhibitory)
+    # GPE.surrogate -> STN (inhibitory)
 
     if pop_gpe_surrogate is not None:
 
         gpesurr_stn_INH = sim.Projection(
             pop_gpe_surrogate, pop_stn,
-            connector=connector_from_config('GpeSurrogate', 'STN', shared_rng_pynn),
-            synapse_type=synapse_from_config('GpeSurrogate', 'STN'),
+            connector=connector_from_config('GPE.surrogate', 'STN', shared_rng_pynn),
+            synapse_type=synapse_from_config('GPE.surrogate', 'STN'),
             receptor_type='proximal.GABAA+GABAB')
 
-        all_proj['GpeSurrogate']['STN'] = gpesurr_stn_INH
+        all_proj['GPE.surrogate']['STN'] = gpesurr_stn_INH
 
     #---------------------------------------------------------------------------
     # CTX -> STN (excitatory)
 
-    ctx_stn_syn = synapse_from_config('CTX', 'STN')
-
-    ctx_stn_connector = connector_from_config('CTX', 'STN')
-    ctx_stn_connector.rng = shared_rng_pynn
-
     ctx_stn_EXC = sim.Projection(
-                        pop_ctx, pop_stn,
-                        connector=ctx_stn_connector,
-                        synapse_type=ctx_stn_syn,
-                        receptor_type='distal.AMPA+NMDA')
+        pop_ctx, pop_stn,
+        connector=connector_from_config('CTX', 'STN', shared_rng_pynn),
+        synapse_type=synapse_from_config('CTX', 'STN'),
+        receptor_type='distal.AMPA+NMDA')
 
     all_proj['CTX']['STN'] = ctx_stn_EXC
 
     #---------------------------------------------------------------------------
     # STN -> STN (excitatory)
 
-    stn_stn_syn = synapse_from_config('STN', 'STN')
-
-    stn_stn_connector = connector_from_config('STN', 'STN')
-    stn_stn_connector.rng = shared_rng_pynn
-
     stn_stn_EXC = sim.Projection(
-                        pop_stn, pop_stn,
-                        connector=stn_stn_connector,
-                        synapse_type=stn_stn_syn,
-                        receptor_type='distal.AMPA+NMDA')
+        pop_stn, pop_stn,
+        connector=connector_from_config('STN', 'STN', shared_rng_pynn),
+        synapse_type=synapse_from_config('STN', 'STN'),
+        receptor_type='distal.AMPA+NMDA')
 
     all_proj['STN']['STN'] = stn_stn_EXC
+
 
     ############################################################################
     # RECORDING
     ############################################################################
-    print("{} start phase: RECORDING.".format(mpi_rank))
+    print("{} starting phase: RECORDING.".format(mpi_rank))
 
-    traces_allpops = {
+    traces_biophys = {
         'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
-        'gAMPA{:d}': {'syn':'GLUsyn[0]', 'var':'g_AMPA'},
+        # 'gAMPA{:d}': {'syn':'GLUsyn[0]', 'var':'g_AMPA'},
         # 'gNMDA{:d}': {'syn':'GLUsyn[::2]', 'var':'g_NMDA'},
         # 'gGABAA{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAA'},
         # 'gGABAB{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAB'},
     }
-    for pop in [pop_gpe, pop_stn]:
-        pop.record(traces_allpops.items(), sampling_interval=.05)
+
+    for pop in biophysical_pops:
+        pop.record(traces_biophys.items(), sampling_interval=.05)
 
     for pop in all_pops.values():
         pop.record(['spikes'], sampling_interval=.05)
@@ -609,7 +653,7 @@ def run_simple_net(
     ############################################################################
     # INITIALIZE & SIMULATE
     ############################################################################
-    print("{} start phase: SIMULATE.".format(mpi_rank))
+    print("{} starting phase: SIMULATE.".format(mpi_rank))
 
     # Set physiological conditions
     h.celsius = 36.0

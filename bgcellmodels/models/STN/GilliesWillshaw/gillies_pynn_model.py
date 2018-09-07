@@ -94,8 +94,8 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     # Must define 'default_parameters' in associated cell type
     parameter_names = [
         # See workaround for non-numerical parameters
-        # 'GABA_synapse_mechanism',
-        # 'GLU_synapse_mechanism',
+        # 'default_GABA_mechanism',
+        # 'default_GLU_mechanism',
         'calculate_lfp',
         'lfp_sigma_extracellular',
         'lfp_electrode_x',
@@ -110,8 +110,8 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
     # FIXME: workaround: set directly as property on the class because
     # PyNN only allows numerical parameters
-    GABA_synapse_mechanism = 'GABAsyn'
-    GLU_synapse_mechanism = 'GLUsyn'
+    default_GABA_mechanism = 'GABAsyn'
+    default_GLU_mechanism = 'GLUsyn'
 
     # Related to PyNN properties
     _mechs_params_dict = {
@@ -242,20 +242,20 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         self._synapses['distal'] = dist_syns = {}
 
         # Get constuctors for NEURON synapse mechanisms
-        make_gaba_syn = getattr(h, self.GABA_synapse_mechanism)
-        make_glu_syn = getattr(h, self.GLU_synapse_mechanism)
+        make_gaba_syn = getattr(h, self.default_GABA_mechanism)
+        make_glu_syn = getattr(h, self.default_GLU_mechanism)
 
         prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
         for seg_index in proximal_indices:
             syn = make_gaba_syn(proximal_segments[seg_index])
             prox_gaba_syns.append(dotdict(synapse=syn, used=0,
-                mechanism=self.GABA_synapse_mechanism))
+                mechanism=self.default_GABA_mechanism))
         
         dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
         for seg_index in distal_indices:
             syn = make_glu_syn(distal_segments[seg_index])
             dist_glu_syns.append(dotdict(synapse=syn, used=0,
-                mechanism=self.GLU_synapse_mechanism))
+                mechanism=self.default_GLU_mechanism))
 
 
     def _update_position(self, xyz):
@@ -335,8 +335,8 @@ class StnCellType(ephys_pynn.EphysCellType):
 
     # NOTE: default_parameters is used to make 'schema' for checking & converting datatypes
     default_parameters = {
-        # 'GABA_synapse_mechanism': 'GABAsyn',
-        # 'GLU_synapse_mechanism': 'GLUsyn',
+        # 'default_GABA_mechanism': 'GABAsyn',
+        # 'default_GLU_mechanism': 'GLUsyn',
         'calculate_lfp': False,
         'lfp_sigma_extracellular': 0.3,
         'lfp_electrode_x': 100.0,

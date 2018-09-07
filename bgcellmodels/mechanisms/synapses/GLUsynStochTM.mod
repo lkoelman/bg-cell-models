@@ -38,7 +38,7 @@ ENDCOMMENT
 NEURON {
     THREADSAFE
 
-    POINT_PROCESS GluTmStoch
+    POINT_PROCESS GLUsynStochTM
     RANGE tau_r_AMPA, tau_d_AMPA
     RANGE tau_r_NMDA, tau_d_NMDA
     RANGE mg, gmax_AMPA, gmax_NMDA

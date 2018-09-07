@@ -246,8 +246,13 @@ class ConnectionNrnWrapped(Connection):
         region, receptor = projection.receptor_type.split(".")
         receptors = receptor.split("+")
 
+        # Plastic synapses use SynapseType.model to store weight adjuster,
+        # we use it for the NEURON synapse mechanism
+        mech_name = projection.synapse_type.model
+
         # Ask cell for segment in target region
-        synapse, used = post_cell.get_synapse(region, receptors, True)
+        synapse, used = post_cell.get_synapse(region, receptors, True, 
+                                              mechanism=mech_name)
         self.synapse = synapse
         if used > 0 and not post_cell.allow_synapse_reuse:
             raise Exception("No unused synapses on target cell {}".format(type(post_cell)))
@@ -265,7 +270,7 @@ class ConnectionNrnWrapped(Connection):
         
         # Plastic synapses use SynapseType.model to store weight adjuster,
         # we use it for the synapse model
-        if projection.synapse_type.model is not None:
+        if mech_name is not None:
             self._setup_nrn_synapse(projection.synapse_type, parameters)
             # self._setup_plasticity(projection.synapse_type, parameters)
 
@@ -569,6 +574,47 @@ class GabaSynTmHill(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
         'K4':           0.033,
         'KD':           100.0,
         'n':            4,
+    }
+
+    def _get_minimum_delay(self):
+        return state.min_delay
+
+
+class GABAAsynTM(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
+    """
+    Wrapper for NEURON GLUsyn mechanism defined in .mod file
+    """
+
+    connection_type = ConnectionNrnWrapped
+    model = 'GABAAsynTM' # defined in GABAsyn.mod
+
+    # PyNN internal name to NEURON name
+    translations = build_translations(
+        # NetCon parameters
+        ('weight', 'weight'),
+        ('delay', 'delay'),
+        # Conductance time course
+        ('gmax_GABAA', 'gmax_GABAA'),     # Weight conversion factor (from nS to uS)
+        ('tau_r_GABAA', 'tau_r_GABAA'),   # Dual-exponential conductance profile
+        ('tau_d_GABAA', 'tau_d_GABAA'),   # IMPORTANT: tau_r < tau_d
+        # Short-term Depression/Facilitation
+        ('tau_rec', 'tau_rec'),         # time constant of recovery from depression
+        ('tau_facil', 'tau_facil'),     # time constant of facilitation
+        ('U1', 'U1'),                   # baseline release probability
+        # Reversal potentials
+        ('Erev_GABAA', 'Erev_GABAA'),                     # GABAA and GABAB reversal potential
+    )
+
+    default_parameters = {
+        'weight':     1.0,
+        'delay':      0.5,
+        'tau_r_GABAA':   0.2,
+        'tau_d_GABAA':   1.7,
+        'Erev_GABAA':   -80.0,
+        'gmax_GABAA':    0.001,
+        'tau_rec':      200.0,
+        'tau_facil':    200.0,
+        'U1':           0.5,
     }
 
     def _get_minimum_delay(self):

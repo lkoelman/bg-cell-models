@@ -79,15 +79,15 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     # Must define 'default_parameters' in associated cell type
     parameter_names = [
         # See workaround for non-numerical parameters
-        # 'GABA_synapse_mechanism',
-        # 'GLU_synapse_mechanism',
+        # 'default_GABA_mechanism',
+        # 'default_GLU_mechanism',
         'tau_m_scale',
         'membrane_noise_std',
     ]
 
     # FIXME: workaround, so far PyNN only allows numerical parameters
-    GABA_synapse_mechanism = 'GABAsyn'
-    GLU_synapse_mechanism = 'GLUsyn'
+    default_GABA_mechanism = 'GABAsyn'
+    default_GLU_mechanism = 'GLUsyn'
 
     # Related to PyNN properties
     _mechs_params_dict = {
@@ -212,20 +212,20 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         self._synapses['distal'] = {}
 
         # Get constuctors for NEURON synapse mechanisms
-        make_gaba_syn = getattr(h, self.GABA_synapse_mechanism)
-        make_glu_syn = getattr(h, self.GLU_synapse_mechanism)
+        make_gaba_syn = getattr(h, self.default_GABA_mechanism)
+        make_glu_syn = getattr(h, self.default_GLU_mechanism)
 
         self._synapses['proximal'][('GABAA', 'GABAB')] = prox_gaba_syns = []
         for seg_index in proximal_indices:
             syn = make_gaba_syn(proximal_segments[seg_index])
             prox_gaba_syns.append(dotdict(synapse=syn, used=0,
-                mechanism=self.GABA_synapse_mechanism))
+                mechanism=self.default_GABA_mechanism))
         
         self._synapses['distal'][('AMPA', 'NMDA')] = dist_glu_syns = []
         for seg_index in distal_indices:
             syn = make_glu_syn(distal_segments[seg_index])
             dist_glu_syns.append(dotdict(synapse=syn, used=0,
-                mechanism=self.GLU_synapse_mechanism))
+                mechanism=self.default_GLU_mechanism))
 
 
     def _update_position(self, xyz):
@@ -270,8 +270,8 @@ class GPeCellType(ephys_pynn.EphysCellType):
 
     # Defaults for our custom PyNN parameters
     default_parameters = {
-        # 'GABA_synapse_mechanism': 'GABAsyn',
-        # 'GLU_synapse_mechanism': 'GLUsyn',
+        # 'default_GABA_mechanism': 'GABAsyn',
+        # 'default_GLU_mechanism': 'GLUsyn',
         'tau_m_scale': 1.0,
         'membrane_noise_std': 0.0,
     }
@@ -285,7 +285,7 @@ class GPeCellType(ephys_pynn.EphysCellType):
 
 
     # extra_parameters = {}
-    # default_initial_values = {'v': -65.0}
+    default_initial_values = {'v': -68.0}
     
     # Combined with self.model.regions by EphysCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
@@ -308,8 +308,9 @@ class GPeCellType(ephys_pynn.EphysCellType):
         """
         return super(GPeCellType, self).can_record(variable)
 
+GpeProtoCellType = GPeCellType
 
-class ArkyCellType(ephys_pynn.EphysCellType):
+class GpeArkyCellType(ephys_pynn.EphysCellType):
     """
     GPe ArkyPallidal cell. It uses the same Gunay (2008) GPe cell model with
     modified parameters to reduce sponaneous firing rate and rebound firing.
@@ -354,7 +355,7 @@ class ArkyCellType(ephys_pynn.EphysCellType):
         """
         # Avoids specifying default values for each scale parameter and
         # thereby calling the property setter for each of them
-        schema = super(GPeCellType, self).get_schema()
+        schema = super(GpeArkyCellType, self).get_schema()
         schema.update({v+'_scale': float for v in self.model.rangevar_names})
         return schema
 
@@ -363,7 +364,7 @@ class ArkyCellType(ephys_pynn.EphysCellType):
         """
         Override or it uses pynn.neuron.record.recordable_pattern.match(variable)
         """
-        return super(GPeCellType, self).can_record(variable)
+        return super(GpeArkyCellType, self).can_record(variable)
 
 
 def test_record_gpe_model(export_locals=False):

@@ -372,26 +372,22 @@ class PynnCellModelBase(object):
                                   "E.g. get_existing_synapse(), ... ")
 
 
-    def make_new_synapse(self, receptors, segment):
+    def make_new_synapse(self, receptors, segment, mechanism=None):
         """
         Make a new synapse that implements given receptors in the
         given segment.
 
         @see    get_synapse() for documentation
         """
-        # Get constuctors for NEURON synapse mechanisms
-        make_gaba_syn = getattr(h, self.GABA_synapse_mechanism)
-        make_glu_syn = getattr(h, self.GLU_synapse_mechanism)
-
-        # Simple method: just make new one
-        if all((rec in ('AMPA', 'NMDA') for rec in receptors)):
-            syn = make_glu_syn(segment)
+        if mechanism is not None:
+            syn = getattr(h, mechanism)(segment)
+        elif all((rec in ('AMPA', 'NMDA') for rec in receptors)):
+            syn = getattr(h, self.default_GABA_mechanism)(segment)
         elif all((rec in ('GABAA', 'GABAB') for rec in receptors)):
-            syn = make_gaba_syn(segment)
+            syn = getattr(h, self.default_GLU_mechanism)(segment)
         else:
-            raise ValueError("No synapse mechanism found that implementss all "
+            raise ValueError("No synapse mechanism found that implements all "
                              "receptors {}".format(receptors))
-
         return syn
 
 
