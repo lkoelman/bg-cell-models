@@ -145,11 +145,15 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
                         morphology, parameters, or mechanisms definitions,
                         we have to override instantiate().
         """
-
         cell_idx = h.make_stn_cell_global()
         cell_idx = int(cell_idx)
         self.icell = h.SThcells[cell_idx]
 
+
+    def _post_instantiate(self):
+        """
+        Post-instantiation setup code. Inserts noise sources if requested.
+        """
         # Insert membrane noise
         if self.membrane_noise_std > 0:
             # Configure RNG to generate independent stream of random numbers.

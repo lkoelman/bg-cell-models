@@ -108,13 +108,18 @@ class EphysCellType(NativeCellType):
     Attributes
     ----------
 
-    units : UnitFetcherPlaceHolder
-        Required by PyNN, celltype must have method units(varname) that
-        returns the units of recorded variables
+    @attr   units : UnitFetcherPlaceHolder
 
-    receptor_types : list(str)
-        Required by Pynn: receptor types accepted by Projection constructor 
-        to population of this cell type.
+            Required by PyNN, celltype must have method `units(varname)` that
+            returns the units of recorded variables
+
+    
+    @attr   receptor_types : list(str)
+
+            Required by PyNN: receptor types accepted by Projection constructor.
+            This attribute is created dynamically by combining
+            celltype.model.region with the celltype.receptor_types declared
+            in the subclass
     """
 
     # Population.find_units() queries this for units
@@ -262,6 +267,9 @@ class PynnCellModelBase(object):
 
         """
 
+        # Create cell in NEURON (Sections, parameters)
+        self.instantiate()
+
         # NOTE: default params will be passed by pyNN Population
         for param_name, param_value in kwargs.iteritems():
             if param_name in self.parameter_names:
@@ -270,9 +278,6 @@ class PynnCellModelBase(object):
                 setattr(self, param_name, param_value)
             else:
                 logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
-
-        # Create cell in NEURON (Sections, parameters)
-        self.instantiate()
 
         # Make synapse data structure in format 
         # {'region': {'receptors': list({ 'synapse':syn, 'used':int }) } }
@@ -590,13 +595,13 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
             Each parameter defined for thsi cell has a corresponding attribute
     
 
-    @attr   locations : dict<str, Ephys.location>
+    @attr   locations : dict[str, Ephys.location]
 
             Dict containing all locations defined on the cell.
             Keys are the same as the location attributes of this cell.
 
 
-    @attr   synapses : dict<str, list(nrn.POINT_PROCESS)>
+    @attr   synapses : dict[str, list(nrn.POINT_PROCESS)]
 
             Synapse object that synapse onto this cell.
     """
@@ -629,6 +634,10 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
             mechs=getattr(self, '_ephys_mechanisms', None),
             params=params)
 
+        # Cell must be instantiated _before_ applying parameters
+        self.sim = ephys_sim_from_pynn()
+        self.instantiate(sim=self.sim)
+
         # NOTE: default params will be passed by pyNN Population
         for param_name, param_value in kwargs.iteritems():
             if (param_name in self.params) and (self.params[param_name].value == param_value):
@@ -643,9 +652,6 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
             else:
                 logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
 
-        self.sim = ephys_sim_from_pynn()
-        self.instantiate(sim=self.sim)
-
         # Add locations / regions
         # self.locations = {}
         # for static_loc in self._ephys_locations:
@@ -659,6 +665,7 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
         # self.synapses = {} # mech_name: str -> list(nrn.POINT_PROCESS)
         # Make synapse objects as targets for connections
         self._init_synapses()
+        self._post_instantiate()
 
         # Attributes required by PyNN
         self.source_section = self.icell.soma[0]
@@ -732,6 +739,20 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
 
         for param in self.params.values():
             param.instantiate(sim=sim, icell=icell)
+
+
+    def _post_instantiate(self):
+        """
+        Hook for subclass to put post-instantiation code.
+        This is code to be executed after morphology and all sections
+        have been created.
+
+        @pre    cell has been instantiated in NEURON: all Sections have been
+                created and mechanisms inserted.
+
+        @pre    all parameters passed to the cell have been applied
+        """
+        pass
 
 
     def get_synapse(self, region, receptors, mark_used, **kwargs):
@@ -870,11 +891,11 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
 
         @pre    Subclass must define attribute 'rangevar_names'
         """
+        # Attribute must a declared rangevar name + '_scale'
         matches = re.search(r'^(\w+)_scale$', name)
         if (matches is None) or (not any(
                 [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
             return super(EphysModelWrapper, self).__setattr__(name, value)
-        
         varname = matches.groups()[0]
         private_attr_name = '_' + varname + '_scale'
 
@@ -884,6 +905,7 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
             old_scale = getattr(self, private_attr_name)
         if value == old_scale:
             return # scale is already correct
+        relative_scale = value / old_scale
 
         # Extract the mechanism name
         matches = re.search(r'.+_([a-zA-Z0-9]+)$', varname)
@@ -899,8 +921,9 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
                 if not h.ismembrane(mechname, sec=sec):
                     continue
                 for seg in sec:
-                    setattr(seg, varname, value * getattr(seg, varname))
+                    setattr(seg, varname, relative_scale * getattr(seg, varname))
         
+        # Indicate the current scale factor applied to attribute
         setattr(self, private_attr_name, value)
             
 

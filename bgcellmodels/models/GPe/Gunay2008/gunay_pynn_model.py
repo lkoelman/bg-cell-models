@@ -105,9 +105,12 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     }
     rangevar_names = [p+'_'+m for m,params in _mechs_params_dict.iteritems() for p in params]
     gleak_name = 'gmax_leak'
+
+    # map rangevar to cell region where it should be scaled, default is 'all'
     tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
-    rangevar_scaled_regions = {}
+    rangevar_scaled_regions = {} 
     for rangevar in rangevar_names:
+        # Indicate that xxx_scale are available parameters, even though they are not explicit attributes (handled by __setattr__ instead)
         parameter_names.append(rangevar + '_scale')
     
 
@@ -128,6 +131,11 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         # Adjust compartment dimensions like in GENESIS code
         gunay_model.fix_comp_dimensions(self)
 
+
+    def _post_instantiate(self):
+        """
+        Post-instantiation setup code. Inserts noise sources if requested.
+        """
         # Insert membrane noise
         if self.membrane_noise_std > 0:
             # Configure RNG to generate independent stream of random numbers.
@@ -322,17 +330,13 @@ class ArkyCellType(ephys_pynn.EphysCellType):
 
     # Defaults for our custom PyNN parameters
     default_parameters = {
-        # 'GABA_synapse_mechanism': 'GABAsyn',
-        # 'GLU_synapse_mechanism': 'GLUsyn',
         'tau_m_scale': 1.0,
+        'gmax_NaP_scale': 0.45,
         'membrane_noise_std': 0.0,
     }
 
     # Defaults for Ephys parameters
-    # TODO: set NaP and rebound-burst params (soma/axon/dend)
     default_parameters.update({
-        # ephys_model.params.values are ephys.Parameter objects
-        # ephys_param.name is same as key in ephys_model.params
         p.name.replace(".", "_"): p.value for p in model._ephys_parameters
     })
 
