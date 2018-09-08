@@ -408,6 +408,62 @@ class PynnCellModelBase(object):
         raise NotImplementedError()
 
 
+    # def make_synapse_balanced(self, region, receptors, mechanism=None):
+    #     """
+    #     Make a new synapse in location so that synapses are distributed 
+    #     in balanced way over dendritic tree.
+    #     """
+    #     # TODO: decide approach
+    #     # - if completely random -> get unbalanced tree
+    #     # - if completely balanced -> unrealistic layout
+    #     # - decide at which point the choice will be random rather than smallest density
+        
+    #     # TODO: move execute-once code to _init_synapses
+    #     sibling_synapses = self.get_synapse_list(region, receptors)
+    #     total_siblings = len(sibling_synapses)
+    #     dendritic = list(self.icell.basal) + list(self.icell.apical)
+    #     dendritic_segments = [seg for sec in dendritic for seg in sec \
+    #                             if self.segment_in_region(seg, region)]
+    #     region_length = sum((seg.sec.L/seg.sec.nseg for seg in dendritic_segments))
+    #     synapse_density = total_siblings / region_length
+
+    #     # Get roots of dendrite
+    #     dendrite_roots = set()
+    #     for sec in self.icell.somatic:
+    #         for child in sec.children():
+    #             if child in dendritic:
+    #                 dendrite_roots.add(child)
+
+    #     # Ascend breadth-first, check subtree, pick random if criterion OK
+    #     queue = list(dendrite_roots)
+    #     while queue:
+    #         node = queue.pop(0) # FIFO queue
+    #         # Get entire subtree of current node
+    #         subtree_secs = h.SectionList()
+    #         subtree_secs.subtree(sec=node)
+    #         subtree_list = list(subtree_secs)
+    #         region_segments = [seg for sec in subtree_secs for seg in sec \
+    #                             if self.segment_in_region(seg, region)]
+    #         region_length = sum((seg.sec.L/seg.sec.nseg for seg in region_segments))
+    #         num_siblings = sum((1.0 for syn in sibling_synapses if (
+    #                             syn.get_segment().sec in subtree_list)))
+    #         region_density = num_siblings / region_length
+            
+    #         if region_length > 0 and region_density < synapse_density:
+    #             # pick random segment in subtree (filter by region) with nsyn/L < target
+    #             # - set new target density to subtree density
+    #             # - pick random segment with density < subtree density
+    #             target_segments = []
+    #             return pick_random_segment(region_segments)
+
+    #         for child in node.children():
+    #             queue.append(child)
+        
+    #     # If this point reached: tree is perfectly balanced -> imbalance it
+    #     # pick random section in whole tree (filter by region)
+    #     return pick_random_segment(dendritic_segments)
+
+
     def get_existing_synapse(self, region, receptors, mark_used):
         """
         Get existing synapse in region with given receptors.

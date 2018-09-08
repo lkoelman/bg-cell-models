@@ -92,8 +92,11 @@ class GolombFsiModel(PynnCellModelBase):
 
         @override   PynnCellModelBase.get_synapse()
         """
-        return super(PynnCellModelBase, self).make_new_synapse(
-                receptors, self.icell.soma[0](0.5), **kwargs)
+        syn = super(GolombFsiModel, self).make_new_synapse(
+                        receptors, self.icell.soma[0](0.5), **kwargs)
+        synmap_key = tuple(sorted(receptors))
+        self._synapses['proximal'].setdefault(synmap_key, []).append(syn)
+        return syn, 0
 
 
 

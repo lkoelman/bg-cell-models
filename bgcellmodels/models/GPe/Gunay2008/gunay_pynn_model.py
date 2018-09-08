@@ -86,7 +86,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     ]
 
     # FIXME: workaround, so far PyNN only allows numerical parameters
-    default_GABA_mechanism = 'GABAsyn'
+    default_GABA_mechanism = 'GABAsyn2'
     default_GLU_mechanism = 'GLUsyn'
 
     # Related to PyNN properties
@@ -167,6 +167,27 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         @override     EphysModelWrapper.memb_init()
         """
         self.noise_rng_init()
+
+
+    def segment_in_region(self, segment, region):
+        """
+        Test if segment is in subcellular region.
+        """
+        h.distance(0, 0.5, sec=self.icell.soma[0]) # reference for distance measurement
+        if region == 'proximal':
+            return h.distance(1, segment.x, sec=segment.sec) < 5.0
+        elif region == 'distal':
+            return h.distance(1, segment.x, sec=segment.sec) > 3
+        else:
+            return False
+
+
+    def section_in_region(self, section, region):
+        """
+        Test if section is in subcellular region.
+        A section is part of a region if any of its segments is in the region.
+        """
+        return any((self.segment_in_region(seg, region) for seg in section))
 
 
     def _init_synapses(self):

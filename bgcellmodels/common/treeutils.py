@@ -339,10 +339,25 @@ def ascend_sectionwise_dfs(start_node):
     """
     stack = [start_node]
     while stack:
-        node = stack.pop()
+        node = stack.pop() # LIFO stack
         yield node
         for child in node.children():
             stack.append(child)
+
+
+def ascend_sectionwise_bfs(start_node):
+    """
+    Return generator that does breadth-first tree traversal starting at given node.
+
+    @note   non-recursive, avoids making a new generator per descent
+            and avoids blowing up the stack trace
+    """
+    queue = [start_node]
+    while queue:
+        node = queue.pop(0) # FIFO queue
+        yield node
+        for child in node.children():
+            queue.append(child)
 
 
 def ascend_segmentwise_dfs(start_section):

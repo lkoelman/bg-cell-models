@@ -4,7 +4,8 @@
 //     "statement": "a + b - c(lol)",
 //     "do_format": false, // if true, statement must contain format specs, and
 //                         // substitutions will be made from parent contexts
-//     "locals": {         // used in Python eval()
+//     "locals": {         // locals for call to eval(),
+//                         // <null> means uses "local_context" entries
 //         "a": 6,
 //         "b": 50.0,
 //     },
@@ -26,16 +27,23 @@
 // CTX Population Parameters
 // =============================================================================
     "CTX": {
+        // Local variables for statements in this dictionary
+        "local_context": {
+            "combined_spike_sources": 3.0, // number of combined (Poisson) spike sources
+        },
         "base_population_size": 500, // 5 independent spike sources per MSN
-        // Beta centered at 20 Hz
-        // 50ms between triplets/doublets at 150 Hz?
+        // Spiking pattern
+        "bursting_fraction": 0.0, // fraction of bursting cells
+        "f_background": { // mean firing rate of non-bursting neurons
+            "statement": "2.0 * combined_spike_sources",
+            "locals": null, // use local_context
+        },
+        // Parameters for bursting neurons
         "T_burst": 50.0,
         "dur_burst": 10.0,
         "f_intra": 150.0,
         "f_inter": 5.0,
-        "f_background": 0.0, // mean firing rate of non-bursting neurons
-        "synchronous": true,
-        "synchronized_fraction": 0.0, // fraction bursting, rest will fire at f_inter
+        "synchronous": true, // whether bursts occur synchronously
     },
 // =============================================================================
 // STR.MSN Population Parameters
@@ -56,7 +64,7 @@
                 "name": "GluSynapse",
                 "parameters": {
                     "weight":       1.0,
-                    "delay":        2.0, // [ms] delay from literature
+                    "delay":        5.1, // [ms] delay from Kita, Kita (2011)
                     // STP parameters
                     "U1":           0.35, // baseline release probability
                     "tau_rec":      100.0, // [ms] recovery from STD
@@ -85,8 +93,7 @@
                 "name": "GABAAsynTM",
                 "parameters": {
                     "weight":       1.0,
-                    // TODO: set rates and delays
-                    "delay":        5.0, // [ms] delay from literature
+                    "delay":        1.0, // [ms] FIXME: guesstimate delay, no source
                     // STP parameters
                     "U1":           0.8, // baseline release probability
                     "tau_rec":      20.0, // [ms] recovery from STD
@@ -111,8 +118,7 @@
                 "name": "GABAAsynTM",
                 "parameters": {
                     "weight":       1.0,
-                    // TODO: set rates and delays
-                    "delay":        5.0, // [ms] delay from literature
+                    "delay":        1.0, // [ms] FIXME: guesstimate delay, no source
                     // STP parameters
                     "U1":           0.35, // baseline release probability
                     "tau_rec":      200.0, // [ms] recovery from STD
@@ -123,7 +129,11 @@
                     "tau_d_GABAA":   8.0, // [ms] decay time
                 }
             }
-        }
+        },
+// -----------------------------------------------------------------------------
+// GPE.arky -> STR.MSN Projection
+// TODO: see Corbit (2016) experimental data
+        "GPE.arky": {},
     },
 // =============================================================================
 // STR.FSI Population Parameters
@@ -144,8 +154,7 @@
                 "name": "GluSynapse",
                 "parameters": {
                     "weight":       1.0,
-                    // TODO: set delay and cortical rate
-                    "delay":        2.0, // [ms] delay from literature
+                    "delay":        5.1, // [ms] FIXME: guesstimate, same as CTX->MSN
                     // STP parameters
                     "U1":           0.1, // baseline release probability
                     "tau_rec":      100.0, // [ms] recovery from STD
@@ -175,7 +184,7 @@
                 "parameters": {
                     "weight":       1.0,
                     // TODO: set rates and delays
-                    "delay":        5.0, // [ms] delay from literature
+                    "delay":        1.0, // [ms] FIXME: guesstimate delay, no source
                     // STP parameters
                     "U1":           0.35, // baseline release probability
                     "tau_rec":      200.0, // [ms] recovery from STD
@@ -189,7 +198,7 @@
         },
 // -----------------------------------------------------------------------------
 // GPE -> STR.FSI Projection
-        "GPE": {
+        "GPE.arky": {
             "connector": {
                 "name": "FixedNumberPreConnector",
                 "parameters": {
@@ -200,8 +209,7 @@
                 "name": "GABAAsynTM",
                 "parameters": {
                     "weight":       1.0,
-                    // TODO: set rates and delays
-                    "delay":        5.0, // [ms] delay from literature
+                    "delay":        5.0, // [ms] FIXME: guesstimate, same as iSPN->GPe
                     // STP parameters
                     "U1":           0.35, // baseline release probability
                     "tau_rec":      200.0, // [ms] recovery from STD
@@ -271,15 +279,9 @@
 // -----------------------------------------------------------------------------
         "GPE.all": {
             "connector": {
-                "name": "DistanceDependentProbabilityConnector",
+                "name": "FixedNumberPreConnector",
                 "parameters": {
-                    "allow_self_connections": false,
-                    "d_expression": {
-                        // NOTE: arg d is numpy array
-                        "statement": "\"0.5 * (d < ({grid_dx} * 6 / 2.0 + 5.0))\"",
-                        "do_format": true,
-                        "locals": null, // copy locals from surrounding context
-                    },
+                    "n": 6,
                 },
             },
             "synapse": {
@@ -309,6 +311,10 @@
                 },
             },
         },
+    },
+// =============================================================================
+// Subpopulation of GPe Prototypic cells
+    "GPE.proto": {
 // STR.MSN -> GPE Projection
 // -----------------------------------------------------------------------------
         "STR.MSN": {
@@ -322,7 +328,7 @@
                 "name": "GabaSynTmHill",
                 "parameters": {
                     "weight":       1.0,
-                    "delay":        5.0, // [ms] delay from literature
+                    "delay":        5.0, // [ms] delay from Kita, Kita (2011)
                     // STP parameters
                     "U1":           0.2, // baseline release probability
                     "tau_rec":      400.0, // [ms] recovery from STD
@@ -343,7 +349,7 @@
     "STN": {
         "base_population_size": 50,
         "v_init": -63.0,
-        "calculate_lfp": true,
+        "calculate_lfp": false,
         "grid_dx": {
             "statement": "grid_dx",
             "locals": null, // null/None means from surrounding context
@@ -408,7 +414,7 @@
                 "name": "GluSynapse",
                 "parameters": {
                     "weight":       1.0,
-                    "delay":        5.9, // [ms] delay from literature
+                    "delay":        5.9, // [ms] delay from Kita, Kita (2011)
                     // STP parameters
                     "U1":           0.1, // baseline release probability
                     "tau_rec":      200.0, // [ms] recovery from STD
@@ -443,7 +449,7 @@
                 "name": "FromListConnector",
                 "parameters": {
                     "conn_list": {
-                        "statement": "make_stn_lateral_connlist(ncell_per_pop, num_lateral_projections, frac_lateral_projecting, shared_rng)",
+                        "statement": "make_stn_lateral_connlist(pop_stn.size, num_lateral_projections, frac_lateral_projecting, shared_rng)",
                         "locals": null, // use enclosing locals
                         "globals": null, // use script globals
                     },
@@ -453,7 +459,7 @@
                 "name": "GluSynapse",
                 "parameters": {
                     "weight":       1.0,
-                    "delay":        0.5, // [ms] delay from literature
+                    "delay":        0.5, // [ms] FIXME: guesstimate delay, no source
                     // STP parameters
                     "U1":           0.1, // baseline release probability
                     "tau_rec":      200.0, // [ms] recovery from STD

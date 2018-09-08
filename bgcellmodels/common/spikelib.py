@@ -15,6 +15,9 @@ def make_oscillatory_bursts(
     The inter-burst interval (IBI) and burst duration are fixed so bursts
     will occur regularly with fixed intervals.
 
+    Parameters
+    ----------
+
     @param      T_burst : float
                 Burst period (ms)
 
@@ -30,10 +33,13 @@ def make_oscillatory_bursts(
     @param      rng : numpy.Random
                 Random object (optional)
 
+    Returns
+    -------
+
     @return     Generator object that generates spike times
 
 
-    EXAMPLES
+    Examples
     --------
 
     >>> import numpy
@@ -85,12 +91,15 @@ def make_variable_bursts(
     T_burst, dur_burst, f_intra, f_inter, 
     max_dur=10e3, rng=None):
     """
-    Make bursting spike times with given burst period, 
-    burst duration, and intra- and inter-burst firing rates.
+    Make bursty spike train with variable inter-burst interval
+    and burst duration. 
 
-    The inter-burst interval (IBI) and burs duration are variable and drawn
+    The inter-burst interval (IBI) and burs duration are drawn
     from a negative exponential distribution so the burst rate is 
     Poisson-distributed.
+
+    Arguments
+    ---------
 
     @param      T_burst : float
                 Burst period (ms), mean of negexp distribution
@@ -106,7 +115,10 @@ def make_variable_bursts(
 
     @param      rng : numpy.Random
                 Random object (optional)
-
+    
+    Returns
+    -------
+    
     @return     Generator object that generates spike times
 
 

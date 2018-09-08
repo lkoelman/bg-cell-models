@@ -131,6 +131,53 @@ def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
     return make_divergent_pattern(source_ids, targets_relative, pop_size)
 
 
+def make_bursty_spike_generator(bursting_fraction, synchronous, rng,
+                                T_burst, dur_burst, f_intra, f_inter,
+                                f_background, duration):
+    """
+    Make generator function that returns bursty spike sequences.
+    """
+    if synchronous:
+        make_bursts = make_oscillatory_bursts
+    else:
+        make_bursts = make_variable_bursts
+
+    def spike_seq_gen(cell_indices):
+        """
+        Spike sequence generator
+
+        @param  cell_indices : list(int)
+                Local indices of cells (NOT index in entire population)
+
+        @return spiketimes_for_cell : list(Sequence)
+                Sequencie of spike times for each cell index
+        """
+        # Choose cell indices that will emit bursty spike trains
+        num_bursting = int(bursting_fraction * len(cell_indices))
+        bursting_cells = rng.choice(cell_indices, 
+                                    num_bursting, replace=False)
+
+        spiketimes_for_index = []
+        for i in cell_indices:
+            if i in bursting_cells:
+                # Spiketimes for bursting cells
+                burst_gen = make_bursts(T_burst, dur_burst, f_intra, f_inter,
+                                        rng=rng, max_dur=duration)
+                spiketimes = Sequence(np.fromiter(burst_gen, float))
+            else:
+                # Spiketimes for background activity
+                number = int(2 * duration * f_background / 1e3)
+                if number == 0:
+                    spiketimes = Sequence([])
+                else:
+                    spiketimes = Sequence(np.add.accumulate(
+                        rng.exponential(1e3/f_background, size=number)))
+            spiketimes_for_index.append(spiketimes)
+        return spiketimes_for_index
+
+    return spike_seq_gen
+
+
 def write_population_data(pop, output, suffix, gather=True, clear=True):
     """
     Write recorded data for Population to file.
@@ -291,7 +338,7 @@ def run_simple_net(
     # POPULATIONS
     ############################################################################
     # Define each cell population with its cell type, number of cells
-    print("{} start phase: POPULATIONS.".format(mpi_rank))
+    print("rank {}: starting phase POPULATIONS.".format(mpi_rank))
 
     #===========================================================================
     # STN POPULATION
@@ -315,8 +362,8 @@ def run_simple_net(
     # GPE POPULATION
 
     # Get common parameters for GPE cells
-    gpe_dx, gaba_mech, gpe_pop_size, frac_proto, frac_arky = get_pop_parameters(
-        'GPE.all', 'grid_dx', 'GABA_mechanism', 'base_population_size',
+    gpe_dx, gpe_pop_size, frac_proto, frac_arky = get_pop_parameters(
+        'GPE.all', 'grid_dx', 'base_population_size',
         'prototypic_fraction', 'arkypallidal_fraction')
     
     gpe_common_params = get_cell_parameters('GPE.all')
@@ -362,7 +409,7 @@ def run_simple_net(
     #---------------------------------------------------------------------------
     # GPE Assembly (Proto + Arky)
 
-    asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_arky)
+    asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_arky, label='GPE.all')
     gpe_pop_size = asm_gpe.size
 
     #===========================================================================
@@ -397,63 +444,39 @@ def run_simple_net(
     # CTX spike sources
     T_burst, dur_burst, f_intra, f_inter, f_background = get_pop_parameters(
         'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'f_background')
-    synchronous, sync_fraction, ctx_pop_size = get_pop_parameters(
-        'CTX', 'synchronous', 'synchronized_fraction', 'base_population_size')
+    synchronous, bursting_fraction, ctx_pop_size = get_pop_parameters(
+        'CTX', 'synchronous', 'bursting_fraction', 'base_population_size')
 
     # Command line args can override Beta frequency from config
     if burst_frequency is not None:
         T_burst = 1.0 / burst_frequency * 1e3
 
+    ctx_spike_generator = make_bursty_spike_generator(
+                                bursting_fraction=bursting_fraction, 
+                                synchronous=synchronous, rng=rank_rng,
+                                T_burst=T_burst, dur_burst=dur_burst, 
+                                f_intra=f_intra, f_inter=f_inter,
+                                f_background=f_background, duration=sim_dur)
 
-    def spiketimes_for_ctx(cell_indices):
-        """
-        Generate spike times for Cortex cell i.
-
-        @param  cell_indices : list(int)
-                Local indices of cells (NOT index in entire population)
-        """
-        if synchronous:
-            make_bursts = make_oscillatory_bursts
-        else:
-            make_bursts = make_variable_bursts
-
-        # Some cells don't burst but fire at inter-burst firing rate
-        synchronized_cells = rank_rng.choice(
-            cell_indices, int(sync_fraction * len(cell_indices)), replace=False)
-
-        spiketimes_for_index = []
-        for i in cell_indices:
-            if i in synchronized_cells:
-                # Spiketimes for bursting cells
-                burst_gen = make_bursts(T_burst, dur_burst, f_intra, f_inter,
-                                        rng=rank_rng, max_dur=sim_dur)
-                spiketimes = Sequence(np.fromiter(burst_gen, float))
-            else:
-                # Spiketimes for background activity
-                number = int(2 * sim_dur * f_background / 1e3)
-                if number == 0:
-                    spiketimes = Sequence([])
-                else:
-                    spiketimes = Sequence(np.add.accumulate(
-                        rank_rng.exponential(1e3/f_background, size=number)))
-            spiketimes_for_index.append(spiketimes)
-        return spiketimes_for_index
-
-
-    pop_ctx = Population(int(ctx_pop_size * pop_scale),
-                         sim.SpikeSourceArray(spike_times=spiketimes_for_ctx),
-                         label='CTX')
+    pop_ctx = Population(
+        int(ctx_pop_size * pop_scale),
+        cellclass=sim.SpikeSourceArray(spike_times=ctx_spike_generator),
+        label='CTX')
 
     #===========================================================================
 
     all_pops = {pop.label : pop for pop in Population.all_populations}
     all_proj = {pop.label : {} for pop in Population.all_populations}
+    all_proj[asm_gpe.label] = {} # add Assembly projections manually
 
     # NativeCellType is common base class for all NEURON cells
     biophysical_pops = [pop for pop in Population.all_populations if isinstance(
                         pop.celltype, sim.cells.NativeCellType)]
     artificial_pops = [pop for pop in Population.all_populations if not isinstance(
                         pop.celltype, sim.cells.NativeCellType)]
+
+    # Update local context for eval() statements
+    params_local_context.update(locals())
 
     ############################################################################
     # CONNECTIONS
@@ -471,7 +494,7 @@ def run_simple_net(
 
     ############################################################################
     # ALL -> STR.MSN
-    print("{} starting phase: STR.MSN AFFERENTS.".format(mpi_rank))
+    print("rank {}: starting phase STR.MSN AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
     # CTX -> STR.MSN (excitatory)
@@ -479,7 +502,7 @@ def run_simple_net(
     ctx_msn_EXC = sim.Projection(pop_ctx, pop_msn, 
         connector=connector_from_config('CTX', 'STR.MSN', rng=shared_rng_pynn),
         synapse_type=synapse_from_config('CTX', 'STR.MSN'),
-        receptor_type='distal.AMPA+NMDA')
+        receptor_type='proximal.AMPA+NMDA')
 
     all_proj['CTX']['STR.MSN'] = ctx_msn_EXC
 
@@ -505,7 +528,7 @@ def run_simple_net(
 
     ############################################################################
     # ALL -> STR.FSI
-    print("{} starting phase: STR.FSI AFFERENTS.".format(mpi_rank))
+    print("rank {}: starting phase STR.FSI AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
     # CTX -> STR.FSI (excitatory)
@@ -513,7 +536,7 @@ def run_simple_net(
     ctx_fsi_EXC = sim.Projection(pop_ctx, pop_fsi, 
         connector=connector_from_config('CTX', 'STR.FSI', rng=shared_rng_pynn),
         synapse_type=synapse_from_config('CTX', 'STR.FSI'),
-        receptor_type='distal.AMPA+NMDA')
+        receptor_type='proximal.AMPA+NMDA')
 
     all_proj['CTX']['STR.FSI'] = ctx_fsi_EXC
 
@@ -539,7 +562,7 @@ def run_simple_net(
 
     ############################################################################
     # ALL -> GPE
-    print("{} starting phase: GPE AFFERENTS.".format(mpi_rank))
+    print("rank {}: starting phase GPE AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
     # STN -> GPE (excitatory)  
@@ -578,7 +601,7 @@ def run_simple_net(
 
     ############################################################################
     # ALL -> STN
-    print("{} starting phase: STN AFFERENTS.".format(mpi_rank))
+    print("rank {}: starting phase STN AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
     # GPe -> STN (inhibitory)
@@ -630,7 +653,7 @@ def run_simple_net(
     ############################################################################
     # RECORDING
     ############################################################################
-    print("{} starting phase: RECORDING.".format(mpi_rank))
+    print("rank {}: starting phase RECORDING.".format(mpi_rank))
 
     traces_biophys = {
         'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
@@ -653,7 +676,7 @@ def run_simple_net(
     ############################################################################
     # INITIALIZE & SIMULATE
     ############################################################################
-    print("{} starting phase: SIMULATE.".format(mpi_rank))
+    print("rank {}: starting phase SIMULATE.".format(mpi_rank))
 
     # Set physiological conditions
     h.celsius = 36.0
@@ -737,7 +760,7 @@ def run_simple_net(
     ############################################################################
     # WRITE PARAMETERS
     ############################################################################
-    print("{} start phase: INTEGRITY CHECK.".format(mpi_rank))
+    print("rank {}: starting phase INTEGRITY CHECK.".format(mpi_rank))
 
     # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
     #       - cannot perform any gather() operations before initializing MPI transfer
@@ -807,13 +830,13 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--dur', nargs='?', type=float, default=500.0,
                         dest='sim_dur', help='Simulation duration')
 
-    parser.add_argument('-n', '--ncell', nargs='?', type=int, default=30,
-                        dest='ncell_per_pop', help='Number of cells per population')
+    parser.add_argument('--scale', nargs='?', type=float, default=1.0,
+                        dest='pop_scale', help='Scale for population sizes')
 
-    parser.add_argument('-s', '--seed', nargs='?', type=int, default=None,
+    parser.add_argument('--seed', nargs='?', type=int, default=None,
                         dest='seed', help='Seed for random number generator')
 
-    parser.add_argument('-b', '--burst', nargs='?', type=float, default=None,
+    parser.add_argument('--burst', nargs='?', type=float, default=None,
                         dest='burst_frequency', help='Beta bursting frequency')
 
     parser.add_argument('-wi', '--write-interval', nargs='?', type=float, default=None,
@@ -890,8 +913,8 @@ if __name__ == '__main__':
 
     # File names for data files
     # Default output format is hdf5 / NIX io
-    filespec = '*_{stamp}_pop-{ncell}_dur-{dur}_job-{job_id}.mat'.format(
-                                            ncell=parsed_dict['ncell_per_pop'],
+    filespec = '*_{stamp}_scale-{scale}_dur-{dur}_job-{job_id}.mat'.format(
+                                            scale=parsed_dict['pop_scale'],
                                             dur=parsed_dict['sim_dur'],
                                             stamp=timestamp,
                                             job_id=job_id)

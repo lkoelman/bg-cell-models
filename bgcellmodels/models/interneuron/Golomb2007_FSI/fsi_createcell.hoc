@@ -70,28 +70,32 @@ proc init() {
 }
 
 proc setparams_golomb2007() {
-    g_pas = 0.00025
-    e_pas = -70
+    soma[0] {
+        g_pas = 0.00025
+        e_pas = -70
 
-    gkd_KdFSI = 3.9e-4 // 1e-4 in Corbit & Whalen (2016), 3.9e-4 in Golomb (2007)
-    gkdr_KdrFSI = 0.225
-    gna_NasFSI = 0.1125
+        gkd_KdFSI = 3.9e-4 // 1e-4 in Corbit & Whalen (2016), 3.9e-4 in Golomb (2007)
+        gkdr_KdrFSI = 0.225
+        gna_NasFSI = 0.1125
 
-    ek = -90
-    ena = 50
+        ek = -90
+        ena = 50
+    }
 }
 
 
 proc setparams_corbit2016() {
-    g_pas = 0.00025
-    e_pas = -70
+    soma[0] {
+        g_pas = 0.00025
+        e_pas = -70
 
-    gkd_KdFSI = 0.0001 // 1e-4 in Corbit & Whalen (2016), 3.9e-4 in Golomb (2007)
-    gkdr_KdrFSI = 0.225
-    gna_NasFSI = 0.1125
+        gkd_KdFSI = 0.0001 // 1e-4 in Corbit & Whalen (2016), 3.9e-4 in Golomb (2007)
+        gkdr_KdrFSI = 0.225
+        gna_NasFSI = 0.1125
 
-    ek = -90
-    ena = 50
+        ek = -90
+        ena = 50
+    }
 }
 
 

@@ -110,7 +110,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
     # FIXME: workaround: set directly as property on the class because
     # PyNN only allows numerical parameters
-    default_GABA_mechanism = 'GABAsyn'
+    default_GABA_mechanism = 'GABAsyn2'
     default_GLU_mechanism = 'GLUsyn'
 
     # Related to PyNN properties
