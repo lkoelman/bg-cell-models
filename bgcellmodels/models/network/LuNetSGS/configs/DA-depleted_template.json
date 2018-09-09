@@ -5,11 +5,11 @@
 //     "do_format": false, // if true, statement must contain format specs, and
 //                         // substitutions will be made from parent contexts
 //     "locals": {         // locals for call to eval(),
-//                         // <null> means uses "local_context" entries
+//                         // <null> means use surrounding "local_context" entries
 //         "a": 6,
 //         "b": 50.0,
 //     },
-//     "globals": {}, // null to copy globals or {} for specific values
+//     "globals": {},      // <null> to copy globals from code, {} for specific values
 // },
 //
 {
@@ -20,8 +20,8 @@
     "simulation": {
         "duration": 10000,
         "timestep": 0.025,
-        "cells_per_population": 100,
         "shared_rng_seed": 151985012,
+        "dopamine_depleted": true,
     },
 // =============================================================================
 // CTX Population Parameters
@@ -33,7 +33,7 @@
         },
         "base_population_size": 500, // 5 independent spike sources per MSN
         // Spiking pattern
-        "bursting_fraction": 0.0, // fraction of bursting cells
+        "bursting_fraction": 0.5, // fraction of bursting cells
         "f_background": { // mean firing rate of non-bursting neurons
             "statement": "2.0 * combined_spike_sources",
             "locals": null, // use local_context
@@ -55,9 +55,12 @@
 // CTX -> STR.MSN Projection
         "CTX": {
             "connector": {
+                // CTX source cells must not be shared between MSN,
+                // see Steiner, Tseng (2017) Chapter 1
                 "name": "FixedNumberPreConnector",
                 "parameters": {
                     "n": 10,
+                    "with_replacement": false,
                 },
             },
             "synapse": {

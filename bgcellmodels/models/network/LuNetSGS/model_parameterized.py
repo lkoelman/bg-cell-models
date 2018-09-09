@@ -17,16 +17,13 @@ Parameterized model construction based on configuration file / dictionary.
 USAGE
 -----
 
-To run using MPI, you can use the following command:
+To run using MPI, use the `mpirun` or `mpiexec` command like:
 
->>> mpirun -n 8 python model_parameterized.py -n numcell -d simdur \
->>> -ng -o ~/storage -c ~/workspace/simple_config.json -id test1
+`mpirun -n 4 python model_parameterized.py --scale 0.5 --dur 500  --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/DA-depleted_template.json`
 
-To do a test run using IPython, use something like:
+To run from an IPyhton shell, use the %run magic function like:
 
->>> %run model_parameterized.py --ncell 25 --dur 500 --transient-period 0.0 \
->>> --write-interval 1000 --no-gui -id test1 \
->>> --config myconfig.json --outdir ~/storage
+`%run model_parameterized.py --scale 0.5 --dur 500 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/DA-depleted_template.json`
 
 
 NOTES
@@ -272,7 +269,8 @@ def run_simple_net(
     shared_rng = shared_rng_pynn.rng
     rank_rng = rank_rng_pynn.rng
     
-
+    # Global physiological conditions
+    DD = dopamine_depleted = config['simulation']['dopamine_depleted']
 
     ############################################################################
     # LOCAL FUNCTIONS
@@ -794,7 +792,9 @@ def run_simple_net(
             proj_params['weight_delay_list'] = pre_post_params
 
 
-    # Write model parameters 
+    # Write model parameters
+    print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
+
     if mpi_rank==0 and output is not None:
         outdir, extension = output.split('*')
 
@@ -819,6 +819,8 @@ def run_simple_net(
 
     if export_locals:
         globals().update(locals())
+
+    print("rank {}: SIMULATION FINISHED.".format(mpi_rank))
 
 
 if __name__ == '__main__':
@@ -906,7 +908,7 @@ if __name__ == '__main__':
 
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames
-    out_subdir = '{stamp}_job-{job_id}_{config_name}'.format(
+    out_subdir = 'LuNetSGS_{stamp}_job-{job_id}_{config_name}'.format(
                                             stamp=timestamp,
                                             job_id=job_id,
                                             config_name=config_name)

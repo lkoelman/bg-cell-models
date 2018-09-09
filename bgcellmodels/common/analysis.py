@@ -713,7 +713,7 @@ def test_plotRaster():
 def plot_connectivity_matrix(
         W, px=10, py=10, 
         pop0='A', pop1='B', 
-        cmap='Oranges', show=True):
+        cmap='Oranges', show=True, figsize=(8,6), title=None):
     """
     Plot connectivity matrix given as string.
 
@@ -727,7 +727,8 @@ def plot_connectivity_matrix(
     from matplotlib import patches
 
     # Create plot
-    fig, ax = plt.subplots(figsize=(8,6))
+    fig, ax = plt.subplots(figsize=figsize)
+    fig.suptitle(title)
     # # fig.subplots_adjust(left=0.02) # Less space on left
     # fig.subplots_adjust(right=0.98) # Less space on right
     # fig.subplots_adjust(top=0.96) # Less space on bottom
