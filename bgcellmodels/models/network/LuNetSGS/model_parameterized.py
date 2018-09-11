@@ -51,6 +51,7 @@ WITH_MPI = mpi_size > 1
 import pyNN.neuron as sim
 from pyNN import space
 from pyNN.parameters import Sequence
+from pyNN.random import RandomDistribution
 from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
 
@@ -270,7 +271,7 @@ def run_simple_net(
     rank_rng = rank_rng_pynn.rng
     
     # Global physiological conditions
-    DD = dopamine_depleted = config['simulation']['dopamine_depleted']
+    DD = dopamine_depleted = config['simulation']['DD']
 
     ############################################################################
     # LOCAL FUNCTIONS
@@ -300,11 +301,12 @@ def run_simple_net(
         """
         Make Synapse object from config dict
         """
-        local_context = config[post].get('local_context', {})
+        config_locals = config[post].get('local_context', {})
         syn_type, syn_params = getdictvals(config[post][pre]['synapse'],
                                            'name', 'parameters')
         syn_class = synapse_types[syn_type]
-        syn_pvals = eval_params(syn_params, params_global_context, local_context)
+        syn_pvals = eval_params(syn_params, params_global_context, 
+                                [params_local_context, config_locals])
         return syn_class(**syn_pvals)
 
     def connector_from_config(pre, post, rng=None):
@@ -351,10 +353,16 @@ def run_simple_net(
                         calculate_lfp=calculate_lfp,
                         **stn_cell_params)
 
+    vinit = stn_type.default_initial_values['v']
+    initial_values={
+        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
+    }
+
     pop_stn = Population(ncell_stn, 
                          cellclass=stn_type, 
                          label='STN',
-                         structure=stn_grid)
+                         structure=stn_grid,
+                         initial_values=initial_values)
 
     #===========================================================================
     # GPE POPULATION
@@ -373,23 +381,35 @@ def run_simple_net(
     # GPE Prototypic
     
     proto_type = gunay.GpeProtoCellType(**gpe_common_params)
+    
+    vinit = proto_type.default_initial_values['v']
+    initial_values={
+        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
+    }
 
     ncell_proto = int(gpe_pop_size * pop_scale * frac_proto)
     pop_gpe_proto = Population(ncell_proto, 
                                cellclass=proto_type,
                                label='GPE.proto',
-                               structure=gpe_grid)
+                               structure=gpe_grid,
+                               initial_values=initial_values)
 
     #---------------------------------------------------------------------------
     # GPE Arkypallidal
 
     arky_type = gunay.GpeArkyCellType(**gpe_common_params)
+    
+    vinit = arky_type.default_initial_values['v']
+    initial_values={
+        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
+    }
 
     ncell_arky = int(gpe_pop_size * pop_scale * frac_arky)
     pop_gpe_arky = Population(ncell_arky, 
                               cellclass=arky_type,
                               label='GPE.arky',
-                              structure=gpe_grid)
+                              structure=gpe_grid,
+                              initial_values=initial_values)
 
     #---------------------------------------------------------------------------
     # GPE Surrogate spike sources
@@ -417,11 +437,17 @@ def run_simple_net(
     msn_cell_params = get_cell_parameters('STR.MSN')
 
     msn_type = mahon.MsnCellType(**msn_cell_params)
+
+    vinit = msn_type.default_initial_values['v']
+    initial_values={
+        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
+    }
     
     pop_msn = Population(
                 int(msn_pop_size * pop_scale), 
                 cellclass=msn_type,
-                label='STR.MSN')
+                label='STR.MSN',
+                initial_values=initial_values)
 
     #===========================================================================
     # STR.FSI POPULATION
@@ -430,11 +456,17 @@ def run_simple_net(
     fsi_cell_params = get_cell_parameters('STR.FSI')
 
     fsi_type = golomb.FsiCellType(**fsi_cell_params)
+
+    vinit = msn_type.default_initial_values['v']
+    initial_values={
+        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
+    }
     
     pop_fsi = Population(
                 int(fsi_pop_size * pop_scale), 
                 cellclass=fsi_type,
-                label='STR.FSI')
+                label='STR.FSI',
+                initial_values=initial_values)
 
     #===========================================================================
     # CTX POPULATION
@@ -904,7 +936,7 @@ if __name__ == '__main__':
         out_basedir = '~/storage'
     job_id = parsed_dict.pop('job_id')[0]
     time_now = time.time()
-    timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d')
+    timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d_%H:%M:%S')
 
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames

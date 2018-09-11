@@ -166,6 +166,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
         @override     EphysModelWrapper.memb_init()
         """
+        super(GPeCellModel, self).memb_init()
         self.noise_rng_init()
 
 
@@ -364,7 +365,7 @@ class GpeArkyCellType(ephys_pynn.EphysCellType):
 
 
     # extra_parameters = {}
-    # default_initial_values = {'v': -65.0}
+    default_initial_values = {'v': -65.0}
     
     # Combined with self.model.regions by EphysCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',

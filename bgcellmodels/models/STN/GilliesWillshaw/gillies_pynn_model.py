@@ -184,6 +184,8 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
         @override     EphysModelWrapper.memb_init()
         """
+        super(StnCellModel, self).memb_init()
+
         for sec in self.icell.all:
             h.ion_style("na_ion",1,2,1,0,1, sec=sec)
             h.ion_style("k_ion",1,2,1,0,1, sec=sec)
@@ -349,7 +351,7 @@ class StnCellType(ephys_pynn.EphysCellType):
         'max_num_stn_syn': 10,
     }
     # extra_parameters = {}
-    # default_initial_values = {'v': -65.0}
+    default_initial_values = {'v': -65.0}
     # recordable = ['spikes', 'v', 'lfp']
 
     # Combined with self.model.regions by EphysCellType constructor

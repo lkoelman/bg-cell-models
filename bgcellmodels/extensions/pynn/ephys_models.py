@@ -302,8 +302,9 @@ class PynnCellModelBase(object):
 
         @override   memb_init() required by PyNN interface for cell models.
         """
-        raise NotImplementedError("Please implement an initializer for your "
-                "custom cell model.")
+        for sec in self.icell.all:
+            for seg in sec:
+                seg.v = self.v_init # set using pop.init(v=v_init) or default_initial_values
 
 
     # @abstractmethod
