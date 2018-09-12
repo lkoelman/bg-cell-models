@@ -328,9 +328,10 @@
             "connector": {
                 "name": "FixedNumberPreConnector",
                 "parameters": {
-                    "n": 10,
+                    "n": 5,
                 },
             },
+            "num_contacts" : 5,
             "synapse": {
                 "name": "GluSynapse",
                 "parameters": {
@@ -360,30 +361,40 @@
                     "n": 6,
                 },
             },
+            "num_contacts": 2,
             "synapse": {
-                "name": "GabaSynTmHill",
+                "name": "GabaSynTm2",
                 "parameters": {
                     "weight": 1.0,
                     "delay":        0.5, // [ms] delay from literature
-                    // STP parameters
-                    "U1":           0.2, // baseline release probability
-                    "tau_rec":      400.0, // [ms] recovery from STD
-                    "tau_facil":    1.0, // [ms] recovery from facilitation
                     // GABA-A receptor
+                    "U1_A":          0.2,   // baseline release probability
+                    "tau_rec_A":     400.0, // [ms] recovery from STD
+                    "tau_facil_A":   1.0,   // [ms] recovery from facilitation
+                    "tau_r_GABAA":   2.0,   // [ms] rise time
+                    "tau_d_GABAA":   5.0,   // [ms] decay time
                     "gmax_GABAA": {
+                        // Miguelez (2012) : double IPSC in DA-depleted condition
                         "statement": "(1 + 1.0*DD) * gmax_base",
                         "locals": {
-                            "gmax_base": 0.5e-3, // [uS], adjusted for U1
+                            "gmax_base": 8.333e-5,
                         },
                         "globals": {},
                     },
-                    "tau_r_GABAA":   2.0, // [ms] rise time
-                    "tau_d_GABAA":   5.0, // [ms] decay time
                     // GABA-B receptor
-                    "gmax_GABAB":    0.1e-3, // [uS], adjusted for U1
+                    "U1_B":          0.05, // baseline release probability
+                    "tau_rec_B":     300.0, // [ms] recovery from STD
+                    "tau_facil_B":   300.0, // [ms] recovery from facilitation
                     "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
-                    "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
-                    "KD":            0.35,  // half-maximum of sigmoid(G)
+                    "tau_d_GABAB":   50.0,  // [ms] decay time bound recepetor fraction
+                    "gmax_GABAB": {
+                        // Miguelez (2012) : double IPSC in DA-depleted condition
+                        "statement": "(1 + 1.0*DD) * gmax_base",
+                        "locals": {
+                            "gmax_base": 2.083e-5,
+                        },
+                        "globals": {},
+                    },
                 },
             },
         },

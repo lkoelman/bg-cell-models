@@ -18,9 +18,10 @@ https://github.com/apdavison/BluePyOpt/blob/pynn-models/bluepyopt/ephys_pyNN/mod
 import re
 import itertools
 import math
-from copy import copy, deepcopy
-from abc import ABCMeta, abstractmethod
+from copy import deepcopy
+# from abc import ABCMeta, abstractmethod
 
+import numpy as np
 import bluepyopt.ephys as ephys
 from pyNN.neuron import state as nrn_state, h
 from pyNN.neuron.cells import NativeCellType
@@ -336,7 +337,7 @@ class PynnCellModelBase(object):
 
 
     # @abstractmethod
-    def get_synapse(self, region, receptors, mark_used, **kwargs):
+    def get_synapses(self, region, receptors, num_contacts, **kwargs):
         """
         Get synapse in subcellular region for given receptors.
         Called by Connector object to get synapse for new connection.
@@ -373,6 +374,28 @@ class PynnCellModelBase(object):
                                   "E.g. get_existing_synapse(), ... ")
 
 
+    def make_synapses_cached_region(self, region, receptors, num_synapses, **kwargs):
+        """
+        Make a new synapse by sampling a cached region.
+
+        @pre    model must have attribute '_cached_region_segments' containing a
+                dict[str, list(nrn.Segment)] that maps the region name
+                to eligible segments in that region.
+        """
+        rng = kwargs.get('rng', np.random)
+        region_segs = self._cached_region_segments[region]
+        seg_ids = rng.choice(len(region_segs), 
+                             num_synapses, replace=False)
+        if 'mechanism' in kwargs:
+            mech_name = kwargs['mechanism']
+        elif all((rec in ('AMPA', 'NMDA') for rec in receptors)):
+            mech_name = self.default_GLU_mechanism
+        elif all((rec in ('GABAA', 'GABAB') for rec in receptors)):
+            mech_name = self.default_GABA_mechanism
+
+        return [getattr(h, mech_name)(region_segs[i]) for i in seg_ids]
+
+
     def make_new_synapse(self, receptors, segment, mechanism=None):
         """
         Make a new synapse that implements given receptors in the
@@ -383,9 +406,9 @@ class PynnCellModelBase(object):
         if mechanism is not None:
             syn = getattr(h, mechanism)(segment)
         elif all((rec in ('AMPA', 'NMDA') for rec in receptors)):
-            syn = getattr(h, self.default_GABA_mechanism)(segment)
-        elif all((rec in ('GABAA', 'GABAB') for rec in receptors)):
             syn = getattr(h, self.default_GLU_mechanism)(segment)
+        elif all((rec in ('GABAA', 'GABAB') for rec in receptors)):
+            syn = getattr(h, self.default_GABA_mechanism)(segment)
         else:
             raise ValueError("No synapse mechanism found that implements all "
                              "receptors {}".format(receptors))
@@ -407,6 +430,7 @@ class PynnCellModelBase(object):
         #     - descend to child branch where =nsyn/L= is smaller than subtree average
         #     - if node's =nsyn/L= is smaller than stored average: stop
         raise NotImplementedError()
+
 
 
     # def make_synapse_balanced(self, region, receptors, mechanism=None):
@@ -465,25 +489,25 @@ class PynnCellModelBase(object):
     #     return pick_random_segment(dendritic_segments)
 
 
-    def get_existing_synapse(self, region, receptors, mark_used):
-        """
-        Get existing synapse in region with given receptors.
+    # def get_existing_synapse(self, region, receptors, mark_used):
+    #     """
+    #     Get existing synapse in region with given receptors.
 
-        This method is useful for cells that create all synapses upon
-        initialization.
+    #     This method is useful for cells that create all synapses upon
+    #     initialization.
 
-        @see    get_synapse() for documentation
-        """
-        syn_list = self.get_synapse_list(region, receptors)
-        if len(syn_list) == 0:
-            raise Exception("Could not find any synapses for "
-                "region '{}' and receptors'{}'".format(region, receptors))
+    #     @see    get_synapse() for documentation
+    #     """
+    #     syn_list = self.get_synapse_list(region, receptors)
+    #     if len(syn_list) == 0:
+    #         raise Exception("Could not find any synapses for "
+    #             "region '{}' and receptors'{}'".format(region, receptors))
 
-        min_used = min((meta.used for meta in syn_list))
-        metadata = next((meta for meta in syn_list if meta.used==min_used))
-        if mark_used:
-            metadata.used += 1 # increment used counter
-        return metadata.synapse, min_used
+    #     min_used = min((meta.used for meta in syn_list))
+    #     metadata = next((meta for meta in syn_list if meta.used==min_used))
+    #     if mark_used:
+    #         metadata.used += 1 # increment used counter
+    #     return metadata.synapse, min_used
 
 
     def get_synapse_list(self, region, receptors):
@@ -510,8 +534,8 @@ class PynnCellModelBase(object):
         @param      mechanism : str
                     NEURON mechanism name
 
-        @return     synapse_list : list(dict())
-                    List of synapse containers
+        @return     synapse_list : list(synapse)
+                    List of synapses in region
         """
         return sum((synlist for region in self._synapses.values() for recs, synlist in region.items()), [])
 
@@ -529,14 +553,14 @@ class PynnCellModelBase(object):
         @return     list(nrn.POINT_PROCESS)
                     List of NEURON synapse objects.
         """
+        # Deconstruct synapse specifier
         matches = re.search(r'^(?P<mechname>\w+)(\[(?P<slice>[\d:]+)\])', spec)
         mechname = matches.group('mechname')
         slice_expr = matches.group('slice') # "i:j:k"
         slice_parts = slice_expr.split(':') # ["i", "j", "k"]
         slice_parts_valid = [int(i) if i!='' else None for i in slice_parts]
-        syn_metadata = self.get_synapses_by_mechanism(mechname)
-        synlist = [meta.synapse for meta in syn_metadata]
         
+        synlist = self.get_synapses_by_mechanism(mechname)
         if len(synlist) == 0:
             return []
         elif len(slice_parts) == 1: # zero colons
@@ -808,14 +832,14 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
         pass
 
 
-    def get_synapse(self, region, receptors, mark_used, **kwargs):
-        """
-        Get synapse in subcellular region for given receptors.
-        Called by Connector object to get synapse for new connection.
-
-        @override   PynnCellModelBase.get_synapse()
-        """
-        return self.get_existing_synapse(region, receptors, mark_used)
+#    def get_synapse(self, region, receptors, mark_used, **kwargs):
+#        """
+#        Get synapse in subcellular region for given receptors.
+#        Called by Connector object to get synapse for new connection.
+#
+#        @override   PynnCellModelBase.get_synapse()
+#        """
+#        return self.get_existing_synapse(region, receptors, mark_used)
 
 
     def _init_lfp(self):

@@ -235,6 +235,7 @@ class ConnectionNrnWrapped(Connection):
         Create a new connection.
         """
         #logger.debug("Creating connection from %d to %d, weight %g" % (pre, post, parameters['weight']))
+        self.synapse_type = projection.synapse_type
         self.presynaptic_index = pre
         self.postsynaptic_index = post
         self.presynaptic_cell = projection.pre[pre]
@@ -251,17 +252,27 @@ class ConnectionNrnWrapped(Connection):
         mech_name = projection.synapse_type.model
 
         # Ask cell for segment in target region
-        synapse, used = post_cell.get_synapse(region, receptors, True, 
-                                              mechanism=mech_name)
-        self.synapse = synapse
-        if used > 0 and not post_cell.allow_synapse_reuse:
-            raise Exception("No unused synapses on target cell {}".format(type(post_cell)))
+        num_contacts = getattr(projection.synapse_type, 'num_contacts', 1)
+        self.synapses = post_cell.get_synapses(region, receptors, num_contacts, 
+                                               mechanism=mech_name)
+        # if used > 0 and not post_cell.allow_synapse_reuse:
+        #     raise Exception("No unused synapses on target cell {}".format(type(post_cell)))
         
         # Create NEURON NetCon
         pre_gid = int(self.presynaptic_cell)
-        self.nc = state.parallel_context.gid_connect(pre_gid, synapse)
-        self.nc.weight[0] = parameters.pop('weight')
-        self.nc.delay = parameters.pop('delay')
+        self.ncs = []
+        weight = parameters.pop('weight')
+        delay = parameters.pop('delay')
+        for syn in self.synapses:
+            nc = state.parallel_context.gid_connect(pre_gid, syn)
+            nc.weight[0] = weight
+            nc.delay = delay
+            self.ncs.append(nc)
+
+        # PyNN expects attritutes 'synapse' and 'nc'
+        # Store first element, should all have same parameter values for Projection.get(...)
+        self.synapse = self.synapses[0]
+        self.nc = self.ncs[0]
         
         # if we have a mechanism (e.g. from 9ML) that includes multiple
         # synaptic channels, need to set nc.weight[1] here
@@ -284,15 +295,24 @@ class ConnectionNrnWrapped(Connection):
         NOTES
         -----
 
-        In PyNN.neuron.simulator.py, this is solved by generating Connector
-        properties for each attribute of the associated synapse type 
-        and weight adjuster. We catch the property assignments in this method
-        so we don't have to create explicit properties.
+        - this hides properties of the base class (see Python data model)
+    
+        - in original Connector class properties are added for each attribute 
+          of the associated synapse type  and weight adjuster. See
+          See https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py#L340
+
+        - We catch the property assignments here so we don't have to create 
+          explicit properties.
         """
-        if hasattr(self, 'synapse_type') and name in self.synapse_type.get_parameter_names():
+        if hasattr(self, 'synapse_type') and (name in self.synapse_type.get_parameter_names()):
             pinfo = self.synapse_type.translations[name]
             pname = pinfo['translated_name']
-            setattr(self.synapse, pname, value)
+            # setattr(self.synapse, pname, value)
+            for synapse in self.synapses:
+                setattr(self.synapse, pname, value)
+        elif name in ('weight', 'delay'):
+            for nc in self.ncs:
+                setattr(nc, name, value)
         else:
             super(ConnectionNrnWrapped, self).__setattr__(name, value)
 
@@ -313,7 +333,9 @@ class ConnectionNrnWrapped(Connection):
             if name in synapse_param_names:
                 pinfo = synapse_type.translations[name]
                 pname = pinfo['translated_name']
-                setattr(self.synapse, pname, value)
+                # setattr(self.synapse, pname, value)
+                for synapse in self.synapses:
+                    setattr(self.synapse, pname, value)
 
 
 # We have to define a custom Synapse model so we can make the connection_type

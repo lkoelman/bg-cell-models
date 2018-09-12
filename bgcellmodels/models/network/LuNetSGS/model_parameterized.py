@@ -261,11 +261,12 @@ def run_simple_net(
     # - The default RNG for Connectors is NumpyRNG(seed=151985012)
     if seed is None:
         seed = config['simulation']['shared_rng_seed']
-    shared_seed = seed # original: 151985012
+    sim.state.shared_rng_seed = shared_seed = seed # original: 151985012
     sim.state.rank_rng_seed = rank_seed = sim.state.native_rng_baseseed + sim.state.mpi_rank
     # RNGs that can be passed to PyNN objects like Connector subclasses
-    shared_rng_pynn = sim.NumpyRNG(seed=shared_seed)
-    rank_rng_pynn = sim.NumpyRNG(seed=rank_seed)
+    # Store them on simulator.state so we can access from other custom classes
+    sim.state.shared_rng = shared_rng_pynn = sim.NumpyRNG(seed=shared_seed)
+    sim.state.rank_rng = rank_rng_pynn = sim.NumpyRNG(seed=rank_seed)
     # Raw Numpy RNGs (numpy.random.RandomState) to be used in our own functions
     shared_rng = shared_rng_pynn.rng
     rank_rng = rank_rng_pynn.rng
@@ -307,7 +308,10 @@ def run_simple_net(
         syn_class = synapse_types[syn_type]
         syn_pvals = eval_params(syn_params, params_global_context, 
                                 [params_local_context, config_locals])
-        return syn_class(**syn_pvals)
+        num_contacts = config[post][pre]['synapse'].get('num_contacts', 1)
+        syntype_obj = syn_class(**syn_pvals)
+        syntype_obj.num_contacts = num_contacts
+        return syntype_obj
 
     def connector_from_config(pre, post, rng=None):
         """

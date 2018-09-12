@@ -85,19 +85,17 @@ class GolombFsiModel(PynnCellModelBase):
         return 0.0
 
 
-    def get_synapse(self, region, receptors, mark_used, **kwargs):
+    def get_synapses(self, region, receptors, num_contacts, **kwargs):
         """
         Get synapse in subcellular region for given receptors.
         Called by Connector object to get synapse for new connection.
 
         @override   PynnCellModelBase.get_synapse()
         """
-        syn = super(GolombFsiModel, self).make_new_synapse(
-                        receptors, self.icell.soma[0](0.5), **kwargs)
+        syns = [self.make_new_synapse(receptors, self.icell.soma[0](0.5), **kwargs) for i in xrange(num_contacts)]
         synmap_key = tuple(sorted(receptors))
-        self._synapses['proximal'].setdefault(synmap_key, []).append(syn)
-        return syn, 0
-
+        self._synapses['proximal'].setdefault(synmap_key, []).extend(syns)
+        return syns
 
 
 class FsiCellType(EphysCellType):

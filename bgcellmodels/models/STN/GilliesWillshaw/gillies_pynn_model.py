@@ -207,57 +207,105 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
         @override   EphysModelWrapper._init_synapses()
         """
+        # Create data structure for synapses
+        super(StnCellModel, self)._init_synapses()
+
         # Indicate to Connector that we don't allow multiple NetCon per synapse
         self.allow_synapse_reuse = False
 
-        # Sample each region uniformly and place synapses there
-        soma = self.icell.soma[0]
-        synapse_spacing = 0.25
-        segment_gen = treeutils.ascend_with_fixed_spacing(
-                            soma(0.5), synapse_spacing)
-        uniform_segments = [seg for seg in segment_gen]
-
         # Sample cell regions
+        soma = self.icell.soma[0]
         h.distance(0, 0.5, sec=soma) # reference for distance measurement
-
         is_proximal = lambda seg: h.distance(1, seg.x, sec=seg.sec) < 120.0
-        proximal_segments = [seg for seg in uniform_segments if is_proximal(seg)]
-
         is_distal = lambda seg: h.distance(1, seg.x, sec=seg.sec) >= 100.0
-        distal_segments = [seg for seg in uniform_segments if is_distal(seg)]
 
-        # Synapses counts are fixed
-        num_gpe_syn = self.max_num_gpe_syn
-        num_ctx_syn = self.max_num_ctx_syn
-        num_stn_syn = self.max_num_stn_syn
-        rng = np.random # TODO: make from base seed + self ID
+        # Sample each region uniformly and place synapses there
+        synapse_spacing = 0.25 # [um]
+        target_secs = list(self.icell.somatic) + list(self.icell.basal) + \
+                      list(self.icell.apical)
+        self._cached_region_segments = {}
+        self._cached_region_segments['proximal'] = []
+        self._cached_region_segments['distal'] = []
+        for sec in target_secs:
+            nsyn = np.ceil(sec.L / synapse_spacing)
+            for i in xrange(int(nsyn)):
+                seg = sec((i+1.0)/nsyn)
+                if is_proximal(seg):
+                    self._cached_region_segments['proximal'].append(seg)
+                if is_distal(seg):
+                    self._cached_region_segments['distal'].append(seg)
+
+
+    def get_synapses(self, region, receptors, num_contacts, **kwargs):
+        """
+        Get synapse in subcellular region for given receptors.
+        Called by Connector object to get synapse for new connection.
+
+        @override   PynnCellModelBase.get_synapse()
+        """
+        syns = self.make_synapses_cached_region(region, receptors, 
+                                                num_contacts, **kwargs)
+        synmap_key = tuple(sorted(receptors))
+        self._synapses[region].setdefault(synmap_key, []).extend(syns)
+        return syns
+
+    # def _init_synapses(self):
+    #     """
+    #     Initialize synapses on this neuron.
+
+    #     @override   EphysModelWrapper._init_synapses()
+    #     """
+    #     # Indicate to Connector that we don't allow multiple NetCon per synapse
+    #     self.allow_synapse_reuse = False
+
+    #     # Sample each region uniformly and place synapses there
+    #     soma = self.icell.soma[0]
+    #     synapse_spacing = 0.25
+    #     segment_gen = treeutils.ascend_with_fixed_spacing(
+    #                         soma(0.5), synapse_spacing)
+    #     uniform_segments = [seg for seg in segment_gen]
+
+    #     # Sample cell regions
+    #     h.distance(0, 0.5, sec=soma) # reference for distance measurement
+
+    #     is_proximal = lambda seg: h.distance(1, seg.x, sec=seg.sec) < 120.0
+    #     proximal_segments = [seg for seg in uniform_segments if is_proximal(seg)]
+
+    #     is_distal = lambda seg: h.distance(1, seg.x, sec=seg.sec) >= 100.0
+    #     distal_segments = [seg for seg in uniform_segments if is_distal(seg)]
+
+    #     # Synapses counts are fixed
+    #     num_gpe_syn = self.max_num_gpe_syn
+    #     num_ctx_syn = self.max_num_ctx_syn
+    #     num_stn_syn = self.max_num_stn_syn
+    #     rng = np.random # TODO: make from base seed + self ID
         
-        proximal_indices = rng.choice(len(proximal_segments), 
-                                num_gpe_syn, replace=False)
+    #     proximal_indices = rng.choice(len(proximal_segments), 
+    #                             num_gpe_syn, replace=False)
 
-        distal_indices = rng.choice(len(distal_segments), 
-                                num_ctx_syn+num_stn_syn, replace=False)
+    #     distal_indices = rng.choice(len(distal_segments), 
+    #                             num_ctx_syn+num_stn_syn, replace=False)
 
-        # Fill synapse lists
-        self._synapses = {}
-        self._synapses['proximal'] = prox_syns = {}
-        self._synapses['distal'] = dist_syns = {}
+    #     # Fill synapse lists
+    #     self._synapses = {}
+    #     self._synapses['proximal'] = prox_syns = {}
+    #     self._synapses['distal'] = dist_syns = {}
 
-        # Get constuctors for NEURON synapse mechanisms
-        make_gaba_syn = getattr(h, self.default_GABA_mechanism)
-        make_glu_syn = getattr(h, self.default_GLU_mechanism)
+    #     # Get constuctors for NEURON synapse mechanisms
+    #     make_gaba_syn = getattr(h, self.default_GABA_mechanism)
+    #     make_glu_syn = getattr(h, self.default_GLU_mechanism)
 
-        prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
-        for seg_index in proximal_indices:
-            syn = make_gaba_syn(proximal_segments[seg_index])
-            prox_gaba_syns.append(dotdict(synapse=syn, used=0,
-                mechanism=self.default_GABA_mechanism))
+    #     prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
+    #     for seg_index in proximal_indices:
+    #         syn = make_gaba_syn(proximal_segments[seg_index])
+    #         prox_gaba_syns.append(dotdict(synapse=syn, used=0,
+    #             mechanism=self.default_GABA_mechanism))
         
-        dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
-        for seg_index in distal_indices:
-            syn = make_glu_syn(distal_segments[seg_index])
-            dist_glu_syns.append(dotdict(synapse=syn, used=0,
-                mechanism=self.default_GLU_mechanism))
+    #     dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
+    #     for seg_index in distal_indices:
+    #         syn = make_glu_syn(distal_segments[seg_index])
+    #         dist_glu_syns.append(dotdict(synapse=syn, used=0,
+    #             mechanism=self.default_GLU_mechanism))
 
 
     def _update_position(self, xyz):
