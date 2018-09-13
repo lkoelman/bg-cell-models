@@ -176,7 +176,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         """
         h.distance(0, 0.5, sec=self.icell.soma[0]) # reference for distance measurement
         if region == 'proximal':
-            return h.distance(1, segment.x, sec=segment.sec) <= 2.5
+            return h.distance(1, segment.x, sec=segment.sec) <= 2.0
         elif region == 'distal':
             return h.distance(1, segment.x, sec=segment.sec) >= 1.0
         else:

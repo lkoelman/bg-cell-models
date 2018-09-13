@@ -175,25 +175,99 @@ def make_variable_bursts(
             i_IBI += 1
             t_start_burst += burst_IBIs[i_IBI]
             continue
-            
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
 
-    # Test synchronized bursts
-    T_burst, dur_burst, f_intra, f_inter = 50.0, 10.0, 150.0, 5.0
-    num_spiketrains = 10
+
+def generate_modulated_spiketimes(
+        sig_mod, Ts_mod, rate_max, rate_min, 
+        dist='normal', rng=None, **kwargs):
+    """
+    Make modulated poisson spike train.
+
+    The ISIs are drawn from a negative exponential distribution with mean
+    equal to the modulator signal amplitude.
+
+    @param  dist : str
+            Distribution name, must be attribute of numpy.random
+
+    @param  **kwargs
+            Additional keyword arguments for numpy.random distribution function
+            besides the 'loc' argument, e.g. 'scale' for normal distribution.
+            WARNING: these must be values for loc=1.0 and will be scaled by
+            the relative firing rate. Check scaling properties of distribution.
+
+    Algorithm
+    ---------
+
+    Interprets the modulator signal as an amplitude-modulated sinusoid.
+    The instantaneous firing rate is the slow rate + the fraction of the
+    maximum amplitude reached times the difference of slow and fast rate during
+    the peaks of the sinusoid. During the throughs the instantaneous firing
+    rate is equal to the slow rate. I.e. the instantaneous amplitude during the
+    negative peaks is discarded.
+
+    Example
+    -------
+
+
+    """
+    if rng is None:
+        rng = np.random
+
+    # Get distribution to sample from
+    dist_func = getattr(rng, dist)
+
+    mod_max = max(sig_mod)
+    mod_min = min(sig_mod)
+    mod_amp = (mod_max - mod_min) / 2.0
+    mod_mid = (mod_min + mod_max) / 2.0
+
+    Tfast = 1./rate_max * 1e3 # fast period (ms)
+    Tslow = 1./rate_min * 1e3 # slow period (ms)
+    Tdelta = Tfast - Tslow
+    assert Tfast < Tslow
+
+    # Pre-sample ISIs to guarantee statistical independence
+    dur = len(sig_mod) * Ts_mod
+    max_spikes = int(5*dur/Tfast)
+    if dist == 'normal':
+        kwargs['loc'] = 1.0
+    if dist == 'exponential':
+        kwargs['scale'] = 1.0
+    ISIs_unscaled = dist_func(size=max(10, max_spikes), **kwargs)
+
+    t = 0.0
+    i = 0
+    while t <= dur:
+        yield t
+        # fire at rate t_slow + frac_amp_pos * t_fast
+        # - i.e. fire at Tslow when amp < 0
+        factor = max(0, (sig_mod[int(t//Ts_mod)] - mod_mid) / mod_amp)
+        Tinst = Tslow + factor*Tdelta
+        t += ISIs_unscaled[i] * Tinst
+        i += 1
+
+
+def test_spiketime_generator(gen_func, num_spiketrains, *args, **kwargs):
+    """
+    Test case for generate_modulated_spiketimes()
+    """
+    import matplotlib.pyplot as plt
     fig, ax = plt.subplots()
     for i in range(num_spiketrains):
 
-        burst_gen = make_oscillatory_bursts(
-                        T_burst, dur_burst, f_intra, f_inter,
-                        rng=np.random, max_dur=5e3)
-        
-        spiketimes = np.fromiter(burst_gen, float)
+        generator = gen_func(*args, **kwargs)
+        spiketimes = np.fromiter(generator, float)
 
         y_vec = np.ones_like(spiketimes) * i
-        ax.plot(spiketimes, y_vec, marker='|', linestyle='', snap=True)
+        ax.plot(spiketimes, y_vec, marker='|', linestyle='', color='red', snap=True)
 
-    ax.set_title("Synchronous bursts")
+    ax.set_title("Modulated spiketimes")
     ax.grid(True)
     plt.show(block=False)
+
+
+if __name__ == '__main__':
+    T_burst, dur_burst, f_intra, f_inter = 50.0, 10.0, 150.0, 5.0
+    num_spiketrains = 10
+    test_spiketime_generator(make_oscillatory_bursts, num_spiketrains, 
+                             T_burst, dur_burst, f_intra, f_inter, max_dur=5e3)

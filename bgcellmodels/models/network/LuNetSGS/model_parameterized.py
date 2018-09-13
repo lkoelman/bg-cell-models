@@ -57,7 +57,8 @@ import neo.io
 
 # Custom PyNN extensions
 from bgcellmodels.extensions.pynn.connection import (
-    GluSynapse, GabaSynapse, GabaSynTmHill, GABAAsynTM)
+    GluSynapse, GabaSynapse, GabaSynTmHill, GABAAsynTM,
+    GabaSynTm2)
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
 
@@ -215,6 +216,7 @@ def run_simple_net(
         seed            = None,
         calculate_lfp   = None,
         burst_frequency = None,
+        dopamine_depleted = None,
         transient_period = None,
         max_write_interval = None):
     """
@@ -272,7 +274,13 @@ def run_simple_net(
     rank_rng = rank_rng_pynn.rng
     
     # Global physiological conditions
-    DD = dopamine_depleted = config['simulation']['DD']
+    DD = dopamine_depleted
+    if DD is None:
+        DD = dopamine_depleted = config['simulation'].get('DD', None)
+    if DD is None:
+        raise ValueError("Dopamine depleted condition not specified "
+                         "in config file nor as simulation argument.")
+    nprint("Dopamine state is " + "DEPLETED" if DD else "NORMAL")
 
     ############################################################################
     # LOCAL FUNCTIONS
@@ -308,7 +316,7 @@ def run_simple_net(
         syn_class = synapse_types[syn_type]
         syn_pvals = eval_params(syn_params, params_global_context, 
                                 [params_local_context, config_locals])
-        num_contacts = config[post][pre]['synapse'].get('num_contacts', 1)
+        num_contacts = config[post][pre].get('num_contacts', 1)
         syntype_obj = syn_class(**syn_pvals)
         syntype_obj.num_contacts = num_contacts
         return syntype_obj
@@ -342,7 +350,11 @@ def run_simple_net(
     # POPULATIONS
     ############################################################################
     # Define each cell population with its cell type, number of cells
+    # NOTE:
+    # - to query cell model attributes, use population[i]._cell
     print("rank {}: starting phase POPULATIONS.".format(mpi_rank))
+
+    config_pop_labels = [k for k in config.keys() if not k in ('simulation',)]
 
     #===========================================================================
     # STN POPULATION
@@ -418,11 +430,12 @@ def run_simple_net(
     #---------------------------------------------------------------------------
     # GPE Surrogate spike sources
 
-    num_gpe_surrogates, surr_rate = get_pop_parameters('GPE.all', 
-        'num_surrogates', 'surrogate_rate')
+    frac_surrogate, surr_rate = get_pop_parameters('GPE.all', 
+        'surrogate_fraction', 'surrogate_rate')
     
-    if num_gpe_surrogates > 0:
-        pop_gpe_surrogate = Population(num_gpe_surrogates, 
+    ncell_surrogate = int(gpe_pop_size * pop_scale * frac_surrogate)
+    if ncell_surrogate > 0:
+        pop_gpe_surrogate = Population(ncell_surrogate, 
                                        sim.SpikeSourcePoisson(rate=surr_rate),
                                        label='GPE.surrogate')
     else:
@@ -431,7 +444,12 @@ def run_simple_net(
     #---------------------------------------------------------------------------
     # GPE Assembly (Proto + Arky)
 
-    asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_arky, label='GPE.all')
+    
+    if pop_gpe_surrogate is None:
+        asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_arky, pop_gpe_surrogate, 
+                               label='GPE.all')
+    else:
+        asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_arky, label='GPE.all')
     gpe_pop_size = asm_gpe.size
 
     #===========================================================================
@@ -500,6 +518,7 @@ def run_simple_net(
     #===========================================================================
 
     all_pops = {pop.label : pop for pop in Population.all_populations}
+    all_asm = {asm.label: asm for asm in (asm_gpe,)}
     all_proj = {pop.label : {} for pop in Population.all_populations}
     all_proj[asm_gpe.label] = {} # add Assembly projections manually
 
@@ -517,13 +536,13 @@ def run_simple_net(
     ############################################################################
 
     # see notes in original model.py (non-parameterized)
+    # TODO: make sure every entry in JSON config is constructed
 
     # Allowed synapse types (for creation from config file)
     synapse_types = {
         "GluSynapse": GluSynapse,
-        "GabaSynapse": GabaSynapse,
-        "GabaSynTmHill" : GabaSynTmHill,
         "GABAAsynTM": GABAAsynTM,
+        "GabaSynTm2": GabaSynTm2,
     }
 
     ############################################################################
@@ -599,39 +618,55 @@ def run_simple_net(
     print("rank {}: starting phase GPE AFFERENTS.".format(mpi_rank))
 
     #---------------------------------------------------------------------------
-    # STN -> GPE (excitatory)  
+    # STN -> GPE (excitatory)
 
-    stn_gpe_EXC = sim.Projection(pop_stn, asm_gpe, 
-        connector=connector_from_config('STN', 'GPE.all', shared_rng_pynn),
-        synapse_type=synapse_from_config('STN', 'GPE.all'),
+    # stn_gpe_all = sim.Projection(pop_stn, asm_gpe, 
+    #     connector=connector_from_config('STN', 'GPE.all', shared_rng_pynn),
+    #     synapse_type=synapse_from_config('STN', 'GPE.all'),
+    #     receptor_type='distal.AMPA+NMDA')
+
+    # all_proj['STN']['GPE.all'] = stn_gpe_all
+
+    # Cannot connect to GPE.all because it contains spike generators
+    stn_gpe_proto = sim.Projection(pop_stn, pop_gpe_proto, 
+        connector=connector_from_config('STN', 'GPE.proto', shared_rng_pynn),
+        synapse_type=synapse_from_config('STN', 'GPE.proto'),
         receptor_type='distal.AMPA+NMDA')
 
-    all_proj['STN']['GPE.all'] = stn_gpe_EXC
+    all_proj['STN']['GPE.proto'] = stn_gpe_proto
+
+    stn_gpe_arky = sim.Projection(pop_stn, pop_gpe_arky, 
+        connector=connector_from_config('STN', 'GPE.arky', shared_rng_pynn),
+        synapse_type=synapse_from_config('STN', 'GPE.arky'),
+        receptor_type='distal.AMPA+NMDA')
+
+    all_proj['STN']['GPE.arky'] = stn_gpe_arky
 
     #---------------------------------------------------------------------------
     # GPE -> GPE (inhibitory)
 
-    # Distance-calculation: wrap-around in along x-axis
-    x_max = asm_gpe.size * gpe_grid.dx
-    gpe_gpe_space = space.Space(periodic_boundaries=((0, x_max), None, None))
+    gpe_gpe_proto = sim.Projection(asm_gpe, pop_gpe_proto, 
+        connector=connector_from_config('GPE.all', 'GPE.proto', shared_rng_pynn),
+        synapse_type=synapse_from_config('GPE.all', 'GPE.proto'),
+        receptor_type='proximal.GABAA+GABAB')
 
-    gpe_gpe_INH = sim.Projection(asm_gpe, asm_gpe, 
-        connector=connector_from_config('GPE.all', 'GPE.all', shared_rng_pynn),
-        synapse_type=synapse_from_config('GPE.all', 'GPE.all'),
-        receptor_type='proximal.GABAA+GABAB',
-        space=gpe_gpe_space)
+    gpe_gpe_arky = sim.Projection(asm_gpe, pop_gpe_arky, 
+        connector=connector_from_config('GPE.all', 'GPE.arky', shared_rng_pynn),
+        synapse_type=synapse_from_config('GPE.all', 'GPE.arky'),
+        receptor_type='proximal.GABAA+GABAB')
 
-    all_proj['GPE.all']['GPE.all'] = gpe_gpe_INH
+    all_proj['GPE.all']['GPE.proto'] = gpe_gpe_proto
+    all_proj['GPE.all']['GPE.arky'] = gpe_gpe_arky
 
     #---------------------------------------------------------------------------
     # STR -> GPE (inhibitory)
 
-    str_gpe_INH = sim.Projection(pop_msn, pop_gpe_proto,
+    str_gpe_proto = sim.Projection(pop_msn, pop_gpe_proto,
         connector=connector_from_config('STR.MSN', 'GPE.proto', rng=shared_rng_pynn),
         synapse_type=synapse_from_config('STR.MSN', 'GPE.proto'),
         receptor_type='proximal.GABAA+GABAB')
 
-    all_proj['STR.MSN']['GPE.proto'] = str_gpe_INH
+    all_proj['STR.MSN']['GPE.proto'] = str_gpe_proto
 
     ############################################################################
     # ALL -> STN
@@ -683,6 +718,26 @@ def run_simple_net(
 
     all_proj['STN']['STN'] = stn_stn_EXC
 
+    #---------------------------------------------------------------------------
+    # Sanity check: make sure all populations and projections are instantiated
+
+    undefined_pops = [cpop for cpop in config_pop_labels if (
+                        cpop not in all_pops and cpop not in all_asm)]
+    undefined_proj = [(pre, post) for (post, pre) in config.items() if (
+                        (pre in config_pop_labels and post in config_pop_labels)
+                        and (pre not in all_proj or post not in all_proj[pre]))]
+
+    err_msg = ''
+    if len(undefined_pops) > 0:
+        err_msg += ("\nFollowing populations in config file were not "
+                    "instantiated in simulator: {}".format(undefined_pops))
+
+    if len(undefined_proj) > 0:
+        err_msg += ("\nFollowing projections in config file were not "
+                    "instantiated in simulator: {}".format(undefined_proj))
+
+    if err_msg:
+        raise Exception(err_msg)
 
     ############################################################################
     # RECORDING
@@ -691,6 +746,7 @@ def run_simple_net(
 
     traces_biophys = {
         'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
+        # Can use SynMech[a:b:c]
         # 'gAMPA{:d}': {'syn':'GLUsyn[0]', 'var':'g_AMPA'},
         # 'gNMDA{:d}': {'syn':'GLUsyn[::2]', 'var':'g_NMDA'},
         # 'gGABAA{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAA'},
@@ -768,7 +824,7 @@ def run_simple_net(
                 os.system("echo [{}]: {} >> {}".format(stamp, progress, progress_file))
 
         # Write recorded data
-        if abs(sim.state.t - write_times[-1]) <= 5.0:
+        if len(write_times) > 0 and abs(sim.state.t - write_times[-1]) <= 5.0:
             suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
             for pop in all_pops.values():
                 write_population_data(pop, output, suffix, gather=True, clear=True)
@@ -787,8 +843,9 @@ def run_simple_net(
 
     # Final write of recorded variables
     suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
-    for pop in all_pops.values():
-        write_population_data(pop, output, suffix, gather=True, clear=True)
+    if sim.state.t - last_write_time > (report_interval + 5.0):
+        for pop in all_pops.values():
+            write_population_data(pop, output, suffix, gather=True, clear=True)
 
 
     ############################################################################
@@ -810,7 +867,10 @@ def run_simple_net(
                 proj.pre.label, proj.post.label) + utf_matrix)
 
             # This does an mpi gather() on all the parameters
-            pre_post_params = np.array(proj.get(["delay", "weight"], format="list", 
+            conn_params = ["delay", "weight"]
+            gsyn_params = ['gmax_AMPA', 'gmax_NMDA', 'gmax_GABAA', 'gmax_GABAB']
+            conn_params.extend([p for p in gsyn_params if p in proj.synapse_type.default_parameters])
+            pre_post_params = np.array(proj.get(conn_params, format="list", 
                                        gather='all', multiple_synapses='sum'))
             mind = min(pre_post_params[:,2])
             maxd = max(pre_post_params[:,2])
@@ -825,7 +885,8 @@ def run_simple_net(
             # Append to saved dictionary
             proj_params = saved_params[pre_pop].setdefault(post_pop, {})
             proj_params['conn_matrix'] = float_matrix
-            proj_params['weight_delay_list'] = pre_post_params
+            proj_params['conpair_pvals'] = pre_post_params
+            proj_params['conpair_pnames'] = conn_params
 
 
     # Write model parameters
@@ -893,6 +954,14 @@ if __name__ == '__main__':
                         dest='calculate_lfp', action='store_false',
                         help='Calculate Local Field Potential.')
     parser.set_defaults(calculate_lfp=None)
+
+    parser.add_argument('--dd',
+                        dest='dopamine_depleted', action='store_true',
+                        help='Set dopamine depleted condition.')
+    parser.add_argument('--dnorm',
+                        dest='dopamine_depleted', action='store_false',
+                        help='Set dopamine normal condition.')
+    parser.set_defaults(dopamine_depleted=None)
 
     parser.add_argument('-g', '--gui',
                         dest='with_gui',

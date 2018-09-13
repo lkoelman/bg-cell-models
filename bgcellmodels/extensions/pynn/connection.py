@@ -317,6 +317,18 @@ class ConnectionNrnWrapped(Connection):
             super(ConnectionNrnWrapped, self).__setattr__(name, value)
 
 
+    def __getattr__(self, name):
+        """
+        Called as last resort if property not found.
+        """
+        if hasattr(self, 'synapse_type') and (name in self.synapse_type.get_parameter_names()):
+            pinfo = self.synapse_type.translations[name]
+            pname = pinfo['translated_name']
+            return getattr(self.synapse, pname)
+        else:
+            return super(ConnectionNrnWrapped, self).__getattr__(name)
+
+
     def _setup_nrn_synapse(self, synapse_type, parameters):
         """
         Set parameters on the NEURON synapse object.
@@ -624,7 +636,7 @@ class GABAAsynTM(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
         ('tau_facil', 'tau_facil'),     # time constant of facilitation
         ('U1', 'U1'),                   # baseline release probability
         # Reversal potentials
-        ('Erev_GABAA', 'Erev_GABAA'),                     # GABAA and GABAB reversal potential
+        ('Erev_GABAA', 'Erev_GABAA'),
     )
 
     default_parameters = {
@@ -637,6 +649,61 @@ class GABAAsynTM(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
         'tau_rec':      200.0,
         'tau_facil':    200.0,
         'U1':           0.5,
+    }
+
+    def _get_minimum_delay(self):
+        return state.min_delay
+
+
+class GabaSynTm2(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
+    """
+    Wrapper for NEURON GABAsynTM2 mechanism defined in .mod file
+    """
+
+    connection_type = ConnectionNrnWrapped
+    model = 'GABAsynTM2'
+
+    # PyNN internal name to NEURON name
+    translations = build_translations(
+        # NetCon parameters
+        ('weight', 'weight'),
+        ('delay', 'delay'),
+        # Conductance time course
+        ('gmax_GABAA', 'gmax_GABAA'),
+        ('tau_r_GABAA', 'tau_r_GABAA'),
+        ('tau_d_GABAA', 'tau_d_GABAA'),
+        ('gmax_GABAB', 'gmax_GABAB'),
+        ('tau_r_GABAB', 'tau_r_GABAB'),
+        ('tau_d_GABAB', 'tau_d_GABAB'),
+        # Short-term Depression/Facilitation
+        ('tau_rec_A', 'tau_rec_A'),         # time constant of recovery from depression
+        ('tau_facil_A', 'tau_facil_A'),     # time constant of facilitation
+        ('U1_A', 'U1_A'),                   # baseline release probability
+        ('tau_rec_B', 'tau_rec_B'),         # time constant of recovery from depression
+        ('tau_facil_B', 'tau_facil_B'),     # time constant of facilitation
+        ('U1_B', 'U1_B'),                   # baseline release probability
+        # Reversal potentials
+        ('Erev_GABAA', 'Erev_GABAA'),
+        ('Erev_GABAB', 'Erev_GABAB'),
+    )
+
+    default_parameters = {
+        'weight':     1.0,
+        'delay':      0.5,
+        'tau_r_GABAA':   0.2,
+        'tau_d_GABAA':   1.7,
+        'tau_rec_A':      200.0,
+        'tau_facil_A':    200.0,
+        'U1_A':           0.5,
+        'Erev_GABAA':   -80.0,
+        'gmax_GABAA':    0.001,
+        'tau_r_GABAB':   5.0,
+        'tau_d_GABAB':   25.0,
+        'tau_rec_B':      5.0,
+        'tau_facil_B':    100.0,
+        'U1_B':           0.05,
+        'Erev_GABAB':   -95.0,
+        'gmax_GABAB':    0.001,
     }
 
     def _get_minimum_delay(self):
