@@ -909,7 +909,7 @@ def run_simple_net(
     # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
     #       - cannot perform any gather() operations before initializing MPI transfer
     #       - must do gather() operations on all nodes
-    saved_params = {}
+    saved_params = {'dopamine_depleted': DD}
     for pre_pop, post_pops in all_proj.iteritems():
         saved_params.setdefault(pre_pop, {})
         for post_pop, proj in post_pops.iteritems():

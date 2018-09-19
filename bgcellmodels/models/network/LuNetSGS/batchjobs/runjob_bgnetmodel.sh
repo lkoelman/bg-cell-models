@@ -40,7 +40,7 @@
 # JOB SCRIPT
 ################################################################################
 
-# Execute using:
+# Example shell command:
 # >>> qsub runjob_lucastest.sh -l walltime=00:45:00 \
 # >>> -v ncell=100,dur=10000,seed=15203008,\
 # >>> config=~/workspace/bgcellmodels/models/KlmnNetMorpho/configs/simple_config.json,
@@ -69,15 +69,14 @@ model="${model_dir}/${model_script}"
 config_file="configs/${config}"
 model_config="${model_dir}/${config_file}"
 
-# Command to be evaluated
+# Command with minimum required arguments
 mpi_command="mpirun -n 12 python ${model} \
 --scale 1.0 --dur ${dur} \
---transient-period 0.0 --write-interval 27e3 \
 --no-gui --progress --config ${model_config} \
 --outdir ${outdir} -id ${PBS_JOBID}"
 
 # Optional arguments passed to python script
-opt_names=("seed" "burst" "write-interval" "transient-period")
+opt_names=("seed" "write-interval" "transient-period")
 for optname in "${opt_names[@]}"; do
     if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} --${optname} ${!optname}"

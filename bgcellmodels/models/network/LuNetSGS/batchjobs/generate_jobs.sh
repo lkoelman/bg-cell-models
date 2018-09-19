@@ -21,7 +21,8 @@ for conf in "${configs[@]}"; do
     for seed in {0..0}; do
         qsub_command="qsub ${job_script} \
 -l walltime=2:30:00 \
--v ncell=100,dur=26000,seed=$((start_seed+seed)),config=${conf}"
+-v dur=26000,seed=$((start_seed+seed)),config=${conf},\
+transient-period=0.0,write-interval=26000"
 
         echo -e "Submitting qsub command:\n> $qsub_command"
         eval $qsub_command

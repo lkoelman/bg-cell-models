@@ -38,13 +38,18 @@
             "locals": null, // use local_context
         },
         // Parameters for bursting neurons
-        "bursting_fraction": 0.0, // fraction of bursting cells
+        "bursting_fraction": 0.33, // fraction of bursting cells
         "T_burst": 50.0,
-        "dur_burst": 20.0,
+        "dur_burst": 25.0,
         "f_intra": 150.0,
         "f_inter": 5.0,
         "synchronous": true, // whether bursts occur synchronously
-        "burst_intervals": [[500.0, 650.0], [1250.0, 1500.0]], // set to None for continuous
+        "burst_intervals": [ // set to None for continuous
+            [1000.0, 1250.0],
+            [2000.0, 2500.0], 
+            [3500.0, 4500.0],
+            [6500.0, 8500.0]
+        ],
         "randomize_bursting_cells": true, // pick random bursting cells in each interval
     },
 // =============================================================================
@@ -77,7 +82,7 @@
                     "tau_facil":    100.0, // [ms] recovery from facilitation
                     // AMPA receptor
                     "gmax_AMPA":    {
-                        "statement": "RandomDistribution('normal', mu=(1 + 0.2*DD)*gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "statement": "RandomDistribution('normal', mu=(1 + 0.25*DD)*gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
                         "locals": {
                             "gmax_base": 6.0e-5, // [uS], adjusted for U1
                         },
@@ -87,7 +92,7 @@
                     "tau_d_AMPA":   4.0, // [ms] decay time
                     // NMDA receptor
                     "gmax_NMDA":    {
-                        "statement": "RandomDistribution('normal', mu=(1 + 0.2*DD)*gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "statement": "RandomDistribution('normal', mu=(1 + 0.25*DD)*gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
                         "locals": {
                             "gmax_base": 1.5e-5, // [uS], adjusted for U1
                         },
@@ -353,7 +358,7 @@
                     "tau_facil":    800.0, // [ms] recovery from facilitation
                     // AMPA receptor
                     "gmax_AMPA":    {
-                        "statement": "(1 + 1.2*DD)*gmax_base",
+                        "statement": "(1 + 0.5*DD)*gmax_base",
                         "locals": {
                             "gmax_base": 0.25e-3,
                         },
@@ -363,7 +368,7 @@
                     "tau_d_AMPA":   4.0, // [ms] decay time
                     // NMDA receptor
                     "gmax_NMDA":    {
-                        "statement": "(1 + 1.2*DD)*gmax_base",
+                        "statement": "(1 + 0.5*DD)*gmax_base",
                         "locals": {
                             "gmax_base": 0.0, // 0.25e-3,
                         },
@@ -398,14 +403,20 @@
                     "gmax_GABAA": {
                         "statement": "(1 + 0.5*DD)*gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
-                            "gmax_base": 0.2e-3, // [uS], adjusted for U1
+                            "gmax_base": 0.15e-3, // [uS], adjusted for U1
                         },
                         "globals": {},
                     },
                     "tau_r_GABAA":   2.0, // [ms] rise time
                     "tau_d_GABAA":   5.0, // [ms] decay time
                     // GABA-B receptor
-                    "gmax_GABAB":    0.04e-3, // [uS], adjusted for U1
+                    "gmax_GABAB": {
+                        "statement": "(1 + 0.25*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 0.03e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
                     "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
                     "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
                     "KD":            0.35,  // half-maximum of sigmoid(G)
@@ -513,14 +524,20 @@
                     "gmax_GABAA": {
                         "statement": "(1 + 0.5*DD)*gmax_base",
                         "locals": {
-                            "gmax_base": 0.6e-3, // [uS], adjusted for U1
+                            "gmax_base": 0.5e-3, // [uS], adjusted for U1
                         },
                         "globals": {},
                     },
                     "tau_r_GABAA":   2.0, // [ms] rise time
                     "tau_d_GABAA":   5.0, // [ms] decay time
                     // GABA-B receptor
-                    "gmax_GABAB":    0.12e-3, // [uS], adjusted for U1
+                    "gmax_GABAB": {
+                        "statement": "(1 + 0.35*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 0.1e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
                     "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
                     "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
                     "KD":            0.35,  // half-maximum of sigmoid(G)
@@ -575,7 +592,7 @@
                     "gmax_GABAA": {
                         "statement": "(1 + 0.5*DD) * gmax_base",
                         "locals": {
-                            "gmax_base": 1.4e-2,
+                            "gmax_base": 12e-3,
                         },
                         "globals": {},
                     },
@@ -588,7 +605,7 @@
                     "gmax_GABAB": {
                         "statement": "(1 + 0.5*DD) * gmax_base",
                         "locals": {
-                            "gmax_base": 0.35e-2,
+                            "gmax_base": 3e-3,
                         },
                         "globals": {},
                     },
@@ -617,7 +634,7 @@
                     "gmax_GABAA": {
                         "statement": "(1 + 0.5*DD) * gmax_base",
                         "locals": {
-                            "gmax_base": 1.4e-2,
+                            "gmax_base": 12e-3,
                         },
                         "globals": {},
                     },
@@ -630,7 +647,7 @@
                     "gmax_GABAB": {
                         "statement": "(1 + 0.5*DD) * gmax_base",
                         "locals": {
-                            "gmax_base": 0.35e-2,
+                            "gmax_base": 3e-3,
                         },
                         "globals": {},
                     },
@@ -658,7 +675,7 @@
                     "tau_facil":    800.0, // [ms] recovery from facilitation
                     // AMPA receptor
                     "gmax_AMPA": {
-                        "statement": "(1 + 1.0*DD) * gmax_base", // factor 1.5 in DA-depleted condition
+                        "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
                             "gmax_base": 8e-3, // [uS], adjusted for U1
                         },
@@ -668,7 +685,7 @@
                     "tau_d_AMPA":   4.0, // [ms] decay time
                     // NMDA receptor
                     "gmax_NMDA": {
-                        "statement": "(1 + 1.0*DD) * gmax_base", // factor 1.5 in DA-depleted condition
+                        "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
                             "gmax_base": 8e-3, // [uS], adjusted for U1
                         },
