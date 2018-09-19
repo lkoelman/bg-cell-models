@@ -1093,7 +1093,7 @@ if __name__ == '__main__':
     # Copy config file to output directory
     if mpi_rank == 0:
         import shutil
-        shutil.copy2(config_file, out_fulldir)
+        shutil.copy2(config_file, os.path.join(out_fulldir, 'sim_config.json'))
     
     # Run the simulation
     run_simple_net(**parsed_dict)

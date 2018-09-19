@@ -40,7 +40,7 @@
         // Parameters for bursting neurons
         "bursting_fraction": 0.33, // fraction of bursting cells
         "T_burst": 50.0,
-        "dur_burst": 25.0,
+        "dur_burst": 20.0,
         "f_intra": 150.0,
         "f_inter": 5.0,
         "synchronous": true, // whether bursts occur synchronously
