@@ -177,6 +177,55 @@ def make_variable_bursts(
             continue
 
 
+def generate_bursts_during(intervals, T_burst, dur_burst, f_intra, f_inter, 
+                           f_background, duration, max_overshoot=0.25, rng=None):
+    """
+    Make spiketrain that bursts during specific intervals.
+    """
+    T_intra, T_inter, T_background = 1e3/f_intra, 1e3/f_inter, 1e3/f_background
+    # TODO: check multiplicative properties of exponential distribution
+    # normalized_ISI = rng.exponential(1.0, 
+    #     size=max(10, int(2*duration/min(T_intra, T_inter, T_background))))
+    i_isi = 0
+
+    t = 0.0
+    intervals_fifo = list(sorted(intervals)) + [None]
+    ival = intervals_fifo.pop(0) # next or current interval
+    while t < duration:
+        while (ival is not None) and (t > ival[1]):
+            ival = intervals_fifo.pop(0)
+        if (ival is not None) and (ival[0] <= t < ival[1]):
+            # we are inside bursty interval
+            j = (t-ival[0]) // T_burst # we are in the j-th cycle
+            t0_cycle = ival[0] + j * T_burst
+            in_burst = (t0_cycle <= t < (t0_cycle + dur_burst))
+            if in_burst:
+                # We are intra-burst, during a bursty period
+                t += rng.normal(T_intra, 0.1*T_intra)
+                i_isi += 1
+                yield t
+            else:
+                # We are inter-burst, during a bursty period
+                end_cycle = t0_cycle + T_burst
+                dt = T_inter * rng.exponential(T_inter)
+                if t + dt < (end_cycle + max_overshoot*dur_burst):
+                    t += dt
+                    i_isi += 1
+                else:
+                    # if overshoot: randomize time inside burst period
+                    t = end_cycle + max_overshoot*dur_burst*rng.uniform(0,1)
+                yield t
+        else:
+            # We are outside bursty interval
+            dt = rng.exponential(T_background)
+            if (ival is not None) and (ival[0] <= t+dt < ival[1]):
+                t = ival[0] + max_overshoot*dur_burst*rng.uniform(0,1)
+            else:
+                t += dt
+                i_isi += 1
+            yield t
+
+
 def generate_modulated_spiketimes(
         sig_mod, Ts_mod, rate_max, rate_min, 
         dist='normal', rng=None, **kwargs):

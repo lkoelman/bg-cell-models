@@ -85,7 +85,7 @@ make_divergent_pattern = connectivity.make_divergent_pattern
 #from bgcellmodels.cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from bgcellmodels.cellpopdata.cellpopdata import CellConnector
 
-from bgcellmodels.common.spikelib import make_oscillatory_bursts, make_variable_bursts
+from bgcellmodels.common import spikelib
 from bgcellmodels.common.configutil import eval_params
 from bgcellmodels.common.stdutil import getdictvals
 from bgcellmodels.common import logutils, fileutils
@@ -137,9 +137,9 @@ def make_bursty_spike_generator(bursting_fraction, synchronous, rng,
     Make generator function that returns bursty spike sequences.
     """
     if synchronous:
-        make_bursts = make_oscillatory_bursts
+        make_bursts = spikelib.make_oscillatory_bursts
     else:
-        make_bursts = make_variable_bursts
+        make_bursts = spikelib.make_variable_bursts
 
     def spike_seq_gen(cell_indices):
         """
@@ -174,6 +174,50 @@ def make_bursty_spike_generator(bursting_fraction, synchronous, rng,
             spiketimes_for_index.append(spiketimes)
         return spiketimes_for_index
 
+    return spike_seq_gen
+
+
+def bursty_spiketrains_during(intervals, bursting_fraction, 
+                          T_burst, dur_burst, f_intra, f_inter, f_background, 
+                          duration, randomize_bursting, rng):
+    """
+    Make spiketrains where a given fraction fires synchronized bursts during
+    each interval.
+    """
+
+    def spike_seq_gen(cell_indices):
+        """
+        Spike sequence generator
+        """
+        # First pick bursting cells during each bursty interval
+        num_bursting = int(bursting_fraction * len(cell_indices))
+        num_intervals = len(intervals)
+        if randomize_bursting:
+            bursting_ids = [rng.choice(cell_indices, num_bursting, replace=False) 
+                                for i in range(num_intervals)]
+        else:
+            bursting_ids = [rng.choice(cell_indices, num_bursting, replace=False)] * num_intervals
+
+        spiketimes_for_index = []
+        for i in cell_indices:
+            burst_intervals = [intervals[j] for j in range(num_intervals) if i in bursting_ids[j]]
+            
+            if len(burst_intervals) > 0:
+                # Spiketimes for bursting cells
+                spikegen = spikelib.generate_bursts_during(burst_intervals, 
+                                T_burst, dur_burst, f_intra, f_inter, 
+                                f_background, duration, max_overshoot=0.25, rng=rng)
+                spiketimes = Sequence(np.fromiter(spikegen, float))
+            else:
+                # Spiketimes for background activity
+                number = int(2 * duration * f_background / 1e3)
+                if number == 0:
+                    spiketimes = Sequence([])
+                else:
+                    spiketimes = Sequence(np.add.accumulate(
+                        rng.exponential(1e3/f_background, size=number)))
+            spiketimes_for_index.append(spiketimes)
+        return spiketimes_for_index
     return spike_seq_gen
 
 
@@ -498,12 +542,20 @@ def run_simple_net(
         'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'f_background')
     synchronous, bursting_fraction, ctx_pop_size = get_pop_parameters(
         'CTX', 'synchronous', 'bursting_fraction', 'base_population_size')
+    burst_intervals, randomize_bursting = get_pop_parameters(
+        'CTX', 'burst_intervals', 'randomize_bursting_cells')
 
     # Command line args can override Beta frequency from config
     if burst_frequency is not None:
         T_burst = 1.0 / burst_frequency * 1e3
 
-    ctx_spike_generator = make_bursty_spike_generator(
+    if burst_intervals is not None:
+        ctx_spike_generator = bursty_spiketrains_during(
+                                burst_intervals, bursting_fraction, 
+                                T_burst, dur_burst, f_intra, f_inter, f_background, 
+                                sim_dur, randomize_bursting, rank_rng)
+    else:
+        ctx_spike_generator = make_bursty_spike_generator(
                                 bursting_fraction=bursting_fraction, 
                                 synchronous=synchronous, rng=rank_rng,
                                 T_burst=T_burst, dur_burst=dur_burst, 
@@ -543,6 +595,7 @@ def run_simple_net(
         "GluSynapse": GluSynapse,
         "GABAAsynTM": GABAAsynTM,
         "GabaSynTm2": GabaSynTm2,
+        "GabaSynTmHill" : GabaSynTmHill, # Desthexhe-like signaling pathway
     }
 
     ############################################################################
