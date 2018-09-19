@@ -398,14 +398,14 @@
                     "gmax_GABAA": {
                         "statement": "(1 + 0.5*DD)*gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
-                            "gmax_base": 0.355e-3, // [uS], adjusted for U1
+                            "gmax_base": 0.2e-3, // [uS], adjusted for U1
                         },
                         "globals": {},
                     },
                     "tau_r_GABAA":   2.0, // [ms] rise time
                     "tau_d_GABAA":   5.0, // [ms] decay time
                     // GABA-B receptor
-                    "gmax_GABAB":    0.075e-3, // [uS], adjusted for U1
+                    "gmax_GABAB":    0.04e-3, // [uS], adjusted for U1
                     "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
                     "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
                     "KD":            0.35,  // half-maximum of sigmoid(G)
@@ -513,14 +513,14 @@
                     "gmax_GABAA": {
                         "statement": "(1 + 0.5*DD)*gmax_base",
                         "locals": {
-                            "gmax_base": 1.125e-3, // [uS], adjusted for U1
+                            "gmax_base": 0.6e-3, // [uS], adjusted for U1
                         },
                         "globals": {},
                     },
                     "tau_r_GABAA":   2.0, // [ms] rise time
                     "tau_d_GABAA":   5.0, // [ms] decay time
                     // GABA-B receptor
-                    "gmax_GABAB":    0.225e-3, // [uS], adjusted for U1
+                    "gmax_GABAB":    0.12e-3, // [uS], adjusted for U1
                     "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
                     "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
                     "KD":            0.35,  // half-maximum of sigmoid(G)

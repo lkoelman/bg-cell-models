@@ -1089,6 +1089,11 @@ if __name__ == '__main__':
     if not os.path.isdir(out_fulldir) and mpi_rank == 0:
         os.mkdir(out_fulldir)
     parsed_dict['output'] = os.path.join(out_fulldir, filespec)
+
+    # Copy config file to output directory
+    if mpi_rank == 0:
+        import shutil
+        shutil.copy2(config_file, out_fulldir)
     
     # Run the simulation
     run_simple_net(**parsed_dict)
