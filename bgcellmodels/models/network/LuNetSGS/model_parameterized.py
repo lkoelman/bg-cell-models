@@ -664,7 +664,7 @@ def run_simple_net(
         synapse_type=synapse_from_config('GPE.arky', 'STR.FSI'),
         receptor_type='proximal.GABAA')
 
-    all_proj['GPE.arky']['STR.FSI'] = fsi_fsi_INH
+    all_proj['GPE.arky']['STR.FSI'] = gpe_fsi_INH
 
     ############################################################################
     # ALL -> GPE
