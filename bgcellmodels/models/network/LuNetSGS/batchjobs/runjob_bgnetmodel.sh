@@ -5,7 +5,7 @@
 ################################################################################
 
 # Set the number of nodes & processors per node
-#PBS -l nodes=1:ppn=24
+#PBS -l nodes=1:ppn=12
 
 # Set the walltime of the job to 1 hour (format is hh:mm:ss)
 # - walltime for 100 cells/populations is sim_time * 2031.75 / 10.000 * 1.25 [seconds]
@@ -18,7 +18,7 @@
 
 # Working directory where submitted script will be executed ($PBS_O_INITDIR)
 # This must be a full path.
-#PBS -d /home/people/15203008/workspace/bgcellmodels/bgcellmodels/models/network/KlmnNetMorpho
+#PBS -d /home/people/15203008/workspace/bgcellmodels/bgcellmodels/models/network/LuNetSGS
 
 # Specifies the jobname. The default name is the script name (basename)
 ## PBS -N BG_network_model

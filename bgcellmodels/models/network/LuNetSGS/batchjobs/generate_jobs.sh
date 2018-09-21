@@ -1,28 +1,26 @@
 #!/bin/bash -l
 
-model_dir="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/KlmnNetMorpho"
+model_dir="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/LuNetSGS"
 job_script="${model_dir}/batchjobs/runjob_bgnetmodel.sh"
 
 # Config files you want to repeat with different seeds
 # configs=( \
 #     "config.json" \
 # )
-outputs_clipboard="q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x0.0.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x0.5.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x0.25.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x0.75.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x1.5.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x2.0.json"
+outputs_clipboard="q3_test-pacemaker_poisson/DD_net-full_poisson-2.5hz.json
+q3_test-pacemaker_poisson/DD_net-no-arkyloop_poisson-2.5hz.json
+q3_test-pacemaker_poisson/DNORM_net-full_poisson-2.5hz.json
+q3_test-pacemaker_poisson/DNORM_net-no-arkyloop_poisson-2.5hz.json"
 readarray -t configs <<< "${outputs_clipboard}"
 
-start_seed=888
+start_seed=777
 
 for conf in "${configs[@]}"; do
     for seed in {0..0}; do
         qsub_command="qsub ${job_script} \
--l walltime=2:30:00 \
--v dur=26000,seed=$((start_seed+seed)),config=${conf},\
-transient-period=0.0,write-interval=26000"
+-l walltime=1:00:00 \
+-v seed=$((start_seed+seed)),config=${conf},\
+dur=10e3,transient-period=0.0,write-interval=10e3"
 
         echo -e "Submitting qsub command:\n> $qsub_command"
         eval $qsub_command
