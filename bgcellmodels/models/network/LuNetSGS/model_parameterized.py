@@ -839,7 +839,7 @@ def run_simple_net(
 
     # Times for writing out data to file
     if transient_period is None:
-        transient_period = 1000.0 # (ms)
+        transient_period = 0.0 # (ms)
     steady_period = sim_dur - transient_period
     if max_write_interval is None:
         max_write_interval = 10e3 # (ms)

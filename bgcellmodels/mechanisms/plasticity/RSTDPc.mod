@@ -71,14 +71,14 @@ ASSIGNED {
 	wsyn				: weight of the synapse
 	t0					: time of last update
 	DA					: global dopamine concentration
-}
 
-STATE {
+	: State variables (STATE but without DERIVATIVE block)
 	M					: LTD/anti-Hebbian part of eligibility trace (trace for post-synaptic spikes) will be NEGATIVE
 	P					: LTP/Hebbian part of eligibility trace (trace for pre-synaptic spikes) will be POSITIVE
 	e_trace				: Synaptic eligibility trace (a.k.a. synaptic tag)
 	delta				: Time step
 }
+
 
 INITIAL {
 	M = 0
