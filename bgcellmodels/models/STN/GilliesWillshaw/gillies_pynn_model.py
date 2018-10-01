@@ -235,6 +235,16 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
                 if is_distal(seg):
                     self._cached_region_segments['distal'].append(seg)
 
+        # Preallocate synapses that will be shared/re-used between afferents.
+        # We create one GABA-B synapse in each of the tree trunk sections
+        # of the STN cable model.
+        # TODO: uncomment below when synapse re-use implemented in Connection
+        # trunk_secs = [self.icell.dend0[1], self.icell.dend0[2], self.icell.dend1[0]]
+        # prox_gabab_syns = self._synapses['proximal'].setdefault('GABAB', [])
+        # for sec in trunk_secs:
+        #     syn = getattr(h, self.default_GABA_mechanism)(sec(0.8))
+        #     prox_gabab_syns.append(syn)
+
 
     def get_synapses(self, region, receptors, num_contacts, **kwargs):
         """

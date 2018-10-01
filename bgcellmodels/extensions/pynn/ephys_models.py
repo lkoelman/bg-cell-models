@@ -396,6 +396,15 @@ class PynnCellModelBase(object):
         return [getattr(h, mech_name)(region_segs[i]) for i in seg_ids]
 
 
+    def get_synapses_lazy(self, region, receptors, num_synapses, **kwargs):
+        """
+        Get synapses in region for all given receptors.
+        Attempts to re-use existing synapses and only creates new synapses
+        if no synapses are available.
+        """
+        pass # TODO: synapse re-use
+
+
     def make_new_synapse(self, receptors, segment, mechanism=None):
         """
         Make a new synapse that implements given receptors in the
