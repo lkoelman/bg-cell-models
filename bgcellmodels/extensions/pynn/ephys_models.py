@@ -27,6 +27,8 @@ from pyNN.neuron import state as nrn_state, h
 from pyNN.neuron.cells import NativeCellType
 import quantities as pq
 
+from bgcellmodels.common import nrnutil
+
 import logging
 logger = logging.getLogger('ephys_models')
 
@@ -546,7 +548,8 @@ class PynnCellModelBase(object):
         @return     synapse_list : list(synapse)
                     List of synapses in region
         """
-        return sum((synlist for region in self._synapses.values() for recs, synlist in region.items()), [])
+        all_syns = sum((synlist for region in self._synapses.values() for recs, synlist in region.items()), [])
+        return [syn for syn in all_syns if nrnutil.get_mod_name(syn) == mechanism]
 
 
     def resolve_synapses(self, spec):

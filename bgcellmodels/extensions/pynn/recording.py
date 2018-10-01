@@ -25,6 +25,17 @@ class TraceSpecRecorder(Recorder):
     @see        Based on NetPyne's Cell.RecordTraces in file:
                 https://github.com/Neurosim-lab/netpyne/blob/master/netpyne/cell.py
 
+    DEVNOTES
+    --------
+
+    See common Population and Recorder class for method chains involved
+    in recording and writing traces:
+    
+    https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/common/populations.py
+    https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/recording/__init__.py
+
+        - sampling_interval is common to all traces/signals of the recorder
+
     USAGE
     -----
 
@@ -138,6 +149,7 @@ class TraceSpecRecorder(Recorder):
             return # was implemented in _record() -> don't execute rest of body
 
         elif trace_spec == 'lfp':
+            # assume cell has attribute 'lfp_tracker'
             vec = h.Vector()
             pp = cell.lfp_tracker.summator
             hoc_ref = cell.lfp_tracker.summator._ref_summed

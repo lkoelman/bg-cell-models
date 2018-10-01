@@ -797,9 +797,10 @@ def run_simple_net(
     ############################################################################
     print("rank {}: starting phase RECORDING.".format(mpi_rank))
 
+    # Default traces
     traces_biophys = {
         'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
-        # Can use SynMech[a:b:c]
+        # Can use SynMech[a:b:c], key must be formattable with index.
         # 'gAMPA{:d}': {'syn':'GLUsyn[0]', 'var':'g_AMPA'},
         # 'gNMDA{:d}': {'syn':'GLUsyn[::2]', 'var':'g_NMDA'},
         # 'gGABAA{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAA'},
@@ -814,6 +815,32 @@ def run_simple_net(
 
     if calculate_lfp:
         pop_stn.record(['lfp'], sampling_interval=.05)
+
+    # Traces defined in config file
+    for pop_label, pop_config in config.iteritems():
+        if 'traces' not in pop_config:
+            continue
+        if pop_label in all_pops:
+            target_pop = all_pops[pop_label]
+        elif pop_label in all_asm:
+            target_pop = all_asm[pop_label]
+        else:
+            raise ValueError("Unknown population to record from: {}".format(pop_label))
+        
+        # Translate trace group specifier to Population.record() call
+        for trace_group in pop_config['traces']:
+            pop_sample = trace_group['cells']
+            if isinstance(pop_sample, int):
+                target_cells = target_pop.sample(pop_sample)
+            elif isinstance(pop_sample, str):
+                slice_args = [int(i) if i!='' else None for i in pop_sample.split(':')]
+                target_cells = target_pop[slice(*slice_args)]
+            elif isinstance(pop_sample, list):
+                target_cells = target_pop[pop_sample]
+            else:
+                raise ValueError("Cannot interpret cell indices '{}'".format(pop_sample))
+            target_cells.record(trace_group['specs'].items(),
+                                sampling_interval=trace_group['sampling_period'])
 
     
     ############################################################################
