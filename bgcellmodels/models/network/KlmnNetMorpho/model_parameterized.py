@@ -24,8 +24,8 @@ To run using MPI, you can use the following command:
 
 To do a test run using IPython, use something like:
 
->>> %run model_parameterized.py --ncell 25 --dur 500 --transient-period 0.0 \
->>> --write-interval 1000 --no-gui -id test1 \
+>>> %run model_parameterized.py --ncell 25 --dur 500 --seed 888 -id test1 \
+>>> --transient-period 0.0 --write-interval 1000 --no-gui \
 >>> --config myconfig.json --outdir ~/storage
 
 
@@ -591,13 +591,20 @@ def run_simple_net(
 
     traces_allpops = {
         'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
-        'gAMPA{:d}': {'syn':'GLUsyn[0]', 'var':'g_AMPA'},
+        # 'gAMPA{:d}': {'syn':'GLUsyn[0]', 'var':'g_AMPA'},
         # 'gNMDA{:d}': {'syn':'GLUsyn[::2]', 'var':'g_NMDA'},
         # 'gGABAA{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAA'},
         # 'gGABAB{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAB'},
     }
     for pop in [pop_gpe, pop_stn]:
         pop.record(traces_allpops.items(), sampling_interval=.05)
+
+    traces_stn = {
+        "gGABAA{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAA"},
+        "gGABAB{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAB"},
+        "iGABA{:d}": {"syn":"GABAsyn2[:]", "var":"i"},
+    }
+    pop_stn.record(traces_stn.items(), sampling_interval=.05)
 
     for pop in all_pops.values():
         pop.record(['spikes'], sampling_interval=.05)
