@@ -4,10 +4,10 @@ Utilities for dealing with NEURON
 @author Lucas Koelman
 """
 
-import re
-
 import neuron
 h = neuron.h
+
+from .nrnmodutil import get_mod_name # for backwards compatibility
 
 
 class ExtSection(neuron.hclass(h.Section)):
@@ -61,21 +61,6 @@ def contains_sec(seclist, sec):
     Check if enumerable contains given section
     """
     return any([sec_b.same(sec) for sec_b in seclist])
-
-
-def get_mod_name(hobj):
-    """
-    Get NEURON mechanism name of given synapse object
-
-    @param  hobj        HocObject: synapse POINT_PROCESS
-    """
-    if hasattr(hobj, 'htype'):
-        hoc_name = hobj.htype.hname() # for wrapped HocObject, mechanism name is in htype attribute
-    else:
-        hoc_name = hobj.hname()
-    match_mod = re.search(r'^[a-zA-Z0-9]+', hoc_name)
-    modname = match_mod.group()
-    return modname
 
 
 def seg_index(tar_seg):

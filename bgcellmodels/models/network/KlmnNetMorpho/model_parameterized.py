@@ -58,7 +58,7 @@ from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
 
 # Custom PyNN extensions
-from bgcellmodels.extensions.pynn.connection import GluSynapse, GabaSynapse, GabaSynTmHill
+from bgcellmodels.extensions.pynn.synapses import GluSynapse, GabaSynapse, GabaSynTmHill
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
 

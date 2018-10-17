@@ -5,106 +5,48 @@ and get their parameters from centralized parameter databvase.
 @author     Lucas Koelman
 
 @date       21/03/2018
+
+
+Example
+-------
+
+>>> pop_A = Population(num_cell, cell_type, label, initial_vals)
+>>> pop_B = Population(num_cell, cell_type, label, initial_vals)
+>>> 
+>>> connector = ConnectorType(**connector_params) # connection pattern
+>>> synapse = SynapseType(**synapse_params) # has Connection type in class definition
+>>> 
+>>> proj = Projection(pop_A, pop_B, connector=connector
+>>>                   synapse_type=synapse, receptor_type='GABAA')
+
+
+DEVNOTES
+--------
+
+There are three central objects involved in a PyNN connection:
+
+- Projection    : encapsulates projection between two populations
+- Connector     : the connection pattern
+- SynapseType   : the synapse type and its parameters for a Projection
+- Connection    : facilitates creation of simulator-specific connection
+                  to instantiated SynapseType
+
+The call graph for creating a connection in PyNN is:
+
+-> Projection.__init__(..., Connector)
+    `-> Connector.connect(..., Projection)
+    `-> MapConnector._standard_connect(...)
+        `-> Connector._parameters_from_synapse_type(...)
+            - parameters are fetched from Projection.synapse_type
+            - parameters are optionally calculated from distance map
+    `-> Projection._convergent_connect(..., **connection_parameters)
+    `-> Projection.synapse_type.connection_type(...)
+        `-> Connection.__init__(...)
 """
 
 import re
 
-import pyNN.neuron
-from pyNN.neuron.simulator import Connection, state, h
-from pyNN.standardmodels import synapses, build_translations
-from bgcellmodels.common import nrnutil
-
-#    The call graph for creating Connections is:
-#
-#    -> Projection.__init__(..., Connector)
-#    `-> Connector.connect(..., Projection)
-#    `-> MapConnector._standard_connect(...)
-#        `-> Connector._parameters_from_synapse_type(...)
-#            - parameters are fetched from Projection.synapse_type
-#            - parameters are optionally calculated from distance map
-#    `-> Projection._convergent_connect(..., **connection_parameters)
-#    `-> Projection.synapse_type.connection_type(...)
-#    `-> Connection.__init__(...)
-
-
-class ConnectionFromDB(Connection):
-    """
-    Same as NativeSynToRegion except it looks up its parameters in
-    the synapse type's attached database, using the Projection's 
-    region + receptor type, presynaptic and postsynaptic cell types.
-    """
-
-    def __init__(self, projection, pre, post, **parameters):
-        """
-        Create a new connection.
-
-
-        @pre        The synapse_type passed to Projection must have an attribute
-                    'parameter_database' providing a method
-                    make_parallel_connection()
-        
-        @pre        The projection must have an attribute 'preferred_param_sources'
-                    containing the preferred sources used for looking up
-                    parameters in the database.
-
-        @pre        The 'label' attribute of each population must be an identifier
-                    recognized by cellpopdata
-
-        @param      parameters : **dict
-                    Parameters retrieved from projection synapse type
-        
-        """
-        #logger.debug("Creating connection from %d to %d, weight %g" % (pre, post, parameters['weight']))
-        self.presynaptic_index = pre
-        self.postsynaptic_index = post
-        self.presynaptic_cell = projection.pre[pre]    # Population[index] -> ID
-        self.postsynaptic_cell = projection.post[post] # Population[index] -> ID
-
-        # Get our population identifiers
-        pre_pop_id = projection.pre.label
-        post_pop_id = projection.post.label
-
-        # Get the target region on the cell and the receptor type
-        region, receptor = projection.receptor_type.split(".")
-        receptors = receptor.split("+")
-        segment = getattr(self.postsynaptic_cell._cell, region)
-        pre_gid = int(self.presynaptic_cell)
-        
-        params_db = projection.synapse_type.parameter_database
-        custom_physio_params = parameters.get('custom_physio_params', None)
-        custom_nrn_params = parameters.get('custom_nrn_params', None)
-
-        # Get suitable parameters for populations and receptors
-        syn_mech_name = params_db.get_synaptic_mechanism(receptors)
-
-        physio_params = params_db.get_physiological_parameters(
-                            pre_pop_id, post_pop_id,
-                            custom_params=custom_physio_params,
-                            use_sources=projection.preferred_param_sourcesr)
-
-        # Make a synapse and NetCon
-        synapse_type = getattr(h, syn_mech_name)
-        syn = synapse_type(segment)
-        nc = state.parallel_context.gid_connect(pre_gid, syn)
-
-        # Set the mechanism and NetCon parameters from phsyiological parameters
-        params_db.set_connection_params_from_physio(
-                    syn, nc, syn_mech_name, receptors, 
-                    con_par_data=physio_params,
-                    custom_synpar=custom_nrn_params)
-
-        self.synapse = syn
-        self.nc = nc
-
-        # Also store synapse on postsynaptic cell
-        syn_mech_name = nrnutil.get_mod_name(syn)
-        post_syns = self.postsynaptic_cell._cell.synapses.setdefault(syn_mech_name, [])
-        post_syns.append(syn)
-
-        
-        if projection.synapse_type.model is not None:
-            self._setup_plasticity(projection.synapse_type, parameters)
-        # nc.threshold is supposed to be set by ParallelContext.threshold, called in _build_cell(), above, but this hasn't been tested
+from pyNN.neuron.simulator import Connection, state
 
 
 class NativeSynToRegion(Connection):
@@ -286,6 +228,27 @@ class ConnectionNrnWrapped(Connection):
             # self._setup_plasticity(projection.synapse_type, parameters)
 
 
+    def _setup_nrn_synapse(self, synapse_type, parameters):
+        """
+        Set parameters on the NEURON synapse object.
+
+        @param      parameters : dict(str, float)
+                    Parameters are already evaluated by PyNN
+        """
+        # parameters = synapse_type.translate(parameters<ParameterSpace>, copy=copy)
+        # parameters.evaluate(simplify=True)
+        # for name, value in parameters.items():
+        #   setattr(target, name, value)
+        synapse_param_names = synapse_type.get_parameter_names()
+        for name, value in parameters.items():
+            if name in synapse_param_names:
+                pinfo = synapse_type.translations[name]
+                pname = pinfo['translated_name']
+                # setattr(self.synapse, pname, value)
+                for synapse in self.synapses:
+                    setattr(self.synapse, pname, value)
+
+
     def __setattr__(self, name, value):
         """
         Support setting properties of connection's synapse
@@ -328,27 +291,6 @@ class ConnectionNrnWrapped(Connection):
             return super(ConnectionNrnWrapped, self).__getattr__(name)
 
 
-    def _setup_nrn_synapse(self, synapse_type, parameters):
-        """
-        Set parameters on the NEURON synapse object.
-
-        @param      parameters : dict(str, float)
-                    Parameters are already evaluated by PyNN
-        """
-        # parameters = synapse_type.translate(parameters<ParameterSpace>, copy=copy)
-        # parameters.evaluate(simplify=True)
-        # for name, value in parameters.items():
-        #   setattr(target, name, value)
-        synapse_param_names = synapse_type.get_parameter_names()
-        for name, value in parameters.items():
-            if name in synapse_param_names:
-                pinfo = synapse_type.translations[name]
-                pname = pinfo['translated_name']
-                # setattr(self.synapse, pname, value)
-                for synapse in self.synapses:
-                    setattr(self.synapse, pname, value)
-
-
 class MultiMechanismConnection(Connection):
     """
     Connection that contacts the post-synaptic cell through multiple synapse
@@ -365,33 +307,21 @@ class MultiMechanismConnection(Connection):
         self.postsynaptic_index = post
         self.presynaptic_cell = projection.pre[pre]
         self.postsynaptic_cell = projection.post[post]
-        post_cell = self.postsynaptic_cell._cell # CellType.model instance
-
-        # Get the target region on the cell and the receptor type
-        # syn_mech_name = projection.synapse_type.mechanism
-        region, receptor = projection.receptor_type.split(".")
-        receptors = receptor.split("+")
-        if not all((rec in self.synapse_type.mechanisms.keys() for rec in receptor)):
-            raise ValueError("Synapse type {} does not support all receptors "
-                             " in {}".format(self.synapse_type, receptors))
+        post_cell = self.postsynaptic_cell._cell # CellType.model
 
         # Get mechanism for each receptor
-        num_contacts = getattr(projection.synapse_type, 'num_contacts', 1)
         self.synapses = {} # dict[str, list[nrn.Synapse]]
         all_synapses = []
-        for receptor, mechanism in projection.synapse_type.mechanisms.iteritems():
-            num_converge = projection.synapse_type.num_converge[receptor]
-            synapses = post_cell.get_synapses(region, [receptor], num_contacts, 
-                                             mechanism=mechanism,
-                                             synapse_reuse=num_converge)
-            self.synapses[receptor] = synapses
+
+        for mech_name, subcell_conn in projection.synapse_type.subcellular_conn.iteritems():
+            region, mech_receptors = subcell_conn['receptors'].split(".")
+            receptor_list = mech_receptors.split("+")
+            synapses = post_cell.get_synapses(region, receptor_list, 
+                                              subcell_conn['num_contacts'], 
+                                              mechanism=mech_name,
+                                              synapse_reuse=subcell_conn['num_converge'])
+            self.synapses[mech_name] = synapses
             all_synapses.extend(synapses)
-        
-        # Apply synapse parameters        
-        wrapper_params = self.synapse_type.get_parameter_names()
-        for name, value in parameters.items():
-            if name in wrapper_params:
-                self._set_synapse_parameter(name, value)
 
         # Create NEURON NetCon
         pre_gid = int(self.presynaptic_cell)
@@ -403,6 +333,12 @@ class MultiMechanismConnection(Connection):
             nc.weight[0] = weight
             nc.delay = delay
             self.ncs.append(nc)
+        
+        # Apply synapse parameters        
+        wrapper_params = self.synapse_type.get_parameter_names()
+        for name, value in parameters.items():
+            if name in wrapper_params:
+                self._set_synapse_parameter(name, value)
 
         # PyNN expects attributes 'synapse' and 'nc'
         # Store first element, should all have same parameter values for Projection.get(...)
@@ -412,22 +348,23 @@ class MultiMechanismConnection(Connection):
         # if we have a mechanism (e.g. from 9ML) that includes multiple
         # synaptic channels, need to set nc.weight[1] here
         if self.nc.wcnt() > 1 and hasattr(self.postsynaptic_cell._cell, "type"):
-            self.nc.weight[1] = self.postsynaptic_cell._cell.type.receptor_types.index(projection.receptor_type)
+            self.nc.weight[1] = self.postsynaptic_cell._cell.type.receptor_types.index(
+                                    projection.receptor_type)
 
 
     def _set_synapse_parameter(self, pname, value):
         """
-        Set a synapse parameter for all the connection's synapses
-        that have that parameter.
-
-        @pre    assumes that every Synapse type that uses this Connection class
-                has it's parameters specified in the format 
-                'receptor_name:nrn_param_name'
+        Apply synapse parameter to all synapses that define that parameter.
         """
-        param_meta = self.synapse_type.translations[pname]
-        receptor, nrn_pname = param_meta['translated_name'].split(':')
-        for synapse in self.synapses[receptor]:
-            setattr(synapse, nrn_pname, value)
+        if pname in ('weight', 'delay'):
+            for nc in self.ncs:
+                setattr(nc, pname, value)
+        else:
+            param_meta = self.synapse_type.translations[pname]
+            match = re.match(r'^([a-zA-Z0-9]+)_(\w+)', param_meta['translated_name'])
+            mech_name, nrn_pname = match.groups()
+            for synapse in self.synapses[mech_name]:
+                setattr(synapse, nrn_pname, value)
 
 
     def __setattr__(self, name, value):
@@ -435,13 +372,13 @@ class MultiMechanismConnection(Connection):
         Support setting properties of connection's synapse
         through Projection.set(param_name=param_val).
         """
-        if hasattr(self, 'synapse_type') and (name in self.synapse_type.get_parameter_names()):
-            self._set_synapse_parameter(name, value)
-        elif name in ('weight', 'delay'):
+        if name in ('weight', 'delay'):
             for nc in self.ncs:
                 setattr(nc, name, value)
+        elif hasattr(self, 'synapse_type') and (name in self.synapse_type.get_parameter_names()):
+            self._set_synapse_parameter(name, value)
         else:
-            super(ConnectionNrnWrapped, self).__setattr__(name, value)
+            super(MultiMechanismConnection, self).__setattr__(name, value)
 
 
     def __getattr__(self, name):
@@ -453,433 +390,4 @@ class MultiMechanismConnection(Connection):
             pname = pinfo['translated_name']
             return getattr(self.synapse, pname)
         else:
-            return super(ConnectionNrnWrapped, self).__getattr__(name)
-
-
-
-
-# We have to define a custom Synapse model so we can make the connection_type
-# point to our custom Connection class
-class SynapseFromDB(pyNN.neuron.StaticSynapse):
-    """
-    A NEURON native synapse that looks up the correct MOD mechanism
-    and all its synapse parameters in the provided database, using the
-    Projection's receptor type, presynaptic cell and postsynaptic cell.
-
-    @see        pyNN.standardmodels.synapses.StaticSynapse
-
-    USAGE
-    -----
-
-        >>> from bgcellmodels.cellpopdata import cellpopdata
-        >>> params_db = cellpopdata.Cellconnector(...)
-        >>> syn = SynapseFromDB(parameter_database=params_db)
-        >>> proj = sim.Projection(pop_stn, pop_gpe, connector, db_syn,
-        >>>>                      receptor_type="distal_dend.AMPA+NMDA")
-    
-    """
-    connection_type = ConnectionFromDB
-
-    def __init__(self, **parameters):
-        """
-        Make new synapse type for use with a Projection.
-
-        @param      parameters_database : object
-
-        """
-        self.parameter_database = parameters.pop('parameter_database')
-        # Insert dummy variables so pyNN doesn't complain
-        parameters['delay'] = 1.0
-        parameters['weight'] = 1.0
-        super(SynapseFromDB, self).__init__(**parameters)
-
-
-class NativeSynapse(pyNN.neuron.StaticSynapse):
-    """
-    A NEURON native synapse model with an explicit MOD mechanism
-    and mechanism parameters.
-
-    You can specify any mechanism name as the 'mechanism' argument,
-    and its parameters as 'mechanism_parameters'
-
-    @see        pyNN.standardmodels.synapses.StaticSynapse
-    """
-    connection_type = NativeSynToRegion
-
-    # default_parameters = {
-    #     'weight': 0.0,
-    #     'delay': None,
-    #     'mechanism': 'Exp2Syn',
-    #     'mechanism_parameters': None,
-    # }
-
-    def __init__(self, **parameters):
-        """
-        Make new NEURON native synapse
-
-
-        @param      mechanism : str
-                    NEURON synapse mechanism name
-
-
-        @param      **parameters : (keyword arguments)
-                    
-                    Only 'weight' 'delay' and 'mechanism_parameters'
-                    are recognized keywords.
-
-
-        @param      mechanism_parameters : dict(str, float)
-                    
-                    Parameters of neuron mechanism and NetCon, in format
-                    "syn:attribute[index]" and "netcon:attribute[index]".
-        """
-        # Don't pass native mechanism parameters
-        self.mechanism = parameters.pop('mechanism')
-        self.mechanism_parameters = parameters.pop('mechanism_parameters', {})
-        self.multi_synapse_rule = parameters.pop('multi_synapse_rule', 1)
-        # self.physiological_parameters = parameters.pop('physiological_parameters', {})
-
-        # Convert distance-based string expressions to callable functions
-        converted_expressions = {}
-        for param_spec, value_spec in self.mechanism_parameters.iteritems():
-            if not isinstance(value_spec, str):
-                continue
-            d_expression = value_spec
-            try:
-                # Check for singularities at large and small distances
-                d = 0; assert 0 <= eval(d_expression), eval(d_expression)
-                d = 1e12; assert 0 <= eval(d_expression), eval(d_expression)
-            except ZeroDivisionError as err:
-                raise ZeroDivisionError("Error in the distance expression %s. %s" % (d_expression, err))
-            converted_expressions[param_spec]= eval("lambda d: {}".format(d_expression))
-        self.mechanism_parameters.update(converted_expressions)
-        
-        # Insert dummy variables so pyNN doesn't complain
-        parameters.setdefault('delay', 1.0)
-        parameters.setdefault('weight', 0.0)
-        super(NativeSynapse, self).__init__(**parameters)
-
-
-
-class GluSynapse(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
-    """
-    Wrapper for NEURON GLUsyn mechanism defined in .mod file
-    """
-
-    connection_type = ConnectionNrnWrapped
-    model = 'GLUsyn'
-
-    # PyNN internal name to NEURON name
-    translations = build_translations(
-        # NetCon parameters
-        ('weight', 'weight'),
-        ('delay', 'delay'),
-        # Conductance time course
-        ('gmax_AMPA', 'gmax_AMPA'),     # Weight conversion factor (from nS to uS)
-        ('gmax_NMDA', 'gmax_NMDA'),     # Weight conversion factor (from nS to uS)
-        ('tau_r_AMPA', 'tau_r_AMPA'),   # Dual-exponential conductance profile
-        ('tau_d_AMPA', 'tau_d_AMPA'),   # IMPORTANT: tau_r < tau_d
-        ('tau_r_NMDA', 'tau_r_NMDA'),   # Dual-exponential conductance profile
-        ('tau_d_NMDA', 'tau_d_NMDA'),    # IMPORTANT: tau_r < tau_d
-        # Short-term Depression/Facilitation
-        ('tau_rec', 'tau_rec'),         # time constant of recovery from depression
-        ('tau_facil', 'tau_facil'),     # time constant of facilitation
-        ('U1', 'U1'),                   # baseline release probability
-        # Magnesium block for NMDA
-        ('e', 'e'),                     # AMPA and NMDA reversal potential
-        ('mg', 'mg'),                   # Initial concentration of mg2+
-    )
-
-    default_parameters = {
-        'weight':       1.0,
-        'delay':        0.5,
-        'tau_r_AMPA':   0.2,
-        'tau_d_AMPA':   1.7,
-        'tau_r_NMDA':   0.29,
-        'tau_d_NMDA':   43.0,
-        'e':            0.0,
-        'mg':           1.0,
-        'gmax_AMPA':    0.001,
-        'gmax_NMDA':    0.001,
-        'tau_rec':      200.0,
-        'tau_facil':    200.0,
-        'U1':           0.5,
-    }
-
-    def _get_minimum_delay(self):
-        return state.min_delay
-
-
-class GabaSynapse(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
-    """
-    Wrapper for NEURON GLUsyn mechanism defined in .mod file
-    """
-
-    connection_type = ConnectionNrnWrapped
-    model = 'GABAsyn' # defined in GABAsyn.mod
-
-    # PyNN internal name to NEURON name
-    translations = build_translations(
-        # NetCon parameters
-        ('weight', 'weight'),
-        ('delay', 'delay'),
-        # Conductance time course
-        ('gmax_GABAA', 'gmax_GABAA'),     # Weight conversion factor (from nS to uS)
-        ('gmax_GABAB', 'gmax_GABAB'),     # Weight conversion factor (from nS to uS)
-        ('tau_r_GABAA', 'tau_r_GABAA'),   # Dual-exponential conductance profile
-        ('tau_d_GABAA', 'tau_d_GABAA'),   # IMPORTANT: tau_r < tau_d
-        ('tau_r_GABAB', 'tau_r_GABAB'),   # Dual-exponential conductance profile
-        ('tau_d_GABAB', 'tau_d_GABAB'),    # IMPORTANT: tau_r < tau_d
-        # Short-term Depression/Facilitation
-        ('tau_rec', 'tau_rec'),         # time constant of recovery from depression
-        ('tau_facil', 'tau_facil'),     # time constant of facilitation
-        ('U1', 'U1'),                   # baseline release probability
-        # Reversal potentials
-        ('Erev_GABAA', 'Erev_GABAA'),                     # GABAA and GABAB reversal potential
-        ('Erev_GABAB', 'Erev_GABAB'),                   # Initial concentration of mg2+
-        # TODO: include GABA-B signaling cascade if necessary
-    )
-
-    default_parameters = {
-        'weight':     1.0,
-        'delay':      0.5,
-        'tau_r_GABAA':   0.2,
-        'tau_d_GABAA':   1.7,
-        'tau_r_GABAB':   0.2,
-        'tau_d_GABAB':   1.7,
-        'Erev_GABAA':   -80.0,
-        'Erev_GABAB':   -95.0,
-        'gmax_GABAA':    0.001,
-        'gmax_GABAB':    0.001,
-        'tau_rec':      200.0,
-        'tau_facil':    200.0,
-        'U1':           0.5,
-    }
-
-    def _get_minimum_delay(self):
-        return state.min_delay
-
-
-class GabaSynTmHill(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
-    """
-    Tsodyks-Markram synapse for GABA-A and GABA-B receptors with GABA-B
-    conductance expressed as hill function applied to Tsodyks-Markram
-    conductance variable.
-    
-    @see    mechanism GABAsyn2.mod
-    """
-
-    connection_type = ConnectionNrnWrapped
-    model = 'GABAsyn2' # defined in GABAsyn.mod
-
-    # PyNN internal name to NEURON name
-    translations = build_translations(
-        # NetCon parameters
-        ('weight', 'weight'),
-        ('delay', 'delay'),
-        # Conductance time course
-        ('gmax_GABAA', 'gmax_GABAA'),     # Weight conversion factor (from nS to uS)
-        ('gmax_GABAB', 'gmax_GABAB'),     # Weight conversion factor (from nS to uS)
-        ('tau_r_GABAA', 'tau_r_GABAA'),   # Dual-exponential conductance profile
-        ('tau_d_GABAA', 'tau_d_GABAA'),   # IMPORTANT: tau_r < tau_d
-        ('tau_r_GABAB', 'tau_r_GABAB'),   # Dual-exponential conductance profile
-        ('tau_d_GABAB', 'tau_d_GABAB'),    # IMPORTANT: tau_r < tau_d
-        # Short-term Depression/Facilitation
-        ('tau_rec', 'tau_rec'),         # time constant of recovery from depression
-        ('tau_facil', 'tau_facil'),     # time constant of facilitation
-        ('U1', 'U1'),                   # baseline release probability
-        # Reversal potentials
-        ('Erev_GABAA', 'Erev_GABAA'),                     # GABAA and GABAB reversal potential
-        ('Erev_GABAB', 'Erev_GABAB'),                   # Initial concentration of mg2+
-        # GABA-B signaling cascade
-        ('K3', 'K3'),
-        ('K4', 'K4'),
-        ('KD', 'KD'),
-        ('n', 'n'),
-    )
-
-    default_parameters = {
-        'weight':       1.0,
-        'delay':        0.5,
-        'tau_r_GABAA':  0.2,
-        'tau_d_GABAA':  1.7,
-        'tau_r_GABAB':  0.2,
-        'tau_d_GABAB':  1.7,
-        'Erev_GABAA':   -80.0,
-        'Erev_GABAB':   -95.0,
-        'gmax_GABAA':   0.001,
-        'gmax_GABAB':   0.001,
-        'tau_rec':      200.0,
-        'tau_facil':    200.0,
-        'U1':           0.5,
-        'K3':           0.098,
-        'K4':           0.033,
-        'KD':           100.0,
-        'n':            4,
-    }
-
-    def _get_minimum_delay(self):
-        return state.min_delay
-
-
-class GABAAsynTM(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
-    """
-    Wrapper for NEURON GLUsyn mechanism defined in .mod file
-    """
-
-    connection_type = ConnectionNrnWrapped
-    model = 'GABAAsynTM' # defined in GABAsyn.mod
-
-    # PyNN internal name to NEURON name
-    translations = build_translations(
-        # NetCon parameters
-        ('weight', 'weight'),
-        ('delay', 'delay'),
-        # Conductance time course
-        ('gmax_GABAA', 'gmax_GABAA'),     # Weight conversion factor (from nS to uS)
-        ('tau_r_GABAA', 'tau_r_GABAA'),   # Dual-exponential conductance profile
-        ('tau_d_GABAA', 'tau_d_GABAA'),   # IMPORTANT: tau_r < tau_d
-        # Short-term Depression/Facilitation
-        ('tau_rec', 'tau_rec'),         # time constant of recovery from depression
-        ('tau_facil', 'tau_facil'),     # time constant of facilitation
-        ('U1', 'U1'),                   # baseline release probability
-        # Reversal potentials
-        ('Erev_GABAA', 'Erev_GABAA'),
-    )
-
-    default_parameters = {
-        'weight':     1.0,
-        'delay':      0.5,
-        'tau_r_GABAA':   0.2,
-        'tau_d_GABAA':   1.7,
-        'Erev_GABAA':   -80.0,
-        'gmax_GABAA':    0.001,
-        'tau_rec':      200.0,
-        'tau_facil':    200.0,
-        'U1':           0.5,
-    }
-
-    def _get_minimum_delay(self):
-        return state.min_delay
-
-
-class GabaSynTm2(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
-    """
-    Wrapper for NEURON GABAsynTM2 mechanism defined in .mod file
-    """
-
-    connection_type = ConnectionNrnWrapped
-    model = 'GABAsynTM2'
-
-    # PyNN internal name to NEURON name
-    translations = build_translations(
-        # NetCon parameters
-        ('weight', 'weight'),
-        ('delay', 'delay'),
-        # Conductance time course
-        ('gmax_GABAA', 'gmax_GABAA'),
-        ('tau_r_GABAA', 'tau_r_GABAA'),
-        ('tau_d_GABAA', 'tau_d_GABAA'),
-        ('gmax_GABAB', 'gmax_GABAB'),
-        ('tau_r_GABAB', 'tau_r_GABAB'),
-        ('tau_d_GABAB', 'tau_d_GABAB'),
-        # Short-term Depression/Facilitation
-        ('tau_rec_A', 'tau_rec_A'),         # time constant of recovery from depression
-        ('tau_facil_A', 'tau_facil_A'),     # time constant of facilitation
-        ('U1_A', 'U1_A'),                   # baseline release probability
-        ('tau_rec_B', 'tau_rec_B'),         # time constant of recovery from depression
-        ('tau_facil_B', 'tau_facil_B'),     # time constant of facilitation
-        ('U1_B', 'U1_B'),                   # baseline release probability
-        # Reversal potentials
-        ('Erev_GABAA', 'Erev_GABAA'),
-        ('Erev_GABAB', 'Erev_GABAB'),
-    )
-
-    default_parameters = {
-        'weight':     1.0,
-        'delay':      0.5,
-        'tau_r_GABAA':   0.2,
-        'tau_d_GABAA':   1.7,
-        'tau_rec_A':      200.0,
-        'tau_facil_A':    200.0,
-        'U1_A':           0.5,
-        'Erev_GABAA':   -80.0,
-        'gmax_GABAA':    0.001,
-        'tau_r_GABAB':   5.0,
-        'tau_d_GABAB':   25.0,
-        'tau_rec_B':      5.0,
-        'tau_facil_B':    100.0,
-        'U1_B':           0.05,
-        'Erev_GABAB':   -95.0,
-        'gmax_GABAB':    0.001,
-    }
-
-    def _get_minimum_delay(self):
-        return state.min_delay
-
-
-class GabaABMultiMech(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
-    """
-    One synapse class that create two distinct synapse objects for
-    the GABA-A and GABA-B receptors.
-    """
-
-    connection_type = MultiMechanismConnection
-
-    # Map receptors to synapse mechanisms
-    mechanisms = {
-        'GABAA': 'GABAAsynTM',
-        'GABAB': 'GABAAsynTM',
-    }
-
-    # For each receptor: how many NetCons converge on one synape implementing
-    # that receptor.
-    num_converging = {
-        'GABAA': 1,
-        'GABAB': 3,
-    }
-
-    # PyNN internal name to NEURON name
-    translations = build_translations(
-        # NetCon parameters
-        ('weight', 'weight'),
-        ('delay', 'delay'),
-        # GABA-A receptor
-        ('Erev_GABAA',  'GABAA:Erev_GABAA'),
-        ('gmax_GABAA',  'GABAA:gmax_GABAA'),
-        ('tau_r_GABAA', 'GABAA:tau_r'),
-        ('tau_d_GABAA', 'GABAA:tau_d'),
-        ('U1_A',        'GABAA:U1'),
-        ('tau_rec_A',   'GABAA:tau_rec'),
-        ('tau_facil_A', 'GABAA:tau_facil'),
-        # GABA-B receptor
-        ('Erev_GABAB',  'GABAB:Erev_GABAA'),
-        ('gmax_GABAB',  'GABAB:gmax_GABAA'),
-        ('tau_r_GABAB', 'GABAB:tau_r'),
-        ('tau_d_GABAB', 'GABAB:tau_d'),
-        ('U1_B',        'GABAB:U1'),
-        ('tau_rec_B',   'GABAB:tau_rec'),
-        ('tau_facil_B', 'GABAB:tau_facil'),
-    )
-
-    default_parameters = {
-        'weight':     1.0,
-        'delay':      0.5,
-        'tau_r_GABAA':   0.2,
-        'tau_d_GABAA':   1.7,
-        'tau_rec_A':      200.0,
-        'tau_facil_A':    200.0,
-        'U1_A':           0.5,
-        'Erev_GABAA':   -80.0,
-        'gmax_GABAA':    0.001,
-        'tau_r_GABAB':   5.0,
-        'tau_d_GABAB':   25.0,
-        'tau_rec_B':      5.0,
-        'tau_facil_B':    100.0,
-        'U1_B':           0.05,
-        'Erev_GABAB':   -95.0,
-        'gmax_GABAB':    0.001,
-    }
-
-    def _get_minimum_delay(self):
-        return state.min_delay
+            raise AttributeError("'{}'' has no attribute '{}'.".format(self, name))
