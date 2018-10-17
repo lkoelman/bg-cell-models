@@ -113,6 +113,7 @@ active_gbar_names = [gname for gname in gbar_list if gname != gleak_name]
 # Different models from Edgerton lab:
 MODEL_GUNAY2008_AXONLESS = "GUNAY2008_AXONLESS"
 MODEL_GUNAY2008_FULL = "GUNAY2008_FULL"
+MODEL_GUNAY2008_REBOUNDBURSTING = "GUNAY2008_t1768"
 MODEL_HENDRICKSON2011_AXONLESS = "HENDRICKSON2011_AXONLESS"
 MODEL_HENDRICKSON2011_FULL = "HENDRICKSON2011_FULL"
 
@@ -194,14 +195,24 @@ def define_parameters(
         params_mapping_file,
         named_locations,
         exclude_mechs=None,
+        genesis_params_overrides=None,
     ):
     """
     Create list of parameter descriptions that link (distributions of)
     mechanism parameters to specific regions in the cell, 
     identified by named section lists.
 
+    Arguments
+    ---------
+
     @param      named_locations: dict<str, ephys.Location>
                 Predefined locations on the cell.
+
+    @param      genesis_params_overrides : dict
+                Dictionary containing GENESIS model parameter names and values.
+
+    Returns
+    -------
     
     @return     parameters: list(ephys.parameters.NrnParameter)
                 List of NEURON parameter descriptions as Ephys objects.
@@ -211,6 +222,8 @@ def define_parameters(
 
     fullfile = os.path.join(script_dir, genesis_params_file)
     genesis_params = fileutils.load_json_nonstrict(fullfile)
+    if genesis_params_overrides is not None:
+        genesis_params.update(genesis_params_overrides)
     
     fullfile = os.path.join(script_dir, params_mapping_file)
     param_specs = fileutils.load_json_nonstrict(fullfile)
@@ -453,6 +466,12 @@ def define_cell(model, exclude_mechs=None):
     elif model == MODEL_GUNAY2008_AXONLESS:
         parameters = define_parameters(
                             'config/params_gunay2008_GENESIS.json',
+                            'config/map_params_gunay2008_v2.json',
+                            locations,
+                            exclude_mechs=exclude_mechs)
+    elif model == MODEL_GUNAY2008_REBOUNDBURSTING:
+        parameters = define_parameters(
+                            'config/params_gunay2008_GENESIS_model-t1768.json',
                             'config/map_params_gunay2008_v2.json',
                             locations,
                             exclude_mechs=exclude_mechs)

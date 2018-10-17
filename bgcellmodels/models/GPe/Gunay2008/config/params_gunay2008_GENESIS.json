@@ -165,20 +165,21 @@
 // # Parameters from /common/actpars.g 
 // #############################################################################
 
-  //Voltage-gated ion channel densities
-  "G_Na_fast_GP" : 500,    
-  "G_Na_slow_GP" : 1.45,
-  "G_Kv3_GP" : 10,
-  "G_Kv2_GP" : 1,     
-  "G_Kv4_fast_GP" : 20, 
-  "G_Kv4_slow_GP" : 30,
-  "G_KCNQ_GP" : 2,
-  "G_Ca_HVA_GP" : 0.3,    
-  "G_K_ahp_GP" : 4, // SK channel
-  "G_h_HCN_GP" : 1,
-  "G_h_HCN2_GP" : 2.5,
+  // Voltage-gated ion channel densities
+  // These are the parameters in Gunay (2008) - Table 1 that are optimized
+  "G_Na_fast_GP" : 500,   // 'NaF' in DB
+  "G_Na_slow_GP" : 1.45,  // 'NaP' in DB
+  "G_Kv3_GP" : 10,        // 'Kv3' in DB
+  "G_Kv2_GP" : 1,         // 'Kv2' in DB
+  "G_Kv4_fast_GP" : 20,   // 'Kv4f' in DB
+  "G_Kv4_slow_GP" : 30,   // (not optimized)
+  "G_KCNQ_GP" : 2,        // 'KCQN' in DB
+  "G_Ca_HVA_GP" : 0.3,    // 'HVA' in DB
+  "G_K_ahp_GP" : 4,       // 'SK' in DB
+  "G_h_HCN_GP" : 1,       // 'HCN' in DB
+  "G_h_HCN2_GP" : 2.5,    // (not optimized)
 
-  //Multipliers for conductance densities
+  // Multipliers for conductance densities
   "G_mult" : 1,
   "G_mult_Na_dend" : 0.7,
   "G_mult_Kdr_dend" : 1,
