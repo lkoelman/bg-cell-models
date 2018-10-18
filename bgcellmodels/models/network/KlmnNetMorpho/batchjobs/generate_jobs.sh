@@ -7,12 +7,7 @@ job_script="${model_dir}/batchjobs/runjob_bgnetmodel.sh"
 # configs=( \
 #     "config.json" \
 # )
-outputs_clipboard="q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x0.0.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x0.5.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x0.25.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x0.75.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x1.5.json
-q6_sweep_stn-stn-strength/DA-depleted-v3_CTX-f0__STN-STN-gsyn-x2.0.json"
+outputs_clipboard="q14_sweep-gpe-surrogate-frac/DA-depleted-v3_CTX-f2.5-GPE-surrogates-frac0.2.json"
 readarray -t configs <<< "${outputs_clipboard}"
 
 start_seed=888
@@ -21,7 +16,7 @@ for conf in "${configs[@]}"; do
     for seed in {0..0}; do
         qsub_command="qsub ${job_script} \
 -l walltime=2:30:00 \
--v ncell=100,dur=26000,seed=$((start_seed+seed)),config=${conf}"
+-v ncell=100,dur=10000,seed=$((start_seed+seed)),config=${conf},wi=1000"
 
         echo -e "Submitting qsub command:\n> $qsub_command"
         eval $qsub_command

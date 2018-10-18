@@ -76,10 +76,17 @@ mpi_command="mpirun -n 12 python ${model} \
 --outdir ${outdir} -id ${PBS_JOBID}"
 
 # Optional arguments passed to python script
-opt_names=("seed" "write-interval" "transient-period")
+opt_names=("seed")
 for optname in "${opt_names[@]}"; do
     if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} --${optname} ${!optname}"
+    fi
+done
+
+opt_names=("wi" "tp")
+for optname in "${opt_names[@]}"; do
+    if [ -n "${!optname}" ]; then
+        mpi_command="${mpi_command} -${optname} ${!optname}"
     fi
 done
 

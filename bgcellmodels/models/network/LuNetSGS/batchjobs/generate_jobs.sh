@@ -7,10 +7,8 @@ job_script="${model_dir}/batchjobs/runjob_bgnetmodel.sh"
 # configs=( \
 #     "config.json" \
 # )
-outputs_clipboard="q3_test-pacemaker_poisson/DD_net-full_poisson-2.5hz.json
-q3_test-pacemaker_poisson/DD_net-no-arkyloop_poisson-2.5hz.json
-q3_test-pacemaker_poisson/DNORM_net-full_poisson-2.5hz.json
-q3_test-pacemaker_poisson/DNORM_net-no-arkyloop_poisson-2.5hz.json"
+outputs_clipboard="q5a_DD-DNORM_const-gains-ctx-stn-gpe/DNORM_const-gain-ctx-stn-gpe_syn-V8.json
+q5a_DD-DNORM_const-gains-ctx-stn-gpe/DD_const-gain-ctx-stn-gpe_syn-V8.json"
 readarray -t configs <<< "${outputs_clipboard}"
 
 start_seed=777
@@ -18,9 +16,10 @@ start_seed=777
 for conf in "${configs[@]}"; do
     for seed in {0..0}; do
         qsub_command="qsub ${job_script} \
--l walltime=1:00:00 \
+-l walltime=1:30:00 \
 -v seed=$((start_seed+seed)),config=${conf},\
-dur=10e3,transient-period=0.0,write-interval=10e3"
+dur=10e3,tp=0.0,wi=1e3"
+        # NOTE: append dd=1 or dnorm=1 to switch PD state
 
         echo -e "Submitting qsub command:\n> $qsub_command"
         eval $qsub_command

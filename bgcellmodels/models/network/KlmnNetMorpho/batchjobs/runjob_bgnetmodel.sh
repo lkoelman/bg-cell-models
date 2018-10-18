@@ -5,7 +5,7 @@
 ################################################################################
 
 # Set the number of nodes & processors per node
-#PBS -l nodes=1:ppn=24
+#PBS -l nodes=1:ppn=12
 
 # Set the walltime of the job to 1 hour (format is hh:mm:ss)
 # - walltime for 100 cells/populations is sim_time * 2031.75 / 10.000 * 1.25 [seconds]
@@ -81,6 +81,13 @@ opt_names=("seed" "burst" "write-interval" "transient-period")
 for optname in "${opt_names[@]}"; do
     if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} --${optname} ${!optname}"
+    fi
+done
+
+opt_names=("wi" "tp")
+for optname in "${opt_names[@]}"; do
+    if [ -n "${!optname}" ]; then
+        mpi_command="${mpi_command} -${optname} ${!optname}"
     fi
 done
 
