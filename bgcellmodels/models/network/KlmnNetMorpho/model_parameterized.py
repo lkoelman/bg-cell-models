@@ -599,19 +599,39 @@ def run_simple_net(
     for pop in [pop_gpe, pop_stn]:
         pop.record(traces_allpops.items(), sampling_interval=.05)
 
-    traces_stn = {
+    for pop in all_pops.values():
+        pop.record(['spikes'], sampling_interval=.05)
+
+    #---------------------------------------------------------------------------
+    # STN Recordings
+    traces_stn_sparse = {
         "gGABAA{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAA"},
         "gGABAB{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAB"},
         "iGABA{:d}": {"syn":"GABAsyn2[:]", "var":"i"},
+        # Ca2+ ion channels
+        "STN_cai": {'sec':'dend1[7]', 'loc':0.8, 'var':'cai'},
+        "STN_CaT_inact_fast": {'sec':'dend1[7]', 'loc':0.8, 'mech':'CaT', 'var':'s'},
+        "STN_CaT_inact_slow": {'sec':'dend1[7]', 'loc':0.8, 'mech':'CaT', 'var':'d'},
+        "STN_CaT_open": {'sec':'dend1[7]', 'loc':0.8, 'mech':'CaT', 'var':'o'},
+        "STN_CaL_inact": {'sec':'dend1[7]', 'loc':0.8, 'mech':'HVA', 'var':'h'},
+        "STN_CaL_open": {'sec':'dend1[7]', 'loc':0.8, 'mech':'HVA', 'var':'o_L'},
     }
-    pop_stn.record(traces_stn.items(), sampling_interval=.05)
-
-    for pop in all_pops.values():
-        pop.record(['spikes'], sampling_interval=.05)
+    pop_stn.sample(5).record(traces_stn_sparse.items(), sampling_interval=.05)
 
     if calculate_lfp:
         pop_stn.record(['lfp'], sampling_interval=.05)
 
+    #---------------------------------------------------------------------------
+    # GPE Recordings
+    traces_gpe_sparse = {
+        "gGABAA{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAA"},
+        "gGABAB{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAB"},
+        "iGABA{:d}": {"syn":"GABAsyn2[:]", "var":"i"},
+        "gAMPA{:d}": {"syn":"GLUsyn[:]", "var":"g_AMPA"},
+        "gNMDA{:d}": {"syn":"GLUsyn[:]", "var":"g_NMDA"},
+        "iGLU{:d}": {"syn":"GLUsyn[:]", "var":"i"},
+    }
+    pop_gpe.sample(5).record(traces_gpe_sparse.items(), sampling_interval=.05)
     
     ############################################################################
     # INITIALIZE & SIMULATE

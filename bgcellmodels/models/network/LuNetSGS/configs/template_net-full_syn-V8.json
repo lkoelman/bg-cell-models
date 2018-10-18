@@ -1,0 +1,809 @@
+// Configuration file for Basal Ganglia network simulation.
+// Parameters can be specified in format:
+// "param_name": {
+//     "statement": "a + b - c(lol)",
+//     "do_format": false, // if true, statement must contain format specs, and
+//                         // substitutions will be made from parent contexts
+//     "locals": {         // locals for call to eval(),
+//                         // <null> means use surrounding "local_context" entries
+//         "a": 6,
+//         "b": 50.0,
+//     },
+//     "globals": {},      // <null> to copy globals from code, {} for specific values
+// },
+//
+{
+// =============================================================================
+// Global Simulation Parameters
+// =============================================================================
+    // Global simulation parameters
+    "simulation": {
+        "duration": 10000,
+        "timestep": 0.025,
+        "shared_rng_seed": 151985012,
+        "DD": true, // dopamine depleted / parkinsonian
+    },
+// =============================================================================
+// CTX Population Parameters
+// =============================================================================
+    "CTX": {
+        // Local variables for statements in this dictionary
+        "local_context": {
+            "combined_spike_sources": 5.0, // number of combined (Poisson) spike sources
+        },
+        "base_population_size": 1000, // 5 independent spike sources per MSN
+        // Spiking pattern
+        "f_background": { // mean firing rate of non-bursting neurons
+            "statement": "2.0 * combined_spike_sources",
+            "locals": null, // use local_context
+        },
+        // Parameters for bursting neurons
+        "bursting_fraction": 0.8, // fraction of bursting cells
+        "T_burst": 1000.0,
+        "dur_burst": 20.0,
+        "f_intra": 200.0,
+        "f_inter": 10.0,
+        "synchronous": true, // whether bursts occur synchronously
+        "burst_intervals": [ // set to None for continuous
+            [1000,0, 20000.0], // Kita & Kita 2011: CTX stim every 1 second
+            // [1000.0, 1250.0],
+            // [2000.0, 2500.0], 
+            // [3500.0, 4500.0],
+            // [6500.0, 8500.0]
+        ],
+        "randomize_bursting_cells": true, // pick random bursting cells in each interval
+    },
+// =============================================================================
+// STR.MSN Population Parameters
+// =============================================================================
+    "STR.MSN": {
+        "base_population_size": 100,
+        "PyNN_cell_parameters": {},
+        "traces": [
+            {
+                "cells": 5,
+                "sampling_period": 0.05,
+                "specs": {
+                    "gAMPA{:d}": {"syn":"GLUsyn[:]", "var":"g_AMPA"},
+                    "gNMDA{:d}": {"syn":"GLUsyn[:]", "var":"g_NMDA"},
+                    "iGLU{:d}": {"syn":"GLUsyn[:]", "var":"i"},
+                    "gGABAA{:d}": {"syn":"GABAAsynTM[:]", "var":"g_GABAA"},
+                    "iGABA{:d}": {"syn":"GABAAsynTM[:]", "var":"i"},
+                },
+            },
+        ],
+// -----------------------------------------------------------------------------
+// CTX -> STR.MSN Projection
+        "CTX": {
+            "connector": {
+                // CTX source cells must not be shared between MSN,
+                // see Steiner, Tseng (2017) Chapter 1
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 20,
+                    "with_replacement": false,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        5.1, // [ms] delay from Kita, Kita (2011)
+                    // STP parameters
+                    "U1":           0.35, // baseline release probability
+                    "tau_rec":      100.0, // [ms] recovery from STD
+                    "tau_facil":    100.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA":    {
+                        "statement": "RandomDistribution('normal', mu=(1 + 0.25*DD)*gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "locals": {
+                            "gmax_base": 6.0e-5, // [uS], adjusted for U1
+                        },
+                        "globals": null,
+                    },
+                    "tau_r_AMPA":   1.0, // [ms] rise time
+                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA":    {
+                        "statement": "RandomDistribution('normal', mu=(1 + 0.25*DD)*gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "locals": {
+                            "gmax_base": 1.5e-5, // [uS], adjusted for U1
+                        },
+                        "globals": null,
+                    },
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                },
+            },
+        },
+// -----------------------------------------------------------------------------
+// STR.MSN -> STR.MSN Projection
+        "STR.MSN": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": {
+                        "statement": "int((1-DD + DD*28./44) * num_pre_ctl)",
+                        "locals": {
+                            "num_pre_ctl": 14, // same as Corbit (2016)
+                        },
+                        "globals": {},
+                    },
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GABAAsynTM",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        1.0, // [ms] FIXME: guesstimate delay, no source
+                    // STP parameters
+                    "U1":           0.8, // baseline release probability
+                    "tau_rec":      20.0, // [ms] recovery from STD
+                    "tau_facil":    0.5, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA":   {
+                        "statement": "RandomDistribution('normal', mu=(1 - DD + DD*23./80.) * gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "locals": {
+                            "gmax_base": 7.714e-5,
+                        },
+                        "globals": null,
+                    },
+                    "tau_r_GABAA":   0.75, // [ms] rise time
+                    "tau_d_GABAA":   12.5, // [ms] decay time
+                }
+            }
+        },
+// -----------------------------------------------------------------------------
+// STR.FSI -> STR.MSN Projection
+        "STR.FSI": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": {
+                        "statement": "int((1 + 1.0*DD) * num_pre_ctl)",
+                        "locals": {
+                            "num_pre_ctl": 3,
+                        },
+                        "globals": {},
+                    },
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GABAAsynTM",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        1.0, // [ms] FIXME: guesstimate delay, no source
+                    // STP parameters
+                    "U1":           0.35, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    0.5, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA":   {
+                        "statement": "RandomDistribution('normal', mu=gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "locals": {
+                            "gmax_base": 1.286e-4,
+                        },
+                        "globals": null,
+                    },
+                    "tau_r_GABAA":   0.5, // [ms] rise time
+                    "tau_d_GABAA":   8.0, // [ms] decay time
+                }
+            }
+        },
+// -----------------------------------------------------------------------------
+// GPE.arky -> STR.MSN Projection
+// TODO: see Corbit (2016) experimental data:
+// - DA depletion doubles connection probability
+// - DA depletion increases gsyn from extremely weak to noticeable
+        "GPE.arky": {
+        //     "connector": {
+        //         "name": "FixedNumberPreConnector",
+        //         "parameters": {
+        //             "n": XXX
+        //         },
+        //     },
+        //     "synapse": {
+        //         "name": "GABAAsynTM",
+        //         "parameters": {
+        //             "weight":       1.0,
+        //             "delay":        5.0, // [ms] FIXME: guesstimate, same as iSPN->GPe
+        //             // STP parameters
+        //             "U1":           0.35, // baseline release probability
+        //             "tau_rec":      200.0, // [ms] recovery from STD
+        //             "tau_facil":    0.5, // [ms] recovery from facilitation
+        //             // GABA-A receptor
+        //             "gmax_GABAA":    2.1e-4, // [uS], adjusted for U1
+        //             "tau_r_GABAA":   0.75, // [ms] rise time
+        //             "tau_d_GABAA":   4.5, // [ms] decay time
+        //         }
+        //     }
+        // },
+        },
+    },// end MSN
+// =============================================================================
+// STR.FSI Population Parameters
+// =============================================================================
+    "STR.FSI": {
+        "base_population_size": 20, // Corbit (2016): factor 1:5 FSI to MSN
+        "PyNN_cell_parameters": {},
+        "traces": [
+            {
+                "cells": 5,
+                "sampling_period": 0.05,
+                "specs": {
+                    "gAMPA{:d}": {"syn":"GLUsyn[:]", "var":"g_AMPA"},
+                    "gNMDA{:d}": {"syn":"GLUsyn[:]", "var":"g_NMDA"},
+                    "iGLU{:d}": {"syn":"GLUsyn[:]", "var":"i"},
+                    "gGABAA{:d}": {"syn":"GABAAsynTM[:]", "var":"g_GABAA"},
+                    "iGABA{:d}": {"syn":"GABAAsynTM[:]", "var":"i"},
+                },
+            },
+        ],
+// -----------------------------------------------------------------------------
+// CTX -> STR.FSI Projection
+        "CTX": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 20,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        5.1, // [ms] FIXME: guesstimate, same as CTX->MSN
+                    // STP parameters
+                    "U1":           0.1, // baseline release probability
+                    "tau_rec":      100.0, // [ms] recovery from STD
+                    "tau_facil":    250.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA":   {
+                        "statement": "RandomDistribution('normal', mu=gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "locals": {
+                            "gmax_base": 0.3e-3,
+                        },
+                        "globals": null,
+                    },
+                    "tau_r_AMPA":   0.5, // [ms] rise time
+                    "tau_d_AMPA":   1.4, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA":   {
+                        "statement": "RandomDistribution('normal', mu=gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "locals": {
+                            "gmax_base": 0.075e-3,
+                        },
+                        "globals": null,
+                    },
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                },
+            },
+        },
+// -----------------------------------------------------------------------------
+// STR.FSI -> STR.FSI Projection
+        "STR.FSI": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 5,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GABAAsynTM",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        1.0, // [ms] FIXME: guesstimate delay, no source
+                    // STP parameters
+                    "U1":           0.35, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    0.5, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA":    0.5e-3, // [uS], adjusted for U1
+                    "tau_r_GABAA":   0.5, // [ms] rise time
+                    "tau_d_GABAA":   5.7, // [ms] decay time
+                }
+            }
+        },
+// -----------------------------------------------------------------------------
+// GPE -> STR.FSI Projection
+        "GPE.arky": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 3,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GABAAsynTM",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        5.0, // [ms] FIXME: guesstimate, same as iSPN->GPe
+                    // STP parameters
+                    "U1":           0.35, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    0.5, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA":    1.25e-3, // [uS], adjusted for U1
+                    "tau_r_GABAA":   0.75, // [ms] rise time
+                    "tau_d_GABAA":   4.5, // [ms] decay time
+                }
+            }
+        },
+    }, // end to FSI
+// =============================================================================
+// GPE Population Parameters
+// =============================================================================
+// Assembly combining GPe Proto & Arky cells
+    "GPE.all": {
+        "base_population_size": 50,
+        "prototypic_fraction": 0.666,
+        "arkypallidal_fraction": 0.333,
+        // Numerical parameters passed to cell type
+        "PyNN_cell_parameters": {
+            "membrane_noise_std": 0.1, // 0.1 calibrated empirically based on Vm trace
+        },
+        // Spatial arrangement
+        "grid_dx": {
+            "statement": "grid_dx",
+            "locals": null, // null/None means from surrounding context
+        },
+        //  GPE surrogate spike sources
+        "surrogate_fraction": 0.1, // fraction of population size
+        "surrogate_rate": 47.5,
+        // Local variables for this context / level of nesting (used in other statements)
+        "local_context": {
+            "grid_dx": 50.0,
+        },
+        // Common traces for all GPE neurons
+        "traces": [
+            {
+                "cells": 5,
+                "sampling_period": 0.05,
+                "specs": {
+                    // STN inputs
+                    "gAMPA{:d}": {"syn":"GLUsyn[:]", "var":"g_AMPA"},
+                    "gNMDA{:d}": {"syn":"GLUsyn[:]", "var":"g_NMDA"},
+                    "iGLU{:d}": {"syn":"GLUsyn[:]", "var":"i"},
+                    // GPE collateral inputs
+                    "gGABAA{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAA"},
+                    "gGABAB{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAB"},
+                    "iGABA{:d}": {"syn":"GABAsyn2[:]", "var":"i"},
+                },
+            },
+        ],
+    }, // end to GPE.all
+// GPE PROTOTYPIC
+// =============================================================================
+    "GPE.proto": {
+        "traces": [
+            {
+                "cells": 5,
+                "sampling_period": 0.05,
+                "specs": {
+                    "gGABAA{:d}": {"syn":"GABAAsynTM[:]", "var":"g_GABAA"},
+                    "iGABAA{:d}": {"syn":"GABAAsynTM[:]", "var":"i"},
+                },
+            },
+        ],
+// STN -> GPE.proto Projection
+// -----------------------------------------------------------------------------
+// NOTE: - must compensate for both MSN->GPE and GPE->GPE increase
+        "STN": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 10,
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        2.0, // [ms] delay from literature
+                    "U1":           0.1, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    800.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA":    {
+                        "statement": "(1 + 0.5*DD)*gmax_base",
+                        "locals": {
+                            "gmax_base": 0.25e-3,
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_AMPA":   1.0, // [ms] rise time
+                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA":    {
+                        "statement": "(1 + 0.5*DD)*gmax_base",
+                        "locals": {
+                            "gmax_base": 0.0, // 0.25e-3,
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                },
+            },
+        },
+// GPE.all -> GPE.proto Projection
+// -----------------------------------------------------------------------------
+// - Strengthened in DA-depleted condition
+        "GPE.all": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 6,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GabaSynTmHill",
+                "parameters": {
+                    "weight": 1.0,
+                    "delay":        0.5, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      400.0, // [ms] recovery from STD
+                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA": {
+                        "statement": "(1 + 0.5*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 0.15e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAA":   2.0, // [ms] rise time
+                    "tau_d_GABAA":   5.0, // [ms] decay time
+                    // GABA-B receptor
+                    "gmax_GABAB": {
+                        "statement": "(1 + 0.25*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 0.03e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
+                    "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
+                    "KD":            0.35,  // half-maximum of sigmoid(G)
+                },
+            },
+        },
+// STR.MSN -> GPE.proto Projection
+// -----------------------------------------------------------------------------
+        "STR.MSN": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 30,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GABAAsynTM",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        5.0, // [ms] delay from Kita, Kita (2011)
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      1.0, // [ms] recovery from STD
+                    "tau_facil":    200.0, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA":   {
+                        "statement": "RandomDistribution('normal', mu=(1 + 1.0*DD)*gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "locals": {
+                            "gmax_base": 1.4e-4,
+                        },
+                        "globals": null,
+                    },
+                    "tau_r_GABAA":   2.0, // [ms] rise time
+                    "tau_d_GABAA":   5.0, // [ms] decay time
+                }
+            }
+        },
+    }, // end to GPE.proto
+// GPE ARKYPALLIDAL
+// =============================================================================
+    "GPE.arky": {
+// STN -> GPE.arky Projection
+// -----------------------------------------------------------------------------
+        "STN": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 10,
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        2.0, // [ms] delay from literature
+                    "U1":           0.1, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    800.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA":    {
+                        "statement": "(1 + 0.5*DD)*gmax_base",
+                        "locals": {
+                            "gmax_base": 0.25e-3,
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_AMPA":   1.0, // [ms] rise time
+                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA":    {
+                        "statement": "(1 + 0.5*DD)*gmax_base",
+                        "locals": {
+                            "gmax_base": 0.0, // 0.25e-3,
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                },
+            },
+        },
+// GPE.all -> GPE.arky Projection
+// -----------------------------------------------------------------------------
+// - Strengthened in DA-depleted condition
+// - Separate projection so we can make it stronger (arky have lower firing rate)
+        "GPE.all": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 6,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GabaSynTmHill",
+                "parameters": {
+                    "weight": 1.0,
+                    "delay":        0.5, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      400.0, // [ms] recovery from STD
+                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA": {
+                        "statement": "(1 + 0.5*DD)*gmax_base",
+                        "locals": {
+                            "gmax_base": 0.5e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAA":   2.0, // [ms] rise time
+                    "tau_d_GABAA":   5.0, // [ms] decay time
+                    // GABA-B receptor
+                    "gmax_GABAB": {
+                        "statement": "(1 + 0.35*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 0.1e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
+                    "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
+                    "KD":            0.35,  // half-maximum of sigmoid(G)
+                },
+            },
+        },
+    }, // end to GPE.ARKY
+// =============================================================================
+// STN Population Parameters
+// =============================================================================
+    "STN": {
+        "base_population_size": 50,
+        "v_init": -63.0,
+        "calculate_lfp": false,
+        "grid_dx": {
+            "statement": "grid_dx",
+            "locals": null, // null/None means from surrounding context
+        },
+        // Local variables for this context / level of nesting (used in other statements)
+        "local_context": {
+            "grid_dx": 50.0,
+            "frac_lateral_projecting": 0.2,
+            "num_lateral_projections": 3, // number of lateral targets on each side
+            "surrogate_afferent_fraction": 0.2, // fraction of GPe afferents from surrogates
+        },
+        // Numerical parameters passed to the PyNN cell type
+        "PyNN_cell_parameters": {
+            "membrane_noise_std": 0.0075, // 0.0075 calibrated empirically based on Vm trace
+            "lfp_sigma_extracellular": 0.3,
+        },
+        // Common traces for all STN neurons
+        "traces": [
+            {
+                "cells": 5,
+                "sampling_period": 0.05,
+                "specs": {
+                    // CTX inputs
+                    "gAMPA{:d}": {"syn":"GLUsyn[:]", "var":"g_AMPA"},
+                    "gNMDA{:d}": {"syn":"GLUsyn[:]", "var":"g_NMDA"},
+                    "iGLU{:d}": {"syn":"GLUsyn[:]", "var":"i"},
+                    // GPE collateral inputs
+                    "gGABAA{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAA"},
+                    "gGABAB{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAB"},
+                    "iGABA{:d}": {"syn":"GABAsyn2[:]", "var":"i"},
+                    // Ca2+ ion channels
+                    "STN_cai": {"sec":"dend1[7]", "loc":0.8, "var":"cai"},
+                    "STN_CaT_inact_fast": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"s"},
+                    "STN_CaT_inact_slow": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"d"},
+                    "STN_CaT_open": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"o"},
+                    "STN_CaL_inact": {"sec":"dend1[7]", "loc":0.8, "mech":"HVA", "var":"h"},
+                    "STN_CaL_open": {"sec":"dend1[7]", "loc":0.8, "mech":"HVA", "var":"o_L"},
+                },
+            },
+        ],
+// GPE -> STN Projection
+// -----------------------------------------------------------------------------
+        "GPE.proto": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 7,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GabaSynTmHill",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        2.0, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      400.0, // [ms] recovery from STD
+                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA": {
+                        "statement": "(1 + 0.5*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 10e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAA":   2.0, // [ms] rise time
+                    "tau_d_GABAA":   5.0, // [ms] decay time
+                    // GABA-B receptor
+                    "gmax_GABAB": {
+                        "statement": "(1 + 0.25*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 2.5e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
+                    "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
+                    "KD":            0.35,  // half-maximum of sigmoid(G)
+                },
+            },
+        },
+        "GPE.surrogate": { // FIXME: Debug: maybe remove surrogates in final version
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 1,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GabaSynTmHill",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        2.0, // [ms] delay from literature
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      400.0, // [ms] recovery from STD
+                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    // GABA-A receptor
+                    "gmax_GABAA": {
+                        "statement": "(1 + 0.5*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 10e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAA":   2.0, // [ms] rise time
+                    "tau_d_GABAA":   5.0, // [ms] decay time
+                    // GABA-B receptor
+                    "gmax_GABAB": {
+                        "statement": "(1 + 0.25*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 2.5e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
+                    "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
+                    "KD":            0.35,  // half-maximum of sigmoid(G)
+                },
+            },
+        },
+// CTX -> STN Projection
+// -----------------------------------------------------------------------------
+        "CTX": {
+            "connector": {
+                "name": "FixedNumberPreConnector",
+                "parameters": {
+                    "n": 20,
+                    "allow_self_connections": false,
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        5.9, // [ms] delay from Kita, Kita (2011)
+                    // STP parameters
+                    "U1":           0.2, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA": {
+                        "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 14.66e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_AMPA":   1.0, // [ms] rise time
+                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA": {
+                        "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 3.66e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                }
+            }
+        },
+// STN -> STN Projection
+// -----------------------------------------------------------------------------
+        "STN": {
+            "connector": {
+                "name": "FromListConnector",
+                "parameters": {
+                    "conn_list": {
+                        "statement": "make_stn_lateral_connlist(pop_stn.size, num_lateral_projections, frac_lateral_projecting, shared_rng)",
+                        "locals": null, // use enclosing locals
+                        "globals": null, // use script globals
+                    },
+                },
+            },
+            "synapse": {
+                "name": "GluSynapse",
+                "parameters": {
+                    "weight":       1.0,
+                    "delay":        0.5, // [ms] FIXME: guesstimate delay, no source
+                    // STP parameters
+                    "U1":           0.1, // baseline release probability
+                    "tau_rec":      200.0, // [ms] recovery from STD
+                    "tau_facil":    800.0, // [ms] recovery from facilitation
+                    // AMPA receptor
+                    "gmax_AMPA":    7e-3, // 7e-3 [uS], adjusted for U1
+                    "tau_r_AMPA":   1.0, // [ms] rise time
+                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    // NMDA receptor
+                    "gmax_NMDA":    0.0, // 7e-3 [uS], adjusted for U1
+                    "tau_r_NMDA":   3.7,    // [ms] rise time
+                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                }
+            }
+        },
+    }, // end STN
+}

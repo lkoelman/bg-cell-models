@@ -28,7 +28,22 @@ def anal_logfun(self, message, *args, **kws):
 logging.Logger.anal = anal_logfun
 
 
-def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handlers_from=None, propagate=False):
+def setRootLoggerFormat(format='%(levelname)s:%(name)s@%(filename)s:%(lineno)s: %(message)s'):
+	"""
+	Set logging format for the root logger.
+
+	Call this function before importing any modules that configure the root logger.
+	"""
+	root = logging.getLogger() # None -> root logger
+	if len(root.handlers) == 0:
+		logging.basicConfig(level=logging.DEBUG, format=format)
+	else:
+		fmt = logging.Formatter(format)
+		for h in root.handlers:
+			h.setFormatter(fmt)
+
+
+def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handlers_from=None, propagate=1):
 	"""
 	Similar to logging.basicConfig() except this works on a new logger rather
 	than on the root logger (logging.root).
@@ -40,6 +55,14 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 
 	if level is None:
 		level = logging.DEBUG
+	elif isinstance(level, str):
+		level = getLogLevel(level)
+	if format is None:
+		format = '%(levelname)s:%(name)s@%(filename)s:%(lineno)s: %(message)s'
+
+	root = logging.getLogger()
+	if len(root.handlers) == 0:
+		logging.basicConfig(level=logging.DEBUG, format=format)
 
 	# Creates logger if not present, returns RootLogger if name is None
 	# By default messages will propagate to parent (root logger) handlers
@@ -49,50 +72,56 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 
 	# Get handlers
 	handlers = list(logger.handlers) # new list
-
 	if copy_handlers_from is not None:
 		if isinstance(copy_handlers_from, logging.Logger):
 			src_loggers = [copy_handlers_from]
 		else:
 			src_loggers = copy_handlers_from
-		
 		for src in src_loggers:
 			if src is not logger:
 				handlers.extend(src.handlers)
-
-	# Create formatter
-	usr_format = format
-	if format is None:
-		# format = '%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s'
-		format = '%(name)s:%(levelname)s@%(filename)s:%(lineno)s> %(message)s'
-	fmt = logging.Formatter(format)
-
+	
 	# Create new handler if none exists or stream explicitly specified
 	default_stream = sys.stderr if stream is None else stream
-	if (stream is not None) or (not any((h.stream==default_stream for h in logger.handlers))):
-		
-		# create stream handler and set level to debug
-		sh = logging.StreamHandler(stream=default_stream)
-		sh.setLevel(level)
-		sh.setFormatter(fmt)
-
-		handlers.append(sh)
-
+	fmt = logging.Formatter(format)
+	# if (stream is not None) or (not any((h.stream==default_stream for h in logger.handlers))):
+	# create stream handler and set level to debug
+	sh = logging.StreamHandler(stream=default_stream)
+	sh.setLevel(level)
+	sh.setFormatter(fmt)
+	logger.addHandler(sh)
 
 	for h in handlers:
 		# Only set formatter if explicitly specified or none present
-		if (h.formatter is None) or (usr_format is not None):
-			h.setFormatter(fmt)
+		# if (h.formatter is None) or (usr_format is not None):
+		# 	h.setFormatter(fmt)
 		
 		# Add handler if handler with same stream not present
 		if h in logger.handlers:
 			continue
 		elif any((h.stream==hdlr.stream for hdlr in logger.handlers)):
+			# don't log to the same stream twice
 			continue
 		else:
 			logger.addHandler(h)
 
 	return logger
+
+
+def getLogLevel(level):
+	"""
+	Get log level from string
+	"""
+	if level in ['verbose', 'debug', 'DEBUG']:
+		return logging.DEBUG
+	elif level in ['silent', 'quiet', 'warning', 'WARNING']:
+		return logging.WARNING
+	elif level in ['anal', 'highly_verbose']:
+		return DEBUG_ANAL_LVL
+	elif level in ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET']:
+		return getattr(logging, level)
+	else:
+		raise ValueError(level)
 
 
 def setLogLevel(level, logger_names):
@@ -102,12 +131,7 @@ def setLogLevel(level, logger_names):
 	@param level	any log level accepted by logging.setLevel() or one of following:
 					'verbose', 'quiet', 'silent', 'anal'
 	"""
-	if level in ['verbose', 'debug', 'DEBUG']:
-		level = logging.DEBUG
-	elif level in ['silent', 'quiet', 'warning', 'WARNING']:
-		level = logging.WARNING
-	elif level in ['anal', 'highly_verbose']:
-		level = DEBUG_ANAL_LVL
+	level = getLogLevel(level)
 
 	for logname in logger_names:
 		if logname in logging.Logger.manager.loggerDict:

@@ -19,9 +19,9 @@ USAGE
 
 To run using MPI, use the `mpirun` or `mpiexec` command like:
 
-`mpirun -n 4 python model_parameterized.py --scale 0.5 --dur 500  --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/DA-depleted_template.json`
+`mpirun -n 4 python model_parameterized.py --scale 0.5 --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/template_net-full_syn-V8json`
 
-To run from an IPyhton shell, use the %run magic function like:
+To run from an IPython shell, use the %run magic function like:
 
 `%run model_parameterized.py --scale 0.5 --dur 500 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/DA-depleted_template.json`
 
@@ -39,6 +39,10 @@ import os
 from datetime import datetime
 
 import numpy as np
+
+# Debug messages
+from bgcellmodels.common import logutils
+logutils.setRootLoggerFormat()
 
 # MPI support
 from mpi4py import MPI
@@ -85,17 +89,16 @@ make_divergent_pattern = connectivity.make_divergent_pattern
 #from bgcellmodels.cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from bgcellmodels.cellpopdata.cellpopdata import CellConnector
 
-from bgcellmodels.common import spikelib
+from bgcellmodels.common import spikelib, fileutils
 from bgcellmodels.common.configutil import eval_params
 from bgcellmodels.common.stdutil import getdictvals
-from bgcellmodels.common import logutils, fileutils
 
-# Debug messages
 logutils.setLogLevel('quiet', [
     'bpop_ext',
     'bluepyopt.ephys.parameters', 
     'bluepyopt.ephys.mechanisms', 
-    'bluepyopt.ephys.morphologies'])
+    'bluepyopt.ephys.morphologies',
+    'Neo'])
 
 
 def nprint(*args, **kwargs):

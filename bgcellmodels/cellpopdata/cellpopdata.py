@@ -30,11 +30,9 @@ Src = ParameterSource
 import synmechs
 
 from bgcellmodels.common.configutil import interpretParamSpec
+from bgcellmodels.common import logutils
 
-import logging
-logging.basicConfig(format='%(levelname)s@%(filename)s:%(lineno)s>%(message)s',
-                    level=logging.DEBUG)
-logger = logging.getLogger(__name__) # create logger for this module
+logger = logutils.getBasicLogger(__name__, 'DEBUG')
 
 
 @unique

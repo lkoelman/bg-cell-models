@@ -60,7 +60,10 @@ PARAMETER {
 }
 
 STATE {
-        q u h
+    : q = CaN + CaL activation
+    : u = CaN inactivation
+    : h = CaL inactivation
+    q u h
 }
 
 ASSIGNED { 

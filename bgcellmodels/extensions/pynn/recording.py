@@ -6,9 +6,17 @@ Utilities for recording NEURON traces using PyNN.
 @date       20/03/2018
 """
 
-from pyNN import errors
+import re
+from datetime import datetime
+
 from pyNN import recording
-from pyNN.neuron.recording import Recorder, recordable_pattern
+from pyNN.neuron.recording import Recorder # recordable_pattern
+from pyNN.neuron import simulator
+
+import numpy
+import neo
+import quantities as pq
+
 import neuron
 h = neuron.h
 
@@ -25,8 +33,31 @@ class TraceSpecRecorder(Recorder):
     @see        Based on NetPyne's Cell.RecordTraces in file:
                 https://github.com/Neurosim-lab/netpyne/blob/master/netpyne/cell.py
 
-    DEVNOTES
-    --------
+
+    Example
+    -----
+
+        >>> from pyNN.neuron import Population
+        >>> from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
+        >>> Population._recorder_class = TraceSpecRecorder
+        >>> ... (recording setup code)
+
+
+    Attributes
+    ----------
+
+    @attr   sampling_interval : float
+            Sampling interval for recording
+
+    @attr   recorded : dict[str, set(int)]
+            Cell IDs of recorded cells for each trace name
+    
+    @attr   trace_opts : dict[str, dict[str, object]]
+            Options for each trace.
+
+
+    Developer Notes
+    ---------------
 
     See common Population and Recorder class for method chains involved
     in recording and writing traces:
@@ -36,16 +67,21 @@ class TraceSpecRecorder(Recorder):
 
         - sampling_interval is common to all traces/signals of the recorder
 
-    USAGE
-    -----
-
-        >>> from pyNN.neuron import Population
-        >>> from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
-        >>> Population._recorder_class = TraceSpecRecorder
-        >>> ... (recording setup code)
+        - PyNN.common.populations.BasePopulation.write_data(io, variables, gather, 
+                                                            clear, annotations)
+            `-> PyNN.recording.Recorder.write(...)
+                `-> data = self.get(variables, gather, ...)
+                `-> neo_io.write_block(data)
     """
 
-    def record(self, variables, ids, sampling_interval=None):
+    def __init__(self, *args, **kwargs):
+        self.trace_opts = {}
+        super(TraceSpecRecorder, self).__init__(*args, **kwargs)
+
+
+    def record(self, variables, ids,
+               sampling_interval=None,
+               write_interval=None):
         """
         Override the default record() method to accept trace specifications
         in the format used by NetPyne.
@@ -65,22 +101,24 @@ class TraceSpecRecorder(Recorder):
                     -> Recorder.record() @ /pyNN/recording/__init__.py
                     -> Recorder._record() @ /pyNN/neuron/recording.py
                     -> Recorder._record_state_variable() @ /pyNN/neuron/recording.py
-        USAGE
+
+        Example
         -----
 
-            >>> trace_specs = {
-            >>>     'GP_cai':{'sec':'soma[0]','loc':0.5,'var':'cai'},
-            >>>     'GP_ainf':{'sec':'soma[0]','loc':0.5,'mech':'gpRT','var':'a_inf'}, 
-            >>>     'GP_r':{'sec':'soma[0]','loc':0.5,'mech':'gpRT','var':'r'},
-            >>> }
-            >>> pop.record(trace_specs.items())
+        >>> trace_specs = {
+        >>>     'GP_cai':{'sec':'soma[0]','loc':0.5,'var':'cai'},
+        >>>     'GP_ainf':{'sec':'soma[0]','loc':0.5,'mech':'gpRT','var':'a_inf'}, 
+        >>>     'GP_r':{'sec':'soma[0]','loc':0.5,'mech':'gpRT','var':'r'},
+        >>> }
+        >>> pop.record(trace_specs.items())
         
         """
-        logger.debug('Recorder.record(<%d cells>)' % len(ids))
-        if sampling_interval is not None:
-            if ((sampling_interval != self.sampling_interval) and (len(self.recorded) > 0) and 
-                    not (len(self.recorded) == 1 and 'spikes' in self.recorded)):
-                raise ValueError("All neurons in a population must be recorded with the same sampling interval.")
+        logger.debug('Recorder.record(<cell ids: {}>)'.format(ids))
+
+        # if sampling_interval is not None:
+        #     if ((sampling_interval != self.sampling_interval) and (len(self.recorded) > 0) and 
+        #             not (len(self.recorded) == 1 and 'spikes' in self.recorded)):
+        #         raise ValueError("All neurons in a population must be recorded with the same sampling interval.")
 
         ids = set([id for id in ids if id.local])
 
@@ -95,23 +133,48 @@ class TraceSpecRecorder(Recorder):
             # Get cells that aren't recording this trace yet
             new_ids = ids.difference(self.recorded[trace_name])
 
+            # Set the sampling interval for this trace
+            sampling_interval = sampling_interval or self._simulator.state.dt
+            if trace_name in self.trace_opts:
+                if self.trace_opts[trace_name]['sampling_interval'] != sampling_interval:
+                    raise ValueError("All neurons in a population must be recorded with the same sampling interval.") 
+            else:
+                self.trace_opts[trace_name] = {}
+            self.trace_opts[trace_name]['sampling_interval'] = sampling_interval
+            
             self.recorded[trace_name] = self.recorded[trace_name].union(ids)
-            self._record(variable, new_ids, sampling_interval)
+            self._record(variable, new_ids)
 
 
-    def _record(self, variable, new_ids, sampling_interval=None):
+    def _record(self, variable, new_ids):
         """
-        Add the cells in `new_ids` to the set of recorded cells.
+        Set up NEURON recordings for givell cell ids.
         """
         if variable == 'spikes':
             for id in new_ids:
                 if id._cell.rec is not None:
                     id._cell.rec.record(id._cell.spike_times)
         else:
-            self.sampling_interval = sampling_interval or self._simulator.state.dt
             for id in new_ids:
                 # Override to pass ID instead of cell
                 self._record_state_variable(id, variable)
+
+
+    def _get_trace_opt(self, trace_name, opt_name):
+        """
+        Get recording options for given trace name (variable).
+        """
+        # trace_name might be Synapse1 with Synapse{:d} present as key
+        if trace_name not in self.trace_opts:
+            match = re.match(r'(\w+?)(\d+)', trace_name)
+            if not match:
+                return KeyError(trace_name)
+            trace_prefix = match.group(1)
+            trace_template = next((k for k in self.trace_opts.keys() if re.match(trace_prefix + r'\{.+?\}', k)), None)
+            if not trace_template:
+                return KeyError(trace_name)
+            return self.trace_opts[trace_template][opt_name]
+        return self.trace_opts[trace_name][opt_name]
 
 
     def _record_state_variable(self, id, variable):
@@ -134,6 +197,7 @@ class TraceSpecRecorder(Recorder):
             trace_name, trace_spec = variable
         
         recorded = False
+        sampling_interval = self._get_trace_opt(trace_name, 'sampling_interval')
 
         # First try to interpret spec as PyNN format (string)
         if hasattr(cell, 'recordable') and trace_spec in cell.recordable:
@@ -153,7 +217,7 @@ class TraceSpecRecorder(Recorder):
             vec = h.Vector()
             pp = cell.lfp_tracker.summator
             hoc_ref = cell.lfp_tracker.summator._ref_summed
-            vec.record(pp, hoc_ref, self.sampling_interval)
+            vec.record(pp, hoc_ref, sampling_interval)
             cell.traces[trace_name] = vec
             recorded = True
         
@@ -164,7 +228,7 @@ class TraceSpecRecorder(Recorder):
         elif 'sec' in trace_spec.keys():
             # spec is in NetPyne format
             hoc_obj = cell.resolve_section(trace_spec['sec'])
-            vec, marker = self._record_trace(hoc_obj, trace_spec, self.sampling_interval)
+            vec, marker = self._record_trace(hoc_obj, trace_spec, sampling_interval)
             if marker is not None:
                 _pp_markers = getattr(cell, '_pp_markers', [])
                 _pp_markers.append(marker)
@@ -174,13 +238,13 @@ class TraceSpecRecorder(Recorder):
 
         elif 'syn' in trace_spec.keys():
             # trace spec 
-            #   'Syn{:d}' : {'syn': Exp2Syn[:], var:'g'}
-            #   'Syn{:d}' : {'syn': Exp2Syn[0], var:'g'}
+            #   'Syn{:d}' : {'syn': 'Exp2Syn[:]', 'var':'g'}
+            #   'Syn{:d}' : {'syn': 'Exp2Syn[0]', 'var':'g'}
             pp_list = cell.resolve_synapses(trace_spec['syn'])
             for i, pp in enumerate(pp_list):
                 vec = h.Vector()
                 hoc_ptr = getattr(pp, '_ref_'+trace_spec['var'])
-                vec.record(pp, hoc_ptr, self.sampling_interval)
+                vec.record(pp, hoc_ptr, sampling_interval)
 
                 numbered_trace_name = trace_name.format(i)
                 cell.traces[numbered_trace_name] = vec
@@ -192,22 +256,22 @@ class TraceSpecRecorder(Recorder):
             self.recorded[trace_name] = set()
             recorded = True
         
-        # recorded == True means recording vector was created and saved
+        # Record global variable 
         if not recorded:
             vec = h.Vector()
-            if self.sampling_interval == self._simulator.state.dt:
+            if sampling_interval == self._simulator.state.dt:
                 vec.record(hoc_var)
             else:
-                vec.record(hoc_var, self.sampling_interval)
+                vec.record(hoc_var, sampling_interval)
             cell.traces[trace_name] = vec
         
         # Record global time variable 't' if not recorded already
         if not cell.recording_time:
             cell.record_times = h.Vector()
-            if self.sampling_interval == self._simulator.state.dt:
+            if sampling_interval == self._simulator.state.dt:
                 cell.record_times.record(h._ref_t)
             else:
-                cell.record_times.record(h._ref_t, self.sampling_interval)
+                cell.record_times.record(h._ref_t, sampling_interval)
             
             cell.recording_time += 1
 
@@ -286,3 +350,71 @@ class TraceSpecRecorder(Recorder):
             vec.record(hoc_ptr, rec_dt)
 
         return vec, pp_marker
+
+
+    def _get_current_segment(self, filter_ids=None, variables='all', clear=False):
+        """
+        Rewrite of same method in module pyNN.recording.Recorder to support
+        distinct sampling period per trace.
+        """
+        segment = neo.Segment(name="segment%03d" % self._simulator.state.segment_counter,
+                              description=self.population.describe(),
+                              rec_datetime=datetime.now())  # would be nice to get the time at the start of the recording, not the end
+        variables_to_include = set(self.recorded.keys())
+        if variables is not 'all':
+            variables_to_include = variables_to_include.intersection(set(variables))
+        for variable in variables_to_include:
+            if variable == 'spikes':
+                t_stop = self._simulator.state.t * pq.ms  # must run on all MPI nodes
+                sids = sorted(self.filter_recorded('spikes', filter_ids))
+                data = self._get_spiketimes(sids)
+
+                segment.spiketrains = [
+                    neo.SpikeTrain(data.get(int(id),[]),
+                                   t_start=self._recording_start_time,
+                                   t_stop=t_stop,
+                                   units='ms',
+                                   source_population=self.population.label,
+                                   source_id=int(id),source_index=self.population.id_to_index(int(id)))
+                    for id in sids]
+            else:
+                ids = sorted(self.filter_recorded(variable, filter_ids))
+                signal_array = self._get_all_signals(variable, ids, clear=clear)
+                t_start = self._recording_start_time
+                sampling_period = self._get_trace_opt(variable, 'sampling_interval') * pq.ms
+                current_time = self._simulator.state.t * pq.ms
+                mpi_node = self._simulator.state.mpi_rank  # for debugging
+                if signal_array.size > 0:  # may be empty if none of the recorded cells are on this MPI node
+                    units = self.population.find_units(variable)
+                    source_ids = numpy.fromiter(ids, dtype=int)
+                    signal = neo.AnalogSignal(
+                                    signal_array,
+                                    units=units,
+                                    t_start=t_start,
+                                    sampling_period=sampling_period,
+                                    name=variable,
+                                    source_population=self.population.label,
+                                    source_ids=source_ids)
+                    signal.channel_index = neo.ChannelIndex(
+                            index=numpy.arange(source_ids.size),
+                            channel_ids=numpy.array([self.population.id_to_index(id) for id in ids]))
+                    segment.analogsignals.append(signal)
+                    logger.debug("%d **** ids=%s, channels=%s", mpi_node, source_ids, signal.channel_index)
+                    assert segment.analogsignals[0].t_stop - current_time - 2 * sampling_period < 1e-10
+                    # need to add `Unit` and `RecordingChannelGroup` objects
+        return segment
+
+
+    def _get_spiketimes(self, id):
+        """
+        Copied from PyNN master (latest version) to solve bug
+        """
+        if hasattr(id, "__len__"):
+            all_spiketimes = {}
+            for cell_id in id:
+                spikes = numpy.array(cell_id._cell.spike_times)
+                all_spiketimes[cell_id] = spikes[spikes <= simulator.state.t + 1e-9]
+            return all_spiketimes
+        else:
+            spikes = numpy.array(id._cell.spike_times)
+        return spikes[spikes <= simulator.state.t + 1e-9]
