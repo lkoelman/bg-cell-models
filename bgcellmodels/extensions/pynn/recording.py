@@ -387,6 +387,7 @@ class TraceSpecRecorder(Recorder):
                 if signal_array.size > 0:  # may be empty if none of the recorded cells are on this MPI node
                     units = self.population.find_units(variable)
                     source_ids = numpy.fromiter(ids, dtype=int)
+                    source_index = numpy.array([self.population.id_to_index(id) for id in ids])
                     signal = neo.AnalogSignal(
                                     signal_array,
                                     units=units,
@@ -394,10 +395,11 @@ class TraceSpecRecorder(Recorder):
                                     sampling_period=sampling_period,
                                     name=variable,
                                     source_population=self.population.label,
-                                    source_ids=source_ids)
+                                    source_ids=source_ids,
+                                    source_indices=source_index)
                     signal.channel_index = neo.ChannelIndex(
                             index=numpy.arange(source_ids.size),
-                            channel_ids=numpy.array([self.population.id_to_index(id) for id in ids]))
+                            channel_ids=source_index)
                     segment.analogsignals.append(signal)
                     logger.debug("%d **** ids=%s, channels=%s", mpi_node, source_ids, signal.channel_index)
                     assert segment.analogsignals[0].t_stop - current_time - 2 * sampling_period < 1e-10

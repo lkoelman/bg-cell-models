@@ -1062,6 +1062,11 @@ if __name__ == '__main__':
                         help='Output destination in format \'/outdir/*.ext\''
                              ' or /path/to/outdir/ with trailing slash')
 
+    parser.add_argument('-of', '--outformat', nargs='?', type=str,
+                        default='mat',
+                        dest='outformat',
+                        help='Output data format (mat/npz/nix)')
+
     parser.add_argument('-p', '--progress',
                         dest='report_progress', action='store_true',
                         help='Report progress periodically to progress file')
@@ -1097,17 +1102,14 @@ if __name__ == '__main__':
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames
     out_subdir = 'LuNetSGS_{stamp}_job-{job_id}_{config_name}'.format(
-                                            stamp=timestamp,
-                                            job_id=job_id,
-                                            config_name=config_name)
+        stamp=timestamp, job_id=job_id, config_name=config_name)
 
     # File names for data files
     # Default output format is hdf5 / NIX io
-    filespec = '*_{stamp}_scale-{scale}_dur-{dur}_job-{job_id}.mat'.format(
-                                            scale=parsed_dict['pop_scale'],
-                                            dur=parsed_dict['sim_dur'],
-                                            stamp=timestamp,
-                                            job_id=job_id)
+    data_fmt = parsed_dict.pop('outformat')
+    filespec = '*_{stamp}_scale-{scale}_dur-{dur}_job-{job_id}.{fmt}'.format(
+        scale=parsed_dict['pop_scale'], dur=parsed_dict['sim_dur'],
+        stamp=timestamp, job_id=job_id, fmt=data_fmt)
     
     # Make output directory if non-existing, but only on one host
     out_basedir = os.path.expanduser(out_basedir)
