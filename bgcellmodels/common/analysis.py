@@ -469,6 +469,33 @@ solid_styles = ['-']
 broken_styles = ['--', '-.', ':']
 
 
+def pick_line_options(hue, solidity, index):
+    """
+    Pick a line color and solidity specifier based on description
+    of the class and an index that wraps around.
+
+    @return     tuple(color, linestyle) that can be passed to the keyword
+                arguments 'color' and 'linestyl' of matplotlib.plot
+    """
+    if hue in ('green', 'greenish'):
+        hue_clist = greenish
+    elif hue in ('red', 'redish'):
+        hue_clist = redish
+    elif hue in ('blue', 'blueish'):
+        hue_clist = blueish
+    elif hue in ('any', 'all'):
+        hue_clist = allcolors
+    else:
+        raise ValueError(hue)
+    if solidity == 'solid':
+        sol_list = solid_styles
+    elif solidity == 'broken':
+        sol_list = broken_styles
+    else:
+        raise ValueError(solidity)
+    return hue_clist[index % len(hue_clist)], sol_list[index % len(sol_list)]
+
+
 def pick_line(trace_name, trace_index, solid_only=False):
     """
     Pick a line style and color based on the trace name
