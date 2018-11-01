@@ -142,14 +142,16 @@ class NativeMultiSynapse(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
                 Maps NEURON mechanism name onto the receptor/region specification
                 for the post-synaptic cell.
         """
+        # TODO: provide dict "contact_types" that has entries mechanism, num_contacts, ...
         mechs_receptors = kwargs.pop('mechanisms_receptors')
+        num_contacts = kwargs.pop('num_contacts', 1)
         translation_pairs = [('weight', 'weight'), ('delay', 'delay')]
 
         # Build default parameters and translations for mechanism
         for mechname, receptor in mechs_receptors.iteritems():
             self.subcellular_conn[mechname] = {
                 'receptors': receptor,
-                'num_contacts': 1,
+                'num_contacts': num_contacts,
                 'num_converge': 1,
             }
             for pname, pinfo in synmech.SYN_MECH_DB[mechname]['parameters'].iteritems():

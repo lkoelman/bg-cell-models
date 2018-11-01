@@ -61,10 +61,13 @@ def eval_params(param_dict, caller_globals, caller_locals):
         if isinstance(param_spec, dict):
             # Parameter specification is a statement to be avaluated in
             # a context of local and global variables
-            params_evaluated[param_name] = eval_context(
-                caller_globals=caller_globals,
-                caller_locals=caller_locals,
-                **param_spec)
+            if "statement" in param_spec:
+                params_evaluated[param_name] = eval_context(
+                    caller_globals=caller_globals,
+                    caller_locals=caller_locals,
+                    **param_spec)
+            else:
+                params_evaluated[param_name] = param_spec
 
         elif isinstance(param_spec, (float, int, bool)) or param_spec is None:
             # Numerical values are passed as is

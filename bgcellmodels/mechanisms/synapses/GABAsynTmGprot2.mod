@@ -43,11 +43,24 @@ USAGE
 
     - record state variable 'G' and plot it
 
+    - this will depend on U1, tau_rec, tau_facil
 
-2. Set KD (half-maximum of sigmoid describing Hill kinetics) to between
-  1.5-3 times the peak G-protein concentration.
 
+2. Set KD (half-maximum of sigmoid describing Hill kinetics) appropriately
+    
+    - Configure sigmoid to map desired range of G-proten concentration to range [0, 1]
+
+    - It makes most sense to map the actual dynamic range of G (during the simulation)
+      to the linear (middle) and sublinear part of the sigmoid. E.g. by setting KD
+      to slightly above peak G.
+    
     - Depending on how many spikes you want to result in a significant rise in g_GABAB
+
+
+3. Adjust ratio of gmax for GABA-A and GABA-B
+
+    - the actual ratio of g during the simulation will generally differ from the
+      values set as parameters due to the different multiplication factors
 
 
 ENDCOMMENT

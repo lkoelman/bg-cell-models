@@ -102,7 +102,10 @@
         },
         // Surrogate spike sources
         "surrogate_fraction": 0.1, // Number of surrogate spike sources as fraction of number of real cells. Added to population size. NOTE: this will determine the number of surrogate afferents if GPE.all is used as source for a Projection. 
-        "surrogate_rate": 47.5, // TODO: set DD and DNORM firing rate
+        "surrogate_rate": {
+            "statement": "14.6 if DD else 33.7", // Mallet 2008 'Parkinsonian Beta...': firing rates during cortical activation
+            "locals": null,
+        },
         // Common traces for all GPE neurons
         "traces": [
             {
@@ -201,7 +204,8 @@
                     "gmax_GABAA": {
                         "statement": "(1 + 0.5*DD)*gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
-                            "gmax_base": 0.15e-3, // [uS], adjusted for U1
+                            "gmax_base": 0.15e-3, // [uS]
+                            "peak_factor": 4.0, // adjustment for actual g_peak
                         },
                         "globals": {},
                     },
@@ -211,13 +215,17 @@
                     "gmax_GABAB": {
                         "statement": "(1 + 0.25*DD)*gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
-                            "gmax_base": 0.03e-3, // [uS], adjusted for U1
+                            "gmax_base": 0.03e-3, // [uS]
+                            "peak_factor": 1.666, // adjustment for actual g_peak
                         },
                         "globals": {},
                     },
                     "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
                     "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
-                    "KD":            0.35,  // half-maximum of sigmoid(G)
+                    "K3":            0.098, // [1/ms] rise rate of cascade LPF
+                    "K4":            0.00625, // [1/ms] decay rate of cascade LPF
+                    "KD":            1.4,  // half-maximum of sigmoid(G)
+                    "n":             4.0,  // exponent of sigmoid Hill function (steepness)
                 },
             },
         },
@@ -281,7 +289,7 @@
         // Surrogate spike sources
         "surrogate_fraction": 0.1, // fraction of population size
         "surrogate_rate": {
-            "statement": "33.7 if DD else 25.0", // TODO: find reference for DNORM firing rate
+            "statement": "29.5 if DD else 14.6", // Mallet 2008 'Disrupted ...': firing rates of non-oscillatory STN neurons
             "locals": null,
         },
 // GPE -> STN Projection
@@ -306,25 +314,34 @@
                     "tau_facil":    1.0,    // [ms] recovery from facilitation
                     // GABA-A receptor
                     "gmax_GABAA": {
-                        "statement": "(1 + 0.5*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "statement": "(1 + 0.5*DD)*gmax_base*peak_factor", // factor 1.5 in DA-depleted condition
                         "locals": {
-                            "gmax_base": 10e-3, // [uS], adjusted for U1
+                            "gmax_base": 2.5e-3, // [uS]
+                            "peak_factor": 4.0, // adjustment for actual g_peak
                         },
                         "globals": {},
                     },
                     "tau_r_GABAA":   2.0, // [ms] rise time
-                    "tau_d_GABAA":   5.0, // [ms] decay time
+                    "tau_d_GABAA":   { // [ms] decay time
+                        "statement": "7.0 if DD else 5.0", // Fan (2012) : prolonged decay kinetics
+                        "locals":   {},
+                        "globals":  {},
+                    },
                     // GABA-B receptor
                     "gmax_GABAB": {
-                        "statement": "(1 + 0.25*DD)*gmax_base", // factor 1.5 in DA-depleted condition
+                        "statement": "(1 + 0.25*DD)*gmax_base*peak_factor", // factor 1.5 in DA-depleted condition
                         "locals": {
-                            "gmax_base": 2.5e-3, // [uS], adjusted for U1
+                            "gmax_base": 2.5e-3, // [uS]
+                            "peak_factor": 1.666, // adjustment for actual g_peak
                         },
                         "globals": {},
                     },
                     "tau_r_GABAB":   5.0,   // [ms] rise time bound receptor fraction
                     "tau_d_GABAB":   25.0,  // [ms] decay time bound recepetor fraction
-                    "KD":            0.35,  // half-maximum of sigmoid(G)
+                    "K3":            0.098, // [1/ms] rise rate of cascade LPF
+                    "K4":            0.00625, // [1/ms] decay rate of cascade LPF
+                    "KD":            1.4,  // half-maximum of sigmoid(G)
+                    "n":             4.0,  // exponent of sigmoid Hill function (steepness)
                 },
             },
         },
@@ -375,34 +392,58 @@
             },
             "receptor_type": "distal.AMPA+NMDA",
             "synapse": {
-                "name": "GluSynapse",
+                "name": "NativeMultiSynapse",
                 "parameters": {
+                    // Synaptic mechanism for each contact type
+                    "mechanisms_receptors": {
+                        "GLUsyn": "distal.AMPA+NMDA",
+                        "NMDAsynTM": "proximal.NMDA"
+                    },
+                    // Common NetCon parameters
                     "weight":       1.0,
                     "delay":        5.9, // [ms] delay from Kita, Kita (2011)
+                    // ---------------------------------------------------------
+                    // GLUsyn parameters: AMPA + NMDA NR2B/D receptor (slow kinetics)
                     // STP parameters
-                    "U1":           0.2, // baseline release probability
-                    "tau_rec":      200.0, // [ms] recovery from STD
-                    "tau_facil":    1.0, // [ms] recovery from facilitation
+                    "GLUsyn_U1":           0.2, // baseline release probability
+                    "GLUsyn_tau_rec":      200.0, // [ms] recovery from STD
+                    "GLUsyn_tau_facil":    1.0, // [ms] recovery from facilitation
                     // AMPA receptor
-                    "gmax_AMPA": {
+                    "GLUsyn_gmax_AMPA": {
                         "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
                             "gmax_base": 14.66e-3, // [uS], adjusted for U1
                         },
                         "globals": {},
                     },
-                    "tau_r_AMPA":   1.0, // [ms] rise time
-                    "tau_d_AMPA":   4.0, // [ms] decay time
+                    "GLUsyn_tau_r_AMPA":   1.0, // [ms] rise time
+                    "GLUsyn_tau_d_AMPA":   4.0, // [ms] decay time
                     // NMDA receptor
-                    "gmax_NMDA": {
+                    "GLUsyn_gmax_NMDA": {
                         "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
                             "gmax_base": 3.66e-3, // [uS], adjusted for U1
                         },
                         "globals": {},
                     },
-                    "tau_r_NMDA":   3.7,    // [ms] rise time
-                    "tau_d_NMDA":   80.0,   // [ms] decay time
+                    "GLUsyn_tau_r_NMDA":   3.7,    // [ms] rise time
+                    "GLUsyn_tau_d_NMDA":   212.0,   // [ms] decay time
+                    // ---------------------------------------------------------
+                    // NMDAsyn parameters: NMDA NR2A receptor (fast kinetics)
+                    // STP parameters
+                    "NMDAsynTM_U1":           0.2, // baseline release probability
+                    "NMDAsynTM_tau_rec":      200.0, // [ms] recovery from STD
+                    "NMDAsynTM_tau_facil":    1.0, // [ms] recovery from facilitation
+                    // NMDA kinetics
+                    "NMDAsynTM_gmax_NMDA": {
+                        "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
+                        "locals": {
+                            "gmax_base": 3.66e-3, // [uS], adjusted for U1
+                        },
+                        "globals": {},
+                    },
+                    "NMDAsynTM_tau_r_NMDA":   3.7,    // [ms] rise time
+                    "NMDAsynTM_tau_d_NMDA":   80.0,   // [ms] decay time
                 }
             }
         },

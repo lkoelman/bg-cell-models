@@ -50,7 +50,7 @@ WITH_MPI = mpi_size > 1
 # PyNN library
 import pyNN.neuron as sim
 from pyNN import space
-from pyNN.parameters import Sequence
+
 from pyNN.random import RandomDistribution
 from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
@@ -58,9 +58,10 @@ import neo.io
 # Custom PyNN extensions
 from bgcellmodels.extensions.pynn.synapses import (
     GluSynapse, GabaSynapse, GabaSynTmHill, GABAAsynTM,
-    GabaSynTm2)
+    GabaSynTm2, NativeMultiSynapse)
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
+import bgcellmodels.extensions.pynn.spiketrains as spikegen
 
 # Monkey-patching of pyNN.neuron.Population class
 # from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
@@ -83,7 +84,6 @@ make_divergent_pattern = connectivity.make_divergent_pattern
 #from bgcellmodels.cellpopdata.physiotypes import ParameterSource as ParamSrc
 # from bgcellmodels.cellpopdata.cellpopdata import CellConnector
 
-from bgcellmodels.common import spikelib
 from bgcellmodels.common.configutil import eval_params
 from bgcellmodels.common.stdutil import getdictvals
 from bgcellmodels.common import logutils, fileutils
@@ -127,96 +127,6 @@ def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
     targets_relative = range(1, num_adjacent+1) + range(-1, -num_adjacent-1, -1)
     return make_divergent_pattern(source_ids, targets_relative, pop_size)
 
-
-def make_bursty_spike_generator(bursting_fraction, synchronous, rng,
-                                T_burst, dur_burst, f_intra, f_inter,
-                                f_background, duration):
-    """
-    Make generator function that returns bursty spike sequences.
-    """
-    if synchronous:
-        make_bursts = spikelib.make_oscillatory_bursts
-    else:
-        make_bursts = spikelib.make_variable_bursts
-
-    def spike_seq_gen(cell_indices):
-        """
-        Spike sequence generator
-
-        @param  cell_indices : list(int)
-                Local indices of cells (NOT index in entire population)
-
-        @return spiketimes_for_cell : list(Sequence)
-                Sequencie of spike times for each cell index
-        """
-        # Choose cell indices that will emit bursty spike trains
-        num_bursting = int(bursting_fraction * len(cell_indices))
-        bursting_cells = rng.choice(cell_indices, 
-                                    num_bursting, replace=False)
-
-        spiketimes_for_index = []
-        for i in cell_indices:
-            if i in bursting_cells:
-                # Spiketimes for bursting cells
-                burst_gen = make_bursts(T_burst, dur_burst, f_intra, f_inter,
-                                        rng=rng, max_dur=duration)
-                spiketimes = Sequence(np.fromiter(burst_gen, float))
-            else:
-                # Spiketimes for background activity
-                number = int(2 * duration * f_background / 1e3)
-                if number == 0:
-                    spiketimes = Sequence([])
-                else:
-                    spiketimes = Sequence(np.add.accumulate(
-                        rng.exponential(1e3/f_background, size=number)))
-            spiketimes_for_index.append(spiketimes)
-        return spiketimes_for_index
-
-    return spike_seq_gen
-
-
-def bursty_spiketrains_during(intervals, bursting_fraction, 
-                          T_burst, dur_burst, f_intra, f_inter, f_background, 
-                          duration, randomize_bursting, rng):
-    """
-    Make spiketrains where a given fraction fires synchronized bursts during
-    each interval.
-    """
-
-    def spike_seq_gen(cell_indices):
-        """
-        Spike sequence generator
-        """
-        # First pick bursting cells during each bursty interval
-        num_bursting = int(bursting_fraction * len(cell_indices))
-        num_intervals = len(intervals)
-        if randomize_bursting:
-            bursting_ids = [rng.choice(cell_indices, num_bursting, replace=False) 
-                                for i in range(num_intervals)]
-        else:
-            bursting_ids = [rng.choice(cell_indices, num_bursting, replace=False)] * num_intervals
-
-        spiketimes_for_index = []
-        for i in cell_indices:
-            burst_intervals = [intervals[j] for j in range(num_intervals) if i in bursting_ids[j]]
-            
-            if len(burst_intervals) > 0:
-                # Spiketimes for bursting cells
-                spikegen = spikelib.generate_bursts_during(burst_intervals, 
-                                T_burst, dur_burst, f_intra, f_inter, 
-                                f_background, duration, max_overshoot=0.25, rng=rng)
-                spiketimes = Sequence(np.fromiter(spikegen, float))
-            else:
-                # Spiketimes for background activity
-                number = int(2 * duration * f_background / 1e3)
-                if number == 0:
-                    spiketimes = Sequence([])
-                else:
-                    spiketimes = Sequence(np.add.accumulate(
-                        rng.exponential(1e3/f_background, size=number)))
-            spiketimes_for_index.append(spiketimes)
-        return spiketimes_for_index
-    return spike_seq_gen
 
 
 def write_population_data(pop, output, suffix, gather=True, clear=True):
@@ -334,9 +244,10 @@ def run_simple_net(
         """
         Get population parameters from config and evaluate them.
         """
-        local_context = config[pop].get('local_context', {})
+        config_locals = config[pop].get('local_context', {})
         param_specs = getdictvals(config[pop], *param_names, as_dict=True)
-        pvals = eval_params(param_specs, params_global_context, local_context)
+        pvals = eval_params(param_specs, params_global_context,
+                            [params_local_context, config_locals])
         return getdictvals(pvals, *param_names)
 
     def get_cell_parameters(pop):
@@ -414,7 +325,7 @@ def run_simple_net(
                                 T_burst, dur_burst, f_intra, f_inter, f_background, 
                                 sim_dur, randomize_bursting, rank_rng)
     else:
-        ctx_spike_generator = make_bursty_spike_generator(
+        ctx_spike_generator = spikegen.make_bursty_spike_generator(
                                 bursting_fraction=bursting_fraction, 
                                 synchronous=synchronous, rng=rank_rng,
                                 T_burst=T_burst, dur_burst=dur_burst, 
@@ -438,12 +349,12 @@ def run_simple_net(
         'STR.MSN', 'burst_intervals', 'randomize_bursting_cells')
 
     if burst_intervals is not None:
-        msn_spike_generator = bursty_spiketrains_during(
+        msn_spike_generator = spikegen.bursty_spiketrains_during(
                                 burst_intervals, bursting_fraction, 
                                 T_burst, dur_burst, f_intra, f_inter, f_background, 
                                 sim_dur, randomize_bursting, rank_rng)
     else:
-        msn_spike_generator = make_bursty_spike_generator(
+        msn_spike_generator = spikegen.make_bursty_spike_generator(
                                 bursting_fraction=bursting_fraction, 
                                 synchronous=synchronous, rng=rank_rng,
                                 T_burst=T_burst, dur_burst=dur_burst, 
@@ -482,7 +393,7 @@ def run_simple_net(
     #---------------------------------------------------------------------------
     # STN Surrogate spike sources
 
-    frac_surrogate, surr_rate = get_pop_parameters('STN.all', 
+    frac_surrogate, surr_rate = get_pop_parameters('STN', 
         'surrogate_fraction', 'surrogate_rate')
     
     ncell_surrogate = int(stn_ncell_biophys * frac_surrogate)
@@ -583,6 +494,7 @@ def run_simple_net(
         "GABAAsynTM": GABAAsynTM,
         "GabaSynTm2": GabaSynTm2,
         "GabaSynTmHill" : GabaSynTmHill, # Desthexhe-like signaling pathway
+        "NativeMultiSynapse" : NativeMultiSynapse,
     }
 
     # Make all Projections directly from (pre, post) pairs in config
