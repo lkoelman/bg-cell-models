@@ -114,9 +114,10 @@ def bursty_spiketrains_during(intervals, bursting_fraction,
     return spike_seq_gen
 
 
-def bursty_permuted_spiketrains(intervals, bursting_fraction, 
-                          T_burst, dur_burst, f_intra, f_inter, f_background, 
-                          duration, randomize_bursting, rng):
+def bursty_permuted_spiketrains(
+        T_burst, num_spk_burst, f_intra, f_background, max_dt_spk,
+        t_refrac_pre, t_refrac_post,
+        bursting_fraction, intervals, duration, rng):
     """
     Make spiketrains that burst semi-synchronously in each cycle of a
     reference sinusoid. In each cycle only a given fraction of spiketrains has
@@ -125,13 +126,70 @@ def bursty_permuted_spiketrains(intervals, bursting_fraction,
     @param      intervals : iterable(tuple[float, float])
                 Sequence of time intervals in which cells should burst.
 
+    @param      max_dt_spk : float
+                Max dt (ms) added to spiketimes inside a burst. The interval
+                between spikes in a burst is 1/f_intra + uniformly sampled
+                value in (0, max_dt_spk). I.e. f_intra is the max firing rate.
+
     @return     function(iterable(index)) -> iterable(Sequence)
                 Function that returns a sequence of spike times for each
                 cell index.
     """
-    # Make a mask that has the bursting cell indices for each period in its rows
-    # i.e. element mask[i][j] is the j-th bursting cell index in period i
+    # Make a mask that has the bursting cell indices for each cycle in its rows
+    # i.e. element mask[i][j] is the j-th bursting cell index in cycle i
+    def spike_seq_gen(cell_indices):
+        """
+        Spike sequence generator
+        """
+        # First pick bursting cells during each bursty interval
+        num_bursting = int(bursting_fraction * len(cell_indices))
+        num_cycles = int(duration / T_burst) + 1
+        # element i are cell ids that burst during cycle i
+        cycle_burst_ids = np.array(
+            [rng.choice(cell_indices, num_bursting, replace=False) 
+                for i in range(num_cycles)])
 
-    # For each spiketrains, find periods that it burst and make burst.
-    # Take into acoount the intervals.
+        T_intra = 1e3 / f_intra
+        spk_burst_centered = np.arange(0, (num_spk_burst+1)*T_intra, T_intra)
+
+        # For each spiketrains
+        # - Generate bursty spikes in cycles that it's active and overlap with interval
+        # - Generate background spikes in remaining cycles.
+        spiketimes_for_index = []
+        for i in cell_indices:
+            # Spiketimes for background activity
+            number = int(2 * duration * f_background / 1e3)
+            spk_bg = np.add.accumulate(
+                rng.exponential(1e3/f_background, size=number))
+            bg_del_mask = np.zeros_like(spk_bg, dtype=bool)
+
+            # Generate background spikes until t > next active period
+            bursting_cycles = np.where(cycle_burst_ids == cell_id)[0]
+            if len(bursting_cycles) == 0:
+                spiketimes_for_index.append(Sequence(spk_bg))
+                continue
+
+            # Add bursty spikes in burst cycles
+            all_spk = []
+            for i_cycle in bursting_cycles:
+                spk_var_dt = rng.uniform(0.0, max_dt_spk, num_spk_burst)
+                spk_burst = (i_cycle*T_burst) + spk_burst_centered + spk_var_dt
+                all_spk.append(spk_burst)
+
+                # Delete background spikes in tspk0-refrac, tspk[-1]+refrac
+                # - build a deletion mask and apply at end
+                cycle_mask = ((spk_bg >= (spk_burst[0] - t_refrac_pre)) & 
+                              (spk_bg <= (spk_burst[-1] + t_refrac_post)))
+                bg_del_mask = bg_del_mask | cycle_mask
+
+            # Delete background spikes that fall in refractory period around burst
+            all_spk.append(spk_bg[~bg_del_mask])
+
+            # Sort the spikes
+            spk_merged = np.concatenate(all_spk)
+            spk_merged.sort()
+
+            spiketimes = Sequence(spk_merged)
+            spiketimes_for_index.append(spiketimes)
+        return spiketimes_for_index
     pass
