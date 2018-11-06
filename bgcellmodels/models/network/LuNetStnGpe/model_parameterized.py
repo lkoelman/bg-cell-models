@@ -19,7 +19,7 @@ USAGE
 
 To run using MPI, use the `mpirun` or `mpiexec` command like:
 
-`mpirun -n 4 python model_parameterized.py --scale 0.5 --dur 500 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/DA-depleted_template.json`
+`mpirun -n 6 python model_parameterized.py --scale 0.5 --dur 3000 --dnorm --no-lfp --seed 888 --transient-period 0.0 --write-interval 3000 -id CALDNORM --outdir ~/storage/BBB_LuNetStnGpe --config configs/StnGpe_template_syn-V8.json`
 
 To run from an IPyhton shell, use the %run magic function like:
 
@@ -123,6 +123,8 @@ def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
     @return conn_list : list(list[int, int])
             Connection list with [source, target] pairs.
     """
+    if fraction == 0 or num_adjacent == 0:
+        return []
     source_ids = rng.choice(range(pop_size), int(fraction*pop_size), replace=False)
     targets_relative = range(1, num_adjacent+1) + range(-1, -num_adjacent-1, -1)
     return make_divergent_pattern(source_ids, targets_relative, pop_size)
@@ -250,13 +252,28 @@ def run_simple_net(
                             [params_local_context, config_locals])
         return getdictvals(pvals, *param_names)
 
+    def get_param_group(pop, group_name=None, mapping=None):
+        """
+        Get a group of parameters for a population as dictionary.
+        """
+        config_locals = config[pop].get('local_context', {})
+        if group_name is None:
+            param_specs = config[pop]
+        else:
+            param_specs = config[pop][group_name]
+        if mapping is not None:
+            param_specs = {v: param_specs[k] for k,v in mapping.iteritems()}
+        return eval_params(param_specs, params_global_context,
+                           [params_local_context, config_locals])
+
     def get_cell_parameters(pop):
         """
         Get PyNN cell parameters as dictionary of numerical values.
         """
-        local_context = config[pop].get('local_context', {})
+        config_locals = config[pop].get('local_context', {})
         param_specs = config[pop].get('PyNN_cell_parameters', {})
-        return eval_params(param_specs, params_global_context, local_context)
+        return eval_params(param_specs, params_global_context,
+                           [params_local_context, config_locals])
 
     def synapse_from_config(pre, post):
         """
@@ -312,25 +329,13 @@ def run_simple_net(
     # CTX POPULATION
 
     # CTX spike sources
-    T_burst, dur_burst, f_intra, f_inter, f_background = get_pop_parameters(
-        'CTX', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'f_background')
-    synchronous, bursting_fraction, ctx_pop_size = get_pop_parameters(
-        'CTX', 'synchronous', 'bursting_fraction', 'base_population_size')
-    burst_intervals, randomize_bursting = get_pop_parameters(
-        'CTX', 'burst_intervals', 'randomize_bursting_cells')
+    ctx_pop_size, = get_pop_parameters('CTX', 'base_population_size')
+    ctx_burst_params = get_param_group('CTX', 'spiking_pattern')
 
-    if burst_intervals is not None:
-        ctx_spike_generator = bursty_spiketrains_during(
-                                burst_intervals, bursting_fraction, 
-                                T_burst, dur_burst, f_intra, f_inter, f_background, 
-                                sim_dur, randomize_bursting, rank_rng)
-    else:
-        ctx_spike_generator = spikegen.make_bursty_spike_generator(
-                                bursting_fraction=bursting_fraction, 
-                                synchronous=synchronous, rng=rank_rng,
-                                T_burst=T_burst, dur_burst=dur_burst, 
-                                f_intra=f_intra, f_inter=f_inter,
-                                f_background=f_background, duration=sim_dur)
+    ctx_spike_generator = spikegen.bursty_permuted_spiketrains(
+                                    duration=sim_dur,
+                                    rng=rank_rng,
+                                    **ctx_burst_params)
 
     pop_ctx = Population(
         int(ctx_pop_size * pop_scale),
@@ -341,25 +346,33 @@ def run_simple_net(
     # STR.MSN POPULATION
 
     # STR.MSN spike sources
-    msn_pop_size, synchronous, bursting_fraction, = get_pop_parameters(
-        'STR.MSN', 'base_population_size', 'synchronous', 'bursting_fraction')
-    T_burst, dur_burst, f_intra, f_inter, f_background = get_pop_parameters(
-        'STR.MSN', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'f_background')
-    burst_intervals, randomize_bursting = get_pop_parameters(
-        'STR.MSN', 'burst_intervals', 'randomize_bursting_cells')
+    msn_pop_size, = get_pop_parameters(
+        'STR.MSN', 'base_population_size')
+    # msn_pop_size, synchronous, bursting_fraction, = get_pop_parameters(
+    #     'STR.MSN', 'base_population_size', 'synchronous', 'bursting_fraction')
+    # T_burst, dur_burst, f_intra, f_inter, f_background = get_pop_parameters(
+    #     'STR.MSN', 'T_burst', 'dur_burst', 'f_intra', 'f_inter', 'f_background')
+    # burst_intervals, randomize_bursting = get_pop_parameters(
+    #     'STR.MSN', 'burst_intervals', 'randomize_bursting_cells')
 
-    if burst_intervals is not None:
-        msn_spike_generator = spikegen.bursty_spiketrains_during(
-                                burst_intervals, bursting_fraction, 
-                                T_burst, dur_burst, f_intra, f_inter, f_background, 
-                                sim_dur, randomize_bursting, rank_rng)
-    else:
-        msn_spike_generator = spikegen.make_bursty_spike_generator(
-                                bursting_fraction=bursting_fraction, 
-                                synchronous=synchronous, rng=rank_rng,
-                                T_burst=T_burst, dur_burst=dur_burst, 
-                                f_intra=f_intra, f_inter=f_inter,
-                                f_background=f_background, duration=sim_dur)
+    # if burst_intervals is not None:
+    #     msn_spike_generator = spikegen.bursty_spiketrains_during(
+    #                             burst_intervals, bursting_fraction, 
+    #                             T_burst, dur_burst, f_intra, f_inter, f_background, 
+    #                             sim_dur, randomize_bursting, rank_rng)
+    # else:
+    #     msn_spike_generator = spikegen.make_bursty_spike_generator(
+    #                             bursting_fraction=bursting_fraction, 
+    #                             synchronous=synchronous, rng=rank_rng,
+    #                             T_burst=T_burst, dur_burst=dur_burst, 
+    #                             f_intra=f_intra, f_inter=f_inter,
+    #                             f_background=f_background, duration=sim_dur)
+
+    msn_burst_params = get_param_group('STR.MSN', 'spiking_pattern')
+    msn_spike_generator = spikegen.bursty_permuted_spiketrains(
+                                    duration=sim_dur,
+                                    rng=rank_rng,
+                                    **msn_burst_params)
 
     pop_msn = Population(
         int(msn_pop_size * pop_scale),
@@ -840,11 +853,11 @@ if __name__ == '__main__':
         out_basedir = '~/storage'
     job_id = parsed_dict.pop('job_id')[0]
     time_now = time.time()
-    timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d_%H:%M:%S')
+    timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d_%H.%M.%S')
 
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames
-    out_subdir = 'LuNetSGS_{stamp}_job-{job_id}_{config_name}'.format(
+    out_subdir = 'LuNetStnGpe_{stamp}_job-{job_id}_{config_name}'.format(
                                             stamp=timestamp,
                                             job_id=job_id,
                                             config_name=config_name)

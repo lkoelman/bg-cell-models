@@ -166,13 +166,13 @@ class TraceSpecRecorder(Recorder):
         """
         # trace_name might be Synapse1 with Synapse{:d} present as key
         if trace_name not in self.trace_opts:
-            match = re.match(r'(\w+?)(\d+)', trace_name)
+            match = re.match(r'(\w+?)(\d+)$', trace_name)
             if not match:
-                return KeyError(trace_name)
+                raise KeyError(trace_name)
             trace_prefix = match.group(1)
             trace_template = next((k for k in self.trace_opts.keys() if re.match(trace_prefix + r'\{.+?\}', k)), None)
             if not trace_template:
-                return KeyError(trace_name)
+                raise KeyError(trace_name)
             return self.trace_opts[trace_template][opt_name]
         return self.trace_opts[trace_name][opt_name]
 

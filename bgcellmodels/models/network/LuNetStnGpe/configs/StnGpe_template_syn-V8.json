@@ -32,26 +32,27 @@
             "combined_spike_sources": 5.0, // number of combined (Poisson) spike sources
         },
         "base_population_size": 1000, // 5 independent spike sources per MSN
-        // Spiking pattern
-        "f_background": { // mean firing rate of non-bursting neurons
-            "statement": "2.0 * combined_spike_sources",
-            "locals": null, // use local_context
+        "spiking_pattern": {
+            "bursting_fraction": 0.25, // fraction of bursting cells
+            "T_burst": 50.0,
+            "phi_burst": 0.0,
+            "f_intra": 200.0,
+            "f_background": { // mean firing rate of non-bursting neurons
+                "statement": "2.0 * combined_spike_sources",
+                "locals": null, // use local_context
+            },
+            "num_spk_burst": [3, 5],
+            "max_dt_spk": 1.0,
+            "t_refrac_pre": 20.0,
+            "t_refrac_post": 10.0,
+            "intervals": [
+                [1500.0, 20000.0],
+                // [1000.0, 1250.0],
+                // [2000.0, 2500.0], 
+                // [3500.0, 4500.0],
+                // [6500.0, 8500.0]
+            ],
         },
-        // Parameters for bursting neurons
-        "bursting_fraction": 0.8, // fraction of bursting cells
-        "T_burst": 1000.0,
-        "dur_burst": 20.0,
-        "f_intra": 200.0,
-        "f_inter": 10.0,
-        "synchronous": true, // whether bursts occur synchronously
-        "burst_intervals": [ // set to None for continuous
-            [1000,0, 20000.0], // Kita & Kita 2011: CTX stim every 1 second
-            // [1000.0, 1250.0],
-            // [2000.0, 2500.0], 
-            // [3500.0, 4500.0],
-            // [6500.0, 8500.0]
-        ],
-        "randomize_bursting_cells": true, // pick random bursting cells in each interval
     },
 // =============================================================================
 // STR.MSN Population Parameters
@@ -62,22 +63,43 @@
             "combined_spike_sources": 1.0, // number of combined (Poisson) spike sources
         },
         "base_population_size": 2000, // approx. num_gpe * num_pre_msn_gpe
-        // Spiking pattern
-        "f_background": { // mean firing rate of non-bursting neurons
-            "statement": "2.0 * combined_spike_sources",
-            "locals": null, // use local_context
+        // // Spiking pattern
+        // "f_background": { // mean firing rate of non-bursting neurons
+        //     "statement": "2.0 * combined_spike_sources",
+        //     "locals": null, // use local_context
+        // },
+        // // Parameters for bursting neurons
+        // "bursting_fraction": 0.8, // fraction of bursting cells
+        // "T_burst": 1000.0,
+        // "dur_burst": 20.0,
+        // "f_intra": 200.0,
+        // "f_inter": 10.0,
+        // "synchronous": true, // whether bursts occur synchronously
+        // "burst_intervals": [ // set to None for continuous
+        //     [1000,0, 20000.0],
+        // ],
+        // "randomize_bursting_cells": true, // pick random bursting cells in each interval
+        "spiking_pattern": {
+            "bursting_fraction": 0.0, // fraction of bursting cells
+            "T_burst": 50.0,
+            "phi_burst": 180.0,
+            "f_intra": 200.0,
+            "f_background": { // mean firing rate of non-bursting neurons
+                "statement": "(6.64 if DD else 0.67) * combined_spike_sources",
+                "locals": null,
+            },
+            "num_spk_burst": [3, 5],
+            "max_dt_spk": 1.0,
+            "t_refrac_pre": 20.0,
+            "t_refrac_post": 10.0,
+            "intervals": [
+                [1500.0, 20000.0],
+                // [1000.0, 1250.0],
+                // [2000.0, 2500.0], 
+                // [3500.0, 4500.0],
+                // [6500.0, 8500.0]
+            ],
         },
-        // Parameters for bursting neurons
-        "bursting_fraction": 0.8, // fraction of bursting cells
-        "T_burst": 1000.0,
-        "dur_burst": 20.0,
-        "f_intra": 200.0,
-        "f_inter": 10.0,
-        "synchronous": true, // whether bursts occur synchronously
-        "burst_intervals": [ // set to None for continuous
-            [1000,0, 20000.0],
-        ],
-        "randomize_bursting_cells": true, // pick random bursting cells in each interval
     },// end MSN
 // =============================================================================
 // GPE Population Parameters
@@ -94,6 +116,10 @@
         // Numerical parameters passed to cell type
         "PyNN_cell_parameters": {
             "membrane_noise_std": 0.1, // 0.1 calibrated empirically based on Vm trace
+            "gmax_HCN_scale": {
+                "statement": "0.5 if DD else 1.0",
+                "locals": null,
+            },
         },
         // Spatial arrangement
         "grid_dx": {
@@ -277,7 +303,7 @@
         // Local variables for this context / level of nesting (used in other statements)
         "local_context": {
             "grid_dx": 50.0,
-            "frac_lateral_projecting": 0.2,
+            "frac_lateral_projecting": 0.0,
             "num_lateral_projections": 3, // number of lateral targets on each side
             "surrogate_afferent_fraction": 0.2, // fraction of GPe afferents from surrogates
         },
@@ -285,6 +311,10 @@
         "PyNN_cell_parameters": {
             "membrane_noise_std": 0.0075, // 0.0075 calibrated empirically based on Vm trace
             "lfp_sigma_extracellular": 0.3,
+            "gk_Ih_scale": {
+                "statement": "0.5 if DD else 1.0", // reduced HCN current in DD condition
+                "locals": null,
+            },
         },
         // Surrogate spike sources
         "surrogate_fraction": 0.1, // fraction of population size
@@ -292,6 +322,26 @@
             "statement": "29.5 if DD else 14.6", // Mallet 2008 'Disrupted ...': firing rates of non-oscillatory STN neurons
             "locals": null,
         },
+        // Recorded traces
+        "traces": [
+            {
+                "cells": 5,
+                "sampling_period": 0.05,
+                "specs": {
+                    // CTX inputs
+                    "g_AMPA{:d}": {"syn":"GLUsyn[:]", "var":"g_AMPA"},
+                    "g_NR2BD{:d}": {"syn":"GLUsyn[:]", "var":"g_NMDA"},
+                    "i_GLU{:d}": {"syn":"GLUsyn[:]", "var":"i"},
+                    // Somatic NMDA, NR2A subunit
+                    "g_NR2A{:d}": {"syn":"NMDAsynTM[:]", "var":"g_NMDA"},
+                    "i_NR2A{:d}": {"syn":"NMDAsynTM[:]", "var":"i"},
+                    // GPE inputs
+                    "gGABAA{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAA"},
+                    "gGABAB{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAB"},
+                    "iGABA{:d}": {"syn":"GABAsyn2[:]", "var":"i"},
+                },
+            },
+        ],
 // GPE -> STN Projection
 // -----------------------------------------------------------------------------
         "GPE.all": {
@@ -348,7 +398,7 @@
 
 // STN -> STN Projection
 // -----------------------------------------------------------------------------
-        "STN.all": {
+        "STN.all": { // See Gouty-Colomer (2017)
             "connector": {
                 "name": "FromListConnector",
                 "parameters": {
@@ -386,7 +436,10 @@
             "connector": {
                 "name": "FixedNumberPreConnector",
                 "parameters": {
-                    "n": 20,
+                    "n": { // Reduction in afferents: Chu 2017, Wang 2018
+                        "statement": "14 if DD else 20", // VGluT1+ factor Chu 2017
+                        "locals": null,
+                    },
                     "allow_self_connections": false,
                 },
             },
@@ -402,45 +455,42 @@
                     // Common NetCon parameters
                     "weight":       1.0,
                     "delay":        5.9, // [ms] delay from Kita, Kita (2011)
-                    // ---------------------------------------------------------
                     // GLUsyn parameters: AMPA + NMDA NR2B/D receptor (slow kinetics)
+                    // ---------------------------------------------------------
                     // STP parameters
                     "GLUsyn_U1":           0.2, // baseline release probability
                     "GLUsyn_tau_rec":      200.0, // [ms] recovery from STD
                     "GLUsyn_tau_facil":    1.0, // [ms] recovery from facilitation
                     // AMPA receptor
                     "GLUsyn_gmax_AMPA": {
-                        "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
+                        "statement": "(1 - 0.66*DD) * gmax_base", // Chu 2017: reduced by factor 3-4 in DD condition
                         "locals": {
                             "gmax_base": 14.66e-3, // [uS], adjusted for U1
                         },
-                        "globals": {},
                     },
                     "GLUsyn_tau_r_AMPA":   1.0, // [ms] rise time
                     "GLUsyn_tau_d_AMPA":   4.0, // [ms] decay time
                     // NMDA receptor
                     "GLUsyn_gmax_NMDA": {
-                        "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
+                        "statement": "gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
                             "gmax_base": 3.66e-3, // [uS], adjusted for U1
                         },
-                        "globals": {},
                     },
                     "GLUsyn_tau_r_NMDA":   3.7,    // [ms] rise time
                     "GLUsyn_tau_d_NMDA":   212.0,   // [ms] decay time
-                    // ---------------------------------------------------------
                     // NMDAsyn parameters: NMDA NR2A receptor (fast kinetics)
+                    // ---------------------------------------------------------
                     // STP parameters
                     "NMDAsynTM_U1":           0.2, // baseline release probability
                     "NMDAsynTM_tau_rec":      200.0, // [ms] recovery from STD
                     "NMDAsynTM_tau_facil":    1.0, // [ms] recovery from facilitation
                     // NMDA kinetics
                     "NMDAsynTM_gmax_NMDA": {
-                        "statement": "(1 + 0.5*DD) * gmax_base", // factor 1.5 in DA-depleted condition
+                        "statement": "gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
                             "gmax_base": 3.66e-3, // [uS], adjusted for U1
                         },
-                        "globals": {},
                     },
                     "NMDAsynTM_tau_r_NMDA":   3.7,    // [ms] rise time
                     "NMDAsynTM_tau_d_NMDA":   80.0,   // [ms] decay time

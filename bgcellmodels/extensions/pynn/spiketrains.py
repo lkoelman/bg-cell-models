@@ -18,7 +18,7 @@ def make_bursty_spike_generator(bursting_fraction, synchronous, rng,
                                 T_burst, dur_burst, f_intra, f_inter,
                                 f_background, duration):
     """
-    Make generator function that returns bursty spike sequences.
+    Make generator for continuous regularly bursting spike trains.
     """
     if synchronous:
         make_bursts = spikelib.make_oscillatory_bursts
@@ -65,8 +65,8 @@ def bursty_spiketrains_during(intervals, bursting_fraction,
                           T_burst, dur_burst, f_intra, f_inter, f_background, 
                           duration, randomize_bursting, rng):
     """
-    Make spiketrains where a given fraction fires synchronized bursts during
-    each interval.
+    Generator for a given fraction of spiketrains firing synchronized bursts
+    during given time intervals.
 
     @param      intervals : iterable(tuple[float, float])
                 Sequence of time intervals in which cells should burst.
@@ -115,13 +115,43 @@ def bursty_spiketrains_during(intervals, bursting_fraction,
 
 
 def bursty_permuted_spiketrains(
-        T_burst, num_spk_burst, f_intra, f_background, max_dt_spk,
-        t_refrac_pre, t_refrac_post,
-        bursting_fraction, intervals, duration, rng):
+        T_burst         = 20.0,
+        phi_burst       = 0.0,
+        num_spk_burst   = 4,
+        f_intra         = 180.0,
+        f_background    = 5.0,
+        max_dt_spk      = 1.0,
+        t_refrac_pre    = 5.0,
+        t_refrac_post   = 10.0,
+        bursting_fraction = 0.25,
+        intervals       = None,
+        duration        = 10e3,
+        rng             = None):
     """
     Make spiketrains that burst semi-synchronously in each cycle of a
     reference sinusoid. In each cycle only a given fraction of spiketrains has
     a burst and the indices of bursting spiketrains are permuted in each cycle.
+
+    Arguments
+    ---------
+
+    @param      T_burst : float
+                Burst period (ms)
+
+    @param      phi_burst : float
+                Phase angle (degrees) where burst starts
+
+    @param      num_spk_burst : tuple[int, int]
+                Number of spikes per burst, lower and upper bound
+
+    @param      f_intra : float
+                Intra-burst firing rate (Hz)
+
+    @param      f_background : float
+                Firing rate when cell is not bursting.
+
+    @param      rng : numpy.Random
+                Random generator (optional)
 
     @param      intervals : iterable(tuple[float, float])
                 Sequence of time intervals in which cells should burst.
@@ -150,21 +180,21 @@ def bursty_permuted_spiketrains(
                 for i in range(num_cycles)])
 
         T_intra = 1e3 / f_intra
-        spk_burst_centered = np.arange(0, (num_spk_burst+1)*T_intra, T_intra)
+        spk_burst_centered = np.arange(0, num_spk_burst[1]*T_intra, T_intra)
 
         # For each spiketrains
         # - Generate bursty spikes in cycles that it's active and overlap with interval
         # - Generate background spikes in remaining cycles.
         spiketimes_for_index = []
-        for i in cell_indices:
+        for cell_idx in cell_indices:
             # Spiketimes for background activity
             number = int(2 * duration * f_background / 1e3)
             spk_bg = np.add.accumulate(
                 rng.exponential(1e3/f_background, size=number))
-            bg_del_mask = np.zeros_like(spk_bg, dtype=bool)
+            bg_del_mask = spk_bg > duration # np.zeros_like(spk_bg, dtype=bool)
 
             # Generate background spikes until t > next active period
-            bursting_cycles = np.where(cycle_burst_ids == cell_id)[0]
+            bursting_cycles = np.where(cycle_burst_ids == cell_idx)[0]
             if len(bursting_cycles) == 0:
                 spiketimes_for_index.append(Sequence(spk_bg))
                 continue
@@ -172,8 +202,16 @@ def bursty_permuted_spiketrains(
             # Add bursty spikes in burst cycles
             all_spk = []
             for i_cycle in bursting_cycles:
-                spk_var_dt = rng.uniform(0.0, max_dt_spk, num_spk_burst)
-                spk_burst = (i_cycle*T_burst) + spk_burst_centered + spk_var_dt
+                t0_cycle = i_cycle * T_burst
+                t1_cycle = t0_cycle + T_burst
+                t0_burst = t0_cycle + (phi_burst / 360.0 * T_burst)
+                if intervals is not None:
+                    # only add burst in cycle if cycle falls in bursty interval
+                    if not any((((ival[0] <= t0_cycle) and (t1_cycle <= ival[1])) for ival in intervals)):
+                        continue
+                num_spk = rng.randint(num_spk_burst[0], num_spk_burst[1]+1)
+                spk_var_dt = rng.uniform(0.0, max_dt_spk, num_spk)
+                spk_burst = t0_burst + spk_burst_centered[0:num_spk] + spk_var_dt
                 all_spk.append(spk_burst)
 
                 # Delete background spikes in tspk0-refrac, tspk[-1]+refrac
@@ -192,4 +230,43 @@ def bursty_permuted_spiketrains(
             spiketimes = Sequence(spk_merged)
             spiketimes_for_index.append(spiketimes)
         return spiketimes_for_index
-    pass
+    return spike_seq_gen
+
+
+def test_spiketime_generator(gen_func, num_spiketrains, *args, **kwargs):
+    """
+    Test case for generate_modulated_spiketimes()
+    """
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+
+    generator = gen_func(*args, **kwargs)
+    cells_spiketimes = generator(np.arange(num_spiketrains))
+
+    for i, sequence in enumerate(cells_spiketimes):
+        spiketimes = sequence.value
+        y_vec = np.ones_like(spiketimes) * i
+        ax.plot(spiketimes, y_vec, marker='|', linestyle='', color='red', snap=True)
+
+    ax.set_title("Result of '{}'".format(gen_func.__name__))
+    ax.grid(True)
+    plt.show(block=False)
+
+
+if __name__ == '__main__':
+    T_burst, dur_burst, f_intra, f_background = 50.0, 10.0, 180.0, 5.0
+    rng = np.random
+    duration = 2e3
+    intervals = [(500.0, 20e3)]
+    num_spiketrains = 20
+    num_spk_burst = (3, 5)
+
+    # Test for 'bursty_permuted_spiketrains'
+    max_dt_spk = 1.0
+    refrac = 20.0, 20.0
+    frac_bursting = 0.2
+    test_spiketime_generator(
+        bursty_permuted_spiketrains, num_spiketrains, 
+        # args and kwargs below:
+        T_burst, num_spk_burst, f_intra, f_background, max_dt_spk,
+        refrac[0], refrac[1], frac_bursting, intervals, duration, np.random)
