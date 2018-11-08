@@ -71,6 +71,8 @@ class TraceSpecRecorder(Recorder):
                                                             clear, annotations)
             `-> PyNN.recording.Recorder.write(...)
                 `-> data = self.get(variables, gather, ...)
+                    `-> segment = self._get_current_segment(...)
+                    `-> self.clear()
                 `-> neo_io.write_block(data)
     """
 
@@ -234,6 +236,24 @@ class TraceSpecRecorder(Recorder):
                 _pp_markers.append(marker)
                 cell._pp_markers = _pp_markers
             cell.traces[trace_name] = vec
+            recorded = True
+
+        elif 'secs' in trace_spec.keys():
+            # spec is in NetPyne format
+            hoc_objs = cell.resolve_section(trace_spec['secs'], multiple=True)
+            for i, hoc_obj in enumerate(hoc_objs):
+                vec, marker = self._record_trace(hoc_obj, trace_spec, sampling_interval)
+                if marker is not None:
+                    _pp_markers = getattr(cell, '_pp_markers', [])
+                    _pp_markers.append(marker)
+                    cell._pp_markers = _pp_markers
+
+                numbered_trace_name = trace_name.format(i)
+                cell.traces[numbered_trace_name] = vec
+                self.recorded[numbered_trace_name] = \
+                    self.recorded[numbered_trace_name].union((id,))
+            
+            self.recorded[trace_name] = set() # remove unformatted trace name
             recorded = True
 
         elif 'syn' in trace_spec.keys():
@@ -415,8 +435,10 @@ class TraceSpecRecorder(Recorder):
             all_spiketimes = {}
             for cell_id in id:
                 spikes = numpy.array(cell_id._cell.spike_times)
+                # add OR mask: self._recording_start_time <= spikes
+                # mask = (spikes >= self._recording_start_time) & (spikes <= simulator.state.t + 1e-9)
                 all_spiketimes[cell_id] = spikes[spikes <= simulator.state.t + 1e-9]
             return all_spiketimes
         else:
             spikes = numpy.array(id._cell.spike_times)
-        return spikes[spikes <= simulator.state.t + 1e-9]
+            return spikes[spikes <= simulator.state.t + 1e-9]

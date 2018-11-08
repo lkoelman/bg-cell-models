@@ -139,7 +139,8 @@ def make_variable_bursts(
     # Pre-sample with safety margin of 5 (times faster than mean)
     max_num_burst = int(5*max_dur/T_burst)
     burst_IBIs = rng.exponential(T_burst, size=max(10, max_num_burst))
-    burst_durs = rng.exponential(dur_burst, size=max(10, max_num_burst))
+    # burst_durs = rng.exponential(dur_burst, size=max(10, max_num_burst))
+    burst_durs = rng.uniform(max(5.0, dur_burst-10), dur_burst+10, size=max(10, max_num_burst))
     max_num_intra = int(5 * np.sum(burst_durs) / T_intra)
     max_num_inter = int(5 * np.sum(burst_IBIs) / T_inter)
     intra_ISIs = rng.exponential(T_intra, size=max(10, max_num_intra))
@@ -157,20 +158,23 @@ def make_variable_bursts(
     while t < max_dur:
         if t < t_start_burst:
             if in_burst and t < t_end_burst:
+                # In burst: fire at f_intra
                 t += intra_ISIs[i_intra]
                 i_intra += 1
                 yield t
             elif in_burst and t >= t_end_burst:
+                # Reached end of burst: turn flag off
                 in_burst = False
                 i_dur += 1
                 t_end_burst = t_start_burst + burst_durs[i_IBI]
                 continue
             else:
+                # Not in burst: fire at f_inter
                 t += inter_ISIs[i_inter]
                 i_inter += 1
                 yield t
         elif t >= t_start_burst:
-            # only reached once per burst
+            # Transition to inside burst: turn flag on
             in_burst = True
             i_IBI += 1
             t_start_burst += burst_IBIs[i_IBI]

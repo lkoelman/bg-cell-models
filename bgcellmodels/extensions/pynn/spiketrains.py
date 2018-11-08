@@ -14,9 +14,9 @@ from pyNN.parameters import Sequence
 from bgcellmodels.common import spikelib
 
 
-def make_bursty_spike_generator(bursting_fraction, synchronous, rng,
-                                T_burst, dur_burst, f_intra, f_inter,
-                                f_background, duration):
+def continuous_bursts(bursting_fraction, synchronous, rng,
+                      T_burst, dur_burst, f_intra, f_inter,
+                      f_background, duration):
     """
     Make generator for continuous regularly bursting spike trains.
     """
@@ -61,7 +61,7 @@ def make_bursty_spike_generator(bursting_fraction, synchronous, rng,
     return spike_seq_gen
 
 
-def bursty_spiketrains_during(intervals, bursting_fraction, 
+def synchronous_bursts_during(intervals, bursting_fraction, 
                           T_burst, dur_burst, f_intra, f_inter, f_background, 
                           duration, randomize_bursting, rng):
     """
@@ -114,7 +114,7 @@ def bursty_spiketrains_during(intervals, bursting_fraction,
     return spike_seq_gen
 
 
-def bursty_permuted_spiketrains(
+def synchronous_permuted_bursts(
         T_burst         = 20.0,
         phi_burst       = 0.0,
         num_spk_burst   = 4,
@@ -231,6 +231,11 @@ def bursty_permuted_spiketrains(
             spiketimes_for_index.append(spiketimes)
         return spiketimes_for_index
     return spike_seq_gen
+
+
+# Aliases for backward compatibility
+make_bursty_spike_generator = continuous_bursts
+bursty_spiketrains_during = synchronous_bursts_during
 
 
 def test_spiketime_generator(gen_func, num_spiketrains, *args, **kwargs):

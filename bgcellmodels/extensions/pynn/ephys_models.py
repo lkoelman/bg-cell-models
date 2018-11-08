@@ -27,7 +27,7 @@ from pyNN.neuron import state as nrn_state, h
 from pyNN.neuron.cells import NativeCellType
 import quantities as pq
 
-from bgcellmodels.common import nrnutil
+from bgcellmodels.common import nrnutil, configutil
 
 import logging
 logger = logging.getLogger('ephys_models')
@@ -565,37 +565,17 @@ class PynnCellModelBase(object):
         @return     list(nrn.POINT_PROCESS)
                     List of NEURON synapse objects.
         """
-        # Deconstruct synapse specifier
-        matches = re.search(r'^(?P<mechname>\w+)(\[(?P<slice>[\d:]+)\])', spec)
+        matches = re.search(r'^(?P<mechname>\w+)', spec)
         mechname = matches.group('mechname')
-        slice_expr = matches.group('slice') # "i:j:k"
-        slice_parts = slice_expr.split(':') # ["i", "j", "k"]
-        slice_parts_valid = [int(i) if i!='' else None for i in slice_parts]
         
         synlist = self.get_synapses_by_mechanism(mechname)
         if len(synlist) == 0:
             return []
-        elif len(slice_parts) == 1: # zero colons
-            return [synlist[int(slice_parts_valid[0])]]
-        else: # at least one colon
-            slice_object = slice(*slice_parts_valid)
-            return synlist[slice_object]
-
-        # elif len(slice_parts) == 2: # one colon
-        #     start = slice_parts[0]
-        #     stop = slice_parts[1]
-        #     if start == stop == '':
-        #         return self.synlist[:]
-        #     elif start == '':
-        #         return self.synlist[:int(stop)]
-        #     elif stop == '':
-        #         return self.synlist[int(start):]
-        #     else:
-        #         return self.synlist[int(start):int(stop)]
-        # elif len(slice_parts) == 3: # two colons
+        else:
+            return configutil.index_with_str(synlist, spec)
 
 
-    def resolve_section(self, spec):
+    def resolve_section(self, spec, multiple=False):
         """
         Resolve a section specification.
 
@@ -621,28 +601,21 @@ class PynnCellModelBase(object):
                     be treated as such. If not, it will be treated as an indexable
                     attribute of the icell instance.
         """
-        matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>\d+)\])?', spec)
+
+        matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>.+)\])?', spec)
         sec_name = matches.group('secname')
         sec_index = matches.group('index')
-        icell = self.icell
-        
+
         if sec_index is None:
-            return getattr(icell, sec_name)
+            return getattr(self.icell, sec_name)
+
+        seclist = list(getattr(self.icell, sec_name))
+        secs = configutil.index_with_str(seclist, spec)
+        if not multiple:
+            assert len(secs) == 1
+            return secs[0]
         else:
-            sec_index = int(sec_index)
-        
-        if sec_name in ['soma', 'dend', 'apic', 'axon', 'myelin']:
-            # target is a secarray
-            return getattr(icell, sec_name)[sec_index]
-        
-        elif sec_name in ['somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all']:
-            # target is a SectionList (does not support indexing)
-            seclist = getattr(icell, sec_name)
-            return next(itertools.islice(seclist, sec_index, sec_index + 1))
-        
-        else:
-            # assume target is a secarray
-            return getattr(icell, sec_name)[sec_index]
+            return secs
 
 
 class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):

@@ -33,6 +33,7 @@
         },
         "base_population_size": 1000, // 5 independent spike sources per MSN
         "spiking_pattern": {
+            "algorithm": "synchronous_permuted_bursts",
             "bursting_fraction": 0.10, // fraction of bursting cells
             "T_burst": 50.0,
             "phi_burst": 0.0,
@@ -60,45 +61,46 @@
     "STR.MSN": {
         // Local variables for statements in this dictionary
         "local_context": {
-            "combined_spike_sources": 1.0, // number of combined (Poisson) spike sources
+            "combined_spike_sources": 1.0, // number of afferents represented by one spike source: should be approx. (total number of boutons / boutons per afferent) / number of model synapses
         },
         "base_population_size": 2000, // approx. num_gpe * num_pre_msn_gpe
-        // // Spiking pattern
-        // "f_background": { // mean firing rate of non-bursting neurons
-        //     "statement": "2.0 * combined_spike_sources",
-        //     "locals": null, // use local_context
+        // "spiking_pattern": {
+        //     "algorithm": "synchronous_permuted_bursts",
+        //     "bursting_fraction": 0.10, // fraction of bursting cells
+        //     "T_burst": 50.0,
+        //     "phi_burst": 180.0,
+        //     "f_intra": 200.0,
+        //     "f_background": { // mean firing rate of non-bursting neurons
+        //         "statement": "(6.64 if DD else 0.67) * combined_spike_sources",
+        //         "locals": null,
+        //     },
+        //     "num_spk_burst": [3, 5],
+        //     "max_dt_spk": 1.0,
+        //     "t_refrac_pre": 20.0,
+        //     "t_refrac_post": 10.0,
+        //     "intervals": [
+        //         [2500.0, 20000.0],
+        //         // [1000.0, 1250.0],
+        //         // [2000.0, 2500.0], 
+        //         // [3500.0, 4500.0],
+        //         // [6500.0, 8500.0]
+        //     ],
         // },
-        // // Parameters for bursting neurons
-        // "bursting_fraction": 0.8, // fraction of bursting cells
-        // "T_burst": 1000.0,
-        // "dur_burst": 20.0,
-        // "f_intra": 200.0,
-        // "f_inter": 10.0,
-        // "synchronous": true, // whether bursts occur synchronously
-        // "burst_intervals": [ // set to None for continuous
-        //     [1000,0, 20000.0],
-        // ],
-        // "randomize_bursting_cells": true, // pick random bursting cells in each interval
         "spiking_pattern": {
-            "bursting_fraction": 0.10, // fraction of bursting cells
-            "T_burst": 50.0,
-            "phi_burst": 180.0,
+            "algorithm": "continuous_bursts",
+            "bursting_fraction": 1.0, // fraction of bursting cells
+            "synchronous": false,
+            "T_burst": 1000.0,
+            "dur_burst": 25.0,
             "f_intra": 200.0,
-            "f_background": { // mean firing rate of non-bursting neurons
-                "statement": "(6.64 if DD else 0.67) * combined_spike_sources",
+            "f_inter": { // between burst of bursting neurons
+                "statement": "(6.64 if DD else 1.5) * combined_spike_sources",
                 "locals": null,
             },
-            "num_spk_burst": [3, 5],
-            "max_dt_spk": 1.0,
-            "t_refrac_pre": 20.0,
-            "t_refrac_post": 10.0,
-            "intervals": [
-                [2500.0, 20000.0],
-                // [1000.0, 1250.0],
-                // [2000.0, 2500.0], 
-                // [3500.0, 4500.0],
-                // [6500.0, 8500.0]
-            ],
+            "f_background": { // mean firing rate of non-bursting neurons
+                "statement": "(6.64 if DD else 1.5) * combined_spike_sources",
+                "locals": null,
+            },
         },
     },// end MSN
 // =============================================================================
@@ -133,22 +135,7 @@
             "locals": null,
         },
         // Common traces for all GPE neurons
-        "traces": [
-            {
-                "cells": 5,
-                "sampling_period": 0.05,
-                "specs": {
-                    // CTX inputs
-                    "gAMPA{:d}": {"syn":"GLUsyn[:]", "var":"g_AMPA"},
-                    "gNMDA{:d}": {"syn":"GLUsyn[:]", "var":"g_NMDA"},
-                    "iGLU{:d}": {"syn":"GLUsyn[:]", "var":"i"},
-                    // GPE collateral inputs
-                    "gGABAA{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAA"},
-                    "gGABAB{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAB"},
-                    "iGABA{:d}": {"syn":"GABAsyn2[:]", "var":"i"},
-                },
-            },
-        ],
+        // "traces": [],
     }, // end to GPE.all
 // GPE PROTOTYPIC
 // =============================================================================
@@ -158,8 +145,16 @@
                 "cells": 5,
                 "sampling_period": 0.05,
                 "specs": {
-                    "gGABAA{:d}": {"syn":"GABAAsynTM[:]", "var":"g_GABAA"},
-                    "iGABAA{:d}": {"syn":"GABAAsynTM[:]", "var":"i"},
+                    // CTX inputs
+                    "gAMPA{:d}": {"syn":"GLUsyn[0:3]", "var":"g_AMPA"},
+                    "gNMDA{:d}": {"syn":"GLUsyn[0:3]", "var":"g_NMDA"},
+                    "iGLU{:d}": {"syn":"GLUsyn[0:3]", "var":"i"},
+                    // GPE collateral inputs
+                    "gGABAA{:d}": {"syn":"GABAsyn2[0:3]", "var":"g_GABAA"},
+                    "gGABAB{:d}": {"syn":"GABAsyn2[0:3]", "var":"g_GABAB"},
+                    "iGABA{:d}": {"syn":"GABAsyn2[0:3]", "var":"i"},
+                    // STR inputs
+                    "iGABAA{:d}": {"syn":"GABAAsynTM[0:3]", "var":"i"},
                 },
             },
         ],
@@ -186,7 +181,7 @@
                     "gmax_AMPA":    {
                         "statement": "(1 + 0.5*DD)*gmax_base",
                         "locals": {
-                            "gmax_base": 0.25e-3,
+                            "gmax_base": 2.5e-4,
                         },
                         "globals": {},
                     },
@@ -230,7 +225,7 @@
                     "gmax_GABAA": {
                         "statement": "(1 + 0.5*DD)*gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
-                            "gmax_base": 0.1e-3, // [uS]
+                            "gmax_base": 0.75e-4, // [uS]
                             "peak_factor": 4.0, // adjustment for actual g_peak
                         },
                         "globals": {},
@@ -241,7 +236,7 @@
                     "gmax_GABAB": {
                         "statement": "(1 + 0.25*DD)*gmax_base", // factor 1.5 in DA-depleted condition
                         "locals": {
-                            "gmax_base": 0.02e-3, // [uS]
+                            "gmax_base": 0.125e-4, // [uS]
                             "peak_factor": 1.666, // adjustment for actual g_peak
                         },
                         "globals": {},
@@ -267,19 +262,23 @@
             },
             "receptor_type": "proximal.GABAA+GABAB",
             "synapse": {
+                // NOTE: DD mostly captured by increased baseline firing rate
                 "name": "GABAAsynTM",
                 "parameters": {
                     "weight":       1.0,
                     "delay":        5.0, // [ms] delay from Kita, Kita (2011)
                     // STP parameters
-                    "U1":           0.2, // baseline release probability
+                    "U1":           { // baseline release probability
+                        "statement": "0.2 * (1 + 0.5*DD)",
+                        "locals": null,
+                    },
                     "tau_rec":      1.0, // [ms] recovery from STD
                     "tau_facil":    200.0, // [ms] recovery from facilitation
                     // GABA-A receptor
                     "gmax_GABAA":   {
-                        "statement": "RandomDistribution('normal', mu=(1 + 1.0*DD)*gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
+                        "statement": "RandomDistribution('normal', mu=gmax_base, sigma=0.25*gmax_base, rng=shared_rng_pynn)",
                         "locals": {
-                            "gmax_base": 1.4e-4,
+                            "gmax_base": 2e-4,
                         },
                         "globals": null,
                     },
@@ -329,16 +328,26 @@
                 "sampling_period": 0.05,
                 "specs": {
                     // CTX inputs
-                    "g_AMPA{:d}": {"syn":"GLUsyn[:]", "var":"g_AMPA"},
-                    "g_NR2BD{:d}": {"syn":"GLUsyn[:]", "var":"g_NMDA"},
-                    "i_GLU{:d}": {"syn":"GLUsyn[:]", "var":"i"},
+                    "g_AMPA{:d}": {"syn":"GLUsyn[0:3]", "var":"g_AMPA"},
+                    "g_NR2BD{:d}": {"syn":"GLUsyn[0:3]", "var":"g_NMDA"},
+                    "i_GLU{:d}": {"syn":"GLUsyn[0:3]", "var":"i"},
                     // Somatic NMDA, NR2A subunit
-                    "g_NR2A{:d}": {"syn":"NMDAsynTM[:]", "var":"g_NMDA"},
-                    "i_NR2A{:d}": {"syn":"NMDAsynTM[:]", "var":"i"},
+                    "g_NR2A{:d}": {"syn":"NMDAsynTM[0:3]", "var":"g_NMDA"},
+                    "i_NR2A{:d}": {"syn":"NMDAsynTM[0:3]", "var":"i"},
                     // GPE inputs
-                    "gGABAA{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAA"},
-                    "gGABAB{:d}": {"syn":"GABAsyn2[:]", "var":"g_GABAB"},
-                    "iGABA{:d}": {"syn":"GABAsyn2[:]", "var":"i"},
+                    "gGABAA{:d}": {"syn":"GABAsyn2[0:3]", "var":"g_GABAA"},
+                    "gGABAB{:d}": {"syn":"GABAsyn2[0:3]", "var":"g_GABAB"},
+                    "iGABA{:d}": {"syn":"GABAsyn2[0:3]", "var":"i"},
+                    // Dendritic voltages
+                    "v_dend1_dist{:d}": {"secs":"dend1[[7,8]]", "loc":0.5, "var":"v"},
+                    "v_dend0_dist{:d}": {"secs":"dend0[[9,10,19,20]]", "loc":0.5, "var":"v"},
+                    // Ca2+ ion channels
+                    // "STN_cai": {"sec":"dend1[7]", "loc":0.8, "var":"cai"},
+                    // "STN_CaT_inact_fast": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"s"},
+                    // "STN_CaT_inact_slow": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"d"},
+                    // "STN_CaT_open": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"o"},
+                    // "STN_CaL_inact": {"sec":"dend1[7]", "loc":0.8, "mech":"HVA", "var":"h"},
+                    // "STN_CaL_open": {"sec":"dend1[7]", "loc":0.8, "mech":"HVA", "var":"o_L"},
                 },
             },
         ],

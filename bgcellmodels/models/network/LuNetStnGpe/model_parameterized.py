@@ -19,7 +19,7 @@ USAGE
 
 To run using MPI, use the `mpirun` or `mpiexec` command like:
 
-`mpirun -n 6 python model_parameterized.py --scale 0.5 --dur 3000 --dnorm --no-lfp --seed 888 --transient-period 0.0 --write-interval 3000 -id CALDNORM --outdir ~/storage/BBB_LuNetStnGpe --config configs/StnGpe_template_syn-V8.json`
+`mpirun -n 6 python model_parameterized.py --scale 0.5 --dur 3000 --dnorm --no-lfp --seed 888 --transient-period 0.0 --write-interval 3000 -id CALDNORM --outdir ~/storage/BBB_LuNetStnGpe --config configs/StnGpe_template_syn-V8.json 2>&1 | tee CALDNORM.log`
 
 To run from an IPyhton shell, use the %run magic function like:
 
@@ -90,6 +90,7 @@ from bgcellmodels.common import logutils, fileutils
 
 # Debug messages
 logutils.setLogLevel('quiet', [
+    'Neo',
     'bpop_ext',
     'bluepyopt.ephys.parameters', 
     'bluepyopt.ephys.mechanisms', 
@@ -331,11 +332,12 @@ def run_simple_net(
     # CTX spike sources
     ctx_pop_size, = get_pop_parameters('CTX', 'base_population_size')
     ctx_burst_params = get_param_group('CTX', 'spiking_pattern')
+    spikegen_name = ctx_burst_params.pop('algorithm')
+    spikegen_func = getattr(spikegen, spikegen_name)
 
-    ctx_spike_generator = spikegen.bursty_permuted_spiketrains(
-                                    duration=sim_dur,
-                                    rng=rank_rng,
-                                    **ctx_burst_params)
+    ctx_spike_generator = spikegen_func(duration=sim_dur,
+                                        rng=rank_rng,
+                                        **ctx_burst_params)
 
     pop_ctx = Population(
         int(ctx_pop_size * pop_scale),
@@ -369,10 +371,11 @@ def run_simple_net(
     #                             f_background=f_background, duration=sim_dur)
 
     msn_burst_params = get_param_group('STR.MSN', 'spiking_pattern')
-    msn_spike_generator = spikegen.bursty_permuted_spiketrains(
-                                    duration=sim_dur,
-                                    rng=rank_rng,
-                                    **msn_burst_params)
+    spikegen_name = msn_burst_params.pop('algorithm')
+    spikegen_func = getattr(spikegen, spikegen_name)
+    msn_spike_generator = spikegen_func(duration=sim_dur,
+                                        rng=rank_rng,
+                                        **msn_burst_params)
 
     pop_msn = Population(
         int(msn_pop_size * pop_scale),

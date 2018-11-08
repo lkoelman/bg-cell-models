@@ -40,6 +40,35 @@ def destructure_param_spec(spec):
 interpretParamSpec = destructure_param_spec
 
 
+def index_with_str(target, index_expr, prefix=r'\w*'):
+    """
+    Address list-like object using a string that represents a NumPy-like
+    index or slice.
+
+    @param  index_expr : str
+            Index or slice expression including the surrounding brackets, e.g:
+            [0:10:2] or [[1,2,3]]. It can also include a prefix, e.g.
+            mylist[2:8].
+    """
+    regexp = r'^({})(\[(?P<slice>[\[\],\d:]+)\])'.format(prefix)
+    matches = re.search(regexp, index_expr)
+    slice_expr = matches.group('slice') # numpy-like: "i:j:k" or "[i,j,k]"
+
+    if ',' in slice_expr:
+        # list-like index expression
+        indices_str = slice_expr.strip('[]').split(',')
+        return [target[int(i)] for i in indices_str if (i != '')]
+    else:
+        # slice expression or single index
+        slice_parts = slice_expr.split(':') # ["i", "j", "k"]
+        slice_parts_valid = [int(i) if i!='' else None for i in slice_parts]
+        if len(slice_parts) == 1: # zero colons
+            return [target[int(slice_parts_valid[0])]]
+        else: # at least one colon
+            slice_object = slice(*slice_parts_valid)
+            return target[slice_object]
+
+
 def eval_params(param_dict, caller_globals, caller_locals):
     """
     Evaluate parameters in dictionary.
