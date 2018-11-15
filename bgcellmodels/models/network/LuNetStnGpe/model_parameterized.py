@@ -385,7 +385,7 @@ def run_simple_net(
     #===========================================================================
     # STN POPULATION
     stn_ncell_base, stn_dx, = get_pop_parameters('STN', 
-                                'grid_dx', 'base_population_size')
+                                'base_population_size', 'grid_dx')
     stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
     stn_ncell_biophys = int(stn_ncell_base * pop_scale)
     
@@ -540,6 +540,14 @@ def run_simple_net(
                 synapse_type=synapse_from_config(pre_label, post_label),
                 receptor_type=proj_config['receptor_type'])
 
+    #---------------------------------------------------------------------------
+    # Post-constructional modifications
+
+    # if DD:
+    #     for conn in list(all_proj['CTX']['STN'].connections)[-6:]:
+    #         # Disable last six AMPA/NR2B-D afferents, but not NR2A
+    #         conn.GLUsyn_gmax_AMPA = 0.0
+    #         conn.GLUsyn_gmax_NMDA = 0.0
 
     #---------------------------------------------------------------------------
     # Sanity check: make sure all populations and projections are instantiated
