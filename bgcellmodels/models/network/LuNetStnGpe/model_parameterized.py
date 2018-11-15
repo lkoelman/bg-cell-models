@@ -609,7 +609,7 @@ def run_simple_net(
         for trace_group in pop_config['traces']:
             pop_sample = trace_group['cells']
             if isinstance(pop_sample, int):
-                target_cells = target_pop.sample(pop_sample)
+                target_cells = target_pop.sample(pop_sample, rng=shared_rng_pynn)
             elif isinstance(pop_sample, str):
                 slice_args = [int(i) if i!='' else None for i in pop_sample.split(':')]
                 target_cells = target_pop[slice(*slice_args)]
