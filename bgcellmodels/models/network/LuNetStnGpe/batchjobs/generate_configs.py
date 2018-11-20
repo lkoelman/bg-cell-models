@@ -11,30 +11,54 @@ directly in the script, by looking for lines marked with 'SETPARAM'.
 """
 import json, os.path
 from bgcellmodels.common import fileutils
+import numpy as np
 
 # SETPARAM: template file and output directory
 template_paths = [
-    "../configs/q13_sweep-str-gpe-gsyn/DA-depleted-v3_CTX-f0_STR-GPE-gsyn-x2.0.json",
+    "../configs/StnGpe_template_syn-V18.json",
 ]
 
 for template_path in template_paths:
 
     template_dir, template_name = os.path.split(template_path)
-    outdir = "../configs/q13_sweep-str-gpe-gsyn" # SETPARAM: output dir
+    outdir = "../configs/sweep_gpe-stn_weight" # SETPARAM: output dir
     config = fileutils.parse_json_file(template_path, nonstrict=True, ordered=True)
 
     # SETPARAM: substitutions
-    factors = [0.1, 0.333, 0.5, 1.5, 2.0, 3.0, 5.0]
-    # ampa_base = config['STN']['STN']['synapse']['parameters']['gmax_AMPA']
-    # nmda_base = config['STN']['STN']['synapse']['parameters']['gmax_NMDA']
+    factors = np.arange(1./3, 3.0+1./3, 1./3)
+    # gs_gabaa = config['STN']['GPE.all']['synapse']['parameters'][
+    #                   'gmax_GABAA']['locals']['gmax_base']
+    # gs_gabab = config['STN']['GPE.all']['synapse']['parameters'][
+    #                   'gmax_GABAB']['locals']['gmax_base']
+    # cs_ampa = config['STN']['CTX']['synapse']['parameters'][
+    #                   'GLUsyn_gmax_AMPA']['locals']['gmax_base']
+    # cs_nmda_dend = config['STN']['CTX']['synapse']['parameters'][
+    #                   'GLUsyn_gmax_NMDA']['locals']['gmax_base']
+    # cs_nmda_soma = config['STN']['CTX']['synapse']['parameters'][
+    #                   'NMDAsynTM_gmax_NMDA']['locals']['gmax_base']
+    gg_gabaa = config['GPE.proto']['GPE.all']['synapse']['parameters'][
+                      'gmax_GABAA']['locals']['gmax_base']
+    gg_gabab = config['GPE.proto']['GPE.all']['synapse']['parameters'][
+                      'gmax_GABAB']['locals']['gmax_base']
 
     # Replace all occurrences of format keywords
     substitutions = {
-        # ('STN', 'PyNN_cell_parameters', 'tau_m_scale'): factors,
-        # ('GPE', 'PyNN_cell_parameters', 'tau_m_scale'): factors,
-        ('GPE', 'STR', 'synapse', 'parameters', 'gmax_GABAA'): [1e-3*f for f in factors],
+        # ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
+        #     'gmax_base'): [f*gs_gabaa for f in factors],
+        # ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAB', 'locals', 
+        #     'gmax_base'): [f*gs_gabab for f in factors],
+        # ('STN', 'CTX', 'synapse', 'parameters', 'GLUsyn_gmax_AMPA', 'locals', 
+        #     'gmax_base'): [f*cs_ampa for f in factors],
+        # ('STN', 'CTX', 'synapse', 'parameters', 'GLUsyn_gmax_NMDA', 'locals', 
+        #     'gmax_base'): [f*cs_nmda_dend for f in factors],
+        # ('STN', 'CTX', 'synapse', 'parameters', 'NMDAsynTM_gmax_NMDA', 'locals', 
+        #     'gmax_base'): [f*cs_nmda_soma for f in factors],
+        ('GPE.proto', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
+            'gmax_base'): [f*gg_gabaa for f in factors],
+        ('GPE.proto', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAB', 'locals', 
+            'gmax_base'): [f*gg_gabab for f in factors],
     }
-    suffix_format = '-{}'
+    suffix_format = '_gpe-gpe_x-{:.2f}' # SETPARAM: format string for json filename
     suffix_substitutions = factors
     sweep_length = len(suffix_substitutions)
 
@@ -47,22 +71,22 @@ for template_path in template_paths:
             for k in nested_keys[:-1]:
                 if k not in parent_dict:
                     parent_dict[k] = {}
-                parent_dict =  parent_dict[k]
+                parent_dict = parent_dict[k]
             sweep_param = nested_keys[-1]
 
             # SETPARAM: uncomment line if you want to check the modified entry exists
-            # if sweep_param not in parent_dict:
-            #     raise ValueError("Key {} not present at nesting level {}".format(
-            #         sweep_param, nested_keys))
+            if sweep_param not in parent_dict:
+                raise ValueError("Key {} not present at nesting level {}".format(
+                    sweep_param, nested_keys))
+            # SETPARAM: substitution or multiplication of target value
             parent_dict[sweep_param] = sweep_vals[i]
+            # parent_dict[sweep_param] *= sweep_vals[i]
             print("Updated key {} for sweep {}".format(sweep_param, i))
 
         # Write config after doing all substitutions for current sweep value
         # SETPARAM: config filename substitution
-        # outname = template_name.replace('template',
-        #                             suffix_format.format(suffix_substitutions[i]))
         outname = template_name.replace('.json',
-                                    suffix_format.format(suffix_substitutions[i]) + '.json')
+                        suffix_format.format(suffix_substitutions[i]) + '.json')
         outfile = os.path.join(outdir, outname)
         
         with open(outfile, 'w') as f:
