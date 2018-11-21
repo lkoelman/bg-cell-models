@@ -14,6 +14,7 @@ See features in eFEL: https://efel.readthedocs.io/en/latest/eFeatures.html
 import neuron
 h = neuron.h
 import numpy as np
+import scipy.signal
 
 
 def spike_indices(vrec, thresh, loc='onset'):
@@ -285,6 +286,49 @@ def nrn_avg_rate_adaptive(spiketrains, tstart, tstop, binwidth=10.0, minsum=15):
     vmeanfreq = h.Vector()
     vmeanfreq.psth(psth, binwidth, ntrials, minsum)
     return vmeanfreq
+
+
+def composite_spiketrain(spike_times, duration, dt_out=1.0, select=None):
+    """
+    Construct composite spiketrain for population.
+    Baseline is subtracted.
+
+    @param  spike_times : list(numpy.array)
+            List of spike time vectors.
+    
+    @param  duration : float
+            Total duration of simulation (ms).
+    """
+    num_samples = int(duration, 3) / dt_out
+    # Select subset of spike trains
+    if select is None:
+        selected = range(len(spike_times))
+    elif isinstance(select, int):
+        selected = np.random.choice(len(spike_times), select, replace=False)
+    else:
+        selected = select # assume list/tuple/numpy array
+    # Insert ones at spike indices
+    binary_trains = np.zeros((num_samples, len(selected)))
+    for i_cell in selected:
+        st = spike_times[i_cell]
+        spike_indices = (st / dt_out).astype(int)
+        binary_trains[spike_indices, i_cell] = 1.0
+    return binary_trains.mean(axis=1)
+    
+
+def composite_spiketrain_coherence(trains_a, trains_b, duration, freq_res=1.0, overlap=0.75):
+    """
+    Coherence between composite (pooled) spike trains as binary signals, averaged.
+
+    See Terry and Griffin 2008 : https://doi.org/10.1016/j.jneumeth.2007.09.014
+    """
+    Ts = 1.0 # ms
+    nperseg = int(1e3 / Ts / freq_res) # fs / dF
+    noverlap = int(nperseg * overlap)
+    comp_trains = [composite_spiketrain(trains, duration, dt_out=Ts)
+                    for trains in trains_a, trains_b]
+    f, Cxy = scipy.signal.coherence(*comp_trains, fs=1e3/Ts, nperseg=nperseg, noverlap=noverlap)
+    return f, Cxy
 
 
 def get_efel_features(
