@@ -4,8 +4,8 @@ model_dir="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/KlmnNetMor
 nb_filename="synchrony_analysis_auto.ipynb"
 nb_dir="${model_dir}/analysis"
 notebook="${nb_dir}/${nb_filename}"
-logfile="${nb_dir}/nb_exec_list.log"
-conffile="${nb_dir}/nb_exec_conf.py"
+logfile="${nb_dir}/nb_exec_list.log" # change for copies of this script
+conffile="${nb_dir}/nb_exec_conf.py" # change for copies of this script
 export NB_CONF_FILE=${conffile} # for subprocesses
 
 # List simulation output directories to analyze

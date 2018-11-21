@@ -2,6 +2,13 @@
 Signal analysis tools for electrophysiology data.
 
 @author     Lucas Koelman
+
+Notes
+-----
+
+See features in PyElectro: https://pyelectro.readthedocs.io/en/latest/pyelectro.html
+
+See features in eFEL: https://efel.readthedocs.io/en/latest/eFeatures.html
 """
 
 import neuron
@@ -67,6 +74,90 @@ def coefficient_of_variation(v_rec, t_rec, v_th):
     t_spikes = spike_times(v_rec, t_rec, v_th, loc='onset')
     isi_vals = np.diff(t_spikes)
     return np.std(isi_vals) / np.mean(isi_vals)
+
+
+def burst_metrics(
+        v_rec, t_rec, threshold=-20.0, 
+        onset_isi=20.0, offset_isi=20.0, min_spk=4):
+    """
+    Calculate burst rate, inter-burst intervals, intra-burst rates,
+    number of spikes per burst.
+    """
+    # Using eFEL: use peak indices
+    # FIXME: indices are half the values of our own function ???
+    # features = ['ISI_values', 'peak_indices']
+    # feat_vals = get_efel_features(v_rec, t_rec, interval, features, threshold=threshold)
+    # isi_vals = feat_vals['ISI_values']
+    # peak_idx = feat_vals['peak_indices']
+
+    # Using threshold crossing indices
+    peak_idx = spike_indices(v_rec, thresh=threshold, loc='onset')
+    peak_times = t_rec[peak_idx]
+    isi_vals = np.diff(peak_times)
+
+    burst_lengths = []
+    burst_intra_rates = []
+    onset_times = []
+    offset_times = []
+    inter_burst_intervals = []
+
+    # Find bursts according to absolute criteria 
+    num_isi = len(isi_vals)
+    isi_burst = np.zeros_like(isi_vals, dtype=bool) # flag which ISIs are in a burst
+    isi_below_offset = np.array(isi_vals <= offset_isi, dtype=int)
+    candidate_offsets = np.diff(isi_below_offset) == -1
+    i = 0
+    while True:
+        if i > num_isi-1:
+            break
+        isi = isi_vals[i]
+        if isi <= onset_isi:
+            # i_offset == 0 if i itself is the last ISI of a burst
+            offset_dists, = np.where(candidate_offsets[i:])
+            if len(offset_dists) == 0:
+                offset_dist = num_isi - i - 1
+            else:
+                offset_dist = offset_dists[0]
+
+            if offset_dist+2 < min_spk:
+                i += 1
+                continue
+
+            # Now still have to check if all ISI until candidate offset are < offset_ISI
+            num_to_offset = np.sum(isi_below_offset[i:i+offset_dist+1])
+            if (num_to_offset+1 < min_spk) or (num_to_offset != offset_dist+1):
+                i += 1
+                continue
+            num_follow = num_to_offset
+            
+            # Burst properties
+            burst_lengths.append(num_follow+1)
+            f_intra = 1e3/np.mean(isi_vals[i:i+num_follow])
+            if np.isnan(f_intra):
+                raise Exception('NaN!')
+            burst_intra_rates.append(f_intra)
+            t_onset = t_rec[peak_idx[i]]
+            t_offset = t_rec[peak_idx[min(i+num_follow, num_isi-1)]]
+            # print("Burst at t={} with ISIs: {}".format(t_onset, isi_vals[i:i+num_follow]))
+            if len(offset_times) > 0:
+                inter_burst_intervals.append(t_onset - offset_times[-1])
+            onset_times.append(t_onset)
+            offset_times.append(t_offset)
+            # Skip to end of burst
+            isi_burst[i:i+num_follow+1] = True
+            i += num_follow + 1
+        else:
+            i += 1
+
+    burst_rate = len(burst_lengths) * 1e3 / (t_rec[-1] - t_rec[0])
+    metrics = {
+        'spikes_per_burst': burst_lengths,
+        'intra_burst_rates': burst_intra_rates,
+        'inter_burst_intervals': inter_burst_intervals,
+        'burst_rate': burst_rate,
+    }
+    return metrics
+
 
 
 def numpy_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):
@@ -194,3 +285,106 @@ def nrn_avg_rate_adaptive(spiketrains, tstart, tstop, binwidth=10.0, minsum=15):
     vmeanfreq = h.Vector()
     vmeanfreq.psth(psth, binwidth, ntrials, minsum)
     return vmeanfreq
+
+
+def get_efel_features(
+        vm, t, interval, features, 
+        threshold=None, raise_warnings=True, **kwargs):
+    """
+    Calculate electrophysiology features using eFEL.
+
+    https://efel.readthedocs.io/en/latest/eFeatures.html
+    http://bluebrain.github.io/eFEL/efeature-documentation.pdf
+
+    @param  features : list[str]
+            List of eFeature names described in eFEL documentation.
+
+    @param  kwargs : dict[str, double/int]
+            Extra eFEL parameters like 'interp_step' or required parameters
+            listed under a feature.
+
+    Example
+    -------
+
+    >>> from bgcellmodels.common import signal
+    >>> features = ['ISI_values', 'burst_ISI_indices', 'burst_mean_freq', 'burst_number']
+    >>> feat_vals = signal.get_efel_features(vm, t, [0.5e3, 3e3], features)
+    >>> print("\n".join(("{} : {}".format(name, val) for name,val in feat_vals)))
+    
+    """
+    
+    import efel
+    efel.reset()
+
+    if threshold is not None:
+        efel.setThreshold(threshold)
+
+    if kwargs is not None:
+        for pname, pval in kwargs.iteritems():
+            if isinstance(pval, float):
+                efel.setDoubleSetting(pname, pval)
+            elif isinstance(pval, int):
+                efel.setIntSetting(pname, pval)
+            else:
+                raise ValueError("Unknown eFEL parameter or unexpected type:"
+                                 "{} : {}".format(pname, pval))
+
+    # Put trace in eFEL compatible format
+    efel_trace = {
+        'T': t,
+        'V': vm,
+        'stim_start': [interval[0]],
+        'stim_end': [interval[1]],
+    }
+
+    # Calculate spike times from response
+    values = efel.getFeatureValues(
+        [efel_trace],
+        features,
+        raise_warnings=raise_warnings
+    )
+    efeat_values = {
+        feat_name: values[0][feat_name] for feat_name in features
+    }
+
+    return efeat_values
+
+
+def get_all_pyelectro_features(
+        vm, t, interval, analysis_params=None):
+    """
+    Calculate electrophysiology features using PyElectro.
+
+    https://pyelectro.readthedocs.io/en/latest/pyelectro.html
+
+    @param  analysis_params : dict[str, float]
+            Parameters for calculation of voltage trace metrics.
+
+    Notes
+    -----
+
+    See IClampAnalysis.analyse() method for calculating individual features:
+    https://github.com/lkoelman/pyelectro/blob/master/pyelectro/analysis.py#L1204
+    """
+
+    from pyelectro import analysis
+
+    if analysis_params is None:
+        analysis_params = {
+            'peak_delta':       1e-4, # the value by which a peak or trough has to exceed its neighbours to be considered outside of the noise
+            'baseline':         -10., # voltage at which AP width is measured
+            'dvdt_threshold':   0, # used in PPTD method described by Van Geit 2007
+        }
+
+    trace_analysis = analysis.IClampAnalysis(
+                            vm,
+                            t,
+                            analysis_params,
+                            start_analysis = interval[0],
+                            end_analysis = interval[1],
+                            show_smoothed_data = False
+                        ) 
+
+    trace_analysis.analyse()
+
+    return trace_analysis.analysis_results
