@@ -331,6 +331,55 @@ def composite_spiketrain_coherence(trains_a, trains_b, duration, freq_res=1.0, o
     return f, Cxy
 
 
+def morgera_covariance_complexity(
+    v_rec, t_rec, interval, 
+    t_window=1000.0, t_overlap=800.0):
+    """
+    Morgera covariance complexity ('synchronization index').
+
+    Works on the raw signal so also measures synchronization of sub-threshold
+    voltage oscillations. I.e. not only spike synchronization.
+
+    Explained succinctly in this review article: https://arxiv.org/abs/q-bio/0603035
+
+    Arguments
+    ---------
+
+    @param  v_rec : numpy.array
+            Array with signals as columns (along first axis).
+
+    References
+    ----------
+
+    S. S. Morgera, “InformationTheoretic Complexityand Relationto Pattern
+    Recognition,” IEEE Transactions on Systems, Man, and Cybernetics, 
+    15 (1985) 608–619
+    """
+    M_values = []
+    delta_t = t_window - t_overlap
+    Ts = t_rec[1] - t_rec[0]
+    t_start, t_stop = interval
+    t0_values = np.arange(t_start, t_stop, delta_t)
+    t1_values = []
+    for t0 in t0_values:
+        window = [t0, t0+t_window]
+        if window[1] > t_stop:
+            break
+        irange = [int((t - t_rec[0])/Ts) for t in window]
+        islice = np.s_[irange[0]:irange[1]] # slice object
+        
+        # SVD and singular values
+        u, s, vh = np.linalg.svd(v_rec[islice, :], full_matrices=True)
+        lambas = s**2
+        sigmas = lambas / lambas.sum()
+        C = - 1./np.log(len(sigmas)) * np.sum(sigmas * np.log(sigmas))
+        
+        t1_values.append(window[1])
+        M_values.append(1 - C)
+
+    return zip(t0_values, t1_values), M_values
+
+
 def get_efel_features(
         vm, t, interval, features, 
         threshold=None, raise_warnings=True, **kwargs):
@@ -403,6 +452,9 @@ def get_all_pyelectro_features(
 
     @param  analysis_params : dict[str, float]
             Parameters for calculation of voltage trace metrics.
+
+    @return features : dict[str, float]
+            Dictionary containing all PyElectro features.
 
     Notes
     -----
