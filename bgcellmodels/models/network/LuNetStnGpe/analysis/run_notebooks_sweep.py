@@ -9,7 +9,7 @@ import subprocess
 import re
 
 nb_dir = "/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/analysis"
-nb_filename = "lunet_stn-gpe-str_calibration.ipynb"
+nb_filename = "lunet_stn-gpe_analysis.ipynb"
 nb_path = os.path.join(nb_dir, nb_filename)
 log_path = os.path.join(nb_dir, "nb_exec_list.log") # change for copies of this script
 conf_path = os.path.join(nb_dir, "nb_exec_conf.py") # change for copies of this script
@@ -17,6 +17,7 @@ conf_path = os.path.join(nb_dir, "nb_exec_conf.py") # change for copies of this 
 
 # List simulation output directories to analyze
 outputs_clipboard="""
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_20.31.44_job-1184502.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-0.33
 /run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_21.11.23_job-1184503.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-0.67
 /run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_21.16.52_job-1184504.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-1.00
 /run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_21.16.52_job-1184505.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-1.33
@@ -37,13 +38,13 @@ for sim_outdir in output_dirs:
     match = re.search(r"x-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)", sim_outdir)
     nb_pyvars = {
         'outputs': sim_outdir,
-        'hpfreq': 5.0,
-        'lpfreq': 20.0,
+        'ROI_INTERVAL': (1e3, 5e3),
+        'reference_phase': {'method': 'from_gpe', 'passpand': (6.0, 20.0)},
         'sweep_var_name': sweep_name,
         'sweep_var_value': match.groups()[0],
     }
     # use property eval(repr(object)) == object.
-    nb_pyscript= "\n".join(("{} = {}".format(k, repr(v) for k,v in nb_pyvars)))
+    nb_pyscript= "\n".join(("{} = {}".format(k, repr(v)) for k,v in nb_pyvars.items()))
 
     with open(conf_path, 'w') as conf_file:
         conf_file.write(nb_pyscript)

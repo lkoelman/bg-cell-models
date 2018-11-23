@@ -299,7 +299,7 @@ def composite_spiketrain(spike_times, duration, dt_out=1.0, select=None):
     @param  duration : float
             Total duration of simulation (ms).
     """
-    num_samples = int(duration, 3) / dt_out
+    num_samples = int(np.round(duration, 3)) / dt_out
     # Select subset of spike trains
     if select is None:
         selected = range(len(spike_times))
@@ -351,9 +351,9 @@ def morgera_covariance_complexity(
     References
     ----------
 
-    S. S. Morgera, “InformationTheoretic Complexityand Relationto Pattern
-    Recognition,” IEEE Transactions on Systems, Man, and Cybernetics, 
-    15 (1985) 608–619
+    S. S. Morgera, "Information Theoretic Complexity and Relation to Pattern
+    Recognition", IEEE Transactions on Systems, Man, and Cybernetics, 
+    15 (1985) 608-619
     """
     M_values = []
     delta_t = t_window - t_overlap
