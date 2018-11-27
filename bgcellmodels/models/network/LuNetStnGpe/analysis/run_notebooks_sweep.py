@@ -18,14 +18,6 @@ conf_path = os.path.join(nb_dir, "nb_exec_conf.py") # change for copies of this 
 # List simulation output directories to analyze
 outputs_clipboard="""
 /run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_20.31.44_job-1184502.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-0.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_21.11.23_job-1184503.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-0.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_21.16.52_job-1184504.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-1.00
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_21.16.52_job-1184505.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-1.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_21.50.23_job-1184506.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-1.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_22.04.02_job-1184507.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-2.00
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_22.04.04_job-1184508.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-2.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_22.16.50_job-1184509.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-2.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q1_sweep_gmax-gpe-gpe/LuNetStnGpe_2018.11.19_22.16.50_job-1184510.sonic-head_StnGpe_template_syn-V18_gpe-gpe_x-3.00
 """
 
 output_dirs = outputs_clipboard.strip().split()
@@ -39,9 +31,10 @@ for sim_outdir in output_dirs:
     nb_pyvars = {
         'outputs': sim_outdir,
         'ROI_INTERVAL': (1e3, 5e3),
-        'reference_phase': {'method': 'from_gpe', 'passpand': (6.0, 20.0)},
+        'reference_phase': {'method': 'from_gpe', 'passband': (6.0, 20.0)},
         'sweep_var_name': sweep_name,
         'sweep_var_value': match.groups()[0],
+        'automatic_execution': True,
     }
     # use property eval(repr(object)) == object.
     nb_pyscript= "\n".join(("{} = {}".format(k, repr(v)) for k,v in nb_pyvars.items()))
@@ -65,10 +58,10 @@ for sim_outdir in output_dirs:
                                                    outdir=sim_outdir)
 
     print("Executing notebook for output: " + sim_outdir)
-    exe_code = subprocess.call(nb_exec_cmd, shell=True, env=env)
+    exe_status = subprocess.call(nb_exec_cmd, shell=True, env=env)
 
     print("Finished! Saving notebook to output directory ...")
-    sav_code = subprocess.call(nb_save_cmd, shell=True)
+    sav_status = subprocess.call(nb_save_cmd, shell=True)
 
 
 print("Finished executing notebooks.")

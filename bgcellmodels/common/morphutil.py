@@ -5,7 +5,7 @@ import json, io
 
 def morphology_to_dict(sections):
     """
-    Extract morphology info from given sections
+    Extract morphology info from given sections.
 
     @return     list(dict()) containing one dict for each section:
                 the dict contains its morphological & topological information
