@@ -298,6 +298,9 @@ def composite_spiketrain(spike_times, duration, dt_out=1.0, select=None):
     
     @param  duration : float
             Total duration of simulation (ms).
+
+    @param  select : int / enumerable[int]
+            Number of spike trains to select or their indices.
     """
     num_samples = int(np.round(duration, 3)) / dt_out
     # Select subset of spike trains
@@ -309,10 +312,10 @@ def composite_spiketrain(spike_times, duration, dt_out=1.0, select=None):
         selected = select # assume list/tuple/numpy array
     # Insert ones at spike indices
     binary_trains = np.zeros((num_samples, len(selected)))
-    for i_cell in selected:
+    for i_select, i_cell in enumerate(selected):
         st = spike_times[i_cell]
         spike_indices = (st / dt_out).astype(int)
-        binary_trains[spike_indices, i_cell] = 1.0
+        binary_trains[spike_indices, i_select] = 1.0
     return binary_trains.mean(axis=1)
     
 
@@ -329,6 +332,44 @@ def composite_spiketrain_coherence(trains_a, trains_b, duration, freq_res=1.0, o
                     for trains in trains_a, trains_b]
     f, Cxy = scipy.signal.coherence(*comp_trains, fs=1e3/Ts, nperseg=nperseg, noverlap=noverlap)
     return f, Cxy
+
+
+def combinatorial_spiketrain_coherence(
+        spike_trains, duration,
+        freq_res=1.0, overlap=0.75, max_comb=100):
+    """
+    Spiketrain coherence as average over all combinations of two groups.
+    
+    As described in McManus et al 2016, https://doi.org/10.1152/jn.00097.2016
+    
+    WARNING: scales badly with population size, e.g. for a population of 50
+    spike trains, there are 126e12 ways of dividing them in two groups.
+    """
+    import scipy.special
+    import itertools
+    
+    Ts = 1.0 # ms
+    nperseg = int(1e3 / Ts / freq_res) # fs / dF
+    noverlap = int(nperseg * overlap)
+    
+    N = len(spike_trains)
+    k = N / 2
+    inds_N = set(range(N))
+    ncomb_tot = scipy.special.comb(N, k) # binomial coefficient
+    if ncomb_tot > max_comb:
+        grp_a_inds = [set(np.random.choice(N, k, replace=False)) for i in range(max_comb)]
+    else:
+        # Generate all possible combinations of choosing k out of N
+        grp_a_inds = [set(inds) for inds in itertools.combinations(inds_N, k)]
+    Cxy_sum = 0.0
+    for grp_a in grp_a_inds:
+        grp_b = inds_N - grp_a
+        comp_spk_a = composite_spiketrain(spike_trains, dt_out=Ts, select=grp_a)
+        comp_spk_b = composite_spiketrain(spike_trains, dt_out=Ts, select=grp_b)
+        f, Cxy = scipy.signal.coherence(comp_spk_a, comp_spk_b, 
+                                        fs=1e3/Ts, nperseg=nperseg, noverlap=noverlap)
+        Cxy_sum += Cxy
+    return f, Cxy_sum / len(grp_a_inds)
 
 
 def morgera_covariance_complexity(
