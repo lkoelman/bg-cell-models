@@ -16,21 +16,21 @@ conf_path = os.path.join(nb_dir, "nb_exec_conf.py") # change for copies of this 
 
 
 # List simulation output directories to analyze
-outputs_clipboard="""
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.16.50_job-1184511.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-0.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.30.08_job-1184512.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-0.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.33.32_job-1184513.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-1.00
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.33.32_job-1184514.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-1.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.33.32_job-1184515.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-1.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.36.13_job-1184516.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-2.00
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.36.13_job-1184517.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-2.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.36.13_job-1184518.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-2.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q2_sweep_gmax-gpe-stn/LuNetStnGpe_2018.11.19_22.48.44_job-1184519.sonic-head_StnGpe_template_syn-V18_gpe-stn_x-3.00
+outputs_clipboard = """
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_22.48.44_job-1184523.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.33
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_22.48.44_job-1184524.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.67
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_22.51.17_job-1184520.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-0.33
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_22.51.18_job-1184521.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-0.67
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.07.00_job-1184522.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.00
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.07.02_job-1184525.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-2.00
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.07.04_job-1184526.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-2.33
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.09.54_job-1184527.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-2.67
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.18.14_job-1184528.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-3.00
 """
 
 output_dirs = outputs_clipboard.strip().split()
 
-sweep_name = "gmax_gpe_gpe"
+sweep_name = "gmax_ctx_stn"
 
 for sim_outdir in output_dirs:
 
@@ -39,8 +39,8 @@ for sim_outdir in output_dirs:
     sweep_val = match.groups()[0]
     nb_pyvars = {
         'outputs': sim_outdir,
-        'ROI_INTERVAL': (1e3, 5e3),
-        'reference_phase': {'method': 'from_gpe', 'passband': (6.0, 20.0)},
+        'ROI_INTERVAL': (6e3, 10e3),
+        'reference_phase': {'method': 'from_ctx', 'passband': (17.0, 23.0)},
         'sweep_var_name': sweep_name,
         'sweep_var_value': sweep_val,
         'automatic_execution': True,

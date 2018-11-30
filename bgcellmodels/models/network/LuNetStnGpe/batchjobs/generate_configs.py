@@ -8,15 +8,27 @@ The script does not work with input arguments. Just modify the parameters
 directly in the script, by looking for lines marked with 'SETPARAM'.
 
 >>> python generate_configs.py
+
+To generate a 2D sweep of two independent variables:
+- generate configs for sweep of one variable
+- use these as inputs for the next sweep: paste in 'template_paths'
 """
 import json, os.path
 from bgcellmodels.common import fileutils
 import numpy as np
 
 # SETPARAM: template file and output directory
-template_paths = [
-    "../configs/StnGpe_template_syn-V18.json",
-]
+template_paths = """
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-0.33.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-0.67.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-1.00.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-1.33.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-1.67.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-2.00.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-2.33.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-2.67.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweep_gpe-stn_weight/StnGpe_template_syn-V18_gpe-stn_x-3.00.json
+""".strip().split()
 
 for template_path in template_paths:
 
@@ -85,7 +97,7 @@ for template_path in template_paths:
 
         # Write config after doing all substitutions for current sweep value
         # SETPARAM: config filename substitution
-        outname = template_name.replace('.json',
+        outname = template_name.replace('template_', '').replace('.json',
                         suffix_format.format(suffix_substitutions[i]) + '.json')
         outfile = os.path.join(outdir, outname)
         
