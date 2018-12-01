@@ -159,6 +159,11 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
     pop.write_data(io, variables='all', gather=gather, clear=clear, 
                        annotations={'script_name': __file__})
 
+    # All ranks do the gather operation, but only rank 0 writes to file.
+    # Make sure that we're all synchronized by putting up extra barrier.
+    data = 0 if (mpi_rank == 0) else None
+    data = comm.bcast(data, root=0)
+
 
 def run_simple_net(
         pop_scale       = 1.0,
@@ -657,8 +662,7 @@ def run_simple_net(
         first_write_time = write_interval
     else:
         first_write_time = transient_period
-    write_times = list(reversed(np.arange(first_write_time, sim_dur+write_interval,
-                                          write_interval)))
+    write_times = list(np.arange(first_write_time, sim_dur, write_interval)) + [sim_dur]
     last_write_time = 0.0
     
     # SIMULATE
@@ -682,11 +686,11 @@ def run_simple_net(
                 os.system("echo [{}]: {} >> {}".format(stamp, progress, progress_file))
 
         # Write recorded data
-        if len(write_times) > 0 and abs(sim.state.t - write_times[-1]) <= 5.0:
+        if len(write_times) > 0 and abs(sim.state.t - write_times[0]) <= 5.0:
             suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
             for pop in all_pops.values():
                 write_population_data(pop, output, suffix, gather=True, clear=True)
-            write_times.pop()
+            write_times.pop(0)
             last_write_time = sim.state.t
 
     # Report simulation statistics
@@ -698,12 +702,6 @@ def run_simple_net(
         total_num_segments = sum(each_num_segments)
         print("Simulated {} segments for {} ms in {} ms CPU time".format(
                 total_num_segments, sim.state.tstop, cputime))
-
-    # Final write of recorded variables
-    suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
-    if sim.state.t - last_write_time > (report_interval + 5.0):
-        for pop in all_pops.values():
-            write_population_data(pop, output, suffix, gather=True, clear=True)
 
 
     ############################################################################
