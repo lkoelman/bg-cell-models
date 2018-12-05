@@ -156,6 +156,7 @@ def burst_metrics(
         'intra_burst_rates': burst_intra_rates,
         'inter_burst_intervals': inter_burst_intervals,
         'burst_rate': burst_rate,
+        'ISI_CV': np.std(isi_vals) / np.mean(isi_vals),
     }
     return metrics
 

@@ -436,8 +436,9 @@ class TraceSpecRecorder(Recorder):
             for cell_id in id:
                 spikes = numpy.array(cell_id._cell.spike_times)
                 # add OR mask: self._recording_start_time <= spikes
-                # mask = (spikes >= self._recording_start_time) & (spikes <= simulator.state.t + 1e-9)
-                all_spiketimes[cell_id] = spikes[spikes <= simulator.state.t + 1e-9]
+                mask = ((spikes >= self._recording_start_time) &
+                        (spikes <= simulator.state.t + 1e-9))
+                all_spiketimes[cell_id] = spikes[mask]
             return all_spiketimes
         else:
             spikes = numpy.array(id._cell.spike_times)

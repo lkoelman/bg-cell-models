@@ -11,35 +11,34 @@ import re
 nb_dir = "/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/analysis"
 nb_infile = "lunet_stn-gpe_analysis.ipynb"
 nb_path = os.path.join(nb_dir, nb_infile)
-log_path = os.path.join(nb_dir, "nb_exec_list.log") # change for copies of this script
-conf_path = os.path.join(nb_dir, "nb_exec_conf.py") # change for copies of this script
+
+# SETPARAM: change filenames for simultaneous runs of this script
+log_path = os.path.join(nb_dir, "nb_exec_list_copy5.log") # change for copies of this script
+conf_path = os.path.join(nb_dir, "nb_exec_conf_copy5.py") # change for copies of this script
 
 
-# List simulation output directories to analyze
+# SETPARAM: List simulation output directories to analyze
 outputs_clipboard = """
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_22.48.44_job-1184523.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_22.48.44_job-1184524.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_22.51.17_job-1184520.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-0.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_22.51.18_job-1184521.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-0.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.07.00_job-1184522.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.00
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.07.02_job-1184525.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-2.00
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.07.04_job-1184526.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-2.33
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.09.54_job-1184527.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-2.67
-/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3_sweep_gmax-ctx-stn/LuNetStnGpe_2018.11.19_23.18.14_job-1184528.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-3.00
+/run/media/luye/Windows7_OS/Users/lkoelman/simdata-win/LuNetStnGpe/q3b_sweep_gmax-ctx-stn_BURST/LuNetStnGpe_2018.12.03_20.04.07_job-1190480.sonic-head_net-StnGpe_syn-V18_fburst-20-25-30_ctx-stn_x-2.67
 """
 
 output_dirs = outputs_clipboard.strip().split()
 
+# SETPARAM: name of sweep variable
 sweep_name = "gmax_ctx_stn"
 
 for sim_outdir in output_dirs:
 
-    # Variables for the target notebook
-    match = re.search(r"x-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)", sim_outdir)
+    # SETPARAM: pattern for extraction of sweep variable from filename
+    sweep_val_pattern = r"x-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
+    match = re.search(sweep_val_pattern, sim_outdir)
     sweep_val = match.groups()[0]
+
+    # SETPARAM: settings variables passed to executed notebook
     nb_pyvars = {
         'outputs': sim_outdir,
-        'ROI_INTERVAL': (6e3, 10e3),
+        'matfile_common_pattern': '-8000ms',
+        'ROI_INTERVAL': (2e3, 7e3),
         'reference_phase': {'method': 'from_ctx', 'passband': (17.0, 23.0)},
         'sweep_var_name': sweep_name,
         'sweep_var_value': sweep_val,

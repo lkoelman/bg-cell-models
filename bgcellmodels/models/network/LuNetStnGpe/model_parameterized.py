@@ -159,11 +159,6 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
     pop.write_data(io, variables='all', gather=gather, clear=clear, 
                        annotations={'script_name': __file__})
 
-    # All ranks do the gather operation, but only rank 0 writes to file.
-    # Make sure that we're all synchronized by putting up extra barrier.
-    data = 0 if (mpi_rank == 0) else None
-    data = comm.bcast(data, root=0)
-
 
 def run_simple_net(
         pop_scale       = 1.0,
