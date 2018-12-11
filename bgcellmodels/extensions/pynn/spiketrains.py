@@ -375,6 +375,15 @@ def test_spiketime_generator(gen_func, num_spiketrains, *args, **kwargs):
         err_spk = spiketimes[err_idx]
         ax.plot(err_spk, np.ones_like(err_spk) * i, 'go', markerfacecolor=None)
 
+    # Plot zero-phase times
+    all_t_phi0 = []
+    for i, interval in enumerate(kwargs['intervals']):
+        T_burst = kwargs['T_burst'][i]
+        num_periods = int((interval[1] - interval[0]) // T_burst) + 1
+        all_t_phi0.extend([interval[0] + j*T_burst for j in range(num_periods)])
+    y0, y1 = ax.get_ylim()
+    ax.vlines(all_t_phi0, y0, y1, color='black', linestyle='dashed', linewidths=0.5)
+
     ax.set_title("Result of '{}'".format(gen_func.__name__))
     ax.grid(True)
     plt.show(block=False)

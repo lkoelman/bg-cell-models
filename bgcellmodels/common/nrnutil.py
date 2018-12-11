@@ -217,20 +217,18 @@ def get_ion_styles(src_sec, ions=None):
     """
     Get ion styles as integer for each ion.
 
-    @return     dict({str:int}) with ion species as keys and integer
-                containing bit flags signifying ion styles as values
+    @return     dict[str, int] mapping ion species to integer containing
+                the bit flags that indicate ion styles
     """
     if not isinstance(ions, list):
         ions = ['na', 'k', 'ca']
 
     # Get ion style for each ion species
-    src_sec.push()
     styles = {}
     for ion in ions:
-        pname = ion + '_ion'
-        if hasattr(src_sec(0.5), pname):
-            styles[ion] = h.ion_style(pname)
-    h.pop_section()
+        ion_var = ion + '_ion'
+        if hasattr(src_sec(0.5), ion_var):
+            styles[ion] = h.ion_style(ion_var, sec=src_sec)
 
     return styles
 
@@ -241,8 +239,6 @@ def set_ion_styles(tar_sec, **kwargs):
 
     @param  kwargs      keyword arguments ion_name: style_int
     """
-    # Copy to target Section
-    tar_sec.push()
     for ion, style in kwargs.iteritems():
 
         # Decompose int into bit flags
@@ -253,9 +249,7 @@ def set_ion_styles(tar_sec, **kwargs):
         eadvance = (int(style) & 64) >> 6
 
         # Copy to new section
-        h.ion_style(ion+'_ion', c_style, e_style, einit, eadvance, cinit)
-    
-    h.pop_section()
+        h.ion_style(ion+'_ion', c_style, e_style, einit, eadvance, cinit, sec=tar_sec)
 
 
 def ion_styles_bits_to_dict(style):
