@@ -81,8 +81,16 @@ def burst_metrics(
         v_rec, t_rec, threshold=-20.0, 
         onset_isi=20.0, offset_isi=20.0, min_spk=4):
     """
-    Calculate burst rate, inter-burst intervals, intra-burst rates,
-    number of spikes per burst.
+    Identify bursts using simple algorithm where a burst consists of a minimum
+    of <min_spk> spikes where the first ISI is smaller than <onset_isi> and
+    susbequent ISIs are smaller than <offset_isi>.
+
+    After burst identification, calculate burst rate, inter-burst intervals, 
+    intra-burst rates, number of spikes per burst.
+
+
+    @return     dict[str, float / list[float]]
+                Dictionary containing burst metrics.
     """
     # Using eFEL: use peak indices
     # FIXME: indices are half the values of our own function ???
@@ -160,6 +168,29 @@ def burst_metrics(
     }
     return metrics
 
+
+def burst_metrics_surprise(
+        v_rec, t_rec, threshold=-20.0, 
+        onset_isi=20.0, offset_isi=20.0, min_spk=4):
+    """
+    Identify bursts using Poisson 'surprise' method (Legendy and Salcman 1985)
+    and calculate various burst metrics.
+
+    This method is used and described in Wichmann and Soares 2006, 
+    Sanders et al. 2013, Sharott et al. 2014.
+
+    @return     dict[str, float / list[float]]
+                Dictionary containing following burst metrics.
+                - burst rate
+                - inter-burst intervals
+                - intra-burst firing rates
+                - inter-burst (background) firing rate 
+                - spikes per burst
+                - proportion of time spent bursting
+                - proportion of spikes in a burst
+                - coefficient of variation (CV)
+    """
+    raise NotImplementedError('TODO')
 
 
 def numpy_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):

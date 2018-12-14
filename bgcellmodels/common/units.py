@@ -1,5 +1,7 @@
 """
-NEURON unit interopability using 'Pint' package.
+NEURON unit interopability using 'Pint' or 'Quantities' package.
+
+@author Lucas Koelman
 
 @see    http://pint.readthedocs.io
 """
@@ -81,8 +83,8 @@ def get_nrn_units(nrn_obj, attr, hoc_classname=None):
     @return q : pint.Quantity
             Units of given NEURON variable
 
-    @throws err : ValueError
-            Error thrown if variable name is not found by Hoc.
+    @throws ValueError
+            Variable name is not found by Hoc.
     """
     # TODO: see h.units() documentation: extract classname from nrn_obj
     #       so we can pass it to h.units('classname.attr'), e.g. if nrn_obj
