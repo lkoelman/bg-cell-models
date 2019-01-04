@@ -32,21 +32,21 @@ objref all, somatic, basal, apical, axonal, myelinated, nodal
 
 // Other public variables
 public v_init, cai0, cao0, nai0, nao0, ki0, ko0
-objref fih_ions // FInitializeHandlers for ions
+objref fih_ions, fih_states // FInitializeHandlers for ions
 
 /**
  * Cell constructor.
  */
 proc init() {
 
-    // Initialize sectionlists, even though some will be empty
+    // Initialize sectionlists rquired by Morphology Importer & BluePyOpt interface
     all = new SectionList()
     somatic = new SectionList()
     basal = new SectionList()
     apical = new SectionList()
     axonal = new SectionList()
     myelinated = new SectionList()
-    nodal = new SectionList() // not part of Morphology Importer interface
+    nodal = new SectionList() // not part of interface
 
     set_indep_params()
     set_dependent_params()
@@ -55,6 +55,7 @@ proc init() {
     set_conductances()
 
     fih_ions = new FInitializeHandler(1, "init_ions()", this)
+    fih_states = new FInitializeHandler(1, "init_states()", this)
 }
 
 /**
@@ -78,6 +79,15 @@ proc init_ions() {
         ko0_k_ion = this.ko0  
         nao0_na_ion = this.nao0
         nai0_na_ion = this.nai0
+    }
+}
+
+/**
+ * Initialize state variables
+ */
+proc init_states() {
+    forsec all {
+        v = this.v_init
     }
 }
 
@@ -119,24 +129,24 @@ proc set_indep_params() {
     nao0 = 126   
     nai0 = 10 
     
-//insert CaT
+    //insert CaT
     my_gcaT_CaT = 0 //0.001 (mho/cm2)
-//insert HVA
+    //insert HVA
     my_gcaL_HVA = 9.5e-4 //0.002 (mho/cm2)
     my_gcaN_HVA = 1.15e-3 //0.012 (mho/cm2)
-//insert sKCa   
+    //insert sKCa   
     my_gk_sKCa = 1.8*6.84e-5 //0.0001 (mho/cm2)
-//insert KDR    
+    //insert KDR    
     my_gk_KDR = 3.84e-3 //3.842910637e-03 (mho/cm2)
-//insert Kv31
+    //insert Kv31
     my_gk_Kv31 = 1.2*1.34e-2 //0.015 (mho/cm2)
-//insert Na 
+    //insert Na 
     my_gna_Na = 0.75*1.48e-2 //1.0e-7 (mho/cm2)
-//insert NaL
+    //insert NaL
     my_gna_NaL = 0.75*1.11e-5 //0.81e-5 (mho/cm2)   
-//insert Ih
+    //insert Ih
     my_gk_Ih = 1.01e-3 //0.001 (mho/cm2)    
-//insert STh    
+    //insert STh    
     my_gpas_STh = 7.84112e-05 //7.84112e-05 (mho/cm2) <0,1e9>
 }
 
