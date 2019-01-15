@@ -234,6 +234,30 @@ def numpy_avg_rate_simple(spiketrains, tstart, tstop, binwidth):
     return avghist / (binwidth*1e-3*len(spiketrains))
 
 
+def moving_average_rate(spiketrains, tstart, tstop, dt, binwidth):
+    """
+    Moving average firing rate with resolution dt, in interval
+    [t-bin/w, t+bin/2]
+    """
+    all_spiketimes = np.concatenate(spiketrains)
+    num_spiketrains = len(spiketrains)
+
+    time = np.arange(tstart, tstop+dt, dt)
+    moving_rate = np.zeros_like(time)
+    for i, t in enumerate(time):
+        t0 = t - binwidth / 2.0
+        t1 = t + binwidth / 2.0
+        if t0 < tstart:
+            t0 = tstart
+        if t1 > tstop:
+            t1 = tstop
+        true_binwidth = t1 - t0
+        bin_num_spikes = np.sum((all_spiketimes > t0) & (all_spiketimes < t1))
+        moving_rate[i] = float(bin_num_spikes) / true_binwidth / num_spiketrains
+
+    return moving_rate
+
+
 def nrn_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):
     """ 
     Sum peri-stimulus spike histograms (PSTH) of spike trains
