@@ -36,9 +36,9 @@ See notes in `notes/BG_observations_experiments.md`
 
 These installation instructions are for the Conda Python ditribution.
 
-Our custom PyNN classes have only been tested with PyNN 0.9.2 (git commit
-`4b80343ba17afd688a92b3a0755ea73179c9daab`) and BluePyOpt version 1.5.35 
-(commit `7d7c65be0bff3a9832d1d5dec3f4ba1c8906fa75`).
+Our custom PyNN classes have only been tested with:
+- PyNN 0.9.2 (commit id `4b80343ba17afd688a92b3a0755ea73179c9daab`)
+- BluePyOpt version 1.5.35 (commit id `7d7c65be0bff3a9832d1d5dec3f4ba1c8906fa75`).
 
 
 ## Installation using Pip / setuptools

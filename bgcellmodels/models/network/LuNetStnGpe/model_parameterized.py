@@ -21,7 +21,7 @@ To run using MPI, use the `mpirun` or `mpiexec` command like:
 
 `mpirun -n 6 python model_parameterized.py --scale 0.5 --dur 3000 --dnorm --no-lfp --seed 888 --transient-period 0.0 --write-interval 3000 -id CALDNORM --outdir ~/storage/BBB_LuNetStnGpe --config configs/StnGpe_template_syn-V8.json 2>&1 | tee CALDNORM.log`
 
-To run from an IPyhton shell, use the %run magic function like:
+To run from an IPython shell, use the %run magic function like:
 
 `%run model_parameterized.py --scale 0.5 --dd --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/DA-depleted_template.json`
 
@@ -485,12 +485,14 @@ def run_simple_net(
 
     #===========================================================================
 
+    # Make all Population and Projection objects accessible by label
     all_pops = {pop.label : pop for pop in Population.all_populations}
     all_asm = {asm.label: asm for asm in (asm_gpe,)}
     all_proj = {pop.label : {} for pop in Population.all_populations}
     all_proj[asm_gpe.label] = {} # add Assembly projections manually
 
-    # NativeCellType is common base class for all NEURON cells
+    # Make distinction between 'real' and surrogate subpopulations
+    # (note: NativeCellType is common base class for all NEURON cells)
     biophysical_pops = [pop for pop in Population.all_populations if isinstance(
                         pop.celltype, sim.cells.NativeCellType)]
     artificial_pops = [pop for pop in Population.all_populations if not isinstance(
@@ -548,6 +550,8 @@ def run_simple_net(
     #         # Disable last six AMPA/NR2B-D afferents, but not NR2A
     #         conn.GLUsyn_gmax_AMPA = 0.0
     #         conn.GLUsyn_gmax_NMDA = 0.0
+    #     # TODO IDEA: - give only GABA-A synapses, but increase number to get same E/I ratio
+    #     #            - then set high GABA-B here for fraction of connections
 
     #---------------------------------------------------------------------------
     # Sanity check: make sure all populations and projections are instantiated
@@ -720,9 +724,12 @@ def run_simple_net(
             # This does an mpi gather() on all the parameters
             conn_params = ["delay", "weight"]
             gsyn_params = ['gmax_AMPA', 'gmax_NMDA', 'gmax_GABAA', 'gmax_GABAB']
-            conn_params.extend([p for p in gsyn_params if p in proj.synapse_type.default_parameters])
+            conn_params.extend(
+                [p for p in gsyn_params if p in proj.synapse_type.default_parameters])
             pre_post_params = np.array(proj.get(conn_params, format="list", 
                                        gather='all', multiple_synapses='sum'))
+            
+            # Sanity check: minimum and maximum delays and weights
             mind = min(pre_post_params[:,2])
             maxd = max(pre_post_params[:,2])
             minw = min(pre_post_params[:,3])
@@ -733,9 +740,15 @@ def run_simple_net(
                     pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
                     minw=minw, maxw=maxw))
 
+            # Make (gid, gid) connectivity pairs
+            pop_idx_pairs = [tuple(pair) for pair in pre_post_params[:, 0:2].astype(int)]
+            cell_gid_pairs = [(int(proj.pre[a]), int(proj.post[b])) for a, b in pop_idx_pairs]
+
             # Append to saved dictionary
             proj_params = saved_params[pre_pop].setdefault(post_pop, {})
             proj_params['conn_matrix'] = float_matrix
+            proj_params['conpair_pop_indices'] = pop_idx_pairs
+            proj_params['conpair_gids'] = cell_gid_pairs
             proj_params['conpair_pvals'] = pre_post_params
             proj_params['conpair_pnames'] = conn_params
 
