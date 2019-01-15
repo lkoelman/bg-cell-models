@@ -712,6 +712,12 @@ def run_simple_net(
     #       - cannot perform any gather() operations before initializing MPI transfer
     #       - must do gather() operations on all nodes
     saved_params = {'dopamine_depleted': DD}
+
+    # Save cell information
+    for pop in all_pops.values() + all_asm.values():
+        saved_params.setdefault(pop.label, {})['gids'] = pop.all_cells.astype(int) 
+
+    # Save connection information
     for pre_pop, post_pops in all_proj.iteritems():
         saved_params.setdefault(pre_pop, {})
         for post_pop, proj in post_pops.iteritems():
