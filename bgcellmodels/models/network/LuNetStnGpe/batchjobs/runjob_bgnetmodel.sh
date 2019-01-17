@@ -5,10 +5,13 @@
 ################################################################################
 
 # Set the number of nodes & processors per node
-#PBS -l nodes=1:ppn=12
+# 24 cores (threads) available per node, so max ppn=24
+#PBS -l nodes=1:ppn=8
+
 
 # Set the walltime of the job to 1 hour (format is hh:mm:ss)
-# - walltime for 100 cells/populations is sim_time * 2031.75 / 10.000 * 1.25 [seconds]
+# - walltime for 1 jobs/node is 11s/50 ms  for LuNetStnGpe with 50 STN + 100 GPe cells
+# - walltime for 3 jobs/node is (19-23)s/50ms for LuNetStnGpe with 50 STN + 100 GPe cells
 # - to get hh and mm (for hh:mm:ss) do hh = runtime // 3600; mm = runtime % 3600
 ## PBS -l walltime=00:45:00
 
@@ -76,12 +79,20 @@ mpi_command="mpirun -n 12 python ${model} \
 --outdir ${outdir} -id ${PBS_JOBID}"
 
 # Optional arguments passed to python script
-opt_names=("seed" "write-interval" "transient-period")
-for optname in "${opt_names[@]}"; do
+opt_names_long=("seed" "writeinterval" "transientperiod")
+for optname in "${opt_names_long[@]}"; do
     if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} --${optname} ${!optname}"
     fi
 done
+
+opt_names_short=("wi" "tp")
+for optname in "${opt_names_short[@]}"; do
+    if [ -n "${!optname}" ]; then
+        mpi_command="${mpi_command} -${optname} ${!optname}"
+    fi
+done
+
 
 # Optional flags passed to python script
 flag_names=("lfp" "no-lfp" "dd" "dnorm")
