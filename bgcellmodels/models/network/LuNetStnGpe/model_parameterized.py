@@ -92,8 +92,8 @@ from bgcellmodels.common import logutils, fileutils
 logutils.setLogLevel('quiet', [
     'Neo',
     'bpop_ext',
-    'bluepyopt.ephys.parameters', 
-    'bluepyopt.ephys.mechanisms', 
+    'bluepyopt.ephys.parameters',
+    'bluepyopt.ephys.mechanisms',
     'bluepyopt.ephys.morphologies'])
 
 
@@ -142,7 +142,7 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
     @note   gathers data from MPI nodes so should be executed on all ranks.
     """
     if output is None:
-        return 
+        return
     outdir, extension = output.split('*')
     # Get Neo IO writer for file format associated with extension
     if extension.endswith('h5'):
@@ -156,7 +156,7 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
     outfile =  "{dir}{label}{suffix}{ext}".format(dir=outdir,
                     label=pop.label, suffix=suffix, ext=extension)
     io = IOClass(outfile)
-    pop.write_data(io, variables='all', gather=gather, clear=clear, 
+    pop.write_data(io, variables='all', gather=gather, clear=clear,
                        annotations={'script_name': __file__})
 
 
@@ -194,12 +194,12 @@ def run_simple_net(
     sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, use_cvode=False)
     if mpi_rank == 0:
         init_logging(logfile=None, debug=True)
-    
+
 
     print("""\nRunning net on MPI rank {} with following settings:
     - sim_dur = {}
     - output = {}""".format(mpi_rank, sim_dur, output))
-    
+
     print("\nThis is node {} ({} of {})\n".format(
           sim.rank(), sim.rank() + 1, sim.num_processes()))
 
@@ -226,7 +226,7 @@ def run_simple_net(
     # Raw Numpy RNGs (numpy.random.RandomState) to be used in our own functions
     shared_rng = shared_rng_pynn.rng
     rank_rng = rank_rng_pynn.rng
-    
+
     # Global physiological conditions
     DD = dopamine_depleted
     if DD is None:
@@ -284,7 +284,7 @@ def run_simple_net(
         syn_type, syn_params = getdictvals(config[post][pre]['synapse'],
                                            'name', 'parameters')
         syn_class = synapse_types[syn_type]
-        syn_pvals = eval_params(syn_params, params_global_context, 
+        syn_pvals = eval_params(syn_params, params_global_context,
                                 [params_local_context, config_locals])
         num_contacts = config[post][pre].get('num_contacts', 1)
         syntype_obj = syn_class(**syn_pvals)
@@ -306,11 +306,11 @@ def run_simple_net(
             connector.rng = rng
         return connector
 
-    
+
     # LFP calculation: command line args get priority over config file
     if calculate_lfp is None:
         calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
-    
+
     # Set NEURON integrator/solver options
     if calculate_lfp:
         sim.state.cvode.use_fast_imem(True)
@@ -359,14 +359,14 @@ def run_simple_net(
 
     # if burst_intervals is not None:
     #     msn_spike_generator = spikegen.bursty_spiketrains_during(
-    #                             burst_intervals, bursting_fraction, 
-    #                             T_burst, dur_burst, f_intra, f_inter, f_background, 
+    #                             burst_intervals, bursting_fraction,
+    #                             T_burst, dur_burst, f_intra, f_inter, f_background,
     #                             sim_dur, randomize_bursting, rank_rng)
     # else:
     #     msn_spike_generator = spikegen.make_bursty_spike_generator(
-    #                             bursting_fraction=bursting_fraction, 
+    #                             bursting_fraction=bursting_fraction,
     #                             synchronous=synchronous, rng=rank_rng,
-    #                             T_burst=T_burst, dur_burst=dur_burst, 
+    #                             T_burst=T_burst, dur_burst=dur_burst,
     #                             f_intra=f_intra, f_inter=f_inter,
     #                             f_background=f_background, duration=sim_dur)
 
@@ -384,11 +384,11 @@ def run_simple_net(
 
     #===========================================================================
     # STN POPULATION
-    stn_ncell_base, stn_dx, = get_pop_parameters('STN', 
+    stn_ncell_base, stn_dx, = get_pop_parameters('STN',
                                 'base_population_size', 'grid_dx')
     stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
     stn_ncell_biophys = int(stn_ncell_base * pop_scale)
-    
+
     # FIXME: set electrode coordinates
     stn_cell_params = get_cell_parameters('STN')
     stn_type = gillies.StnCellType(
@@ -400,8 +400,8 @@ def run_simple_net(
         'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
     }
 
-    pop_stn = Population(stn_ncell_biophys, 
-                         cellclass=stn_type, 
+    pop_stn = Population(stn_ncell_biophys,
+                         cellclass=stn_type,
                          label='STN',
                          structure=stn_grid,
                          initial_values=initial_values)
@@ -409,12 +409,12 @@ def run_simple_net(
     #---------------------------------------------------------------------------
     # STN Surrogate spike sources
 
-    frac_surrogate, surr_rate = get_pop_parameters('STN', 
+    frac_surrogate, surr_rate = get_pop_parameters('STN',
         'surrogate_fraction', 'surrogate_rate')
-    
+
     ncell_surrogate = int(stn_ncell_biophys * frac_surrogate)
     if ncell_surrogate > 0:
-        pop_stn_surrogate = Population(ncell_surrogate, 
+        pop_stn_surrogate = Population(ncell_surrogate,
                                        sim.SpikeSourcePoisson(rate=surr_rate),
                                        label='STN.surrogate')
     else:
@@ -424,7 +424,7 @@ def run_simple_net(
     # STN Assembly (Biophys + Surrogate)
 
     if pop_stn_surrogate is None:
-        asm_stn = sim.Assembly(pop_stn, pop_stn_surrogate, 
+        asm_stn = sim.Assembly(pop_stn, pop_stn_surrogate,
                                label='STN.all')
     else:
         asm_stn = sim.Assembly(pop_stn, label='STN.all')
@@ -437,21 +437,21 @@ def run_simple_net(
     gpe_dx, gpe_ncell_base, frac_proto, frac_arky = get_pop_parameters(
         'GPE.all', 'grid_dx', 'base_population_size',
         'prototypic_fraction', 'arkypallidal_fraction')
-    
+
     gpe_common_params = get_cell_parameters('GPE.all')
 
     gpe_grid = space.Line(x0=0.0, dx=gpe_dx,
                           y=1e6, z=0.0)
-    
+
     proto_type = gunay.GpeProtoCellType(**gpe_common_params)
-    
+
     vinit = proto_type.default_initial_values['v']
     initial_values={
         'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
     }
 
     ncell_proto = int(gpe_ncell_base * pop_scale * frac_proto)
-    pop_gpe_proto = Population(ncell_proto, 
+    pop_gpe_proto = Population(ncell_proto,
                                cellclass=proto_type,
                                label='GPE.proto',
                                structure=gpe_grid,
@@ -461,12 +461,12 @@ def run_simple_net(
     #---------------------------------------------------------------------------
     # GPE Surrogate spike sources
 
-    frac_surrogate, surr_rate = get_pop_parameters('GPE.all', 
+    frac_surrogate, surr_rate = get_pop_parameters('GPE.all',
         'surrogate_fraction', 'surrogate_rate')
-    
+
     ncell_surrogate = int(gpe_ncell_base * pop_scale * frac_surrogate)
     if ncell_surrogate > 0:
-        pop_gpe_surrogate = Population(ncell_surrogate, 
+        pop_gpe_surrogate = Population(ncell_surrogate,
                                        sim.SpikeSourcePoisson(rate=surr_rate),
                                        label='GPE.surrogate')
     else:
@@ -476,7 +476,7 @@ def run_simple_net(
     # GPE Assembly (Proto + Arky + Surrogate)
 
     if pop_gpe_surrogate is None:
-        asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_surrogate, 
+        asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_surrogate,
                                label='GPE.all')
     else:
         asm_gpe = sim.Assembly(pop_gpe_proto, label='GPE.all')
@@ -535,7 +535,7 @@ def run_simple_net(
             else:
                 continue
             proj_config = pop_config[pre_label]
-            
+
             # make PyNN Projection
             all_proj[pre_label][post_label] = sim.Projection(pre_pop, post_pop,
                 connector=connector_from_config(pre_label, post_label, rng=shared_rng_pynn),
@@ -545,11 +545,31 @@ def run_simple_net(
     #---------------------------------------------------------------------------
     # Post-constructional modifications
 
-    # if DD:
-    #     for conn in list(all_proj['CTX']['STN'].connections)[-6:]:
-    #         # Disable last six AMPA/NR2B-D afferents, but not NR2A
-    #         conn.GLUsyn_gmax_AMPA = 0.0
-    #         conn.GLUsyn_gmax_NMDA = 0.0
+    # Reduce dendritic branching and number of GLU synapses in DD
+    num_prune = config['STN'].get('prune_dendritic_GLUR', 0)
+    if DD and num_prune > 0:
+        # Disable last AMPA/NR2B-D afferents, but not NR2A
+        for conn in list(all_proj['CTX']['STN'].connections)[-num_prune:]:
+            conn.GLUsyn_gmax_AMPA = 0.0
+            conn.GLUsyn_gmax_NMDA = 0.
+
+    # Disable somatic/proximal fast NMDA subunits
+    if config['STN'].get('disable_somatic_NR2A', False):
+        all_proj['CTX']['STN'].set(NMDAsynTM_gmax_NMDA=0.0)
+
+    # Only allow GABA-B currents on reported fraction of cells
+    num_without_GABAB = config['STN'].get('num_cell_without_GABAB', 0)
+    if num_without_GABAB > 0:
+        # Pick subset of cells with GABA-B disabled
+        pop_sample = pop_stn.sample(num_without_GABAB, rng=shared_rng_pynn)
+        stn_ids = pop_sample.all_cells  # global ids
+        for pre in 'GPE.all', 'GPE.proto', 'GPE.surrogate':
+            if pre in all_proj and 'STN' in all_proj[pre]:
+                for conn in all_proj[pre]['STN'].connections:
+                    if conn.postsynaptic_cell in stn_ids:
+                        conn.gmax_GABAB = 0.0
+                        print('Disabled GABAB on STN cell with id {}'.format(conn.postsynaptic_cell))
+
     #     # TODO IDEA: - give only GABA-A synapses, but increase number to get same E/I ratio
     #     #            - then set high GABA-B here for fraction of connections
 
@@ -608,7 +628,7 @@ def run_simple_net(
             target_pop = all_asm[pop_label]
         else:
             raise ValueError("Unknown population to record from: {}".format(pop_label))
-        
+
         # Translate trace group specifier to Population.record() call
         for trace_group in pop_config['traces']:
             pop_sample = trace_group['cells']
@@ -624,7 +644,7 @@ def run_simple_net(
             target_cells.record(trace_group['specs'].items(),
                                 sampling_interval=trace_group['sampling_period'])
 
-    
+
     ############################################################################
     # INITIALIZE & SIMULATE
     ############################################################################
@@ -633,7 +653,7 @@ def run_simple_net(
     # Set physiological conditions
     h.celsius = 36.0
     h.set_aCSF(4) # Hoc function defined in Gillies code
-    
+
     # Simulation statistics
     num_segments = sum((sec.nseg for sec in h.allsec()))
     num_cell = sum((1 for sec in h.allsec()))
@@ -663,11 +683,11 @@ def run_simple_net(
         first_write_time = transient_period
     write_times = list(np.arange(first_write_time, sim_dur, write_interval)) + [sim_dur]
     last_write_time = 0.0
-    
+
     # SIMULATE
     while sim.state.t < sim_dur:
         sim.run(report_interval)
-        
+
         # Report simulation progress
         if mpi_rank == 0:
             tnow = time.time()
@@ -679,7 +699,7 @@ def run_simple_net(
                         "CPU time elapsed is {} s, last step took {} s".format(
                         sim.state.t, sim_dur, t_elapsed, t_stepdur))
             print(progress)
-        
+
             if report_progress:
                 stamp = datetime.fromtimestamp(tnow).strftime('%Y-%m-%d@%H:%M:%S')
                 os.system("echo [{}]: {} >> {}".format(stamp, progress, progress_file))
@@ -715,7 +735,7 @@ def run_simple_net(
 
     # Save cell information
     for pop in all_pops.values() + all_asm.values():
-        saved_params.setdefault(pop.label, {})['gids'] = pop.all_cells.astype(int) 
+        saved_params.setdefault(pop.label, {})['gids'] = pop.all_cells.astype(int)
 
     # Save connection information
     for pre_pop, post_pops in all_proj.iteritems():
@@ -732,9 +752,9 @@ def run_simple_net(
             gsyn_params = ['gmax_AMPA', 'gmax_NMDA', 'gmax_GABAA', 'gmax_GABAB']
             conn_params.extend(
                 [p for p in gsyn_params if p in proj.synapse_type.default_parameters])
-            pre_post_params = np.array(proj.get(conn_params, format="list", 
+            pre_post_params = np.array(proj.get(conn_params, format="list",
                                        gather='all', multiple_synapses='sum'))
-            
+
             # Sanity check: minimum and maximum delays and weights
             mind = min(pre_post_params[:,2])
             maxd = max(pre_post_params[:,2])
@@ -811,7 +831,7 @@ if __name__ == '__main__':
 
     parser.add_argument('-tp', '--transient-period', nargs='?', type=float, default=None,
                         dest='transient_period',
-                        help=('Duration of transient period at start of simulation. ' 
+                        help=('Duration of transient period at start of simulation. '
                               'First data write-out is after transient period'))
 
     parser.add_argument('--lfp',
@@ -869,7 +889,7 @@ if __name__ == '__main__':
     config_name, ext = os.path.splitext(os.path.basename(config_file))
     sim_config = fileutils.parse_json_file(config_file, nonstrict=True)
     parsed_dict['config'] = sim_config
-    
+
     # Post process output specifier
     out_basedir = parsed_dict['output']
     if out_basedir is None or out_basedir == '': # shell can pass empty string
@@ -892,7 +912,7 @@ if __name__ == '__main__':
                                             dur=parsed_dict['sim_dur'],
                                             stamp=timestamp,
                                             job_id=job_id)
-    
+
     # Make output directory if non-existing, but only on one host
     out_basedir = os.path.expanduser(out_basedir)
     if not os.path.isdir(out_basedir) and mpi_rank == 0:
@@ -908,6 +928,6 @@ if __name__ == '__main__':
     if mpi_rank == 0:
         import shutil
         shutil.copy2(config_file, os.path.join(out_fulldir, 'sim_config.json'))
-    
+
     # Run the simulation
     run_simple_net(**parsed_dict)
