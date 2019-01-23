@@ -548,13 +548,17 @@ def run_simple_net(
     # Reduce dendritic branching and number of GLU synapses in DD
     num_prune = config['STN'].get('prune_dendritic_GLUR', 0)
     if DD and num_prune > 0:
-        # Disable last AMPA/NR2B-D afferents, but not NR2A
-        for conn in list(all_proj['CTX']['STN'].connections)[-num_prune:]:
-            conn.GLUsyn_gmax_AMPA = 0.0
-            conn.GLUsyn_gmax_NMDA = 0.
+        # PD: dendritic AMPA & NMDA-NR2B/D afferents pruned
+        num_disabled = np.zeros(pop_stn.size)
+        for conn in all_proj['CTX']['STN'].connections:
+            if num_disabled[conn.postsynaptic_index] < num_prune:
+                conn.GLUsyn_gmax_AMPA = 0.0
+                conn.GLUsyn_gmax_NMDA = 0.0
+                num_disabled[conn.postsynaptic_index] += 1
 
     # Disable somatic/proximal fast NMDA subunits
     if config['STN'].get('disable_somatic_NR2A', False):
+        # NOTE: config uses a separate NMDAsyn point process for somatic NMDAR
         all_proj['CTX']['STN'].set(NMDAsynTM_gmax_NMDA=0.0)
 
     # Only allow GABA-B currents on reported fraction of cells
@@ -569,9 +573,8 @@ def run_simple_net(
                     if conn.postsynaptic_cell in stn_ids:
                         conn.gmax_GABAB = 0.0
                         print('Disabled GABAB on STN cell with id {}'.format(conn.postsynaptic_cell))
-
-    #     # TODO IDEA: - give only GABA-A synapses, but increase number to get same E/I ratio
-    #     #            - then set high GABA-B here for fraction of connections
+        # TODO: for cells without GABAB, create new Projection with only GABA-A synapses
+        #       - either from surrogate only or whole population (choose)
 
     #---------------------------------------------------------------------------
     # Sanity check: make sure all populations and projections are instantiated
