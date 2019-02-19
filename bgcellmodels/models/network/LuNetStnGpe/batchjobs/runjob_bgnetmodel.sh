@@ -10,8 +10,8 @@
 
 
 # Set the walltime of the job to 1 hour (format is hh:mm:ss)
-# - walltime for 1 jobs/node is 11s/50 ms  for LuNetStnGpe with 50 STN + 100 GPe cells
-# - walltime for 3 jobs/node is (19-23)s/50ms for LuNetStnGpe with 50 STN + 100 GPe cells
+# - 1 jobs/node: 11 [s walltime] / 50 [ms simtime] for LuNetStnGpe with 50 STN + 100 GPe cells
+# - 3 jobs/node is (19-23)s / 50 ms for 50 STN + 100 GPe cells
 # - to get hh and mm (for hh:mm:ss) do hh = runtime // 3600; mm = runtime % 3600
 ## PBS -l walltime=00:45:00
 
@@ -117,23 +117,38 @@ Executing script with following inputs:
 The final command (following '> ') is:
 
 > $mpi_command
-
---------------------------------------------------------------------------------
-Version information for model code:
-
-$(git log -1)
-
---------------------------------------------------------------------------------
-The contents of the model configuration file is:
-
 "
 
+echo -e "
+################################################################################
+REPRODUCIBILITY INFO
+
+--------------------------------------------------------------------------------
+Model repository version:
+"
+git log -1
+
+echo -e "
+--------------------------------------------------------------------------------
+Python package versions:
+"
+pip freeze
+
+echo -e "
+--------------------------------------------------------------------------------
+The contents of job generation file is:
+"
+cat "${model_dir}/batchjobs/generate_jobs.sh"
+
+echo -e "
+--------------------------------------------------------------------------------
+The contents of the model configuration file is:
+"
 cat $model_config
 
 echo -e "
 Model output follows below line:
 ================================================================================
 "
-
 # Evaluate our command
 eval $mpi_command
