@@ -51,7 +51,7 @@ class TraceSpecRecorder(Recorder):
 
     @attr   recorded : dict[str, set(int)]
             Cell IDs of recorded cells for each trace name
-    
+
     @attr   trace_opts : dict[str, dict[str, object]]
             Options for each trace.
 
@@ -61,13 +61,13 @@ class TraceSpecRecorder(Recorder):
 
     See common Population and Recorder class for method chains involved
     in recording and writing traces:
-    
+
     https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/common/populations.py
     https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/recording/__init__.py
 
         - sampling_interval is common to all traces/signals of the recorder
 
-        - PyNN.common.populations.BasePopulation.write_data(io, variables, gather, 
+        - PyNN.common.populations.BasePopulation.write_data(io, variables, gather,
                                                             clear, annotations)
             `-> PyNN.recording.Recorder.write(...)
                 `-> data = self.get(variables, gather, ...)
@@ -98,7 +98,7 @@ class TraceSpecRecorder(Recorder):
                     specification. The trace specification can be either a
                     string like the default PyNN variable names, or a dict
                     that specifies the trace in NetPyne format.
-        
+
         @note       The original graph is as follows:
                     -> Recorder.record() @ /pyNN/recording/__init__.py
                     -> Recorder._record() @ /pyNN/neuron/recording.py
@@ -109,16 +109,16 @@ class TraceSpecRecorder(Recorder):
 
         >>> trace_specs = {
         >>>     'GP_cai':{'sec':'soma[0]','loc':0.5,'var':'cai'},
-        >>>     'GP_ainf':{'sec':'soma[0]','loc':0.5,'mech':'gpRT','var':'a_inf'}, 
+        >>>     'GP_ainf':{'sec':'soma[0]','loc':0.5,'mech':'gpRT','var':'a_inf'},
         >>>     'GP_r':{'sec':'soma[0]','loc':0.5,'mech':'gpRT','var':'r'},
         >>> }
         >>> pop.record(trace_specs.items())
-        
+
         """
         logger.debug('Recorder.record(<cell ids: {}>)'.format(ids))
 
         # if sampling_interval is not None:
-        #     if ((sampling_interval != self.sampling_interval) and (len(self.recorded) > 0) and 
+        #     if ((sampling_interval != self.sampling_interval) and (len(self.recorded) > 0) and
         #             not (len(self.recorded) == 1 and 'spikes' in self.recorded)):
         #         raise ValueError("All neurons in a population must be recorded with the same sampling interval.")
 
@@ -131,7 +131,7 @@ class TraceSpecRecorder(Recorder):
                 trace_name, trace_spec = variable
             # if not self.population.can_record(trace_spec):
             #     raise errors.RecordingError(trace_spec, self.population.celltype)
-            
+
             # Get cells that aren't recording this trace yet
             new_ids = ids.difference(self.recorded[trace_name])
 
@@ -139,11 +139,11 @@ class TraceSpecRecorder(Recorder):
             sampling_interval = sampling_interval or self._simulator.state.dt
             if trace_name in self.trace_opts:
                 if self.trace_opts[trace_name]['sampling_interval'] != sampling_interval:
-                    raise ValueError("All neurons in a population must be recorded with the same sampling interval.") 
+                    raise ValueError("All neurons in a population must be recorded with the same sampling interval.")
             else:
                 self.trace_opts[trace_name] = {}
             self.trace_opts[trace_name]['sampling_interval'] = sampling_interval
-            
+
             self.recorded[trace_name] = self.recorded[trace_name].union(ids)
             self._record(variable, new_ids)
 
@@ -197,7 +197,7 @@ class TraceSpecRecorder(Recorder):
             trace_name, trace_spec = variable, variable
         else:
             trace_name, trace_spec = variable
-        
+
         recorded = False
         sampling_interval = self._get_trace_opt(trace_name, 'sampling_interval')
 
@@ -222,11 +222,11 @@ class TraceSpecRecorder(Recorder):
             vec.record(pp, hoc_ref, sampling_interval)
             cell.traces[trace_name] = vec
             recorded = True
-        
+
         elif isinstance(trace_spec, str):
             source, var_name = self._resolve_variable(cell, trace_spec)
             hoc_var = getattr(source, "_ref_%s" % var_name)
-        
+
         elif 'sec' in trace_spec.keys():
             # spec is in NetPyne format
             hoc_obj = cell.resolve_section(trace_spec['sec'])
@@ -252,12 +252,12 @@ class TraceSpecRecorder(Recorder):
                 cell.traces[numbered_trace_name] = vec
                 self.recorded[numbered_trace_name] = \
                     self.recorded[numbered_trace_name].union((id,))
-            
+
             self.recorded[trace_name] = set() # remove unformatted trace name
             recorded = True
 
         elif 'syn' in trace_spec.keys():
-            # trace spec 
+            # trace spec
             #   'Syn{:d}' : {'syn': 'Exp2Syn[:]', 'var':'g'}
             #   'Syn{:d}' : {'syn': 'Exp2Syn[0]', 'var':'g'}
             pp_list = cell.resolve_synapses(trace_spec['syn'])
@@ -275,8 +275,8 @@ class TraceSpecRecorder(Recorder):
             # signals for this ID
             self.recorded[trace_name] = set()
             recorded = True
-        
-        # Record global variable 
+
+        # Record global variable
         if not recorded:
             vec = h.Vector()
             if sampling_interval == self._simulator.state.dt:
@@ -284,7 +284,7 @@ class TraceSpecRecorder(Recorder):
             else:
                 vec.record(hoc_var, sampling_interval)
             cell.traces[trace_name] = vec
-        
+
         # Record global time variable 't' if not recorded already
         if not cell.recording_time:
             cell.record_times = h.Vector()
@@ -292,7 +292,7 @@ class TraceSpecRecorder(Recorder):
                 cell.record_times.record(h._ref_t)
             else:
                 cell.record_times.record(h._ref_t, sampling_interval)
-            
+
             cell.recording_time += 1
 
 
@@ -329,7 +329,7 @@ class TraceSpecRecorder(Recorder):
             else:
                 # No mechanism. E.g. soma(0.5)._ref_v
                 hoc_ptr = getattr(seg, '_ref_'+spec['var'])
-            
+
             # find a POINT_PROCESS in segment to improve efficiency
             # seg_pps = seg.point_processes()
             # if any(seg_pps):
@@ -337,20 +337,20 @@ class TraceSpecRecorder(Recorder):
             # else:
             pp = h.PointProcessMark(seg)
             pp_marker = pp
-        
+
 
         elif 'pointp' in spec: # hoc_obj is POINT_PROCESS
             # Look for the point process in Section
             mech_name = spec['pointp']
             seg_pps = seg.point_processes()
 
-            pp = next((hobj for hobj in seg_pps if 
+            pp = next((hobj for hobj in seg_pps if
                         nrnutil.get_mod_name(hobj)==mech_name), None)
-            
+
             if pp is None:
                 raise ValueError("Could not find point process '{}' "
                     "in segment {}".format(spec['pointp'], seg))
-            
+
             hoc_ptr = getattr(pp, '_ref_'+spec['var'])
 
 
