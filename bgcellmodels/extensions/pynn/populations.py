@@ -53,11 +53,11 @@ class Population(NrnPopulation):
         super(Population, self)._create_cells()
         pos_array = self.positions # numpy array of shape (3, N)
         for i, (cell_id, is_local) in enumerate(zip(self.all_cells, self._mask_local)):
+            # NOTE: i should be same as Population.id_to_index(id)
             if is_local:
-                if hasattr(cell_id._cell, '_update_position'):
-                    cell_id._cell._update_position(pos_array[:, i])
-                if hasattr(cell_id._cell, '_init_lfp'):
-                    cell_id._cell._init_lfp()
+                position = pos_array[:, i]
+                if hasattr(cell_id._cell, '_post_build'):
+                    cell_id._cell._post_build(i, position)
 
 
     # def calculate_lfp(self):

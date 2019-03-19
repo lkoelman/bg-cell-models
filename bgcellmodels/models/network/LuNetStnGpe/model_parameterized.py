@@ -23,7 +23,7 @@ To run using MPI, use the `mpirun` or `mpiexec` command like:
 
 To run from an IPython shell, use the %run magic function like:
 
-`%run model_parameterized.py --scale 0.5 --dd --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/DA-depleted_template.json`
+`%run model_parameterized.py --scale 0.5 --dd --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/syn-V18_template.json`
 
 
 NOTES

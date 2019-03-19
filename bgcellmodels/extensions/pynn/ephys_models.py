@@ -827,6 +827,21 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
 #        return self.get_existing_synapse(region, receptors, mark_used)
 
 
+    def _post_build(self, pop_index, position):
+        """
+        Hook called after Population._create_cells() -> ID._build_cell()
+        is executed.
+
+        @param  index in Population
+                (same as result of Population.id_to_index(ID))
+
+        @note   called by our custom Population class that overrides
+                Population._create_cells()
+        """
+        self._update_position(position)
+        self._init_lfp()
+
+
     def _init_lfp(self):
         """
         Initialize LFP sources for this cell.

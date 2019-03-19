@@ -150,32 +150,15 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         self.icell = h.SThcells[cell_idx]
 
 
-    def _post_instantiate(self):
+    def _post_build(self, pop_index, position):
         """
-        Post-instantiation setup code. Inserts noise sources if requested.
-        """
-        # Insert membrane noise
-        if self.membrane_noise_std > 0:
-            # Configure RNG to generate independent stream of random numbers.
-            num_picks = int(nrnsim.state.duration / nrnsim.state.dt)
-            rng, init_rng = nrnutil.independent_random_stream(
-                                    num_picks, nrnsim.state.mcellran4_rng_indices,
-                                    start_low_index=nrnsim.state.rank_rng_seed)
-            rng.normal(0, 1)
-            self.noise_rng = rng
-            self.noise_rng_init = init_rng
+        Hook called after Population._create_cells() -> ID._build_cell()
+        is executed.
 
-            soma = self.icell.soma[0]
-            self.noise_stim = stim = h.ingauss2(soma(0.5))
-            std_scale =  1e-2 * sum((seg.area() for seg in soma)) # [mA/cm2] to [nA]
-            stim.mean = 0.0
-            stim.stdev = self.membrane_noise_std * std_scale
-            stim.noiseFromRandom(rng)
-        else:
-            def fdummy():
-                pass
-            self.noise_rng = None
-            self.noise_rng_init = fdummy
+        @override   EphysModelWrapper._post_build()
+        """
+        self._init_memb_noise(pop_index)
+        super(StnCellModel, self)._post_build(pop_index, position)
 
 
     def memb_init(self):
@@ -199,6 +182,31 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         Get spike threshold for soma membrane potential (used for NetCon)
         """
         return -10.0
+
+
+    def _init_memb_noise(self, pop_index):
+        # Insert membrane noise
+        if self.membrane_noise_std > 0:
+            # Configure RNG to generate independent stream of random numbers.
+            num_picks = int(nrnsim.state.duration / nrnsim.state.dt)
+            rng, init_rng = nrnutil.independent_random_stream(
+                                    num_picks, nrnsim.state.mcellran4_rng_indices,
+                                    force_low_index=1000+pop_index)
+            rng.normal(0, 1)
+            self.noise_rng = rng
+            self.noise_rng_init = init_rng
+
+            soma = self.icell.soma[0]
+            self.noise_stim = stim = h.ingauss2(soma(0.5))
+            std_scale =  1e-2 * sum((seg.area() for seg in soma)) # [mA/cm2] to [nA]
+            stim.mean = 0.0
+            stim.stdev = self.membrane_noise_std * std_scale
+            stim.noiseFromRandom(rng)
+        else:
+            def fdummy():
+                pass
+            self.noise_rng = None
+            self.noise_rng_init = fdummy
 
 
     def _init_synapses(self):
@@ -258,64 +266,6 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         synmap_key = tuple(sorted(receptors))
         self._synapses[region].setdefault(synmap_key, []).extend(syns)
         return syns
-
-    # def _init_synapses(self):
-    #     """
-    #     Initialize synapses on this neuron.
-
-    #     @override   EphysModelWrapper._init_synapses()
-    #     """
-    #     # Indicate to Connector that we don't allow multiple NetCon per synapse
-    #     self.allow_synapse_reuse = False
-
-    #     # Sample each region uniformly and place synapses there
-    #     soma = self.icell.soma[0]
-    #     synapse_spacing = 0.25
-    #     segment_gen = treeutils.ascend_with_fixed_spacing(
-    #                         soma(0.5), synapse_spacing)
-    #     uniform_segments = [seg for seg in segment_gen]
-
-    #     # Sample cell regions
-    #     h.distance(0, 0.5, sec=soma) # reference for distance measurement
-
-    #     is_proximal = lambda seg: h.distance(1, seg.x, sec=seg.sec) < 120.0
-    #     proximal_segments = [seg for seg in uniform_segments if is_proximal(seg)]
-
-    #     is_distal = lambda seg: h.distance(1, seg.x, sec=seg.sec) >= 100.0
-    #     distal_segments = [seg for seg in uniform_segments if is_distal(seg)]
-
-    #     # Synapses counts are fixed
-    #     num_gpe_syn = self.max_num_gpe_syn
-    #     num_ctx_syn = self.max_num_ctx_syn
-    #     num_stn_syn = self.max_num_stn_syn
-    #     rng = np.random # TODO: make from base seed + self ID
-        
-    #     proximal_indices = rng.choice(len(proximal_segments), 
-    #                             num_gpe_syn, replace=False)
-
-    #     distal_indices = rng.choice(len(distal_segments), 
-    #                             num_ctx_syn+num_stn_syn, replace=False)
-
-    #     # Fill synapse lists
-    #     self._synapses = {}
-    #     self._synapses['proximal'] = prox_syns = {}
-    #     self._synapses['distal'] = dist_syns = {}
-
-    #     # Get constuctors for NEURON synapse mechanisms
-    #     make_gaba_syn = getattr(h, self.default_GABA_mechanism)
-    #     make_glu_syn = getattr(h, self.default_GLU_mechanism)
-
-    #     prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
-    #     for seg_index in proximal_indices:
-    #         syn = make_gaba_syn(proximal_segments[seg_index])
-    #         prox_gaba_syns.append(dotdict(synapse=syn, used=0,
-    #             mechanism=self.default_GABA_mechanism))
-        
-    #     dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
-    #     for seg_index in distal_indices:
-    #         syn = make_glu_syn(distal_segments[seg_index])
-    #         dist_glu_syns.append(dotdict(synapse=syn, used=0,
-    #             mechanism=self.default_GLU_mechanism))
 
 
     def _update_position(self, xyz):

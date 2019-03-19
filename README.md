@@ -38,45 +38,40 @@ These installation instructions are for the Conda Python ditribution.
 
 Our custom PyNN classes have only been tested with:
 - PyNN 0.9.2 (commit id `4b80343ba17afd688a92b3a0755ea73179c9daab`)
-- BluePyOpt version 1.5.35 (commit id `7d7c65be0bff3a9832d1d5dec3f4ba1c8906fa75`).
+- BluePyOpt version 1.5.35 (commit id `1456941abe425b4a20fb084eab1cb6415ccfe2b8`).
 
 
-## Installation using Pip / setuptools
+## Installation
 
 Install editable version (symlink to this directory):
 
 ```sh
-pip install -e path_to_repo
-# or alternatively:
-python setup.py develop
+# Install dependencies
+pip install lazyarray pint elephant
 
-# Build NMODL files automatically:
-python setup.py build_mechs
-```
-
-## Installation using PYTHONPATH
-
-This will make the module globally available by adding it to the `PYTHONPATH` environment variable.
-
-```bash
-# Create Python virtual environment using Conda
-conda create -n neuro python=2
-source activate neuro
-
-# Install dependencies in new environment
-pip install scipy matplotlib cython numba pint elephant PySpike
 git clone https://github.com/BlueBrain/BluePyOpt.git
-pip install -e ./BluePyOpt # -e only if you want editable version
+cd BluePyOpt && git checkout 1456941abe425b4a20fb084eab1cb6415ccfe2b8
+cd .. & pip install -e ./BluePyOpt
 
+git clone https://github.com/NeuralEnsemble/PyNN.git
+cd PyNN && git checkout 4b80343ba17afd688a92b3a0755ea73179c9daab
+cd pyNN/neuron/nmodl && nrnivmodl
+cd ../../../.. & pip install -e ./PyNN
+
+git clone https://github.com/lkoelman/python-neo.git
+cd python-neo && git checkout lkmn-dev # development version with MATLAB annotation support
+cd .. & pip install -e ./python-neo
+
+git clone https://github.com/lkoelman/LFPsim.git
+cd LFPsim/lfpsim && nrnivmodl
+pip install -e ./LFPsim
+
+
+# Install package
 git clone https://lkmn_ucd@bitbucket.org/lkmn_ucd/bg-cell-models.git bgcellmodels
-cd bgcellmodels
-git checkout --track origin/nothreadsafe
-# append the following to your ~/.bashrc or ~/.bash_profile file:
-export PYTHONPATH=$PYTHONPATH:$HOME/workspace/bgcellmodels
-
-# Start jupyter from the environment where nb_conda is installed
-source activate
-jupyter notebook
+cd bgcellmodels && git checkout --track origin/nothreadsafe
+python setup.py develop # or: pip install -e path_to_repo
+python setup.py mechanisms # Build NMODL files automatically:
 ```
 
 

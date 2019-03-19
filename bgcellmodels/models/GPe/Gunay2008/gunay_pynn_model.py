@@ -132,17 +132,35 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         gunay_model.fix_comp_dimensions(self)
 
 
-    def _post_instantiate(self):
+    def _post_build(self, pop_index, position):
         """
-        Post-instantiation setup code. Inserts noise sources if requested.
+        Hook called after Population._create_cells() -> ID._build_cell()
+        is executed.
+
+        @override   EphysModelWrapper._post_build()
         """
+        self._init_memb_noise(pop_index)
+        super(GPeCellModel, self)._post_build(pop_index, position)
+
+
+    def memb_init(self):
+        """
+        Initialization function required by PyNN.
+
+        @override     EphysModelWrapper.memb_init()
+        """
+        super(GPeCellModel, self).memb_init()
+        self.noise_rng_init()
+
+
+    def _init_memb_noise(self, pop_index):
         # Insert membrane noise
         if self.membrane_noise_std > 0:
             # Configure RNG to generate independent stream of random numbers.
             num_picks = int(nrnsim.state.duration / nrnsim.state.dt)
             rng, init_rng = nrnutil.independent_random_stream(
                                     num_picks, nrnsim.state.mcellran4_rng_indices,
-                                    start_low_index=nrnsim.state.rank_rng_seed)
+                                    force_low_index=1000+pop_index)
             rng.normal(0, 1)
             self.noise_rng = rng
             self.noise_rng_init = init_rng
@@ -158,16 +176,6 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
                 pass
             self.noise_rng = None
             self.noise_rng_init = fdummy
-
-
-    def memb_init(self):
-        """
-        Initialization function required by PyNN.
-
-        @override     EphysModelWrapper.memb_init()
-        """
-        super(GPeCellModel, self).memb_init()
-        self.noise_rng_init()
 
 
     def segment_in_region(self, segment, region):
