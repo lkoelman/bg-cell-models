@@ -25,6 +25,7 @@ class Population(NrnPopulation):
         """
         super(Population, self).__init__(*args, **kwargs)
         Population.all_populations.append(self)
+        self.pop_gid = len(Population.all_populations)
 
 
     @NrnPopulation.positions.setter
@@ -51,13 +52,11 @@ class Population(NrnPopulation):
         notified of their 3D position assigned by PyNN.
         """
         super(Population, self)._create_cells()
-        pos_array = self.positions # numpy array of shape (3, N)
         for i, (cell_id, is_local) in enumerate(zip(self.all_cells, self._mask_local)):
             # NOTE: i should be same as Population.id_to_index(id)
             if is_local:
-                position = pos_array[:, i]
                 if hasattr(cell_id._cell, '_post_build'):
-                    cell_id._cell._post_build(i, position)
+                    cell_id._cell._post_build(self, i)
 
 
     # def calculate_lfp(self):

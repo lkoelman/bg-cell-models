@@ -29,7 +29,7 @@ from distutils.command.build import build as BuildCommand
 # To use a consistent encoding
 from codecs import open
 from os import path
-import os
+import os, platform
 import subprocess
 
 here = path.abspath(path.dirname(__file__))
@@ -43,10 +43,12 @@ BASEDIR = os.path.dirname(os.path.abspath(__file__))
 
 # Build NMODL mechanisms
 nmodl_mechanism_dirs = [
-    'bgcellmodels/mechanisms/synapses',
+    'bgcellmodels/mechanisms',
     'bgcellmodels/models/STN/GilliesWillshaw/mechanisms',
     'bgcellmodels/models/GPe/Gunay2008/mechanisms'
 ]
+
+ARCH = platform.machine()
 
 class Build_NMODL(BuildCommand):
     """
@@ -92,24 +94,27 @@ class Build_NMODL(BuildCommand):
         else:
             nrnivmodl = self._find_executable("nrnivmodl")
 
-        if nrnivmodl:
-            print("nrnivmodl found at", nrnivmodl)
-
-            # Build mechanism files
-            for mech_dir in nmodl_mechanism_dirs:
-                # run `nrnivmodl` on our directory
-                result, stdout = self._run_sys_command(nrnivmodl, os.path.join(
-                    BASEDIR, mech_dir))
-
-                if result != 0:
-                    print("Unable to compile NMODL files in {dir}. Output was:\n"
-                          "\t{output}".format(dir=mech_dir, output=stdout))
-                else:
-                    print("Successfully compiled NMODL files in {}.".format(mech_dir))
-
-        else:
+        if not nrnivmodl:
             print("Unable to find nrnivmodl. "
                   "You will have to compile NEURON .mod files manually.")
+            return
+
+        print("nrnivmodl found at", nrnivmodl)
+
+        # Build mechanism files
+        for mech_dir in nmodl_mechanism_dirs:
+            for root, dirs, files in os.walk(mech_dir):
+                if any((f.endswith('.mod') for f in files)) and not (
+                    root.endswith(ARCH)):
+                    # run `nrnivmodl` on our directory
+                    result, stdout = self._run_sys_command(nrnivmodl, root)
+
+                    if result != 0:
+                        print("Unable to compile NMODL files in {dir}. Output was:\n"
+                              "\t{output}".format(dir=mech_dir, output=stdout))
+                    else:
+                        print("Successfully compiled NMODL files in {}.".format(mech_dir))
+            
 
 
     def _find_executable(self, command):

@@ -132,15 +132,15 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         gunay_model.fix_comp_dimensions(self)
 
 
-    def _post_build(self, pop_index, position):
+    def _post_build(self, population, pop_index):
         """
         Hook called after Population._create_cells() -> ID._build_cell()
         is executed.
 
         @override   EphysModelWrapper._post_build()
         """
-        self._init_memb_noise(pop_index)
-        super(GPeCellModel, self)._post_build(pop_index, position)
+        self._init_memb_noise(population, pop_index)
+        super(GPeCellModel, self)._post_build(population, pop_index)
 
 
     def memb_init(self):
@@ -153,14 +153,15 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         self.noise_rng_init()
 
 
-    def _init_memb_noise(self, pop_index):
+    def _init_memb_noise(self, population, pop_index):
         # Insert membrane noise
         if self.membrane_noise_std > 0:
             # Configure RNG to generate independent stream of random numbers.
             num_picks = int(nrnsim.state.duration / nrnsim.state.dt)
+            seed = (1e4 * population.pop_gid) + pop_index
             rng, init_rng = nrnutil.independent_random_stream(
                                     num_picks, nrnsim.state.mcellran4_rng_indices,
-                                    force_low_index=1000+pop_index)
+                                    force_low_index=seed)
             rng.normal(0, 1)
             self.noise_rng = rng
             self.noise_rng_init = init_rng
