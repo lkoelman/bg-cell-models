@@ -24,10 +24,20 @@ nb_path = os.path.join(nb_dir, nb_infile)
 
 # SETPARAM: List simulation output directories to analyze
 output_dirs = """
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.02.19_10.03.39_job-1238485.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.00
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.02.19_10.03.44_job-1238481.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-0.10
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.02.19_10.03.39_job-1238486.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.33
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.02.19_10.03.39_job-1238487.sonic-head_StnGpe_template_syn-V18_ctx-stn_x-1.67
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.32_job-1252856.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.90
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.34_job-1252861.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.40
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.34_job-1252862.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.50
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.41_job-1252857.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.0
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.43_job-1252851.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.40
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.46_job-1252855.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.80
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.46_job-1252858.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.10
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.46_job-1252860.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.30
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.47_job-1252859.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.20
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.50_job-1252850.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.30
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.50_job-1252852.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.50
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.50_job-1252853.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.60
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.51_job-1252849.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.20
+/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.51_job-1252854.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.70
 """.strip().split()
 
 
