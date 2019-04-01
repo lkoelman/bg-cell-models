@@ -605,7 +605,7 @@ def morphology_to_dict(sections, outfile=None):
 def load_json(morphfile):
 
     with open(morphfile, 'r') as f:
-        secdata = json.load(morphfile)
+        secdata = json.load(f)
 
     seclist = []
     for sd in secdata:
@@ -621,7 +621,7 @@ def load_json(morphfile):
     # connect children to parent compartments
     for sec,sd in zip(seclist,secdata):
         if sd['parent_loc'] >= 0:
-            parent_sec = sec_list[sd['parent']]
+            parent_sec = seclist[sd['parent']]
             sec.connect(parent_sec(sd['parent_loc']), sd['section_orientation'])
 
     return seclist

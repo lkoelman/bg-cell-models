@@ -1,6 +1,6 @@
 from neuron import h
 from neuron.rxd.morphology import parent, parent_loc
-import json, io
+import json, io, re
 
 
 def morphology_to_dict(sections):
@@ -46,83 +46,13 @@ def morphology_to_dict(sections):
 def morphology_to_swc(sections, filename, encoding='utf-8'):
     """
     Convert any NEURON cell to SWC.
+
+    Instead use:
+    - built in exporters in ModelView (to NeuroML)
+    - https://github.com/JustasB/hoc2swc
+    - http://neuronland.org/NLMorphologyConverter/NLMorphologyConverter.html
     """
-
-    # orientation determines which sample point get a parent_id in another section
-    # parent_loc determines the parent_id: which segment to refer to in other section
-
-    raise NotImplementedError("Not yet implemented for non-uniform diameters over sections")
-
-
-def uniform_to_swc(sections, filename, encoding='ascii'):
-    """
-    Convert sections with uniform diameter to SWC file.
-
-    @note   see SWC file specification at 
-            http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
-    
-    @pre    assumes 3d location info is stored from 0 to 1-end of Section
-    """
-    morph_dicts = morphology_to_dict(sections)
-
-    with io.open(filename, 'w', encoding=encoding) as outfile:
-        for sec_id, sd in enumerate(morph_dicts):
-
-            sec = sections[sec_id]
-            parent_sec = parent(sec)
-            parent_x = -1 if parent_sec is None else parent_loc(sec, parent_sec)
-            orientation = sd['section_orientation']
-
-            # Check if section has uniform diameter
-            diams = sd['diam']
-            if not all((d==diams[0] for d in diams)):
-                ValueError("Encountered Section with non-uniform diameter: {}".format(sec))
-
-            # Determine parent sample from connection point
-            if parent_x == 1:
-                parent_id = 2*sd['parent'] + 2
-            elif parent_x == 0:
-                parent_id = 2*sd['parent'] + 1
-            elif parent_x == -1:
-                parent_id = -1
-            else:
-                ValueError("Encountered non-terminal connection at Section {}.".format(sec))
-
-            # Sample at start of Section
-            sample_1 = {
-                'segment_id': 2*sec_id + 1,
-                'region_id': 0,
-                'radius': sd['diam'][0] / 2.0,
-                'x': sd['x'][0],
-                'y': sd['y'][0],
-                'z': sd['z'][0],
-            }
-
-            # Sample at end of Section
-            sample_2 = {
-                'segment_id': 2*sec_id + 2,
-                'region_id': 0,
-                'radius': sd['diam'][-1] / 2.0,
-                'x': sd['x'][-1],
-                'y': sd['y'][-1],
-                'z': sd['z'][-1],
-            }
-
-            # Determine wich sample connects to parent
-            if orientation == 0:
-                sample_1['parent_id'] = parent_id
-                sample_2['parent_id'] = sample_1['segment_id']
-            elif orientation == 1:
-                sample_2['parent_id'] = parent_id
-                sample_1['parent_id'] = sample_2['segment_id']
-            else:
-                raise ValueError("Illegal orientation value {}".format(orientation))
-
-            
-            # Write samples to file         
-            outfile.write(u"{segment_id:d} {region_id:d} {x:f} {y:f} {z:f} {radius:f} {parent_id:d}\n".format(**sample_1))
-
-            outfile.write(u"{segment_id:d} {region_id:d} {x:f} {y:f} {z:f} {radius:f} {parent_id:d}\n".format(**sample_2))
+    raise NotImplementedError(morphology_to_swc.__doc__)
 
 
 def save_json(sections, filename, encoding='utf-8'):
@@ -189,6 +119,34 @@ def test_json_export():
    
     print json.dumps(morphology_to_dict([s[3], s[5], s[8], s[0], s[1], s[4], s[7]]), indent=2)
 
+
+def prepare_hoc_morphology_for_SWC_export(hoc_script_path, hoc_out_path):
+    """
+    Replace expressions in brackets (not containing variables) by their
+    evaluated values.
+
+    - first replace all variable names in 'connect' 'access' and 'pt3dadd' statements
+    - ensure there is only one statement per line
+        - split 'create A, B, C' into separate statements
+    """
+    hoc_clean_morph = ''
+    def match_evaluator(match):
+        """ process a regex match and return the corrected line """
+        assert match.lastindex == 1 # only one match
+        expr = match.group(0)
+        repl = str(eval(expr))
+        print("{}\n>>>>>>\n{}".format(expr, repl))
+        return repl
+
+    pattern = r"\[([\d\*\+]+)\]" # expression within brackets e.g. [i*j+2]
+
+    with open(hoc_script_path, 'r') as hoc_script:
+        hoc_dirty_morph = hoc_script.read()
+
+    hoc_clean_morph = re.sub(pattern, match_evaluator, hoc_dirty_morph)
+
+    with open(hoc_out_path, 'w') as out_script:
+        out_script.write(hoc_clean_morph)
 
 if __name__ == '__main__':
     test_json_export()

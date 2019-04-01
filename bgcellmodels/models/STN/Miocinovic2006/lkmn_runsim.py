@@ -28,18 +28,6 @@ import numpy as np
 from transforms3d import utils as tfutils
 from transforms3d import affines
 
-# library:      github.com/tpaviot/pythonocc-core
-# wrapper API:  api.pythonocc.org/py-modindex.html
-# c++ API:      www.opencascade.com/doc/occt-7.1.0/refman/html/toolkit_tkmath.html
-from OCC.gp import gp_Pnt, gp_Lin, gp_Ax1, gp_Dir # core geometry types
-from OCC.TColgp import TColgp_Array1OfPnt # collections
-from OCC.GeomAPI import GeomAPI_PointsToBSpline # geometry types
-from OCC.GeomAbs import GeomAbs_C0
-from OCC.BRepBuilderAPI import BRepBuilderAPI_MakeEdge # geometry to shape
-from OCC.TopoDS import TopoDS_Compound, TopoDS_Builder # Compound shapes
-from OCC.STEPControl import STEPControl_Writer, STEPControl_AsIs
-from OCC.IFSelect import IFSelect_RetDone # Return codes
-from OCC.Interface import Interface_Static_SetCVal
 
 # Global variables for Miocinovic file
 stn_groups_nsec = {
@@ -76,7 +64,9 @@ def transform_sections(secs, TR_hom):
         h.pop_section()
 
 def read_V_raw(x, y, z):
-    """ Query voltage attenuation factor relative to 1V peak-to-peak at location (x,y,z) """
+    """
+    Query voltage attenuation factor relative to 1V peak-to-peak at location (x,y,z)
+    """
     # TODO: replace this by Diego's function
     return 1.0
 
@@ -89,7 +79,8 @@ def read_transform():
     TR = affines.compose(T, R, Z, S=None)
     return TR
 
-def write_geometry(secs, filepath):
+
+def write_geometry_STEP(secs, filepath):
     """
     Write write_geometry as sections as polyline
 
@@ -97,6 +88,19 @@ def write_geometry(secs, filepath):
                     be exported. It is important that this is a SectionList
                     so that the CAS will be set correctly during iterations.
     """
+    # library:      github.com/tpaviot/pythonocc-core
+    # wrapper API:  api.pythonocc.org/py-modindex.html
+    # c++ API:      www.opencascade.com/doc/occt-7.1.0/refman/html/toolkit_tkmath.html
+    from OCC.gp import gp_Pnt, gp_Lin, gp_Ax1, gp_Dir # core geometry types
+    from OCC.TColgp import TColgp_Array1OfPnt # collections
+    from OCC.GeomAPI import GeomAPI_PointsToBSpline # geometry types
+    from OCC.GeomAbs import GeomAbs_C0
+    from OCC.BRepBuilderAPI import BRepBuilderAPI_MakeEdge # geometry to shape
+    from OCC.TopoDS import TopoDS_Compound, TopoDS_Builder # Compound shapes
+    from OCC.STEPControl import STEPControl_Writer, STEPControl_AsIs
+    from OCC.IFSelect import IFSelect_RetDone # Return codes
+    from OCC.Interface import Interface_Static_SetCVal
+
     # TODO: give mesh to Diego, ask him to position it, then give me matrix
     # NOTE: for mesh generation, see https://github.com/MetaCell/NEURON-UI/blob/master/neuron_ui/neuron_geometries_utils.py
     step_writer = STEPControl_Writer()
@@ -128,6 +132,7 @@ def write_geometry(secs, filepath):
     if status != IFSelect_RetDone:
         raise Exception("Failed to write STEP file")
 
+
 def export_cell():
     """ Export cell morphology used in Miocinovic simulation """
     # Set up model and functions
@@ -140,7 +145,7 @@ def export_cell():
 
     # Export geometry
     filepath = "stn_tree.stp" # write as STEP file (ISO standard for CAD exhange)
-    write_geometry(sl, filepath)
+    write_geometry_STEP(sl, filepath)
 
 
 def inspect_model():
@@ -180,7 +185,7 @@ def run_example():
         centroid = np.mean(sec_verts, axis=0)
 
         # Query voltage attenuation at this location
-        V_raw.x[jj_cell*nsec_stn + kk_sec] = query_V_raw(*centroid)
+        V_raw.x[jj_cell*nsec_stn + kk_sec] = read_V_raw(*centroid)
         h.pop_section()
 
     # TODO: simulate model

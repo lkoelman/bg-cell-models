@@ -95,6 +95,8 @@ proc init_states() {
  * Set variables in class/prototype namespace.
  */
 proc set_indep_params() {
+    // Axon parameters ---------------------------------------------------------
+    
     // topological parameters
     dendelements=288
     somaelements = 3
@@ -117,6 +119,8 @@ proc set_indep_params() {
     rhoa=0.7e6 //Ohm-um//
     mycm=0.1 //uF/cm2/lamella membrane//
     mygm=0.001 //S/cm2/lamella membrane//
+
+    // Cell parameters ---------------------------------------------------------
 
     v_init=-60  //mV//
 
@@ -151,7 +155,7 @@ proc set_indep_params() {
 }
 
 /**
- * Parameters dependent on other geometrical parameters.
+ * Axon parameters dependent on other geometrical parameters.
  */
 proc set_dependent_params() {
     if (fiberD==1) {
@@ -219,9 +223,9 @@ proc set_conductances() {
         } else {
             if (kdr_prox > 0) { 
                 f = (1-kdr_prox-pd)/(1-kdr_prox)
-                } else { 
+            } else { 
                 f = (kdr_prox+pd)/(1+kdr_prox) 
-                }
+            }
         } 
         if (f < 0) f = 0
             gk_KDR   = 4.22e-5 + f*9.32e-5  //Basal conductance * f*Tree_Conductance 
@@ -233,9 +237,9 @@ proc set_conductances() {
         } else {
             if (cat_prox > 0) { 
                 f = (1-cat_prox-pd)/(1-cat_prox)
-                } else { 
+            } else { 
                 f = (cat_prox+pd)/(1+cat_prox) 
-                }
+            }
         } 
         if (f < 0) f = 0
             gcaT_CaT   = 1.17e-3 + f*1.67e-3  //Basal conductance * f*Tree_Conductance 
@@ -246,9 +250,9 @@ proc set_conductances() {
         } else {
             if (cal_prox > 0) { 
                 f = (1-cal_prox-pd)/(1-cal_prox)
-                } else { 
+            } else { 
                 f = (cal_prox+pd)/(1+cal_prox) 
-                }
+            }
         } 
         if (f < 0) f = 0
             gcaL_HVA   = 1.21e-4 + f*1.87e-3  //Basal conductance * f*Tree_Conductance 
@@ -259,9 +263,9 @@ proc set_conductances() {
         } else {
             if (can_prox > 0) { 
                 f = (1-can_prox-pd)/(1-can_prox)
-                } else { 
+            } else { 
                 f = (can_prox+pd)/(1+can_prox) 
-                }
+            }
         } 
         if (f < 0) f = 0
             gcaN_HVA   = 0 + f*4.79e-4  //Basal conductance * f*Tree_Conductance 
@@ -272,9 +276,9 @@ proc set_conductances() {
         } else {
             if (kca_prox > 0) { 
                 f = (1-kca_prox-pd)/(1-kca_prox)
-                } else { 
+            } else { 
                 f = (kca_prox+pd)/(1+kca_prox) 
-                }
+            }
         } 
         if (f < 0) f = 0
             gk_sKCa   = 0 + 1.8*f*3.92e-5  //Basal conductance * f*Tree_Conductance 
@@ -285,9 +289,9 @@ proc set_conductances() {
         } else {
             if (kfr_prox > 0) { 
                 f = (1-kfr_prox-pd)/(1-kfr_prox)
-                } else { 
+            } else { 
                 f = (kfr_prox+pd)/(1+kfr_prox) 
-                }
+            }
         } 
         if (f < 0) f = 0
             gk_Kv31   = 8.91e-4 + f*1.0e-3  //Basal conductance * f*Tree_Conductance 
@@ -299,9 +303,9 @@ proc set_conductances() {
         } else {
             if (hcn_prox > 0) { 
                 f = (1-hcn_prox-pd)/(1-hcn_prox)
-                } else { 
+            } else { 
                 f = (hcn_prox+pd)/(1+hcn_prox) 
-                }
+            }
         } 
         if (f < 0) f = 0
             gk_Ih   = 0 + f*5.1e-4  //Basal conductance * f*Tree_Conductance        

@@ -618,6 +618,33 @@ class PynnCellModelBase(object):
             return secs
 
 
+class SwcModelWrapper(PynnCellModelBase):
+    """
+    TODO: Wrap SWC + NEURON template.
+    - both SWC and template are optional
+    """
+    
+    def instantiate(self, sim=None, template_name):
+        """
+        Instantiate cell in simulator
+        """
+
+        # Instantiate NEURON cell
+        template_function = getattr(sim.neuron.h, template_name)
+        self.icell = template_function()
+
+        self.morphology.instantiate(sim=sim, icell=self.icell)
+        self.icell.insert_biophys()
+
+        # TODO: set discretization
+        set_discretization(self.icell)
+        self.icell.set_biophys_spatial()
+        
+        # TODO: append axon
+        append_axon(self.icell)
+
+
+
 class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
     """
     Subclass of Ephys CellModel that conforms to the interface required
