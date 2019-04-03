@@ -14,7 +14,7 @@ import math
 import neuron
 h = neuron.h
 
-from pynrnfem.axon import AxonBuilder
+from bgcellmodels.models.axon.axon_base import AxonBuilder
 
 # Load NEURON mechanisms
 script_dir = os.path.dirname(__file__)

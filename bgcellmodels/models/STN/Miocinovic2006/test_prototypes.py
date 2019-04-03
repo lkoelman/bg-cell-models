@@ -21,6 +21,7 @@ h.load_file("stdrun.hoc") # Load the standard run library
 # Load external libs
 import bluepyopt.ephys as ephys
 import bgcellmodels.common.electrotonic as electrotonic
+import bgcellmodels.morphology.morph_ni as morph_ni
 
 # Load NMODL and Hoc code
 neuron.load_mechanisms(os.path.join(script_dir, '..', 'GilliesWillshaw', 'mechanisms'))
@@ -34,6 +35,8 @@ nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
 
 def test_stn_prototype(template_name='STN_morph_arcdist',
+                       axon_builder=None,
+                       streamline_path=None,
                        export_locals=False):
     """
     Test generic STN prototype based on cartesian distance calculation.
@@ -57,6 +60,15 @@ def test_stn_prototype(template_name='STN_morph_arcdist',
     nseg_extra = electrotonic.set_min_nseg_hines(icell.all, f_lambda=100.0)
     print("Created {} extra segments to satisfy Hines' rule".format(nseg_extra))
     icell.set_biophys_spatial()
+
+    # Build the axon
+    tracks_coords = morph_ni.load_streamlines(streamline_path, max_num=1, min_length=2.0)
+    axon_coords = tracks_coords[0]
+    axon_conn_sec = icell.axon_terminal_ref().sec
+    axon = axon_builder.build_along_streamline(axon_coords,
+                terminate='nodal_cutoff', interp_method='cartesian',
+                parent_cell=icell, parent_sec=axon_conn_sec)
+
     
     # append_axon(self.icell)
     if export_locals:
@@ -69,5 +81,13 @@ if __name__ == '__main__':
     # for template_name in templates:
     #     test_stn_prototype(export_locals=False)
 
+    streamline_path = '/home/luye/Documents/mri_data/Waxholm_rat_brain_atlas/WHS_DTI_v1_ALS/S56280_track_filter-ROI-STN.tck'
+
+    from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002
+    axon_builder = AxonMcintyre2002()
+
     # Test single template
-    test_stn_prototype(template_name='STN_morph_arcdist', export_locals=True)
+    test_stn_prototype(template_name='STN_morph_arcdist',
+        axon_builder=axon_builder,
+        streamline_path=streamline_path,
+        export_locals=True)

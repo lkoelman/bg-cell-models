@@ -117,9 +117,7 @@ def subtreeroot(secref):
         roottree = h.SectionList()
         
         # Fill SectionList with subtree of CAS
-        root.push()
-        roottree.subtree()
-        h.pop_section()
+        roottree.subtree(sec=root)
 
         # Check if given section in in subtree
         if secref.sec in roottree:
@@ -144,9 +142,7 @@ def subtree_secs(rootsec):
     Get all Sections in subtree of but not including rootsec.
     """
     tree_secs = h.SectionList()
-    rootsec.push()
-    tree_secs.subtree() # includes rootsec itself
-    h.pop_section()
+    tree_secs.subtree(sec=rootsec) # includes rootsec itself
 
     return [sec for sec in tree_secs if not rootsec.same(sec)]
 

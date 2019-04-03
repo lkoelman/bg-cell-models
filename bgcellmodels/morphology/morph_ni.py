@@ -9,7 +9,7 @@ import numpy as np
 import nibabel as nib
 import transforms3d
 
-import morph3d
+from . import morph_3d as morph3d
 
 
 def densities_to_positions(masks, densities, rng=None, rotate=False,
@@ -158,22 +158,18 @@ def distribute_morphologies(cell_gen, **kwargs):
     return cells
 
 
-
-def align_axons_tractogram(axon_builder, tracts_path, streamline_ids=None):
+def load_streamlines(file_path, max_num=1e12, min_length=0.0, indices=None):
     """
-    See http://nipy.org/nibabel/reference/nibabel.streamlines.html
+    Load streamlines from file
 
     Arguments
     ---------
 
-    @param  axon_builder : pynrnfem.axon.AxonWithPath
-            Subclass of axon builder
-
-    @param  streamline_ids : list[int]
+    @param  indices : list[int]
             Indices of streamlines in tractogram file that should be used for
             aligning model axons.
     """
-    tck_file = nib.streamlines.load(tracts_path, lazy_load=True)
+    tck_file = nib.streamlines.load(file_path, lazy_load=True)
 
     # Make sure tracts are defined in RAS+ world coordinate system
     tractogram = tck_file.tractogram.to_world(lazy=True)
@@ -182,22 +178,27 @@ def align_axons_tractogram(axon_builder, tracts_path, streamline_ids=None):
     # vox2ras = tck_file.tractogram.affine_to_rasmm
     # tck_ras_coords = nib.affines.apply_affine(vox2ras, streamline)
 
-    all_axons_secs = []
+    streamlines_filtered = []
     for i, streamline in enumerate(tractogram.streamlines): # lazy-loading generator
-        if (streamline_ids is not None) and (i not in streamline_ids):
+        # streamline is (N x 3) matrix
+        if indices and (i not in indices):
             continue
-        tck_ras_coords = streamline # (N x 3) matrix
-        all_axons_secs.append(
-            axon_builder.build_along_streamline(tck_ras_coords))
+        if len(streamlines_filtered) >= max_num:
+            break
+        # check length
+        if min_length > 0:
+            tck_len = np.sum(np.linalg.norm(np.diff(streamline, axis=0), axis=1))
+        else:
+            tck_len = 1.0
+        if tck_len >= min_length:
+            streamlines_filtered.append(streamline)
 
-    raise Exception()
-    return all_axons_secs
+    return streamlines_filtered
         
 
 
 if __name__ == '__main__':
 
-    ############################################################################
     # Test voxel positioning
     # mask_paths = [
     #     '/home/luye/workspace/fem-neuron-interface/test_data/hcp-subj_118932_ROI_box.nii.gz'
@@ -226,11 +227,4 @@ if __name__ == '__main__':
     #       len(cells), tot_compartments))
     # step_outfile = '/home/luye/workspace/fem-neuron-interface/test_data/cells_in_mask.stp'
     # morphio.write_STEP(all_sec, step_outfile)
-
-
-    ############################################################################
-    # Test aligning axons
-    from pynrnfem.axon.mcintyre2002 import AxonBuilder
-    cortico_spinal_tracts = '/home/luye/workspace/fem-neuron-interface/test_data/Yeh2018_CST_left.trk'
-    builder = AxonBuilder()
-    axons = align_axons_tractogram(builder, cortico_spinal_tracts, streamline_ids=[0])
+    pass

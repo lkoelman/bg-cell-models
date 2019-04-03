@@ -3,6 +3,3 @@
 
 # make classes available at package level
 from .axonmodel import *
-
-# Alias our axon builder class
-AxonBuilder = AxonMcintyre2002

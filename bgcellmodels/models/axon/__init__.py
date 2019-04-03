@@ -3,4 +3,3 @@
 
 # make classes available at package level
 # from mymodule import myclass
-from .axon import *

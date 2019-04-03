@@ -52,10 +52,10 @@ begintemplate STN_morph_arcdist
     public soma
 
     // Section array variables required by Import3d
-    create soma[1], dend[1], axon[1], apic[1], myelin[1], node[1]
+    create soma[1], dend[1], axon[1], apic[1] //, myelin[1], node[1]
 
     // Section list variables required by Import3d
-    objref all, somatic, basal, apical, axonal, myelinated, nodal
+    objref all, somatic, basal, apical, axonal //, myelinated, nodal
 
     // 'this' is reserved keyword but must be declared if used
     objref this
@@ -79,8 +79,8 @@ begintemplate STN_morph_arcdist
         basal = new SectionList()
         apical = new SectionList()
         axonal = new SectionList()
-        myelinated = new SectionList()
-        nodal = new SectionList()
+        // myelinated = new SectionList()
+        // nodal = new SectionList()
 
         set_constant_params()
         with_extracellular = 1
@@ -359,6 +359,23 @@ begintemplate STN_morph_arcdist
         }
     }
 
+
+    /**
+     * Return terminal section of axon
+     */
+    obfunc axon_terminal_ref() { \
+        localobj leaf_secs, secref
+
+        leaf_secs = new SectionList()
+        forsec axonal {
+            secref = new SectionRef()
+            if (secref.nchild() < 1) {
+                return secref
+            }
+        }
+        return nil
+    }
+
     // =========================================================================
     // Initializers for Hoc FInitializeHandler
     // =========================================================================
@@ -458,22 +475,6 @@ begintemplate STN_morph_arcdist
         }
         if (!ncell) {
             axon[0] delete_section()
-        }
-
-        ncell = 0
-        forsec nodal {
-            ncell = ncell + 1
-        }
-        if (!ncell) {
-            node[0] delete_section()
-        }
-
-        ncell = 0
-        forsec myelinated {
-            ncell = ncell + 1
-        }
-        if (!ncell) {
-            myelin[0] delete_section()
         }
     }
 
