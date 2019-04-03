@@ -97,6 +97,25 @@ def calc_min_nseg_hines(f, L, diam, Ra, cm, round_up=True):
         return max(nseg_trunc, 1)
 
 
+def set_min_nseg_hines(seclist, f_lambda, round_up=True):
+    """
+    Set number of segments based on Hines' rule of thumb.
+
+    NOTE: uses diam and cm in the middle segment (x = 0.5)
+
+    @return     The number of additionally created segments.
+    """
+    extra_nseg = 0
+    for sec in seclist:
+        min_nseg = calc_min_nseg_hines(
+                        f_lambda, sec.L, sec.diam, sec.Ra, sec.cm,
+                        round_up=False)
+        if min_nseg > sec.nseg:
+            extra_nseg += min_nseg - sec.nseg
+            sec.nseg = min_nseg
+    return extra_nseg
+
+
 def inputresistance_inf(sec, gleak, f):
     """
     Input resistance for semi-infinite cable in units of [Ohm*1e6]

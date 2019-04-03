@@ -7,13 +7,10 @@
  *
  * @author      Lucas Koelman
  * @date        01/04/2018
-
- TODO:
- - [ ] set gradients using additional for x in [0, 1] inside forsec loops
  */
 
-load_file("stdlib.hoc")
-load_file("stdrun.hoc")
+// load_file("stdlib.hoc")
+// load_file("stdrun.hoc")
 
 /**
  * Properly encapsulated version of STN cell that doesn't pollute global
@@ -53,7 +50,7 @@ begintemplate STN_morph_cartdist
     public soma
 
     // Section array variables required by Import3d
-    create soma[1], dend[1], apic[1], axon[1], myelin[1], node[1]
+    create soma[1], dend[1], axon[1], apic[1], myelin[1], node[1]
 
     // Section list variables required by Import3d
     objref all, somatic, basal, apical, axonal, myelinated, nodal
@@ -62,7 +59,7 @@ begintemplate STN_morph_cartdist
     objref this
 
     // Other public variables
-    public v_init, cai0, cao0, nai0, nao0, ki0, ko0
+    public v_init, cai0, cao0, nai0, nao0, ki0, ko0, with_extracellular
     objref fih_ions, fih_states // FInitializeHandlers for ions
 
     // =========================================================================
@@ -84,13 +81,18 @@ begintemplate STN_morph_cartdist
         nodal = new SectionList()
 
         set_constant_params()
+        with_extracellular = 1
 
         fih_ions = new FInitializeHandler(1, "init_ions()", this)
         fih_states = new FInitializeHandler(1, "init_states()", this)
     }
 
+
     /**
      * Set biophysical properties of sections.
+     *
+     * NOTE: conductances assigned here will be copied to additonally created
+    *        sections.
      *
      * @pre     Morphology must be instantiated (all sections and their spatial
      *          coordinates must be final).
@@ -103,8 +105,7 @@ begintemplate STN_morph_cartdist
         forsec somatic {
             Ra = 150.2  //Ohm-cm//  //from Gillies 2005
             cm = 1
-
-            insert myions  //dummy mechanism to set up ion concentrations for na and k      
+  
             insert Cacum    
                 cai0_Cacum = cai0_ca_ion
             insert CaT
@@ -127,15 +128,16 @@ begintemplate STN_morph_cartdist
             insert STh  
                 gpas_STh = my_gpas_STh          
         
-            insert extracellular xraxial=1e+09 xg=1e+09 xc=0
+            if (with_extracellular) {
+                insert extracellular xraxial=1e+09 xg=1e+09 xc=0
+            }
         }
 
         forsec basal {
             Ra = 150.2  //Ohm-cm//  //from Gillies 2005
             cm = 1
 
-            //conductances for dendrites set at the end of file
-            insert myions  //dummy mechanism to set up ion concentrations for na and k      
+            // conductances for dendrites set at the end of file    
             insert Cacum    
                 cai0_Cacum = cai0_ca_ion
             insert CaT
@@ -151,16 +153,16 @@ begintemplate STN_morph_cartdist
             insert STh  
                 gpas_STh = my_gpas_STh          
 
-            insert extracellular xraxial=1e+09 xg=1e+09 xc=0
+            if (with_extracellular) {
+                insert extracellular xraxial=1e+09 xg=1e+09 xc=0
+            }
         }
 
         // TODO: Should only be applied to Axon initial segment
         forsec axonal {
             Ra = 150.2  //Ohm-cm//  //from Gillies 2005
             cm = 1
-
-            insert myions
-            insert myions  //dummy mechanism to set up ion concentrations for na and k      
+    
             insert Cacum    
                 cai0_Cacum = cai0_ca_ion
             insert CaT
@@ -183,28 +185,50 @@ begintemplate STN_morph_cartdist
             insert STh  
                 gpas_STh = my_gpas_STh          
 
-            insert extracellular xraxial=1e+09 xg=1e+09 xc=0
+            if (with_extracellular) {
+                insert extracellular xraxial=1e+09 xg=1e+09 xc=0
+            }
 
         }
+
+        // Ion styles frol Gillies & Willshaw model
+        forsec all {
+            ion_style("na_ion",1,2,1,0,1)
+            ion_style("k_ion",1,2,1,0,1)
+            ion_style("ca_ion",3,2,1,1,1)
+        }
+
+        // If CVode is used
+        // cvode.atol(0.0001)
+        // cvode.atolscale(soma[0].cai, 1.0e-3)
     }
 
 
     /**
      * Set spatially varying (non-uniform) biophysical properties.
      *
+     * NOTE: as in the original implementation, each section has uniform
+     *       channel density (conductance).
+     *
      * @pre     Must be called _after_ nseg (number of segments per section)
      *          are set to their final value. Otherwise distributions will be invalid.
      *
      * @post    All spatially non-uniform, segment-wise properties are finalized.
      */
-    proc set_biophys_spatial() {
+    proc set_biophys_spatial() { \
+        local sec_gcaT_CaT, sec_gcaL_HVA, sec_gcaN_HVA, \
+              sec_gk_KDR, sec_gk_Kv31, sec_gk_Ih, sec_gk_sKCa
+        
         access soma[1]
+
+        // Get coordinates of middle 3D point of soma (not necessarily center!)
         my_ind = int(n3d()/2)
         xsoma=x3d(my_ind)  //get coordinates for soma location
         ysoma=y3d(my_ind)
         zsoma=z3d(my_ind)
-        //print "soma coords ", xsoma, ysoma, zsoma
-        max_dist = 734.15 // Maximum dendrite-soma distance ; set to zero when calculating for the first time
+
+        // Maximum dendrite-soma distance ; set to zero when calculating for the first time
+        max_dist = 734.15
 
         kdr_prox = -0.05 //Proximity for KDR channel (from Gillies 2005)
         kfr_prox = 0.8 //Proximity for Kv31 channel (from Gillies 2005)
@@ -215,13 +239,18 @@ begintemplate STN_morph_cartdist
         cal_prox = -0.57 //Proximity for CaL channel (from Gillies 2005)
 
         forsec basal {
+
+            // Get coordinates of middle 3D point of section (not necessarily center!)
             my_ind = int(n3d()/2)
-            xdend=x3d(my_ind)  //get coordinates for dendrite
-            ydend=y3d(my_ind)
-            zdend=z3d(my_ind)
-            //print "       dend coords ", xdend, ydend, zdend
-            app_dist = sqrt((xsoma-xdend)^2 + (ysoma-ydend)^2 + (zsoma-zdend)^2) //distance from soma to dend
-            pd = app_dist/max_dist   //parametrized distance (from 0 to 1)
+            xdend = x3d(my_ind)  //get coordinates for dendrite
+            ydend = y3d(my_ind)
+            zdend = z3d(my_ind)
+
+            // Cartesian distance from middle 3D point to soma
+            app_dist = sqrt((xsoma-xdend)^2 + (ysoma-ydend)^2 + (zsoma-zdend)^2)
+
+            // Parametrized distance (from 0 to 1)
+            pd = app_dist / max_dist   
             //if (max_dist < app_dist) max_dist = app_dist  //for calculating maximum dendrite-soma distance
             
             //set up KDR conductance
@@ -235,7 +264,7 @@ begintemplate STN_morph_cartdist
                 }
             } 
             if (f < 0) f = 0
-                gk_KDR   = 4.22e-5 + f*9.32e-5  //Basal conductance * f*Tree_Conductance 
+            sec_gk_KDR = 4.22e-5 + f*9.32e-5  //Basal conductance * f*Tree_Conductance 
 
 
             //set up CaT conductance
@@ -249,7 +278,7 @@ begintemplate STN_morph_cartdist
                 }
             } 
             if (f < 0) f = 0
-                gcaT_CaT   = 1.17e-3 + f*1.67e-3  //Basal conductance * f*Tree_Conductance 
+            sec_gcaT_CaT   = 1.17e-3 + f*1.67e-3  //Basal conductance * f*Tree_Conductance 
 
             //set up CaL conductance
             if (cal_prox == 0) { 
@@ -262,7 +291,7 @@ begintemplate STN_morph_cartdist
                 }
             } 
             if (f < 0) f = 0
-                gcaL_HVA   = 1.21e-4 + f*1.87e-3  //Basal conductance * f*Tree_Conductance 
+            sec_gcaL_HVA   = 1.21e-4 + f*1.87e-3  //Basal conductance * f*Tree_Conductance 
             
             //set up CaN conductance
             if (can_prox == 0) { 
@@ -275,7 +304,7 @@ begintemplate STN_morph_cartdist
                 }
             } 
             if (f < 0) f = 0
-                gcaN_HVA   = 0 + f*4.79e-4  //Basal conductance * f*Tree_Conductance 
+            sec_gcaN_HVA   = 0 + f*4.79e-4  //Basal conductance * f*Tree_Conductance 
 
             //set up KCa conductance
             if (kca_prox == 0) { 
@@ -288,7 +317,7 @@ begintemplate STN_morph_cartdist
                 }
             } 
             if (f < 0) f = 0
-                gk_sKCa   = 0 + 1.8*f*3.92e-5  //Basal conductance * f*Tree_Conductance 
+            sec_gk_sKCa   = 0 + 1.8*f*3.92e-5  //Basal conductance * f*Tree_Conductance 
             
             //set up Kv31 (KFR) conductance
             if (kfr_prox == 0) { 
@@ -301,7 +330,7 @@ begintemplate STN_morph_cartdist
                 }
             } 
             if (f < 0) f = 0
-                gk_Kv31   = 8.91e-4 + f*1.0e-3  //Basal conductance * f*Tree_Conductance 
+            sec_gk_Kv31   = 8.91e-4 + f*1.0e-3  //Basal conductance * f*Tree_Conductance 
 
 
             //set up HCN conductance
@@ -315,8 +344,19 @@ begintemplate STN_morph_cartdist
                 }
             } 
             if (f < 0) f = 0
-                gk_Ih   = 0 + f*5.1e-4  //Basal conductance * f*Tree_Conductance        
+            sec_gk_Ih = 0 + f*5.1e-4  //Basal conductance * f*Tree_Conductance        
 
+            // Original model only has one segment per section.
+            // Here we must set conductance in each segment.
+            for (x, 0) {
+                gk_KDR(x) = sec_gk_KDR
+                gcaT_CaT(x) = sec_gcaT_CaT
+                gcaL_HVA(x) = sec_gcaL_HVA                
+                gcaN_HVA(x) = sec_gcaN_HVA
+                gk_sKCa(x) = sec_gk_sKCa
+                gk_Kv31(x) = sec_gk_Kv31
+                gk_Ih(x) = sec_gk_Ih
+            }
         }
     }
 
@@ -368,8 +408,8 @@ begintemplate STN_morph_cartdist
     proc set_constant_params() {
         v_init = -60
 
-        //Extracell. ion concentrations taken from Bevan,Wilson 1999 paper (slice bathing solution)                                 
-        //Intracell. ion concentrations are typical mammalian values (from Johnston & Wu, 1999 via NEURON tutorial)
+        // Extracell. ion concentrations taken from Bevan,Wilson 1999 paper (slice bathing solution)                                 
+        // Intracell. ion concentrations are typical mammalian values (from Johnston & Wu, 1999 via NEURON tutorial)
         cai0 = 1e-4  //from Gillies mod file  //was 2e-4     
         cao0 = 2             
         ki0 = 140 
@@ -398,5 +438,44 @@ begintemplate STN_morph_cartdist
         my_gpas_STh = 7.84112e-05 //7.84112e-05 (mho/cm2) <0,1e9>
     }
 
+
+    /**
+     * Delete unused sections created by template before loading morphology.
+     */
+    proc del_unused_sections() { \
+        local ncell
+
+        ncell = 0
+        forsec apical {
+            ncell = ncell + 1
+        }
+        if (!ncell) {
+            apic[0] delete_section()
+        }
+
+        ncell = 0
+        forsec axonal {
+            ncell = ncell + 1
+        }
+        if (!ncell) {
+            axon[0] delete_section()
+        }
+
+        ncell = 0
+        forsec nodal {
+            ncell = ncell + 1
+        }
+        if (!ncell) {
+            node[0] delete_section()
+        }
+
+        ncell = 0
+        forsec myelinated {
+            ncell = ncell + 1
+        }
+        if (!ncell) {
+            myelin[0] delete_section()
+        }
+    }
 
 endtemplate STN_morph_cartdist

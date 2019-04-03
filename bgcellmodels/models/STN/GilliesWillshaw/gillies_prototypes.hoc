@@ -410,6 +410,7 @@ for i = 0,SThndend1-1 {
 
 
    // set the ion styles
+   // (Within an object, forall refers to all the sections declared in the object)
    forall ion_style("na_ion",1,2,1,0,1)
    forall ion_style("k_ion",1,2,1,0,1)
    forall ion_style("ca_ion",3,2,1,1,1)
