@@ -344,7 +344,7 @@ def reduce_marasco():
 	""" Implementation of Marasco (2013) CellPurkAnalysis() & PurkReduction() """
 
 	# Initialize Gillies model
-	h.xopen("createcell.hoc")
+	h.xopen("gillies_cell_singleton.hoc")
 	# Make sections accesible by both name and index + allow to add attributes
 	somaref = ExtSecRef(sec=h.SThcell[0].soma)
 	dendLrefs = [ExtSecRef(sec=sec) for sec in h.SThcell[0].dend0]

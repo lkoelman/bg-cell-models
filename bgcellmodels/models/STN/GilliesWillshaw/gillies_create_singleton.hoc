@@ -9,7 +9,7 @@ tstop      = 8000
 
 // *** Load the cell prototypes
 
-hide = xopen("SThprotocell.hoc")   
+hide = xopen("scripts_article/SThprotocell.hoc")   
 
 // *** Turn on CVode mode
 
@@ -33,7 +33,7 @@ SThcells[0] = new SThcell(0,SThtype)
 // general support functions
 // NOTE: recording vectors also declared here
 // NOTE: every time newgraph() is called, Vectors rect and recv are copied to the given vectors
-hide = xopen("tools.hoc")
+hide = xopen("scripts_article/tools.hoc")
 
 proc set_gbar_stn() {
 

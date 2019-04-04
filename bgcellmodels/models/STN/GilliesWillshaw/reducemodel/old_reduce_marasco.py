@@ -1125,7 +1125,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	# 	if not sec.name().startswith('SThcell') and delete_old_cells:
 	# 		h.delete_section() # delete existing cells
 	if not hasattr(h, 'SThcells'):
-		h.xopen("createcell.hoc")
+		h.xopen("gillies_cell_singleton.hoc")
 
 	# Make sections accesible by name and index
 	somaref = ExtSecRef(sec=h.SThcell[0].soma)
@@ -1255,7 +1255,7 @@ def reduce_gillies_partial(delete_old_cells=True):
 		if not sec.name().startswith('SThcell') and delete_old_cells:
 			h.delete_section() # delete existing cells
 	if not hasattr(h, 'SThcells'):
-		h.xopen("createcell.hoc")
+		h.xopen("gillies_cell_singleton.hoc")
 
 	# Make sections accesible by name and index
 	somaref = ExtSecRef(sec=h.SThcell[0].soma)
@@ -1379,7 +1379,7 @@ def reduce_gillies_pathRi(customclustering, average_Ri):
 		if not sec.name().startswith('SThcell'): # original model sections
 			h.delete_section()
 	if not hasattr(h, 'SThcells'):
-		h.xopen("createcell.hoc")
+		h.xopen("gillies_cell_singleton.hoc")
 
 	# Make sections accesible by both name and index + allow to add attributes
 	somaref = ExtSecRef(sec=h.SThcell[0].soma)

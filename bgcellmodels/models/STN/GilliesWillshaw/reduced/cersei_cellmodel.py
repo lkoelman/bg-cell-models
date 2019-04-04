@@ -102,7 +102,7 @@ class StnCellReduced(CollapsableCell):
 
             # If existed: reset variables
             if stn_exists:
-                h.set_gbar_stn() # see createcell.hoc
+                h.set_gbar_stn() # see gillies_cell_singleton.hoc
 
             self.icell._soma_refs = [soma]
             self.icell._dend_refs = dendL + dendR

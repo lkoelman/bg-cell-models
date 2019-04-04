@@ -19,8 +19,7 @@ neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms'))
 # Load STN cell Hoc libraries
 prev_cwd = os.getcwd()
 os.chdir(script_dir)
-# os.environ['HOC_LIBRARY_PATH'] = os.environ.get('HOC_LIBRARY_PATH', '') + ':' + script_dir
-h.xopen("gillies_createcell.hoc") # instantiates all functions & data structures on Hoc object
+h.xopen("gillies_cell_factory.hoc") 
 os.chdir(prev_cwd)
 
 import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn

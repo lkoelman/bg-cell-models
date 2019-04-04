@@ -4,6 +4,8 @@ Utilities for dealing with NEURON
 @author Lucas Koelman
 """
 
+import os
+
 import neuron
 h = neuron.h
 
@@ -18,6 +20,19 @@ class ExtSection(neuron.hclass(h.Section)):
 class ExtSecRef(neuron.hclass(h.SectionRef)):
     """ Extension of SectionRef to allow modifying attributes """
     pass
+
+
+def hoc_load_from(working_dir, script):
+    """
+    Load Hoc code with given working directory.
+
+    NOTE: alternative is to append dirrectoires to the Hoc library path 
+          accessible via environment variable os.environ['HOC_LIBRARY_PATH']
+    """
+    prev_cwd = os.getcwd()
+    os.chdir(working_dir)
+    h.xopen(script)
+    os.chdir(prev_cwd)
 
 
 # Create equivalent section
