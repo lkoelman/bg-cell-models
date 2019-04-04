@@ -7,6 +7,8 @@ Electrotonic analysis in NEURON
 import math
 from neuron import h
 
+from . import treeutils
+
 def lambda_DC(sec, gleak):
     """
     Compute electrotonic length constant of section in units of micron [um]
@@ -164,7 +166,6 @@ def inputresistance_tree(rootsec, f, glname):
     return inputresistance_leaky(rootsec, gleak, f, 1./g_end)
 
 
-
 def measure_current_transfer(
         source=None,
         target=None,
@@ -285,6 +286,55 @@ def measure_input_impedance(
         imp.loc(source.x, sec=source.sec)
         imp.compute(freq, int(linearize_gating))
     return imp.input(source.x, sec=source.sec)
+
+
+def measure_along_paths(root, leaves, measure_funcs):
+    """
+    Measure electrotonic properties along paths.
+    
+    @param  root : nrn.Section
+            Root section for measurement
+
+    @param  leaves : iterable[nrn.Section]
+            Endpoints for measurements
+
+    @param  measure_funcs : callable
+            Any of the functions measure_X from this module or function
+            with the same signature.
+    """
+    # make paths to leaves and measure each measure
+    probe = h.Impedance()
+    leaf_distance_measures = [] # one dict for each leaf
+
+    # Get path lengths
+    h.distance(0, 0.5, sec=root)
+    pathlen_func = lambda seg: h.distance(seg.x, sec=seg.sec)
+
+    # Get electrotonic measurements
+    for leaf_sec in leaves:
+
+        dist_measures_vecs = {}
+
+        path_sections = treeutils.path_sections(leaf_sec)
+        path_segments = [seg for sec in path_sections for seg in sec]
+
+        # Get path lengths
+        dist_measures_vecs['pathlen_micron'] = map(pathlen_func, path_segments)
+
+        # do each measurement
+        for measure, dist_func in measure_funcs.iteritems():
+            measure_func = lambda seg: dist_func(
+                                        source=seg,
+                                        target=root(0.5),
+                                        imp=probe,
+                                        freq=25.0,
+                                        linearize_gating=0)
+            distance_vec = map(measure_func, path_segments)
+            dist_measures_vecs[measure] = distance_vec
+
+        leaf_distance_measures.append(dist_measures_vecs)
+        
+    return leaf_distance_measures
 
 
 def segs_at_dX(cur_seg, dX, f, gleak):
