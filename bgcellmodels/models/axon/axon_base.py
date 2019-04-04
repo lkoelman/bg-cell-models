@@ -7,9 +7,10 @@ import math
 
 import numpy as np
 import neuron
+
+from bgcellmodels.morphology import morph_3d
+
 h = neuron.h
-
-
 PI = math.pi
 
 def normvec(a):
@@ -109,8 +110,8 @@ class AxonBuilder(object):
 
         TODO: does not work if last_coord extrapolated beyond streamline
         """
-        dist_stop2next = veclen(self.last_coord - self.streamline_pts[self.i_streamline_pt+1])
-        dist_next2end = np.sum(self.streamline_segment_lengths[self.i_streamline_pt+2:])
+        dist_stop2next = veclen(self.last_coord - self.streamline_pts[self.num_passed+1])
+        dist_next2end = np.sum(self.streamline_segment_lengths[self.num_passed+2:])
         return dist_stop2next + dist_next2end
 
 
@@ -142,7 +143,7 @@ class AxonBuilder(object):
         @return     next_tangent : np.array[float] (3x1)
                     Unit tangent vector at endpoint of walk
         """
-        remaining_pts = self.streamline_pts[self.i_streamline_pt+1:]
+        remaining_pts = self.streamline_pts[self.num_passed:]
         last_walk_coord = self.last_coord
         dist_walked = 0.0
         num_passed = 0
@@ -172,7 +173,9 @@ class AxonBuilder(object):
                 # end of walk is before next streamline point
                 tangent_vec = path_vec / dist_waypoint
                 stop_pt = last_walk_coord + (dist - dist_walked) * tangent_vec
-                return num_passed, stop_pt, tangent_vec
+                break
+
+        return num_passed, stop_pt, tangent_vec
 
 
     def _walk_cartesian_length(self, dist):
@@ -183,18 +186,19 @@ class AxonBuilder(object):
         Returns
         -------
 
-        @return     num_passed : int
-                    Number of streamline points passed during walk.
-
         @return     stop_coord : np.array[float] (3x1)
                     Coordinates of endpoint of walk.
 
         @return     next_tangent : np.array[float] (3x1)
                     Unit tangent vector at endpoint of walk
         """
-        remaining_pts = self.streamline_pts[self.i_streamline_pt+1:]
+        if self.num_passed >= self.num_streamline_pts:
+            remaining_pts = []
+        else:
+            remaining_pts = self.streamline_pts[self.num_passed:]
+        
         start_walk_coord = self.last_coord
-        num_passed = 0
+        walk_passed = 0 # streamline points passed during this walk
 
         # Find between which streamline points the stopping point lies
         i_pre = -1
@@ -212,35 +216,40 @@ class AxonBuilder(object):
         if i_post == 0:
             # Stopping point is on the current line segment
             colinear = True
-            num_passed = 0
-            tangent = normvec(self._get_segment_vec(self.i_streamline_pt))
+            walk_passed = 0
+            tangent = normvec(self._get_segment_vec(self.num_passed))
+        elif (i_pre == -1) and (i_post == -1):
+            # We are past the end of the streamline (extending it)
+            assert self.num_passed == self.num_streamline_pts
+            colinear = True
+            walk_passed = 0
+            tangent = self.last_tangent
         elif (i_post == -1) and (i_pre == 0):
             # We are on last line segment and stopping point is beyond endpoint
             # of streamline.
-            assert len(remaining_pts) == 1
+            assert self.num_passed == self.num_streamline_pts - 1
             colinear = True
-            num_passed = 1
+            walk_passed = 1
             tangent = normvec(self._get_segment_vec(self.num_streamline_pts-1))
         elif (i_pre != -1) and (i_post != -1):
             # We are moving from one line segment to one of the following
             # line segments.
             colinear = False
-            num_passed = i_pre + 1
+            walk_passed = i_pre + 1
             p1 = remaining_pts[i_pre]
             p2 = remaining_pts[i_post]
         elif (i_pre != -1) and (i_post == -1):
             # We are moving from a line segment to beyond the endpoint of
             # the streamline
             colinear = False
-            streamline_i_pre = self.i_streamline_pt + i_pre + 1
-            assert streamline_i_pre == len(self.streamline_pts) - 1
-            num_passed = i_pre + 1
+            streamline_i_pre = self.num_passed + i_pre + 1
+            assert streamline_i_pre == self.num_streamline_pts - 1
+            walk_passed = i_pre + 1
             tangent = normvec(self._get_segment_vec(streamline_i_pre))
             p1 = remaining_pts[i_pre]
             p2 = p1 + 100.0 * tangent
         else:
             assert False, "Unknown condition, should not occur."
-
 
         # Choose the interpolation method based on the case
         if colinear:
@@ -270,13 +279,14 @@ class AxonBuilder(object):
             stop_pt = p1 + alpha * u12
             tangent = u12
 
-        return num_passed, stop_pt, tangent
+        return walk_passed, stop_pt, tangent
 
 
 
-    def build_along_streamline(self, streamline_xyz, terminate='nodal_cutoff',
+    def build_along_streamline(self, streamline_coords, terminate='nodal_cutoff',
                                tolerance_mm=1e-6, interp_method='cartesian',
-                               parent_cell=None, parent_sec=None):
+                               parent_cell=None, parent_sec=None,
+                               connection_method='translate_axon'):
         """
         Build NEURON axon along a sequence of coordinates.
 
@@ -301,6 +311,21 @@ class AxonBuilder(object):
                 between streamline arclength and length of compartments spanning
                 a streamline node.
 
+        @param  connection_method : str
+                
+                Method for connecting the reconstructed acon to the parent
+                sections. One of the following:
+
+                'orient_coincident': find streamline end that connects to the 
+                parent section and start building from this point. Raise
+                exception if not coincident.
+
+                'translate_axon_<start/end>': translate starting or endpoint
+                of axon to endpoint of parent section.
+
+                'translate_cell_<start/end>': Translate cell so that connection 
+                point is coincident with start or end of streamline
+
         Returns
         -------
 
@@ -311,19 +336,65 @@ class AxonBuilder(object):
         # points using interpolation.
         n_repeating = len(self.compartment_sequence)
 
+        streamline_coords = np.array(streamline_coords)
+        if parent_sec is not None:
+
+            # Get connection point on parent cell (assume last 3D point)
+            n3d = int(h.n3d(sec=parent_sec))
+            parent_coords = np.array([h.x3d(i, sec=parent_sec) for i in xrange(n3d)])
+
+            # Connect axon according to method
+            if connection_method == 'orient_coincident':
+                # Check which end of streamline is coincident with connection
+                # point and build in appropriate direction
+                if np.allclose(parent_coords, streamline_coords[-1], atol=tolerance_mm):
+                    streamline_coords = streamline_coords[::-1] # reverse
+                elif not np.allclose(parent_coords, streamline_coords[0], atol=tolerance_mm):
+                    raise ValueError("Start or end of streamline must be coincident"
+                            "with endpoint of parent section ({})".format(
+                                parent_coords))
+
+            elif connection_method.startswith('translate_axon'):
+                # Translate axon start or end to connection point
+                if connection_method.endswith('start'):
+                    streamline_origin = streamline_coords[0]
+                elif connection_method.endswith('end'):
+                    streamline_origin = streamline_coords[-1]
+                else:
+                    raise ValueError(connection_method)
+
+                translate_vec = parent_coords - streamline_origin
+                streamline_coords = streamline_coords - translate_vec # broadcasts
+
+            elif connection_method.startswith('translate_cell'):
+                # Translate cell so that connection point is coincident with
+                # start or end of streamline
+                if connection_method.endswith('start'):
+                    target_pt = streamline_coords[0]
+                elif connection_method.endswith('end'):
+                    target_pt = streamline_coords[-1]
+                else:
+                    raise ValueError(connection_method)
+
+                translate_vec = target_pt - parent_coords
+                translate_mat = np.eye(4)
+                translate_mat[:3,3] = translate_vec
+                morph_3d.translate_sections(parent_cell.all, translate_mat)
+
         # Save streamline info
-        self.streamline_pts = streamline_xyz
+        self.streamline_pts = streamline_coords
         self.num_streamline_pts = len(self.streamline_pts)
         self._set_streamline_length()
         
         # State variables for building algorithm
         self.interp_pts = []        # interpolated points
         self.i_compartment = 0      # index in sequence of compartments
-        self.i_streamline_pt = 0    # index of last passed streamline point
+        self.num_passed = 1         # index of last passed streamline point
+                                    # (we already 'passed' starting point)
         
         self.interp_pts = [self.streamline_pts[0]]        # interpolated points
         self.last_coord = self.streamline_pts[0]
-        self.last_tangent = normvec(streamline_xyz[1] - streamline_xyz[0])
+        self.last_tangent = normvec(streamline_coords[1] - streamline_coords[0])
         self.built_length = 0.0
 
         # Walk to its endpoint
@@ -384,14 +455,14 @@ class AxonBuilder(object):
 
             # Update state variables
             self.built_length += sec_L_mm
-            self.i_streamline_pt += num_passed
+            self.num_passed += num_passed
             self.last_coord = stop_coord
             self.last_tangent = next_tangent
 
             # If terminating axon with nodal compartment: either cutoff or extrapolate
             remaining_length = self._get_remaining_arclength()
             if terminate == 'any_extend':
-                if self.i_streamline_pt >= len(streamline_xyz)-1:
+                if self.num_passed >= len(streamline_coords):
                     break
             elif terminate == 'any_cutoff':
                 next_type = self.compartment_sequence[i_compartment % n_repeating]
@@ -403,7 +474,7 @@ class AxonBuilder(object):
                 if next_node_dist > remaining_length:
                     break
             elif terminate == 'nodal_extend' and sec_type == self.nodal_compartment_type:
-                if self.i_streamline_pt >= len(streamline_xyz)-1:
+                if self.num_passed >= len(streamline_coords):
                     break
 
         if i_compartment >= MAX_NUM_COMPARTMENTS-1:

@@ -185,7 +185,7 @@ def root_section(tree_sec):
     return root
 
 
-def leaf_sections(tree_sec=None):
+def leaf_sections(root_sec=None, subtree=False):
     """
     Returns a list of all sections that have no children.
 
@@ -194,10 +194,13 @@ def leaf_sections(tree_sec=None):
             the leaves.
     """
     leaves = []
-    if tree_sec is not None:
-        all_sec = wholetree_secs(tree_sec)
-    else:
+    if root_sec is None:
         all_sec = h.allsec() # iterator
+    elif subtree:
+        all_sec = h.SectionList()
+        all_sec.subtree(sec=root_sec) # includes rootsec itself
+    else:
+        all_sec = wholetree_secs(root_sec)
     
     for sec in all_sec:
         ref = h.SectionRef(sec=sec)

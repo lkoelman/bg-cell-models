@@ -24,7 +24,7 @@ import bgcellmodels.common.electrotonic as electrotonic
 import bgcellmodels.morphology.morph_ni as morph_ni
 
 # Load NMODL and Hoc code
-neuron.load_mechanisms(os.path.join(script_dir, '..', 'GilliesWillshaw', 'mechanisms'))
+import bgcellmodels.models.STN.GilliesWillshaw.mechanisms
 os.chdir(script_dir)
 h.xopen("stn_proto_cartdist.hoc")
 h.xopen("stn_proto_arcdist.hoc")
