@@ -49,7 +49,7 @@ class AxonBuilder(object):
             - 'morphology': dict[<parameter name>, <value>]
     """
 
-    def __init__(self):
+    def __init__(self, logger=None):
         """
         Define compartments types that constitute the axon model.
 
@@ -178,8 +178,7 @@ class AxonBuilder(object):
     def _walk_cartesian_length(self, dist):
         """
         Walk along streamline until cartesian distance to last stopping point
-        is equal to dist. This ensures the section length is exactly equal
-        to <dist>.
+        is equal to <dist>.
 
         Returns
         -------

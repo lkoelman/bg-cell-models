@@ -29,7 +29,7 @@ for template_path in template_paths:
     config = fileutils.parse_json_file(template_path, nonstrict=True, ordered=True)
 
     # SETPARAM: substitutions
-    factors = np.arange(2.0, 12.0, 2.0)
+    factors = [16.0] # np.arange(2.0, 12.0, 2.0)
     gs_gabaa = config['STN']['GPE.all']['synapse']['parameters'][
                       'gmax_GABAA']['locals']['gmax_base']
     gs_gabab = config['STN']['GPE.all']['synapse']['parameters'][
@@ -58,7 +58,7 @@ for template_path in template_paths:
         ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
             'gmax_base'): [f*gs_gabaa for f in factors],
         ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAB', 'locals', 
-            'gmax_base'): [f*gs_gabab for f in factors],
+            'gmax_base'): [0.2*gs_gabab for f in factors],
         # ('STN', 'CTX', 'synapse', 'parameters', 'GLUsyn_gmax_AMPA', 'locals', 
         #     'gmax_base'): [f*cs_ampa for f in factors],
         # ('STN', 'CTX', 'synapse', 'parameters', 'GLUsyn_gmax_NMDA', 'locals', 
@@ -74,7 +74,7 @@ for template_path in template_paths:
         # ('GPE.proto', 'STR.MSN', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
         #     'gmax_base'): [f*mg_gabaa for f in factors],
     }
-    suffix_format = 'gabaB-x-0.5_gabaA-x-{:.1f}' # SETPARAM: format string for json filename
+    suffix_format = 'gabaB-x-0.2_gabaA-x-{:.1f}' # SETPARAM: format string for json filename
     suffix_substitutions = factors
     sweep_length = len(suffix_substitutions)
 
