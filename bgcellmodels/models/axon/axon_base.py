@@ -57,7 +57,7 @@ class AxonBuilder(object):
         @post   attributes 'compartment_defs' and 'compartment_sequence'
                 have been set.
         """
-        raise NotImplementedError('Implement __init__ in subclass to set axon properties.')
+        self.logger = logger
 
 
     def _set_comp_attributes(self, sec, sec_attrs):
@@ -286,7 +286,8 @@ class AxonBuilder(object):
     def build_along_streamline(self, streamline_coords, terminate='nodal_cutoff',
                                tolerance_mm=1e-6, interp_method='cartesian',
                                parent_cell=None, parent_sec=None,
-                               connection_method='translate_axon'):
+                               connection_method='translate_axon',
+                               raise_if_existing=True):
         """
         Build NEURON axon along a sequence of coordinates.
 
@@ -341,7 +342,9 @@ class AxonBuilder(object):
 
             # Get connection point on parent cell (assume last 3D point)
             n3d = int(h.n3d(sec=parent_sec))
-            parent_coords = np.array([h.x3d(i, sec=parent_sec) for i in xrange(n3d)])
+            parent_coords = np.array([h.x3d(n3d-1, sec=parent_sec),
+                                      h.y3d(n3d-1, sec=parent_sec),
+                                      h.z3d(n3d-1, sec=parent_sec)])
 
             # Connect axon according to method
             if connection_method == 'orient_coincident':
@@ -407,6 +410,9 @@ class AxonBuilder(object):
         
         sec_by_type = {sec_type: [] for sec_type in self.compartment_defs.keys()}
         sec_ordered = []
+        # num_ax_sec = 0
+        # if parent_cell is not None:
+        #     num_ax_sec = len(list(parent_cell.axonal))
 
         MAX_NUM_COMPARTMENTS = int(1e9)
         for i_compartment in xrange(MAX_NUM_COMPARTMENTS):
@@ -420,6 +426,8 @@ class AxonBuilder(object):
 
             # Create the compartment
             sec_name = "{:s}[{:d}]".format(sec_type, len(sec_by_type[sec_type]))
+            # sec_name = "axon[{:d}]".format(num_ax_sec)
+            # num_ax_sec += 1
             if parent_cell is None:
                 ax_sec = h.Section(name=sec_name)
             else:
@@ -479,9 +487,18 @@ class AxonBuilder(object):
 
         if i_compartment >= MAX_NUM_COMPARTMENTS-1:
             raise ValueError("Axon too long.")
+        self.debug("Created %i axonal compartments", len(sec_ordered))
 
         # Add to parent cell
         if parent_cell is not None:
+            # FIXME: refs to sections are not kept alive by appending them
+            # to one of the the instantiated template's (icell's) SectionList.
+            # There does not seem a way to store newly created sections
+            # on the instantiated template (icell) from within python in a way
+            # that references are kept alive. You cannot assign python
+            # lists to the icell, and appending to its SectionLists
+            # also does not work.
+
             # for sec_type, seclist in sec_by_type.items():
             #     existing = getattr(parent_cell, sec_type, None)
             #     if existing is None:
@@ -496,10 +513,27 @@ class AxonBuilder(object):
             #         setattr(parent_cell, sec_type, seclist)
 
             # Add to axonal SectionList in order of connection
-            axonal = getattr(parent_cell, 'axonal', None)
-            if axonal is not None:
-                for ax_sec in sec_ordered:
-                    axonal.append(sec=ax_sec)
+            append_to = ['all', 'axonal']
+            for seclist_name in append_to:
+                seclist = getattr(parent_cell, seclist_name, None)
+                if seclist is not None:
+                    # DOES NOT KEEP ALIVE REFS:
+                    for ax_sec in sec_ordered:
+                        seclist.append(sec=ax_sec)
+                    self.debug("Updated SectionList '%s' of %s", seclist_name, parent_cell)
 
 
         return sec_by_type
+
+
+# Make logging functions
+import logging
+for level in logging.INFO, logging.DEBUG, logging.WARN:
+    def make_func(level=level): # solves late binding issue
+        def log_func(self, *args, **kwargs):
+            if self.logger is None:
+                return
+            self.logger.log(level, *args, **kwargs)
+        return log_func
+    level_name = logging.getLevelName(level).lower()
+    setattr(AxonBuilder, level_name, make_func(level))

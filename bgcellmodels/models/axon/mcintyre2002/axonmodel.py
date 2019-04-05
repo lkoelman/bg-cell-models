@@ -46,7 +46,10 @@ class AxonMcintyre2002(AxonBuilder):
     - 'STIN' = internodal segment
     """
 
-    def __init__(self):
+    def __init__(self, **kwargs):
+        # Only pass keyword arguments
+        super(AxonMcintyre2002, self).__init__(**kwargs)
+
         self._set_elec_params()
         self._set_morpho_params()
         self._set_compartment_types()

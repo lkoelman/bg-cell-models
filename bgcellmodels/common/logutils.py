@@ -15,9 +15,16 @@ import sys
 import threading
 import traceback
 
+DEFAULT_FORMAT = '%(levelname)s:%(name)s@%(filename)s:%(lineno)s: %(message)s'
+
+################################################################################
+# Custom logging functions
+################################################################################
 
 # Create a very verbose log level named "ANAL"
-DEBUG_ANAL_LVL = 5 # see https://docs.python.org/2/library/logging.html#logging-levels
+
+# see https://docs.python.org/2/library/logging.html#logging-levels
+DEBUG_ANAL_LVL = 5 
 logging.addLevelName(DEBUG_ANAL_LVL, "ANAL")
 
 def anal_logfun(self, message, *args, **kws):
@@ -28,22 +35,39 @@ def anal_logfun(self, message, *args, **kws):
 logging.Logger.anal = anal_logfun
 
 
-def setRootLoggerFormat(format='%(levelname)s:%(name)s@%(filename)s:%(lineno)s: %(message)s'):
+################################################################################
+# Logging helpers
+################################################################################
+
+def configure(logger, level=logging.WARNING, format=DEFAULT_FORMAT,
+			  stream=sys.stderr, propagate=1):
+	"""
+	Configure logger.
+	"""
+	pass
+
+def setFormat(logger=None, format=DEFAULT_FORMAT):
 	"""
 	Set logging format for the root logger.
 
 	Call this function before importing any modules that configure the root logger.
 	"""
-	root = logging.getLogger() # None -> root logger
-	if len(root.handlers) == 0:
-		logging.basicConfig(level=logging.DEBUG, format=format)
+	if logger is None:
+		logger = logging.getLogger() # None -> root logger
+	if len(logger.handlers) == 0:
+		fmt = logging.Formatter(format)
+		handler = logging.StreamHandler(stream=sys.stderr)
+		handler.setLevel(logger.level)
+		handler.setFormatter(fmt)
+		logger.addHandler(handler)
 	else:
 		fmt = logging.Formatter(format)
-		for h in root.handlers:
+		for h in logger.handlers:
 			h.setFormatter(fmt)
 
 
-def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handlers_from=None, propagate=1):
+def getBasicLogger(name=None, level=logging.WARNING, format=DEFAULT_FORMAT,
+				   stream=sys.stderr, propagate=1, propage_config=False):
 	"""
 	Similar to logging.basicConfig() except this works on a new logger rather
 	than on the root logger (logging.root).
@@ -52,17 +76,13 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 
 	@note	see https://github.com/python/cpython/blob/master/Lib/logging/__init__.py
 	"""
-
-	if level is None:
-		level = logging.DEBUG
-	elif isinstance(level, str):
+	if isinstance(level, str):
 		level = getLogLevel(level)
-	if format is None:
-		format = '%(levelname)s:%(name)s@%(filename)s:%(lineno)s: %(message)s'
 
-	root = logging.getLogger()
-	if len(root.handlers) == 0:
-		logging.basicConfig(level=logging.DEBUG, format=format)
+	# root = logging.getLogger()
+	# if len(root.handlers) == 0:
+	# 	# FIXME: this changes properties of all loggers
+	# 	logging.basicConfig(level=logging.DEBUG, format=format)
 
 	# Creates logger if not present, returns RootLogger if name is None
 	# By default messages will propagate to parent (root logger) handlers
@@ -71,39 +91,42 @@ def getBasicLogger(name=None, level=None, format=None, stream=None, copy_handler
 	logger.propagate = propagate
 
 	# Get handlers
-	handlers = list(logger.handlers) # new list
-	if copy_handlers_from is not None:
-		if isinstance(copy_handlers_from, logging.Logger):
-			src_loggers = [copy_handlers_from]
-		else:
-			src_loggers = copy_handlers_from
-		for src in src_loggers:
-			if src is not logger:
-				handlers.extend(src.handlers)
+	# handlers = list(logger.handlers) # new list
+	# if copy_handlers_from is not None:
+	# 	if isinstance(copy_handlers_from, logging.Logger):
+	# 		src_loggers = [copy_handlers_from]
+	# 	else:
+	# 		src_loggers = copy_handlers_from
+	# 	for src in src_loggers:
+	# 		if src is not logger:
+	# 			handlers.extend(src.handlers)
 	
-	# Create new handler if none exists or stream explicitly specified
-	default_stream = sys.stderr if stream is None else stream
-	fmt = logging.Formatter(format)
-	# if (stream is not None) or (not any((h.stream==default_stream for h in logger.handlers))):
-	# create stream handler and set level to debug
-	sh = logging.StreamHandler(stream=default_stream)
-	sh.setLevel(level)
-	sh.setFormatter(fmt)
-	logger.addHandler(sh)
+	if not logger.propagate and (len(logger.handlers) == 0):
+		# Create new handler 
+		fmt = logging.Formatter(format)
+		handler = logging.StreamHandler(stream=stream)
+		handler.setLevel(level)
+		handler.setFormatter(fmt)
+		logger.addHandler(handler)
 
-	for h in handlers:
-		# Only set formatter if explicitly specified or none present
-		# if (h.formatter is None) or (usr_format is not None):
-		# 	h.setFormatter(fmt)
+	if propage_config:
+		# This configures the root logger
+		logging.basicConfig(level=level, format=format)
+
+
+	# for h in handlers:
+	# 	# Only set formatter if explicitly specified or none present
+	# 	# if (h.formatter is None) or (usr_format is not None):
+	# 	# 	h.setFormatter(fmt)
 		
-		# Add handler if handler with same stream not present
-		if h in logger.handlers:
-			continue
-		elif any((h.stream==hdlr.stream for hdlr in logger.handlers)):
-			# don't log to the same stream twice
-			continue
-		else:
-			logger.addHandler(h)
+	# 	# Add handler if handler with same stream not present
+	# 	if h in logger.handlers:
+	# 		continue
+	# 	elif any((h.stream==hdlr.stream for hdlr in logger.handlers)):
+	# 		# don't log to the same stream twice
+	# 		continue
+	# 	else:
+	# 		logger.addHandler(h)
 
 	return logger
 
