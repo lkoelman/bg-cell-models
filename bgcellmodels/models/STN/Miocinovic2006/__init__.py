@@ -17,7 +17,7 @@ pkg_dir = os.path.abspath(os.path.dirname(__file__))
 
 templates = {
     "STN_morph_arcdist": "stn_proto_arcdist.hoc",
-    "STN_morph_cartdist": "stn_proto_arcdist.hoc",
+    "STN_morph_cartdist": "stn_proto_cartdist.hoc",
     "STN_morph_type1RD": "stn_proto_type1RD.hoc",
 }
 

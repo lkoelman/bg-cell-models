@@ -21,7 +21,7 @@ from proto_common import StimProtocol, EvaluationStep, register_step
 
 
 @register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.CLAMP_REBOUND)
-def init_sim(self, protocol):
+def init_sim_rebound(self, protocol):
 	"""
 	Initialize simulator to simulate background protocol
 	"""
@@ -41,7 +41,7 @@ def init_sim(self, protocol):
 	h.dt = dt
 
 	h.celsius = celsius # different temp from paper
-	h.v_init = v_init # paper simulations sue default v_init
+	h.v_init = v_init # paper simulations USE default v_init
 	gillies.set_aCSF(4) # Set initial ion concentrations from Bevan & Wilson (1999)
 
 	# Initialize NEURON simulator
@@ -49,7 +49,7 @@ def init_sim(self, protocol):
 
 
 @register_step(EvaluationStep.MAKE_INPUTS, StimProtocol.CLAMP_REBOUND)
-def make_inputs(self, connector=None):
+def make_inputs_rebound(self, connector=None):
 	"""
 	Make a number of either GLU (AMPA) or GABA (GABA-A) synapses distributed randomly
 	over the dendritic tree, and firing sequentially with a fixed ISI.
@@ -95,7 +95,7 @@ def make_inputs(self, connector=None):
 
 
 @register_step(EvaluationStep.RECORD_TRACES, StimProtocol.CLAMP_REBOUND)
-def rec_traces(self, protocol, traceSpecs):
+def rec_traces_rebound(self, protocol, traceSpecs):
 	"""
 	Record all traces for this protocol.
 	"""
@@ -116,7 +116,7 @@ def rec_traces(self, protocol, traceSpecs):
 
 
 @register_step(EvaluationStep.PLOT_TRACES, StimProtocol.CLAMP_REBOUND)
-def plot_traces(self, model, protocol):
+def plot_traces_rebound(self, model, protocol):
 	"""
 	Plot all traces for this protocol
 	"""
@@ -141,7 +141,7 @@ def plot_traces(self, model, protocol):
 
 
 @register_step(EvaluationStep.INIT_SIMULATION, StimProtocol.CLAMP_PLATEAU)
-def init_sim(self, protocol):
+def init_sim_plateau(self, protocol):
 	"""
 	Initialize simulator to simulate background protocol
 	"""
@@ -225,7 +225,7 @@ def make_inputs(self, connector=None):
 
 
 @register_step(EvaluationStep.RECORD_TRACES, StimProtocol.CLAMP_PLATEAU)
-def rec_traces(self, protocol, traceSpecs):
+def rec_traces_plateau(self, protocol, traceSpecs):
 	"""
 	Record all traces for this protocol.
 	"""
@@ -255,7 +255,7 @@ def rec_traces(self, protocol, traceSpecs):
 
 
 @register_step(EvaluationStep.PLOT_TRACES, StimProtocol.CLAMP_PLATEAU)
-def plot_traces(self, model, protocol):
+def plot_traces_plateau(self, model, protocol):
 	"""
 	Plot all traces for this protocol
 	"""
@@ -279,8 +279,7 @@ def plot_traces(self, model, protocol):
 
 
 if __name__ == '__main__':
-	print(
-	"""
+	print("""
 	Run this protocol using stn_model_evaluation.py:
 
 	cd bgcellmodels/GilliesWillshaw

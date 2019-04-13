@@ -288,7 +288,7 @@ def measure_input_impedance(
     return imp.input(source.x, sec=source.sec)
 
 
-def measure_along_paths(root, leaves, measure_funcs):
+def measure_along_paths(root, leaves, measure_funcs, freq=None):
     """
     Measure electrotonic properties along paths.
     
@@ -327,7 +327,7 @@ def measure_along_paths(root, leaves, measure_funcs):
                                         source=seg,
                                         target=root(0.5),
                                         imp=probe,
-                                        freq=25.0,
+                                        freq=freq,
                                         linearize_gating=0)
             distance_vec = map(measure_func, path_segments)
             dist_measures_vecs[measure] = distance_vec

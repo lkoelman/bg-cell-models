@@ -193,7 +193,8 @@ begintemplate STN_morph_arcdist
 
         }
 
-        // Ion styles frol Gillies & Willshaw model
+        // Ion styles from Gillies & Willshaw model
+        // NOTE: original cinit was 1, can set to 0 to set on per-cell basis
         forsec all {
             ion_style("na_ion",1,2,1,0,1)
             ion_style("k_ion",1,2,1,0,1)
@@ -203,6 +204,32 @@ begintemplate STN_morph_arcdist
         // If CVode is used
         // cvode.atol(0.0001)
         // cvode.atolscale(soma[0].cai, 1.0e-3)
+    }
+
+
+    proc calc_density() { \
+        local b, c, prox, dist
+        // a = $1 // A: density at the soma
+        b = $1 // B: overall density to be distributed across the dendritic trees.
+        c = $2 // C: proportion of the density that is uniformly distributed across the trees
+        prox = $3 // D: proximity, how the reamining density is distributed
+        dist = $4 // Normalized distance (between 0-1)
+        
+        if (prox == 0) { 
+            f = 1   
+        } else {
+            if (prox > 0) { 
+                f = (1 - prox - dist) / (1 - prox)
+            } else { 
+                f = (prox + dist) / (1 + prox) 
+            }
+        } 
+        if (f < 0) {
+            f = 0
+        }
+
+        // Shouldn't it be c + f (b - c) ? Since c is the uniform part, and b is the total
+        return c + (f * b)
     }
 
 
@@ -242,14 +269,34 @@ begintemplate STN_morph_arcdist
         }
         print "maximum dendrite length in ", this, " is ", max_dist
 
-        // Proximity (parameter 'D' in Gillies 2005, Fig. 2. Values in Table A1)
-        kdr_prox = -0.05 //Proximity for KDR channel (from Gillies 2005)
-        kfr_prox = 0.8 //Proximity for Kv31 channel (from Gillies 2005)
-        kca_prox = -0.52 //Proximity for KCa channel (from Gillies 2005)
-        hcn_prox = -0.39 //Proximity for HCN channel (from Gillies 2005)
-        cat_prox = -0.01 //Proximity for CaT channel (from Gillies 2005)
-        can_prox = 0.5 //Proximity for CaN channel (from Gillies 2005)
-        cal_prox = -0.57 //Proximity for CaL channel (from Gillies 2005)
+        // A,B,C,D parameters from Gillies 2005, Fig. 2. Values in Table A1)
+        kdr_B = 9.32e-5
+        kdr_C = 4.22e-5
+        kdr_D = -0.05
+
+        kfr_B = 1.0e-3
+        kfr_C = 8.91e-4
+        kfr_D = 0.8
+        
+        kca_B = 3.92e-5 * 1.8 // factor 1.8 added by Miocinovic
+        kca_C = 0
+        kca_D = -0.52
+        
+        hcn_B = 5.1e-4
+        hcn_C = 0
+        hcn_D = -0.39
+        
+        cat_B = 1.67e-3
+        cat_C = 1.17e-3
+        cat_D = -0.01
+        
+        can_B = 4.79e-4
+        can_C = 0
+        can_D = 0.5
+        
+        cal_B = 1.87e-3
+        cal_C = 1.21e-4
+        cal_D = -0.57
 
         forsec basal {
 
@@ -259,102 +306,18 @@ begintemplate STN_morph_arcdist
 
                 // Arc distance from middle 3D point to soma
                 arc_dist = distance(x)
+                norm_dist = arc_dist / max_dist   
 
-                // Parametrized distance (from 0 to 1)
-                pd = arc_dist / max_dist   
-                
-                //set up KDR conductance
-                if (kdr_prox == 0) { 
-                    f = 1   
-                } else {
-                    if (kdr_prox > 0) { 
-                        f = (1-kdr_prox-pd)/(1-kdr_prox)
-                    } else { 
-                        f = (kdr_prox+pd)/(1+kdr_prox) 
-                    }
-                } 
-                if (f < 0) f = 0
-                gk_KDR(x) = 4.22e-5 + f*9.32e-5  //Basal conductance * f*Tree_Conductance 
+                //set up conductances
+                gk_KDR(x) = calc_density(kdr_B, kdr_C, kdr_D, norm_dist)
 
+                gcaT_CaT(x) = calc_density(cat_B, cat_C, cat_D, norm_dist)
+                gcaL_HVA(x) = calc_density(cal_B, cal_C, cal_D, norm_dist)
+                gcaN_HVA(x) = calc_density(can_B, can_C, can_D, norm_dist)
 
-                //set up CaT conductance
-                if (cat_prox == 0) { 
-                    f = 1   
-                } else {
-                    if (cat_prox > 0) { 
-                        f = (1-cat_prox-pd)/(1-cat_prox)
-                    } else { 
-                        f = (cat_prox+pd)/(1+cat_prox) 
-                    }
-                } 
-                if (f < 0) f = 0
-                gcaT_CaT(x) = 1.17e-3 + f*1.67e-3  //Basal conductance * f*Tree_Conductance 
-
-                //set up CaL conductance
-                if (cal_prox == 0) { 
-                    f = 1   
-                } else {
-                    if (cal_prox > 0) { 
-                        f = (1-cal_prox-pd)/(1-cal_prox)
-                    } else { 
-                        f = (cal_prox+pd)/(1+cal_prox) 
-                    }
-                } 
-                if (f < 0) f = 0
-                gcaL_HVA(x) = 1.21e-4 + f*1.87e-3  //Basal conductance * f*Tree_Conductance 
-                
-                //set up CaN conductance
-                if (can_prox == 0) { 
-                    f = 1   
-                } else {
-                    if (can_prox > 0) { 
-                        f = (1-can_prox-pd)/(1-can_prox)
-                    } else { 
-                        f = (can_prox+pd)/(1+can_prox) 
-                    }
-                } 
-                if (f < 0) f = 0
-                gcaN_HVA(x) = 0 + f*4.79e-4  //Basal conductance * f*Tree_Conductance 
-
-                //set up KCa conductance
-                if (kca_prox == 0) { 
-                    f = 1   
-                } else {
-                    if (kca_prox > 0) { 
-                        f = (1-kca_prox-pd)/(1-kca_prox)
-                    } else { 
-                        f = (kca_prox+pd)/(1+kca_prox) 
-                    }
-                } 
-                if (f < 0) f = 0
-                gk_sKCa(x) = 0 + 1.8*f*3.92e-5  //Basal conductance * f*Tree_Conductance 
-                
-                //set up Kv31 (KFR) conductance
-                if (kfr_prox == 0) { 
-                    f = 1   
-                } else {
-                    if (kfr_prox > 0) { 
-                        f = (1-kfr_prox-pd)/(1-kfr_prox)
-                    } else { 
-                        f = (kfr_prox+pd)/(1+kfr_prox) 
-                    }
-                } 
-                if (f < 0) f = 0
-                gk_Kv31(x) = 8.91e-4 + f*1.0e-3  //Basal conductance * f*Tree_Conductance 
-
-
-                //set up HCN conductance
-                if (hcn_prox == 0) { 
-                    f = 1   
-                } else {
-                    if (hcn_prox > 0) { 
-                        f = (1-hcn_prox-pd)/(1-hcn_prox)
-                    } else { 
-                        f = (hcn_prox+pd)/(1+hcn_prox) 
-                    }
-                } 
-                if (f < 0) f = 0
-                gk_Ih(x) = 0 + f*5.1e-4  //Basal conductance * f*Tree_Conductance
+                gk_sKCa(x) = calc_density(kca_B, kca_C, kca_D, norm_dist)
+                gk_Kv31(x) = calc_density(kfr_B, kfr_C, kfr_D, norm_dist)
+                gk_Ih(x) = calc_density(hcn_B, hcn_C, hcn_D, norm_dist)
             }
         }
     }
@@ -383,6 +346,10 @@ begintemplate STN_morph_arcdist
      * Set initial ion concentrations
      */
     proc init_ions() {
+        // NOTE: last param of ion_style() call (cinit) is 1, so each
+        // segment's ion<i>/ion<0> variables are set from the global
+        // variables ion<i/o>0_<ion>_ion. Alternative is to set cinit to 0
+        // and here do a double loop forsec, for (x, 0), ion<i/0>(x) = val/
         forsec somatic {
             cai0_Cacum = this.cai0
             cai0_ca_ion = this.cai0
@@ -432,6 +399,7 @@ begintemplate STN_morph_arcdist
         nao0 = 126   
         nai0 = 10 
         
+        // Densities at the soma (parameter 'A' in Gillies 2006 Table A1)
         //insert CaT
         my_gcaT_CaT = 0 //0.001 (mho/cm2)
         //insert HVA
