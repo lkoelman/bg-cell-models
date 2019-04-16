@@ -21,7 +21,7 @@ h.xopen("mahon_createcell.hoc") # instantiates all functions & data structures o
 os.chdir(prev_cwd)
 
 from bgcellmodels.extensions.pynn.ephys_models import (
-    PynnCellModelBase, EphysCellType)
+    PynnCellModelBase, MorphCellType)
 
 class MsnCellModel(PynnCellModelBase):
     """
@@ -39,7 +39,7 @@ class MsnCellModel(PynnCellModelBase):
     
     """
 
-    # Combined with celltype.receptors in EphysCellType constructor
+    # Combined with celltype.receptors in MorphCellType constructor
     # to make celltype.receptor_types in format 'region.receptor'
     regions = ['proximal']
 
@@ -100,7 +100,7 @@ class MsnCellModel(PynnCellModelBase):
 
 
 
-class MsnCellType(EphysCellType):
+class MsnCellType(MorphCellType):
     """
     Encapsulates an MSN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -115,7 +115,7 @@ class MsnCellType(EphysCellType):
     default_initial_values = {'v': -77.4}
     # recordable = ['spikes', 'v']
 
-    # Combined with self.model.regions by EphysCellType constructor
+    # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
 

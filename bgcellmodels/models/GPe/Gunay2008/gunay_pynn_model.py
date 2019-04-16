@@ -316,7 +316,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         return -10.0
 
 
-class GPeCellType(ephys_pynn.EphysCellType):
+class GPeCellType(ephys_pynn.MorphCellType):
     """
     Encapsulates a GPe model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -362,7 +362,7 @@ class GPeCellType(ephys_pynn.EphysCellType):
     # extra_parameters = {}
     default_initial_values = {'v': -68.0}
     
-    # Combined with self.model.regions by EphysCellType constructor
+    # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
 
@@ -385,7 +385,7 @@ class GPeCellType(ephys_pynn.EphysCellType):
 
 GpeProtoCellType = GPeCellType
 
-class GpeArkyCellType(ephys_pynn.EphysCellType):
+class GpeArkyCellType(ephys_pynn.MorphCellType):
     """
     GPe ArkyPallidal cell. It uses the same Gunay (2008) GPe cell model with
     modified parameters to reduce sponaneous firing rate and rebound firing.
@@ -420,7 +420,7 @@ class GpeArkyCellType(ephys_pynn.EphysCellType):
     # extra_parameters = {}
     default_initial_values = {'v': -65.0}
     
-    # Combined with self.model.regions by EphysCellType constructor
+    # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
 

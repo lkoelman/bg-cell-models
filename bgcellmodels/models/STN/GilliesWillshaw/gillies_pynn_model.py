@@ -86,7 +86,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
     # _ephys_locations = define_locations()
 
-    # Combined with celltype.receptors in EphysCellType constructor
+    # Combined with celltype.receptors in MorphCellType constructor
     # to make celltype.receptor_types in format 'region.receptor'
     regions = ['proximal', 'distal']
 
@@ -334,7 +334,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
                                 coords, self.icell.somatic, self.icell.basal)
 
 
-class StnCellType(ephys_pynn.EphysCellType):
+class StnCellType(ephys_pynn.MorphCellType):
     """
     Encapsulates an STN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -362,7 +362,7 @@ class StnCellType(ephys_pynn.EphysCellType):
     default_initial_values = {'v': -65.0}
     # recordable = ['spikes', 'v', 'lfp']
 
-    # Combined with self.model.regions by EphysCellType constructor
+    # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
 

@@ -104,7 +104,7 @@ class UnitFetcherPlaceHolder(dict):
             return 'dimensionless'
 
 
-class EphysCellType(NativeCellType):
+class MorphCellType(NativeCellType):
     """
     PyNN native cell type that has Ephys model as 'model' attribute.
 
@@ -142,7 +142,7 @@ class EphysCellType(NativeCellType):
                     cell location/region.
         """
         extra_receptors = kwargs.pop('extra_receptors', None)
-        super(EphysCellType, self).__init__(**kwargs)
+        super(MorphCellType, self).__init__(**kwargs)
 
         # Combine receptors defined on the cell type with regions
         # defined on the model class
@@ -255,6 +255,7 @@ class PynnCellModelBase(object):
     Connector and Recorder classes or marks them as abstract methods
     for implementation in the subclass.
     """
+    
     # FIXME: Problems with conflicting metaclass in subclass
     # __metaclass__ = ABCMeta
 
@@ -616,33 +617,6 @@ class PynnCellModelBase(object):
             return secs[0]
         else:
             return secs
-
-
-class SwcModelWrapper(PynnCellModelBase):
-    """
-    TODO: Wrap SWC + NEURON template.
-    - both SWC and template are optional
-    """
-    
-    def instantiate(self, sim=None, template_name):
-        """
-        Instantiate cell in simulator
-        """
-
-        # Instantiate NEURON cell
-        template_function = getattr(sim.neuron.h, template_name)
-        self.icell = template_function()
-
-        self.morphology.instantiate(sim=sim, icell=self.icell)
-        self.icell.insert_biophys()
-
-        # TODO: set discretization
-        set_discretization(self.icell)
-        self.icell.set_biophys_spatial()
-        
-        # TODO: append axon
-        append_axon(self.icell)
-
 
 
 class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):

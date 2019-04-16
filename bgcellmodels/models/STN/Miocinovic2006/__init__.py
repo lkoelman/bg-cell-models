@@ -21,17 +21,23 @@ templates = {
     "STN_morph_type1RD": "stn_proto_type1RD.hoc",
 }
 
+_loaded_templates = []
+
 def load_template(template_name):
     """
     Load Hoc code with template definition.
     """
+    global loaded_templates
+
     if template_name not in templates:
         raise ValueError(
             "Unknown template: {}. Available templates are: {}".format(
                 template_name, ", ".join(templates.keys())))
 
     # Load Hoc template
-    prev_wd = os.getcwd()
-    os.chdir(pkg_dir)
-    h.xopen(templates[template_name])
-    os.chdir(prev_wd)
+    if template_name not in _loaded_templates:
+        prev_wd = os.getcwd()
+        os.chdir(pkg_dir)
+        h.xopen(templates[template_name])
+        os.chdir(prev_wd)
+        _loaded_templates.append(template_name)

@@ -207,7 +207,7 @@ begintemplate STN_morph_arcdist
     }
 
 
-    proc calc_density() { \
+    func calc_density() { \
         local b, c, prox, dist
         // a = $1 // A: density at the soma
         b = $1 // B: overall density to be distributed across the dendritic trees.

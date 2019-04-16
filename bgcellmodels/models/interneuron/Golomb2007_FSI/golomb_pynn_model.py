@@ -21,7 +21,7 @@ h.xopen("fsi_createcell.hoc") # instantiates all functions & data structures on 
 os.chdir(prev_cwd)
 
 from bgcellmodels.extensions.pynn.ephys_models import (
-    PynnCellModelBase, EphysCellType)
+    PynnCellModelBase, MorphCellType)
 
 # Set error tolerances for adaptive integrator
 h.golomb_set_state_tolerances()
@@ -98,7 +98,7 @@ class GolombFsiModel(PynnCellModelBase):
         return syns
 
 
-class FsiCellType(EphysCellType):
+class FsiCellType(MorphCellType):
     """
     Encapsulates an MSN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -113,7 +113,7 @@ class FsiCellType(EphysCellType):
     default_initial_values = {'v': -70.038}
     # recordable = ['spikes', 'v']
 
-    # Combined with self.model.regions by EphysCellType constructor
+    # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
 
