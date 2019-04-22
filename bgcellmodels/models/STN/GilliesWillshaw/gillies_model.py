@@ -72,7 +72,7 @@ def stn_cell_gillies():
     (only one copy of cell possible)
     """
     if not hasattr(h, 'SThcell'):
-        neuron.h.load_file(os.path.join(script_dir, 'gillies_cell_singleton.hoc'))
+        neuron.h.load_file(os.path.join(script_dir, 'gillies_create_singleton.hoc'))
     else:
         print("Gillies STN cell already exists. Cannot create more than one instance.")
     

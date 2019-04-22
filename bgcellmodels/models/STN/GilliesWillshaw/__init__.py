@@ -67,3 +67,18 @@ def load_template(template_name):
                 template_name, ", ".join(templates.keys())))
 
     load_hoc(templates[template_name])
+
+
+def load_gbar_dist(gbar_name):
+    """
+    Return conductance values saved in 'sth-data' files for specific
+    ion channel.
+
+    @return gbar : np.array[N, 4]
+            Array where each row is (tree_index, array_index, segment_x, gbar)
+            with tree_index -1 for soma, 0 for 'dend0', 1 for 'dend1'. 
+    """
+    import numpy as np
+    gbar_filepath = os.path.join(pkg_dir, 'sth-data', 'cell-{}'.format(gbar_name))
+    gbar_mat = np.loadtxt(gbar_filepath)
+    return gbar_mat

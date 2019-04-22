@@ -43,16 +43,19 @@ def morphology_to_dict(sections):
     return result
 
 
-def morphology_to_SWC(sections, filename, encoding='utf-8'):
+def morphology_to_SWC(sections, filename):
     """
-    Convert any NEURON cell to SWC.
+    Convert all instantiated NEURON cells to SWC. 
+
+    Each isolated tree is written to a separate .swc file.
 
     Instead use:
     - built in exporters in ModelView (to NeuroML)
     - https://github.com/JustasB/hoc2swc
     - http://neuronland.org/NLMorphologyConverter/NLMorphologyConverter.html
     """
-    raise NotImplementedError(morphology_to_SWC.__doc__)
+    from hoc2swc import neuron2swc # this function exports all loaded cells to SWC
+    neuron2swc(filename)
 
 
 def uniform_morphology_to_SWC(sections, filename, encoding='ascii'):
@@ -223,6 +226,16 @@ def prepare_hoc_morphology_for_SWC_export(hoc_script_path, hoc_out_path):
 
     with open(hoc_out_path, 'w') as out_script:
         out_script.write(hoc_clean_morph)
+
+
+def morphology_to_STL(secs, filepath):
+    """
+    Write neuron morphology to STL file using degenerate faces.
+
+    Each segment is represented by a degenerate face, i.e. a triangle
+    with vertices [a b a].
+    """
+    raise NotImplementedError()
 
 
 def morphology_to_STEP_1D(secs, filepath):

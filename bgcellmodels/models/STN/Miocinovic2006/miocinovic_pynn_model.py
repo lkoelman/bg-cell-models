@@ -1,5 +1,6 @@
 import math, logging
 
+import numpy as np
 import neuron
 import bluepyopt.ephys as ephys
 import pyNN.neuron
@@ -22,7 +23,8 @@ logging.basicConfig(format=logutils.DEFAULT_FORMAT)
 
 class StnMorphModel(ephys_pynn.PynnCellModelBase):
     """
-    Cell model for instantiation of a cell in PyNN.
+    Morphological STN model using any morphology in combination
+    with Miocinovic (2006) cell template.
 
     DEVNOTES
     --------
@@ -39,7 +41,7 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
     # to make celltype.receptor_types in format 'region.receptor'
     regions = ['proximal', 'distal']
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         """
         Custom handling of parameters
         """
@@ -50,6 +52,9 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         for param_name, param_value in kwargs.iteritems():
             if param_name in cell_param_names:
                 setattr(self, param_name, param_value)
+            else:
+                raise ValueError('Unknown argument "{}":'.format(
+                        param_name), param_value)
 
         self.instantiate()
         self._init_synapses()
@@ -97,25 +102,34 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         nseg_extra = electrotonic.set_min_nseg_hines(icell.all, f_lambda=100.0)
         icell.set_biophys_spatial()
 
+        # Create and append axon
         if streamlines_path is not None:
-            # Load axon coordinates
-            axon_builder = axon_class(logger=logger)
-            tracks_coords = morph_ni.load_streamlines(
-                                streamlines_path, max_num=1, min_length=2.0)
-            axon_coords = tracks_coords[0]
+            self._init_axon(axon_class, streamlines_path)
 
-            # Build axon
-            axon_initial_secs = list(icell.axonal)
-            axon_terminal_secs = treeutils.leaf_sections(axon_initial_secs[0], subtree=True)
-            assert len(axon_terminal_secs) == 1
-            axon_end_sec = axon_terminal_secs[0]
 
-            axon = axon_builder.build_along_streamline(axon_coords,
-                        terminate='nodal_cutoff', interp_method='cartesian',
-                        parent_cell=icell, parent_sec=axon_end_sec,
-                        connection_method='translate_axon_start')
-        
-            self.axon = axon
+    def _init_axon(self, axon_class, streamlines_path):
+        """
+        Create and append axon.
+
+        @post   self.axon contains references to axonal sections.
+        """
+        axon_builder = axon_class(logger=logger)
+        tracks_coords = morph_ni.load_streamlines(
+                            streamlines_path, max_num=1, min_length=2.0)
+        axon_coords = tracks_coords[0]
+
+        # Build axon
+        axon_initial_secs = list(self.icell.axonal)
+        axon_terminal_secs = treeutils.leaf_sections(axon_initial_secs[0], subtree=True)
+        assert len(axon_terminal_secs) == 1
+        axon_end_sec = axon_terminal_secs[0]
+
+        axon = axon_builder.build_along_streamline(axon_coords,
+                    terminate='nodal_cutoff', interp_method='cartesian',
+                    parent_cell=self.icell, parent_sec=axon_end_sec,
+                    connection_method='translate_axon_start')
+    
+        self.axon = axon
 
 
     def _post_build(self, population, pop_index):
@@ -218,6 +232,81 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         Get spike threshold for soma membrane potential (used for NetCon)
         """
         return -10.0
+
+
+class GilliesSwcModel(StnMorphModel):
+    """
+    Morphological SWC model that uses the channel density distributions
+    and morphology from the original Gillies (2005) model.
+    """
+
+    def __init__(self, **kwargs):
+        super(GilliesSwcModel, self).__init__(**kwargs)
+
+
+    def instantiate(self, sim=None):
+        """
+        Instantiate cell in simulator.
+        """
+        # Get arguments from __init__
+        template_name = self.template_name
+        morphology_path = self.morphology_path
+        streamlines_path = self.streamlines_path
+        axon_class = self.axon_class # e.g. AxonMcintyre2002
+        if sim is None:
+            sim = ephys_pynn.ephys_sim_from_pynn()
+
+        # Get the Hoc template
+        miocinovic.load_template(template_name) # xopen -> loads once
+        template_constructor = getattr(h, template_name)
+        
+        # Instantiate template
+        self.icell = icell = template_constructor()
+        icell.with_extracellular = 0
+
+        # Load morphology into template
+        morphology = ephys.morphologies.NrnFileMorphology(morphology_path, do_replace_axon=False)
+        morphology.instantiate(sim=sim, icell=icell)
+
+        # Setup biophysical properties
+        icell.del_unused_sections()
+        icell.insert_biophys()
+
+        # Instead of cel.set_biophys_spatial(), load channel density
+        # distributions from file.
+        self._init_gbar()
+
+        # Create and append axon
+        if streamlines_path is not None:
+            self._init_axon(axon_class, streamlines_path)
+
+
+    def _init_gbar(self):
+        """
+        Load channel conductances from Gillies & Wilshaw data files.
+        """
+        sec_arrays_lists = {'soma': 'somatic', 'dend': 'basal'}
+        gbar_names = ['gk_KDR', 'gcaT_CaT', 'gcaL_HVA', 'gcaN_HVA', 
+                        'gk_sKCa', 'gk_Kv31', 'gk_Ih']
+        
+        for gbar_name in gbar_names:
+            gbar_mat = gillies.load_gbar_dist(gbar_name)
+            for secarray_name, seclist_name in sec_arrays_lists.items():
+                for i, sec in enumerate(getattr(self.icell, seclist_name)):
+                    tree_index, array_index = miocinovic.swc_to_gillies_index(
+                                                i, secarray_name=secarray_name)
+                    # Get samples for section
+                    sample_mask = (gbar_mat[:,0] == tree_index) & (gbar_mat[:,1] == array_index)
+                    gbar_samples = gbar_mat[sample_mask]
+                    if gbar_samples.ndim == 1:
+                        gbar_samples = gbar_samples[np.newaxis, :]
+                    xvals_gvals = gbar_samples[:, [2, 3]]
+                    # Choose closest sample to assign gbar (nseg discretization mismatch)
+                    for seg in sec:
+                        i_close = np.abs(xvals_gvals[:,0] - seg.x).argmin()
+                        setattr(seg, gbar_name, xvals_gvals[i_close, 1])
+                    # for seg_x, gbar_val in xvals_gvals:
+                    #     setattr(sec(seg_x), gbar_name, gbar_val)
 
 
 class StnMorphType(ephys_pynn.MorphCellType):

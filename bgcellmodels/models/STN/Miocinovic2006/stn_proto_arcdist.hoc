@@ -61,7 +61,8 @@ begintemplate STN_morph_arcdist
     objref this
 
     // Other public variables
-    public v_init, cai0, cao0, nai0, nao0, ki0, ko0, with_extracellular
+    public v_init, cai0, cao0, nai0, nao0, ki0, ko0
+    public with_extracellular, max_dist
     objref fih_ions, fih_states // FInitializeHandlers for ions
 
     // =========================================================================
@@ -83,7 +84,10 @@ begintemplate STN_morph_arcdist
         // nodal = new SectionList()
 
         set_constant_params()
-        with_extracellular = 1
+
+        // Default parameters
+        with_extracellular = 0
+        max_dist = 0
 
         fih_ions = new FInitializeHandler(1, "init_ions()", this)
         fih_states = new FInitializeHandler(1, "init_states()", this)
@@ -252,24 +256,30 @@ begintemplate STN_morph_arcdist
             distance(0, 0)
         }
 
-        // Maximum dendrite-soma distance
-        max_dist = 0.0 // constant 734.15 in Miocinovic model
-        leaf_secs = new SectionList()
-        forsec basal {
-            secref = new SectionRef()
-            if (secref.nchild() < 1) {
-                leaf_secs.append()
+        // Maximum dendrite-soma distance (734.15 in Miocinovic model)
+        if (max_dist == 0.0) {
+            leaf_secs = new SectionList()
+            forsec basal {
+                secref = new SectionRef()
+                if (secref.nchild() < 1) {
+                    leaf_secs.append()
+                }
             }
-        }
-        forsec leaf_secs {
-            leaf_dist = distance(1)
-            if (leaf_dist > max_dist) {
-                max_dist = leaf_dist
+            forsec leaf_secs {
+                leaf_dist = distance(1)
+                if (leaf_dist > max_dist) {
+                    max_dist = leaf_dist
+                }
             }
+            print "maximum dendrite length in ", this, " is ", max_dist
         }
-        print "maximum dendrite length in ", this, " is ", max_dist
+        
 
         // A,B,C,D parameters from Gillies 2005, Fig. 2. Values in Table A1)
+        // A: density at the soma
+        // B: overall density to be distributed across the dendritic trees.
+        // C: proportion of the density that is uniformly distributed across the trees
+        // D: proximity, how the remaining density is distributed
         kdr_B = 9.32e-5
         kdr_C = 4.22e-5
         kdr_D = -0.05
@@ -430,7 +440,9 @@ begintemplate STN_morph_arcdist
 
         ncell = 0
         forsec apical {
-            ncell = ncell + 1
+            if (parent_section()) {
+                ncell = ncell + 1
+            }
         }
         if (!ncell) {
             apic[0] delete_section()
@@ -438,7 +450,9 @@ begintemplate STN_morph_arcdist
 
         ncell = 0
         forsec axonal {
-            ncell = ncell + 1
+            if (parent_section()) {
+                ncell = ncell + 1
+            }
         }
         if (!ncell) {
             axon[0] delete_section()
