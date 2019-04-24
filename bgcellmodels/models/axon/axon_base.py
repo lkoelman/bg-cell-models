@@ -38,7 +38,7 @@ class AxonBuilder(object):
     Attributes
     ----------
 
-    @attr   'compartment_sequence' : list(str)
+    @attr   'repeating_comp_sequence' : list(str)
             Sequence of compartment types that define repeating structure of axon
 
     @attr   'nodal_compartment_type' : str
@@ -55,7 +55,7 @@ class AxonBuilder(object):
         """
         Define compartments types that constitute the axon model.
 
-        @post   attributes 'compartment_defs' and 'compartment_sequence'
+        @post   attributes 'compartment_defs' and 'repeating_comp_sequence'
                 have been set.
         """
         self.logger = logger
@@ -68,8 +68,19 @@ class AxonBuilder(object):
         """
         tck_length_mm = np.sum(np.linalg.norm(np.diff(self.streamline_pts, axis=0), axis=1))
         rep_length_um = sum((self.compartment_defs[sec]['morphology']['L'] 
-                                    for sec in self.compartment_sequence))
-        return 1e3 * tck_length_mm / rep_length_um * len(self.compartment_sequence)
+                                    for sec in self.repeating_comp_sequence))
+        return 1e3 * tck_length_mm / rep_length_um * len(self.repeating_comp_sequence)
+
+
+    def get_initial_diameter(self):
+        """
+        Get diameter of first axonal section
+        """
+        if len(self.initial_comp_sequence) > 0:
+            comp_type = self.initial_comp_sequence[0]
+        else:
+            comp_type = self.repeating_comp_sequence[0]
+        return self.compartment_defs[comp_type]['morphology']['diam']
 
 
     def _set_comp_attributes(self, sec, sec_attrs):
@@ -91,6 +102,9 @@ class AxonBuilder(object):
         # Set passive parameters
         for pname, pval in sec_attrs['passive'].items():
                 setattr(sec, pname, pval)
+
+        # Number of segments (discretization)
+        sec.nseg = sec_attrs['morphology'].get('nseg', 1)
         return sec
 
 
@@ -98,11 +112,11 @@ class AxonBuilder(object):
         """
         Distance to next node in mm.
         """
-        if measure_from==1 and i_sequence==len(self.compartment_sequence)-1:
+        if measure_from==1 and i_sequence==len(self.repeating_comp_sequence)-1:
             return 0.0
         i_start = i_sequence+1 if measure_from==1 else i_sequence
         dist_microns = sum((self.compartment_defs[t]['morphology']['L']
-                                for t in self.compartment_sequence[i_start:]))
+                                for t in self.repeating_comp_sequence[i_start:]))
         return 1e-3 * dist_microns
 
 
@@ -439,7 +453,7 @@ class AxonBuilder(object):
         # if parent_cell is not None:
         #     num_ax_sec = len(list(parent_cell.axonal))
 
-        n_repeating = len(self.compartment_sequence)
+        n_repeating = len(self.repeating_comp_sequence)
         MAX_NUM_COMPARTMENTS = int(1e9)
         est_num_comp = self.estimate_num_sections()
         self.debug("Estimated number of compartments to build axon: {}".format(est_num_comp))
@@ -449,10 +463,16 @@ class AxonBuilder(object):
 
         for i_compartment in xrange(MAX_NUM_COMPARTMENTS):
 
-            # What kind of section must we create?
+            # Look up section type for current point in the chain
             self.i_compartment = i_compartment
-            i_sequence = i_compartment % n_repeating
-            sec_type = self.compartment_sequence[i_sequence]
+            if i_compartment < len(self.initial_comp_sequence):
+                # We are in the initial section of the axon (non-repeating structure)
+                i_sequence = i_compartment
+                sec_type = self.initial_comp_sequence[i_sequence]
+            else:
+                # We are in the repeating part of the axon
+                i_sequence = i_compartment % n_repeating
+                sec_type = self.repeating_comp_sequence[i_sequence]
             sec_attrs = self.compartment_defs[sec_type]
             sec_L_mm = sec_attrs['morphology']['L'] * 1e-3 # um to mm
 
@@ -502,14 +522,14 @@ class AxonBuilder(object):
             self.last_tangent = next_tangent
 
             # If terminating axon with nodal compartment: either cutoff or extrapolate
-            remaining_length = self._get_remaining_arclength()
+            # remaining_length = self._get_remaining_arclength() # FIXME: fix bug
             remaining_length = self.streamline_length - self.built_length
 
             if terminate == 'any_extend':
                 if self.num_passed >= len(streamline_coords):
                     break
             elif terminate == 'any_cutoff':
-                next_type = self.compartment_sequence[i_compartment % n_repeating]
+                next_type = self.repeating_comp_sequence[i_compartment % n_repeating]
                 next_length = self.compartment_defs[next_type]['morphology']['L'] * 1e-3
                 if remaining_length - next_length <= 0:
                     break

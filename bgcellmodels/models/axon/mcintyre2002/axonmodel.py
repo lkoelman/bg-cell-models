@@ -115,9 +115,10 @@ class AxonMcintyre2002(AxonBuilder):
         @pre    morphology parameters have been set
         """
         # Sequence of compartment types that define repeating structure of axon
-        self.compartment_sequence = ['node', 'MYSA', 'FLUT'] + \
-                                    ['STIN', 'STIN', 'STIN'] + \
-                                    ['FLUT', 'MYSA']
+        self.initial_comp_sequence = []
+        self.repeating_comp_sequence = ['node', 'MYSA', 'FLUT'] + \
+                                       ['STIN', 'STIN', 'STIN'] + \
+                                       ['FLUT', 'MYSA']
 
         # Name of compartment type representing node of Ranvier
         self.nodal_compartment_type = 'node'

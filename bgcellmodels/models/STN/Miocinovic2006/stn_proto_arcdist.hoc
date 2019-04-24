@@ -344,7 +344,8 @@ begintemplate STN_morph_arcdist
 
 
     /**
-     * Create axon hillock/initial segment as conical section attached to soma.
+     * Create axon hillock as conical section attached to soma.
+     * This ensures there is a taper from soma to axon.
      *
      * @param   $1 (end_diam) : float
      *          Diameter that section should taper to
@@ -354,12 +355,12 @@ begintemplate STN_morph_arcdist
      * @post    icell.axonal contains single section representing the AIS of
      *          length (relative_length * somatic_length) attached at point
      */
-     proc create_AIS() { \
-        local end_diam, start_diam, ais_length, ais_area, ais_relative_length, \
+     proc create_hillock() { \
+        local end_diam, start_diam, hillock_area, relative_length, \
               style, soma_area, soma_x, soma_dL, soma_length
         
         end_diam = $1
-        ais_relative_length = $2
+        relative_length = $2
         soma_i = $3
         soma_x = $4     // set to 0 or 1 depending on dendrite location
 
@@ -379,10 +380,10 @@ begintemplate STN_morph_arcdist
         // Create AIS Section
         // Could directly use pt3dadd(), create points colinear with soma, but
         // we choose to set basic geometry, and then use define_shape().
-        ais_area = 0
+        hillock_area = 0
         axon[0] {
             nseg = 2
-            L = ais_relative_length * soma_length
+            L = relative_length * soma_length
 
             // Set biophysical properties
             Ra = 150.2
@@ -398,7 +399,7 @@ begintemplate STN_morph_arcdist
             // Measure AIS area (must be _after_ define_shape())
             for (x, 0) {
                 // diam(x) = start_diam + x * (end_diam - start_diam)
-                ais_area = ais_area + area(x)
+                hillock_area = hillock_area + area(x)
             }
 
             // Insert biophysical mechanisms (same as soma)
@@ -409,7 +410,7 @@ begintemplate STN_morph_arcdist
         // Reduce somatic length to compensate for increase of area
         style = pt3dconst(0) // diam & L affect 3d points
         soma[0] {
-            soma_dL = ais_area / (PI * start_diam)
+            soma_dL = hillock_area / (PI * start_diam)
             if (soma_dL <= 0.75 * L) {
                 L = L - soma_dL
                 print "Soma length decreased by ", soma_dL, " to ", L

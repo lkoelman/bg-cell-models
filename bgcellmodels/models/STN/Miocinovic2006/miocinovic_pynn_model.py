@@ -9,7 +9,8 @@ from bgcellmodels.common import electrotonic, nrnutil, treeutils, logutils
 from bgcellmodels.morphology import morph_ni
 from bgcellmodels.models.STN import GilliesWillshaw as gillies
 from bgcellmodels.models.STN import Miocinovic2006 as miocinovic
-from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002
+# from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002
+from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 from bgcellmodels.extensions.pynn import ephys_models as ephys_pynn
 
 
@@ -90,7 +91,7 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         
         # Instantiate template
         self.icell = icell = template_constructor()
-        icell.with_extracellular = 0
+        icell.with_extracellular = not self.without_extracellular
 
         # Load morphology into template
         morphology = ephys.morphologies.NrnFileMorphology(morphology_path, do_replace_axon=False)
@@ -275,9 +276,9 @@ class GilliesSwcModel(StnMorphModel):
         morphology.instantiate(sim=sim, icell=icell)
 
         # Setup biophysical properties
-        ais_diam = 1.4 # nodal diam from McIntyre axon
+        ais_diam = 1.2 # nodal diam from Foust axon
         ais_relative_length = 0.2
-        icell.create_AIS(ais_diam, ais_relative_length, 0, 0.0)
+        icell.create_hillock(ais_diam, ais_relative_length, 0, 0.0)
         icell.del_unused_sections()
         icell.insert_biophys()
 
@@ -345,7 +346,7 @@ class StnMorphType(ephys_pynn.MorphCellType):
         'template_name': 'STN_morph_arcdist',
         'morphology_path': 'placeholder/path',
         'streamlines_path': 'placeholder/path',
-        'axon_class': AxonMcintyre2002,
+        'axon_class': AxonFoust2011,
         'without_extracellular': False,
         'default_GABA_mechanism': 'GABAsyn2',
         'default_GLU_mechanism': 'GLUsyn',
