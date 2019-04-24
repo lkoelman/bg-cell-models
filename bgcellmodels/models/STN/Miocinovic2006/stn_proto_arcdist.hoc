@@ -49,7 +49,7 @@ begintemplate STN_morph_arcdist
     // (myelin, myelinated), (node, nodal)
 
     // Section variables
-    public soma
+    public soma, axon
 
     // Section array variables required by Import3d
     create soma[1], dend[1], apic[1], axon[1] //, myelin[1], node[1]
@@ -60,10 +60,19 @@ begintemplate STN_morph_arcdist
     // 'this' is reserved keyword but must be declared if used
     objref this
 
-    // Other public variables
+    // Cell-specific initial values
     public v_init, cai0, cao0, nai0, nao0, ki0, ko0
+    
+    // Cel template parameters (set manually after init())
     public with_extracellular, max_dist
-    objref fih_ions, fih_states // FInitializeHandlers for ions
+    
+    // Default channel conductances
+    public default_gpas_STh, default_gna_Na, default_gna_NaL
+    public default_gk_KDR, default_gk_Kv31, default_gk_Ih, default_gk_sKCa
+    public default_gcaT_CaT, default_gcaL_HVA, default_gcaN_HVA
+    
+    // FInitializeHandlers for ions
+    objref fih_ions, fih_states
 
     // =========================================================================
     // Public initialization functions
@@ -115,32 +124,65 @@ begintemplate STN_morph_arcdist
             insert Cacum    
                 cai0_Cacum = cai0_ca_ion
             insert CaT
-                gcaT_CaT = my_gcaT_CaT
+                gcaT_CaT = default_gcaT_CaT
             insert HVA
-                gcaL_HVA = my_gcaL_HVA
-                gcaN_HVA = my_gcaN_HVA
+                gcaL_HVA = default_gcaL_HVA
+                gcaN_HVA = default_gcaN_HVA
             insert sKCa 
-                gk_sKCa = my_gk_sKCa
+                gk_sKCa = default_gk_sKCa
             insert KDR  
-                gk_KDR = my_gk_KDR
+                gk_KDR = default_gk_KDR
             insert Kv31
-                gk_Kv31 = my_gk_Kv31
+                gk_Kv31 = default_gk_Kv31
             insert Na   
-                gna_Na = my_gna_Na
+                gna_Na = default_gna_Na
             insert NaL
-                gna_NaL = my_gna_NaL    
+                gna_NaL = default_gna_NaL    
             insert Ih
-                gk_Ih = my_gk_Ih
+                gk_Ih = default_gk_Ih
             insert STh  
-                gpas_STh = my_gpas_STh          
+                gpas_STh = default_gpas_STh          
         
             if (with_extracellular) {
                 insert extracellular xraxial=1e+09 xg=1e+09 xc=0
             }
         }
 
-        forsec basal {
+        // NOTE: Should only be applied to Axon initial segment
+        forsec axonal {
             Ra = 150.2  //Ohm-cm//  //from Gillies 2005
+            cm = 1
+    
+            insert Cacum    
+                cai0_Cacum = cai0_ca_ion
+            insert CaT
+                gcaT_CaT = default_gcaT_CaT
+            insert HVA
+                gcaL_HVA = default_gcaL_HVA
+                gcaN_HVA = default_gcaN_HVA
+            insert sKCa 
+                gk_sKCa = default_gk_sKCa
+            insert KDR  
+                gk_KDR = default_gk_KDR
+            insert Kv31
+                gk_Kv31 = default_gk_Kv31
+            insert Na   
+                gna_Na = default_gna_Na
+            insert NaL
+                gna_NaL = default_gna_NaL    
+            insert Ih
+                gk_Ih = default_gk_Ih
+            insert STh  
+                gpas_STh = default_gpas_STh          
+
+            if (with_extracellular) {
+                insert extracellular xraxial=1e+09 xg=1e+09 xc=0
+            }
+        }
+
+        // Dendritic mechanisms
+        forsec basal {
+            Ra = 150.2
             cm = 1
 
             // conductances for dendrites set at the end of file    
@@ -152,50 +194,18 @@ begintemplate STN_morph_arcdist
             insert KDR  
             insert Kv31
             insert Na   
-                gna_Na = 0.65*1e-7
+                gna_Na = 1e-7
             insert NaL
-                gna_NaL = 0.65*8.1e-6
+                gna_NaL = 8.1e-6
             insert Ih
             insert STh  
-                gpas_STh = my_gpas_STh          
+                gpas_STh = default_gpas_STh          
 
             if (with_extracellular) {
                 insert extracellular xraxial=1e+09 xg=1e+09 xc=0
             }
         }
 
-        // TODO: Should only be applied to Axon initial segment
-        forsec axonal {
-            Ra = 150.2  //Ohm-cm//  //from Gillies 2005
-            cm = 1
-    
-            insert Cacum    
-                cai0_Cacum = cai0_ca_ion
-            insert CaT
-                gcaT_CaT = my_gcaT_CaT
-            insert HVA
-                gcaL_HVA = my_gcaL_HVA
-                gcaN_HVA = my_gcaN_HVA
-            insert sKCa 
-                gk_sKCa = my_gk_sKCa
-            insert KDR  
-                gk_KDR = my_gk_KDR
-            insert Kv31
-                gk_Kv31 = my_gk_Kv31
-            insert Na   
-                gna_Na = my_gna_Na
-            insert NaL
-                gna_NaL = my_gna_NaL    
-            insert Ih
-                gk_Ih = my_gk_Ih
-            insert STh  
-                gpas_STh = my_gpas_STh          
-
-            if (with_extracellular) {
-                insert extracellular xraxial=1e+09 xg=1e+09 xc=0
-            }
-
-        }
 
         // Ion styles from Gillies & Willshaw model
         // NOTE: original cinit was 1, can set to 0 to set on per-cell basis
@@ -334,19 +344,84 @@ begintemplate STN_morph_arcdist
 
 
     /**
-     * Return terminal section of axon
+     * Create axon hillock/initial segment as conical section attached to soma.
+     *
+     * @param   $1 (end_diam) : float
+     *          Diameter that section should taper to
+     *
+     * @pre     assumes there is a single somatic section
+     *
+     * @post    icell.axonal contains single section representing the AIS of
+     *          length (relative_length * somatic_length) attached at point
      */
-//    obfunc axon_terminal_ref() { \
-//        localobj leaf_secs, secref
-//        leaf_secs = new SectionList()
-//        forsec axonal {
-//            secref = new SectionRef()
-//            if (secref.nchild() < 1) {
-//                return secref
-//            }
-//        }
-//        return nil
-//    }
+     proc create_AIS() { \
+        local end_diam, start_diam, ais_length, ais_area, ais_relative_length, \
+              style, soma_area, soma_x, soma_dL, soma_length
+        
+        end_diam = $1
+        ais_relative_length = $2
+        soma_i = $3
+        soma_x = $4     // set to 0 or 1 depending on dendrite location
+
+        // Get diameter at end of somatic section
+        soma_area = 0
+        soma_length = 0
+        forsec somatic {
+            for (x, 0) {
+                soma_area = soma_area + area(x)
+            }
+            soma_length = soma_length + L
+        }
+        soma[soma_i] {
+            start_diam = diam(soma_x)
+        }
+
+        // Create AIS Section
+        // Could directly use pt3dadd(), create points colinear with soma, but
+        // we choose to set basic geometry, and then use define_shape().
+        ais_area = 0
+        axon[0] {
+            nseg = 2
+            L = ais_relative_length * soma_length
+
+            // Set biophysical properties
+            Ra = 150.2
+            cm = 1
+
+            // Create tapering diam
+            diam(0) = start_diam
+            diam(1) = end_diam
+
+            // Add 3D points based on geometry
+            define_shape()
+
+            // Measure AIS area (must be _after_ define_shape())
+            for (x, 0) {
+                // diam(x) = start_diam + x * (end_diam - start_diam)
+                ais_area = ais_area + area(x)
+            }
+
+            // Insert biophysical mechanisms (same as soma)
+            // NOTE: inserted in insert_biophys()
+
+        }
+
+        // Reduce somatic length to compensate for increase of area
+        style = pt3dconst(0) // diam & L affect 3d points
+        soma[0] {
+            soma_dL = ais_area / (PI * start_diam)
+            if (soma_dL <= 0.75 * L) {
+                L = L - soma_dL
+                print "Soma length decreased by ", soma_dL, " to ", L
+            } else {
+                print "Soma will be too small"
+            }
+        }
+        pt3dconst(style) // restore style
+
+        // Connect AIS to soma
+        connect axon[0](0), soma[soma_i](soma_x)
+     }
 
     // =========================================================================
     // Initializers for Hoc FInitializeHandler
@@ -411,24 +486,24 @@ begintemplate STN_morph_arcdist
         
         // Densities at the soma (parameter 'A' in Gillies 2006 Table A1)
         //insert CaT
-        my_gcaT_CaT = 0 //0.001 (mho/cm2)
+        default_gcaT_CaT = 0 //0.001 (mho/cm2)
         //insert HVA
-        my_gcaL_HVA = 9.5e-4 //0.002 (mho/cm2)
-        my_gcaN_HVA = 1.15e-3 //0.012 (mho/cm2)
+        default_gcaL_HVA = 9.5e-4 //0.002 (mho/cm2)
+        default_gcaN_HVA = 1.15e-3 //0.012 (mho/cm2)
         //insert sKCa   
-        my_gk_sKCa = 1.8*6.84e-5 //0.0001 (mho/cm2)
+        default_gk_sKCa = 6.84e-5 //0.0001 (mho/cm2)
         //insert KDR    
-        my_gk_KDR = 3.84e-3 //3.842910637e-03 (mho/cm2)
+        default_gk_KDR = 3.84e-3 //3.842910637e-03 (mho/cm2)
         //insert Kv31
-        my_gk_Kv31 = 1.2*1.34e-2 //0.015 (mho/cm2)
+        default_gk_Kv31 = 1.34e-2 //0.015 (mho/cm2)
         //insert Na 
-        my_gna_Na = 0.75*1.48e-2 //1.0e-7 (mho/cm2)
+        default_gna_Na = 1.483419823e-02  //1.0e-7 (mho/cm2)
         //insert NaL
-        my_gna_NaL = 0.75*1.11e-5 //0.81e-5 (mho/cm2)   
+        default_gna_NaL = 1.108670852e-05 //0.81e-5 (mho/cm2)   
         //insert Ih
-        my_gk_Ih = 1.01e-3 //0.001 (mho/cm2)    
+        default_gk_Ih = 1.01e-3 //0.001 (mho/cm2)    
         //insert STh    
-        my_gpas_STh = 7.84112e-05 //7.84112e-05 (mho/cm2) <0,1e9>
+        default_gpas_STh = 7.84112e-05 //7.84112e-05 (mho/cm2) <0,1e9>
     }
 
 
@@ -446,6 +521,7 @@ begintemplate STN_morph_arcdist
         }
         if (!ncell) {
             apic[0] delete_section()
+            print "Deleted unused apical section."
         }
 
         ncell = 0
@@ -456,6 +532,7 @@ begintemplate STN_morph_arcdist
         }
         if (!ncell) {
             axon[0] delete_section()
+            print "Deleted unused axonal section."
         }
     }
 

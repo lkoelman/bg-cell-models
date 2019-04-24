@@ -113,20 +113,26 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
 
         @post   self.axon contains references to axonal sections.
         """
-        axon_builder = axon_class(logger=logger)
+        axon_builder = axon_class(logger=logger,
+                            without_extracellular=self.without_extracellular)
         tracks_coords = morph_ni.load_streamlines(
                             streamlines_path, max_num=1, min_length=2.0)
         axon_coords = tracks_coords[0]
 
         # Build axon
-        axon_initial_secs = list(self.icell.axonal)
-        axon_terminal_secs = treeutils.leaf_sections(axon_initial_secs[0], subtree=True)
-        assert len(axon_terminal_secs) == 1
-        axon_end_sec = axon_terminal_secs[0]
+        axonal_secs = list(self.icell.axonal)
+        if len(axonal_secs) > 0:
+            # Attach axon to axon stub/AIS if present
+            axon_terminal_secs = treeutils.leaf_sections(axonal_secs[0], subtree=True)
+            assert len(axon_terminal_secs) == 1
+            axon_parent_sec = axon_terminal_secs[0]
+        else:
+            # Attach axon directly to soma
+            axon_parent_sec = self.icell.soma[0]
 
         axon = axon_builder.build_along_streamline(axon_coords,
-                    terminate='nodal_cutoff', interp_method='cartesian',
-                    parent_cell=self.icell, parent_sec=axon_end_sec,
+                    terminate='nodal_cutoff', interp_method='arclength',
+                    parent_cell=self.icell, parent_sec=axon_parent_sec,
                     connection_method='translate_axon_start')
     
         self.axon = axon
@@ -262,13 +268,16 @@ class GilliesSwcModel(StnMorphModel):
         
         # Instantiate template
         self.icell = icell = template_constructor()
-        icell.with_extracellular = 0
+        icell.with_extracellular = not self.without_extracellular
 
         # Load morphology into template
         morphology = ephys.morphologies.NrnFileMorphology(morphology_path, do_replace_axon=False)
         morphology.instantiate(sim=sim, icell=icell)
 
         # Setup biophysical properties
+        ais_diam = 1.4 # nodal diam from McIntyre axon
+        ais_relative_length = 0.2
+        icell.create_AIS(ais_diam, ais_relative_length, 0, 0.0)
         icell.del_unused_sections()
         icell.insert_biophys()
 
@@ -337,6 +346,7 @@ class StnMorphType(ephys_pynn.MorphCellType):
         'morphology_path': 'placeholder/path',
         'streamlines_path': 'placeholder/path',
         'axon_class': AxonMcintyre2002,
+        'without_extracellular': False,
         'default_GABA_mechanism': 'GABAsyn2',
         'default_GLU_mechanism': 'GLUsyn',
     }

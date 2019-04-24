@@ -59,9 +59,10 @@ class AxonMcintyre2002(AxonBuilder):
         """
         Set electrical paramters
         """
-        self.Rho_axial = 0.7e3           # kilo-Ohm-um
+        self.Rho_axial = 0.7e-6          # kilo-Ohm-um
         self.myelin_sheet_cm = 0.1       # uF/cm2/lamella membrane
         self.myelin_sheet_gm = 0.001     # uF/cm2/lamella membrane
+        self.Ra = self.Rho_axial * 1e-4
 
 
     def _set_morpho_params(self):
@@ -136,14 +137,15 @@ class AxonMcintyre2002(AxonBuilder):
                         'vshift': 15,
                         'vtraub': -80,
                     },
-                    'extracellular': {}
+                    'extracellular': {
+                        'xraxial': self.Rpn0,
+                        'xg': 1e10,
+                        'xc': 0.0,
+                    }
                 }, 
                 'passive' : {
-                    'Ra': self.Rho_axial,
+                    'Ra': self.Ra,
                     'cm': 2.0,
-                    'xraxial': self.Rpn0,
-                    'xg': 1e10,
-                    'xc': 0.0,
                 },
                 'morphology' : {
                     'diam': 1.4,
@@ -153,16 +155,17 @@ class AxonMcintyre2002(AxonBuilder):
             'MYSA': {
                 'mechanisms' : {
                     'pas' : {},
-                    'extracellular': {}
+                    'extracellular': {
+                        'xraxial': self.Rpn1,
+                        'xg': self.myelin_sheet_gm / (self.nl*2),
+                        'xc': self.myelin_sheet_cm / (self.nl*2),
+                    }
                 }, 
                 'passive' : {
                     'g_pas': 0.0001,
                     'e_pas': -65,
-                    'Ra': self.Rho_axial,
+                    'Ra': self.Ra,
                     'cm': 2.0,
-                    'xraxial': self.Rpn1,
-                    'xg': self.myelin_sheet_gm / (self.nl*2),
-                    'xc': self.myelin_sheet_cm / (self.nl*2),
                 },
                 'morphology' : {
                     'diam': 1.4,
@@ -177,39 +180,41 @@ class AxonMcintyre2002(AxonBuilder):
                         'vshift': 15,
                     },
                     'pas' : {},
-                    'extracellular': {}
+                    'extracellular': {
+                        'xraxial': self.Rpn2,
+                        'xg': self.myelin_sheet_gm / (self.nl*2),
+                        'xc': self.myelin_sheet_cm / (self.nl*2),
+                    }
                 }, 
                 'passive' : {
                     'g_pas': 0.0001,
                     'e_pas': -60,
-                    'Ra': self.Rho_axial,
+                    'Ra': self.Ra,
                     'cm': 2.0,
-                    'xraxial': self.Rpn2,
-                    'xg': self.myelin_sheet_gm / (self.nl*2),
-                    'xc': self.myelin_sheet_cm / (self.nl*2),
                 },
                 'morphology' : {
                     'diam': 1.6,
-                    'L' : 58.0,
+                    'L' : 10.0,
                 },
             },
             'STIN': {
                 'mechanisms' : {
                     'pas' : {},
-                    'extracellular': {}
+                    'extracellular': {
+                        'xraxial': self.Rpx,
+                        'xg': self.myelin_sheet_gm / (self.nl*2),
+                        'xc': self.myelin_sheet_cm / (self.nl*2),
+                    }
                 }, 
                 'passive' : {
                     'g_pas': 0.0001,
                     'e_pas': -65,
-                    'Ra': self.Rho_axial,
+                    'Ra': self.Ra,
                     'cm': 2.0,
-                    'xraxial': self.Rpx,
-                    'xg': self.myelin_sheet_gm / (self.nl*2),
-                    'xc': self.myelin_sheet_cm / (self.nl*2),
                 },
                 'morphology' : {
                     'diam': 1.6,
-                    'L': 58.0,
+                    'L': 29.0,
                 },
             },
         }
