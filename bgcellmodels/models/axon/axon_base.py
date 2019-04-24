@@ -38,6 +38,9 @@ class AxonBuilder(object):
     Attributes
     ----------
 
+    @attr   'initial_comp_sequence' : list(str)
+            Sequence of compartment types that define initial structure of axon
+
     @attr   'repeating_comp_sequence' : list(str)
             Sequence of compartment types that define repeating structure of axon
 
@@ -321,6 +324,58 @@ class AxonBuilder(object):
         return walk_passed, stop_pt, tangent
 
 
+    def _connect_axon(self, parent_cell, parent_sec, connection_method,
+                      tolerance_mm=1e-3):
+        """
+        Ensure axon is connected to parent cell, both geometrically (in 3D space)
+        and electrically (in NEURON).
+
+        @see    build_along_streamline.
+        """
+        # Get connection point on parent cell (assume last 3D point)
+        n3d = int(h.n3d(sec=parent_sec))
+        parent_coords = np.array([h.x3d(n3d-1, sec=parent_sec),
+                                  h.y3d(n3d-1, sec=parent_sec),
+                                  h.z3d(n3d-1, sec=parent_sec)])
+
+        # Connect axon according to method
+        if connection_method == 'orient_coincident':
+            # Check which end of streamline is coincident with connection
+            # point and build in appropriate direction
+            if np.allclose(parent_coords, self.streamline_pts[-1], atol=tolerance_mm):
+                self.streamline_pts = self.streamline_pts[::-1] # reverse
+            elif not np.allclose(parent_coords, self.streamline_pts[0], atol=tolerance_mm):
+                raise ValueError("Start or end of streamline must be coincident"
+                        "with endpoint of parent section ({})".format(
+                            parent_coords))
+
+        elif connection_method.startswith('translate_axon'):
+            # Translate axon start or end to connection point
+            if connection_method.endswith('start'):
+                streamline_origin = self.streamline_pts[0]
+            elif connection_method.endswith('end'):
+                streamline_origin = self.streamline_pts[-1]
+            else:
+                raise ValueError(connection_method)
+
+            translate_vec = parent_coords - streamline_origin
+            self.streamline_pts = self.streamline_pts - translate_vec # broadcasts
+
+        elif connection_method.startswith('translate_cell'):
+            # Translate cell so that connection point is coincident with
+            # start or end of streamline
+            if connection_method.endswith('start'):
+                target_pt = self.streamline_pts[0]
+            elif connection_method.endswith('end'):
+                target_pt = self.streamline_pts[-1]
+            else:
+                raise ValueError(connection_method)
+
+            translate_vec = target_pt - parent_coords
+            translate_mat = np.eye(4)
+            translate_mat[:3,3] = translate_vec
+            morph_3d.transform_sections(parent_cell.all, translate_mat)
+
 
     def build_along_streamline(self, streamline_coords, terminate='nodal_cutoff',
                                tolerance_mm=1e-6, interp_method='cartesian',
@@ -376,55 +431,12 @@ class AxonBuilder(object):
         # points using interpolation.
         
 
-        streamline_coords = np.array(streamline_coords)
+        self.streamline_pts = np.array(streamline_coords)
         if parent_sec is not None:
-
-            # Get connection point on parent cell (assume last 3D point)
-            n3d = int(h.n3d(sec=parent_sec))
-            parent_coords = np.array([h.x3d(n3d-1, sec=parent_sec),
-                                      h.y3d(n3d-1, sec=parent_sec),
-                                      h.z3d(n3d-1, sec=parent_sec)])
-
-            # Connect axon according to method
-            if connection_method == 'orient_coincident':
-                # Check which end of streamline is coincident with connection
-                # point and build in appropriate direction
-                if np.allclose(parent_coords, streamline_coords[-1], atol=tolerance_mm):
-                    streamline_coords = streamline_coords[::-1] # reverse
-                elif not np.allclose(parent_coords, streamline_coords[0], atol=tolerance_mm):
-                    raise ValueError("Start or end of streamline must be coincident"
-                            "with endpoint of parent section ({})".format(
-                                parent_coords))
-
-            elif connection_method.startswith('translate_axon'):
-                # Translate axon start or end to connection point
-                if connection_method.endswith('start'):
-                    streamline_origin = streamline_coords[0]
-                elif connection_method.endswith('end'):
-                    streamline_origin = streamline_coords[-1]
-                else:
-                    raise ValueError(connection_method)
-
-                translate_vec = parent_coords - streamline_origin
-                streamline_coords = streamline_coords - translate_vec # broadcasts
-
-            elif connection_method.startswith('translate_cell'):
-                # Translate cell so that connection point is coincident with
-                # start or end of streamline
-                if connection_method.endswith('start'):
-                    target_pt = streamline_coords[0]
-                elif connection_method.endswith('end'):
-                    target_pt = streamline_coords[-1]
-                else:
-                    raise ValueError(connection_method)
-
-                translate_vec = target_pt - parent_coords
-                translate_mat = np.eye(4)
-                translate_mat[:3,3] = translate_vec
-                morph_3d.translate_sections(parent_cell.all, translate_mat)
+            self._connect_axon(parent_cell, parent_sec, connection_method,
+                               tolerance_mm=1e-3)
 
         # Save streamline info
-        self.streamline_pts = streamline_coords
         self.num_streamline_pts = len(self.streamline_pts)
         self._set_streamline_length()
         
@@ -436,7 +448,7 @@ class AxonBuilder(object):
         
         self.interp_pts = [self.streamline_pts[0]]        # interpolated points
         self.last_coord = self.streamline_pts[0]
-        self.last_tangent = normvec(streamline_coords[1] - streamline_coords[0])
+        self.last_tangent = normvec(self.streamline_pts[1] - streamline_coords[0])
         self.built_length = 0.0
 
         # Walk to its endpoint
@@ -526,7 +538,7 @@ class AxonBuilder(object):
             remaining_length = self.streamline_length - self.built_length
 
             if terminate == 'any_extend':
-                if self.num_passed >= len(streamline_coords):
+                if self.num_passed >= len(self.streamline_pts):
                     break
             elif terminate == 'any_cutoff':
                 next_type = self.repeating_comp_sequence[i_compartment % n_repeating]
@@ -538,7 +550,7 @@ class AxonBuilder(object):
                 if next_node_dist > remaining_length:
                     break
             elif terminate == 'nodal_extend' and sec_type == self.nodal_compartment_type:
-                if self.num_passed >= len(streamline_coords):
+                if self.num_passed >= len(self.streamline_pts):
                     break
 
             # Sanity check: is axon too long?

@@ -36,6 +36,7 @@ NOTES
 from __future__ import print_function
 import time
 import os
+import cPickle as pickle
 from datetime import datetime
 
 import numpy as np
@@ -50,7 +51,7 @@ WITH_MPI = mpi_size > 1
 # PyNN library
 import pyNN.neuron as sim
 from pyNN import space
-
+from pyNN.parameters import ArrayParameter, Sequence
 from pyNN.random import RandomDistribution
 from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
@@ -160,7 +161,7 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
                        annotations={'script_name': __file__})
 
 
-def run_simple_net(
+def simulate_model(
         pop_scale       = 1.0,
         sim_dur         = 500.0,
         export_locals   = True,
@@ -168,6 +169,9 @@ def run_simple_net(
         output          = None,
         report_progress = None,
         config          = None,
+        morph_config    = None,
+        axon_coordinates = None,
+        morphologies_dir = None,
         seed            = None,
         calculate_lfp   = None,
         dopamine_depleted = None,
@@ -186,6 +190,10 @@ def run_simple_net(
                 Dictionary with one entry per population label and one
                 key 'simulation' for simulation parameters.
     """
+    ############################################################################
+    # READ CONFIGURATIONS
+    ############################################################################
+
 
     ############################################################################
     # SIMULATOR SETUP
@@ -217,12 +225,16 @@ def run_simple_net(
     # - The default RNG for Connectors is NumpyRNG(seed=151985012)
     if seed is None:
         seed = config['simulation']['shared_rng_seed']
+    
+    # Make RNG seeds accessible
     sim.state.shared_rng_seed = shared_seed = seed # original: 151985012
     sim.state.rank_rng_seed = rank_seed = sim.state.native_rng_baseseed + sim.state.mpi_rank
+    
     # RNGs that can be passed to PyNN objects like Connector subclasses
     # Store them on simulator.state so we can access from other custom classes
     sim.state.shared_rng = shared_rng_pynn = sim.NumpyRNG(seed=shared_seed)
     sim.state.rank_rng = rank_rng_pynn = sim.NumpyRNG(seed=rank_seed)
+    
     # Raw Numpy RNGs (numpy.random.RandomState) to be used in our own functions
     shared_rng = shared_rng_pynn.rng
     rank_rng = rank_rng_pynn.rng
@@ -306,6 +318,12 @@ def run_simple_net(
             connector.rng = rng
         return connector
 
+    def get_axon_coordinates(axon_id):
+        return axon_coordinates[axon_id]
+
+    def get_morphology_path(morphology_id):
+        return os.path.join(morphologies_dir, morphology_id + '.swc')
+
 
     # LFP calculation: command line args get priority over config file
     if calculate_lfp is None:
@@ -365,20 +383,41 @@ def run_simple_net(
 
     #===========================================================================
     # STN POPULATION
-    stn_ncell_base, stn_dx, = get_pop_parameters('STN',
-                                'base_population_size', 'grid_dx')
-    stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
-    stn_ncell_biophys = int(stn_ncell_base * pop_scale)
+
+    #---------------------------------------------------------------------------
+    # Define cell model
+    
 
     # TODO: set electrode coordinates, load morphologies
+    # TODO: wrap in Sequence/ArrayParameter if not working
     # see http://neuralensemble.org/docs/PyNN/parameters.html
-    # - the parameters specifying morphology, axon, transform must be list
-    # - set using Populatio.set(param=list(...)) or as param of cell type
+
+    cell_morph_defs = morph_config['cells']
+    cells_transforms = [np.array(cell['transform'])for cell in cell_morph_defs]
+    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_morph_defs]
+    cells_morph_paths = [get_morphology_path(cell['morphology']) for cell in cell_morph_defs]
+
+    # Load default parameters from sim config
     stn_cell_params = get_cell_parameters('STN')
+
+    # Add parameters from other soruces
     stn_cell_params['calculate_lfp'] = calculate_lfp
+    stn_cell_params['morphology_path'] = cells_morph_paths
+    stn_cell_params['transform'] = cells_transforms
+    stn_cell_params['streamline_coordinates'] = cells_axon_coords
 
     
     stn_type = miocinovic.StnMorphType(**stn_cell_params)
+
+    #---------------------------------------------------------------------------
+    # Define population
+
+    stn_ncell_base, stn_dx, = get_pop_parameters('STN',
+                                'base_population_size', 'grid_dx')
+
+    # Grid structure for calculating connectivity
+    stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
+    stn_ncell_biophys = int(stn_ncell_base * pop_scale)
 
     vinit = stn_type.default_initial_values['v']
     initial_values={
@@ -864,10 +903,10 @@ if __name__ == '__main__':
                         dest='config_file',
                         help='Configuration file in JSON format')
 
-    parser.add_argument('-cc', '--circuitconfig', nargs=1, type=str,
-                        metavar='/path/to/circuit_config.json',
-                        dest='circuit_config',
-                        help='Circuit configuration file')
+    parser.add_argument('-c3d', '--config3d', nargs=1, type=str,
+                        metavar='/path/to/circuit_config',
+                        dest='config3d_root',
+                        help='Directory containing circuit configuration')
 
     parser.add_argument('-id', '--identifier', nargs=1, type=str,
                         metavar='<job identifer>',
@@ -884,9 +923,16 @@ if __name__ == '__main__':
     parsed_dict['config'] = sim_config
 
     # Parse 3D circuit config file
-    circuit_conf_path = os.path.expanduser(parsed_dict.pop('circuit_config')[0])
-    parsed_dict['circuit_config'] = fileutils.parse_json_file(
-                                        circuit_conf_path, nonstrict=True)
+    conf3d_root = os.path.expanduser(parsed_dict.pop('config3d_root')[0])
+    conf3d_circuit = os.path.join(conf3d_root)
+    conf3d_streamlines = os.path.join(conf3d_root, 'axons', 'axon_coordinates.pkl')
+    conf3d_morph_dir = os.path.join(conf3d_root, 'morphologies')
+    with open(conf3d_streamlines, 'rb') as file:
+        axon_coordinates = pickle.read(file)
+    
+    parsed_dict['morph_config'] = fileutils.parse_json_file(conf3d_circuit, nonstrict=True)
+    parsed_dict['axon_coordinates'] = axon_coordinates
+    parsed_dict['morphologies_dir'] = conf3d_morph_dir
 
     # Post process output specifier
     out_basedir = parsed_dict['output']
@@ -928,4 +974,4 @@ if __name__ == '__main__':
         shutil.copy2(config_file, os.path.join(out_fulldir, 'sim_config.json'))
 
     # Run the simulation
-    run_simple_net(**parsed_dict)
+    simulate_model(**parsed_dict)

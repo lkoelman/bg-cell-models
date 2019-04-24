@@ -3,10 +3,13 @@ import math, logging
 import numpy as np
 import neuron
 import bluepyopt.ephys as ephys
+
+# PyNN imports
 import pyNN.neuron
+from pyNN.parameters import ArrayParameter, Sequence
 
 from bgcellmodels.common import electrotonic, nrnutil, treeutils, logutils
-from bgcellmodels.morphology import morph_ni
+from bgcellmodels.morphology import morph_3d
 from bgcellmodels.models.STN import GilliesWillshaw as gillies
 from bgcellmodels.models.STN import Miocinovic2006 as miocinovic
 # from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002
@@ -108,7 +111,7 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
             self._init_axon(axon_class, streamlines_path)
 
 
-    def _init_axon(self, axon_class, streamlines_path):
+    def _init_axon(self, axon_class):
         """
         Create and append axon.
 
@@ -116,9 +119,6 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         """
         axon_builder = axon_class(logger=logger,
                             without_extracellular=self.without_extracellular)
-        tracks_coords = morph_ni.load_streamlines(
-                            streamlines_path, max_num=1, min_length=2.0)
-        axon_coords = tracks_coords[0]
 
         # Build axon
         axonal_secs = list(self.icell.axonal)
@@ -131,12 +131,18 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
             # Attach axon directly to soma
             axon_parent_sec = self.icell.soma[0]
 
-        axon = axon_builder.build_along_streamline(axon_coords,
+        axon = axon_builder.build_along_streamline(
+                    self.streamline_coordinates,
                     terminate='nodal_cutoff', interp_method='arclength',
                     parent_cell=self.icell, parent_sec=axon_parent_sec,
                     connection_method='translate_axon_start')
     
         self.axon = axon
+
+        # Change source for NetCons (see pyNN.neuron.simulator code)
+        terminal_sec = list(self.icell.axonal)[-1]
+        self.source_section = terminal_sec
+        self.source = terminal_sec(0.5)._ref_v
 
 
     def _post_build(self, population, pop_index):
@@ -258,7 +264,6 @@ class GilliesSwcModel(StnMorphModel):
         # Get arguments from __init__
         template_name = self.template_name
         morphology_path = self.morphology_path
-        streamlines_path = self.streamlines_path
         axon_class = self.axon_class # e.g. AxonMcintyre2002
         if sim is None:
             sim = ephys_pynn.ephys_sim_from_pynn()
@@ -286,9 +291,13 @@ class GilliesSwcModel(StnMorphModel):
         # distributions from file.
         self._init_gbar()
 
+        # Transform morphology
+        if len(self.transform) > 0 and not np.allclose(self.transform, np.eye(4)):
+            morph_3d.transform_sections(icell.all, self.transform)
+
         # Create and append axon
-        if streamlines_path is not None:
-            self._init_axon(axon_class, streamlines_path)
+        if len(self.streamline_coordinates) > 0:
+            self._init_axon(axon_class)
 
 
     def _init_gbar(self):
@@ -318,15 +327,20 @@ class GilliesSwcModel(StnMorphModel):
                     # for seg_x, gbar_val in xvals_gvals:
                     #     setattr(sec(seg_x), gbar_name, gbar_val)
 
+        # Increase persistent Na current to compensate for axon Zin
+        for sec in list(self.icell.somatic) + [self.icell.axon[0]]:
+            for seg in sec:
+                seg.gna_NaL = 2.0 * seg.gna_NaL
+
 
 class StnMorphType(ephys_pynn.MorphCellType):
     """
     Cell type associated with a PyNN population.
     """
+    model = GilliesSwcModel
 
-    model = StnMorphModel
-
-    # NOTE: default_parameters is used to make 'schema' for checking & converting datatypes
+    # NOTE: default_parameters is used to make 'schema' for checking and 
+    #       converting datatypes. It supports only basic numpy-comatible types.
     default_parameters = {
         # 'calculate_lfp': False,
         # 'lfp_sigma_extracellular': 0.3,
@@ -338,14 +352,16 @@ class StnMorphType(ephys_pynn.MorphCellType):
         'max_num_gpe_syn': 19,
         'max_num_ctx_syn': 30,
         'max_num_stn_syn': 10,
+        'transform': ArrayParameter([]),
+        'streamline_coordinates': Sequence([]),
     }
 
-    # NOTE: extra_parameters are passed to model.__init__(), can contain strings,
-    #       but cannot be passed as argument to cell type unless hack below is used
+    # NOTE: extra_parameters supports non-numpy types. They are are passed to
+    #       model.__init__(), but nromally cannot be passed as argument to 
+    #       cell type. This is solved by the fix below in __init__()
     extra_parameters = {
         'template_name': 'STN_morph_arcdist',
         'morphology_path': 'placeholder/path',
-        'streamlines_path': 'placeholder/path',
         'axon_class': AxonFoust2011,
         'without_extracellular': False,
         'default_GABA_mechanism': 'GABAsyn2',
