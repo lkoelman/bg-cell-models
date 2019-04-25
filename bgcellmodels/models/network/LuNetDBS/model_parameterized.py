@@ -7,23 +7,22 @@ Parameterized model construction based on configuration file / dictionary.
 
 @author     Lucas Koelman
 
-@date       31/05/2018
+@date       25/04/2019
 
-@see        PyNN manual for building networks:
-                http://neuralensemble.org/docs/PyNN/building_networks.html
-            PyNN examples of networks:
-                https://github.com/NeuralEnsemble/PyNN/tree/master/examples
 
 USAGE
 -----
 
-To run using MPI, use the `mpirun` or `mpiexec` command like:
+Run distributed using MPI:
 
-`mpirun -n 6 python model_parameterized.py --scale 0.5 --dur 3000 --dnorm --no-lfp --seed 888 --transient-period 0.0 --write-interval 3000 -id CALDNORM --outdir ~/storage/BBB_LuNetStnGpe --config configs/StnGpe_template_syn-V8.json 2>&1 | tee CALDNORM.log`
+mpirun -n 6 python model_parameterized.py --scale 0.5 --dur 3000 --dnorm --no-lfp --seed 888 --transient-period 0.0 --write-interval 3000 -id CALDNORM --outdir ~/storage/BBB_LuNetStnGpe --config configs/StnGpe_template_syn-V8.json 2>&1 | tee CALDNORM.log
 
-To run from an IPython shell, use the %run magic function like:
 
-`%run model_parameterized.py --scale 0.5 --dd --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --config configs/syn-V18_template.json`
+Run single-threaded using IPython:
+
+
+%run model_parameterized.py --scale 0.5 --dd --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_gillies-x5.json --axonfile axon_coords_python2.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
+
 
 
 NOTES
@@ -169,14 +168,15 @@ def simulate_model(
         output          = None,
         report_progress = None,
         config          = None,
-        morph_config    = None,
+        cell_config     = None,
         axon_coordinates = None,
-        morphologies_dir = None,
+        morph_dir       = None,
         seed            = None,
         calculate_lfp   = None,
         dopamine_depleted = None,
         transient_period = None,
-        max_write_interval = None):
+        max_write_interval = None,
+        **kwargs):
     """
     Run a simple network consisting of an STN and GPe cell population
     that are reciprocally connected.
@@ -322,7 +322,7 @@ def simulate_model(
         return axon_coordinates[axon_id]
 
     def get_morphology_path(morphology_id):
-        return os.path.join(morphologies_dir, morphology_id + '.swc')
+        return os.path.join(morph_dir, morphology_id + '.swc')
 
 
     # LFP calculation: command line args get priority over config file
@@ -392,7 +392,7 @@ def simulate_model(
     # TODO: wrap in Sequence/ArrayParameter if not working
     # see http://neuralensemble.org/docs/PyNN/parameters.html
 
-    cell_morph_defs = morph_config['cells']
+    cell_morph_defs = cell_config['cells']
     cells_transforms = [np.array(cell['transform'])for cell in cell_morph_defs]
     cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_morph_defs]
     cells_morph_paths = [get_morphology_path(cell['morphology']) for cell in cell_morph_defs]
@@ -417,7 +417,7 @@ def simulate_model(
 
     # Grid structure for calculating connectivity
     stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
-    stn_ncell_biophys = int(stn_ncell_base * pop_scale)
+    stn_ncell_biophys = len(cell_config['cells']) # int(stn_ncell_base * pop_scale)
 
     vinit = stn_type.default_initial_values['v']
     initial_values={
@@ -441,17 +441,11 @@ def simulate_model(
         pop_stn_surrogate = Population(ncell_surrogate,
                                        sim.SpikeSourcePoisson(rate=surr_rate),
                                        label='STN.surrogate')
-    else:
-        pop_stn_surrogate = None
-
-    #---------------------------------------------------------------------------
-    # STN Assembly (Biophys + Surrogate)
-
-    if pop_stn_surrogate is None:
         asm_stn = sim.Assembly(pop_stn, pop_stn_surrogate,
                                label='STN.all')
     else:
         asm_stn = sim.Assembly(pop_stn, label='STN.all')
+        
     stn_pop_size = asm_stn.size
 
     #===========================================================================
@@ -898,41 +892,73 @@ if __name__ == '__main__':
                         help='Report progress periodically to progress file')
     parser.set_defaults(report_progress=False)
 
-    parser.add_argument('-c', '--config', nargs=1, type=str,
-                        metavar='/path/to/config.json',
-                        dest='config_file',
-                        help='Configuration file in JSON format')
-
-    parser.add_argument('-c3d', '--config3d', nargs=1, type=str,
-                        metavar='/path/to/circuit_config',
-                        dest='config3d_root',
-                        help='Directory containing circuit configuration')
-
     parser.add_argument('-id', '--identifier', nargs=1, type=str,
                         metavar='<job identifer>',
                         dest='job_id',
                         help='Job identifier to tag the simulation')
 
+    parser.add_argument('-dc', '--configdir', nargs=1, type=str,
+                        metavar='/path/to/circuit_config',
+                        dest='config_root',
+                        help='Directory containing circuit configuration.'
+                             ' All other configuration files will be considered'
+                             ' relative to this directory if they consist only'
+                             ' of a filename.')
+
+    parser.add_argument('-cs', '--simconfig', nargs=1, type=str,
+                        metavar='sim_config.json',
+                        dest='sim_config_file',
+                        help='Simulation configuration (JSON file).')
+
+    parser.add_argument('-cc', '--cellconfig', nargs=1, type=str,
+                        metavar='cell_config.json',
+                        dest='cell_config_file',
+                        help='Cell configuration file (pickle file).')
+
+    parser.add_argument('-ca', '--axonfile', nargs=1, type=str,
+                        metavar='/path/to/axon_coordinates.pkl',
+                        dest='axon_coord_file',
+                        help='Axon coordiantes file (pickle file).')
+
+    parser.add_argument('-dm', '--morphdir', nargs=1, type=str,
+                        default='morphologies',
+                        metavar='/path/to/morphologies_dir',
+                        dest='morph_dir',
+                        help='Morphologies directory.')
+
+    
+
+    
     args = parser.parse_args() # Namespace object
     parsed_dict = vars(args) # Namespace to dict
 
-    # Parse config JSON file to dict
-    config_file = os.path.expanduser(parsed_dict.pop('config_file')[0])
-    config_name, ext = os.path.splitext(os.path.basename(config_file))
-    sim_config = fileutils.parse_json_file(config_file, nonstrict=True)
-    parsed_dict['config'] = sim_config
+    # Parse config files
+    config_root = os.path.expanduser(parsed_dict.pop('config_root')[0])
 
-    # Parse 3D circuit config file
-    conf3d_root = os.path.expanduser(parsed_dict.pop('config3d_root')[0])
-    conf3d_circuit = os.path.join(conf3d_root)
-    conf3d_streamlines = os.path.join(conf3d_root, 'axons', 'axon_coordinates.pkl')
-    conf3d_morph_dir = os.path.join(conf3d_root, 'morphologies')
-    with open(conf3d_streamlines, 'rb') as file:
-        axon_coordinates = pickle.read(file)
-    
-    parsed_dict['morph_config'] = fileutils.parse_json_file(conf3d_circuit, nonstrict=True)
-    parsed_dict['axon_coordinates'] = axon_coordinates
-    parsed_dict['morphologies_dir'] = conf3d_morph_dir
+    # Default parent directory of each configuration file
+    default_dirs = {
+        'morph_dir': config_root,
+        'sim_config_file': os.path.join(config_root, 'circuits'),
+        'cell_config_file': os.path.join(config_root, 'cells'),
+        'axon_coord_file': os.path.join(config_root, 'axons'),
+    }
+    # Locate each configuration file
+    for conf, parent_dir in default_dirs.items():
+        conf_filedir, conf_filename = os.path.split(parsed_dict[conf][0])
+        if conf_filedir == '':
+            conf_filepath = os.path.join(parent_dir, conf_filename)
+        else:
+            conf_filepath = os.path.join(os.path.expanduser(conf_filedir), conf_filename)
+        parsed_dict[conf] = conf_filepath
+
+    # Read configuration files
+    parsed_dict['config'] = fileutils.parse_json_file(
+                            parsed_dict['sim_config_file'], nonstrict=True)
+    parsed_dict['cell_config'] = fileutils.parse_json_file(
+                            parsed_dict['cell_config_file'], nonstrict=True)
+    with open(parsed_dict['axon_coord_file'], 'rb') as axon_file:
+        parsed_dict['axon_coordinates'] = pickle.load(axon_file)
+
 
     # Post process output specifier
     out_basedir = parsed_dict['output']
@@ -944,6 +970,7 @@ if __name__ == '__main__':
 
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames
+    config_name, ext = os.path.splitext(os.path.basename(parsed_dict['sim_config_file']))
     out_subdir = 'LuNetStnGpe_{stamp}_job-{job_id}_{config_name}'.format(
                                             stamp=timestamp,
                                             job_id=job_id,
@@ -971,7 +998,10 @@ if __name__ == '__main__':
     # Copy config file to output directory
     if mpi_rank == 0:
         import shutil
-        shutil.copy2(config_file, os.path.join(out_fulldir, 'sim_config.json'))
+        shutil.copytree(config_root,
+                os.path.join(out_fulldir, 'simconfig'))
+        shutil.copy2(parsed_dict['sim_config_file'],
+                os.path.join(out_fulldir, 'simconfig', 'sim_config.json'))
 
     # Run the simulation
     simulate_model(**parsed_dict)

@@ -23,9 +23,10 @@ class Population(NrnPopulation):
         """
         Initialize population and append to class variable 'all_populations'.
         """
+        self.pop_gid = len(Population.all_populations)
         super(Population, self).__init__(*args, **kwargs)
         Population.all_populations.append(self)
-        self.pop_gid = len(Population.all_populations)
+        
 
 
     @NrnPopulation.positions.setter

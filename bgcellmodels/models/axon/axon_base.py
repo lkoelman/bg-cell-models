@@ -554,7 +554,6 @@ class AxonBuilder(object):
                     break
 
             # Sanity check: is axon too long?
-            self.debug("Built {}/{} mm.".format(self.built_length, self.streamline_length))
             if i_compartment >= MAX_NUM_COMPARTMENTS-1:
                 raise ValueError("Axon too long.")
             elif i_compartment >= 1.1 * est_num_comp:
@@ -565,7 +564,7 @@ class AxonBuilder(object):
 
         # Add to parent cell
         if parent_cell is not None:
-            # FIXME: refs to sections are not kept alive by appending them
+            # NOTE: refs to sections are not kept alive by appending them
             # to one of the the instantiated template's (icell's) SectionList.
             # There does not seem a way to store newly created sections
             # on the instantiated template (icell) from within python in a way

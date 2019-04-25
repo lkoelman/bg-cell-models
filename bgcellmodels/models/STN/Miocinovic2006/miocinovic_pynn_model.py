@@ -6,7 +6,7 @@ import bluepyopt.ephys as ephys
 
 # PyNN imports
 import pyNN.neuron
-from pyNN.parameters import ArrayParameter, Sequence
+from pyNN.parameters import ArrayParameter
 
 from bgcellmodels.common import electrotonic, nrnutil, treeutils, logutils
 from bgcellmodels.morphology import morph_3d
@@ -54,6 +54,8 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         
         # Make parameters accessible as attributes
         for param_name, param_value in kwargs.iteritems():
+            if isinstance(param_value, ArrayParameter):
+                param_value = param_value.value
             if param_name in cell_param_names:
                 setattr(self, param_name, param_value)
             else:
@@ -261,23 +263,20 @@ class GilliesSwcModel(StnMorphModel):
         """
         Instantiate cell in simulator.
         """
-        # Get arguments from __init__
-        template_name = self.template_name
-        morphology_path = self.morphology_path
-        axon_class = self.axon_class # e.g. AxonMcintyre2002
         if sim is None:
             sim = ephys_pynn.ephys_sim_from_pynn()
 
         # Get the Hoc template
-        miocinovic.load_template(template_name) # xopen -> loads once
-        template_constructor = getattr(h, template_name)
+        miocinovic.load_template(self.template_name) # xopen -> loads once
+        template_constructor = getattr(h, self.template_name)
         
         # Instantiate template
         self.icell = icell = template_constructor()
         icell.with_extracellular = not self.without_extracellular
 
         # Load morphology into template
-        morphology = ephys.morphologies.NrnFileMorphology(morphology_path, do_replace_axon=False)
+        morphology = ephys.morphologies.NrnFileMorphology(
+                        str(self.morphology_path), do_replace_axon=False)
         morphology.instantiate(sim=sim, icell=icell)
 
         # Setup biophysical properties
@@ -297,7 +296,7 @@ class GilliesSwcModel(StnMorphModel):
 
         # Create and append axon
         if len(self.streamline_coordinates) > 0:
-            self._init_axon(axon_class)
+            self._init_axon(self.axon_class)
 
 
     def _init_gbar(self):
@@ -340,30 +339,30 @@ class StnMorphType(ephys_pynn.MorphCellType):
     model = GilliesSwcModel
 
     # NOTE: default_parameters is used to make 'schema' for checking and 
-    #       converting datatypes. It supports only basic numpy-comatible types.
+    #       converting datatypes. It supports only basic numpy-compatible types.
     default_parameters = {
-        # 'calculate_lfp': False,
-        # 'lfp_sigma_extracellular': 0.3,
+        'calculate_lfp': False,
+        'lfp_sigma_extracellular': 0.3,
         # 'lfp_electrode_x': 100.0,
         # 'lfp_electrode_y': 100.0,
         # 'lfp_electrode_z': 100.0,
-        # 'tau_m_scale': 1.0,
-        # 'membrane_noise_std': 0.0,
+        'membrane_noise_std': 0.0,
         'max_num_gpe_syn': 19,
         'max_num_ctx_syn': 30,
         'max_num_stn_syn': 10,
+        'morphology_path': np.array('placeholder/path'), # workaround for strings
         'transform': ArrayParameter([]),
-        'streamline_coordinates': Sequence([]),
+        'streamline_coordinates': ArrayParameter([]), # Sequence([])
+        'without_extracellular': False,
     }
 
-    # NOTE: extra_parameters supports non-numpy types. They are are passed to
-    #       model.__init__(), but nromally cannot be passed as argument to 
-    #       cell type. This is solved by the fix below in __init__()
+    # NOTE: extra_parameters supports non-numpy types. 
+    #       - They are are passed to model.__init__()
+    #       - using fix below, they can be passed as argument to cell type 
+    #       - You still cannot pass arrays of values (one value per cell) 
     extra_parameters = {
         'template_name': 'STN_morph_arcdist',
-        'morphology_path': 'placeholder/path',
         'axon_class': AxonFoust2011,
-        'without_extracellular': False,
         'default_GABA_mechanism': 'GABAsyn2',
         'default_GLU_mechanism': 'GLUsyn',
     }
