@@ -10,6 +10,7 @@ from pyNN.parameters import ArrayParameter
 
 from bgcellmodels.common import electrotonic, nrnutil, treeutils, logutils
 from bgcellmodels.morphology import morph_3d
+from bgcellmodels import emfield
 from bgcellmodels.models.STN import GilliesWillshaw as gillies
 from bgcellmodels.models.STN import Miocinovic2006 as miocinovic
 # from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002
@@ -112,6 +113,9 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         if streamlines_path is not None:
             self._init_axon(axon_class, streamlines_path)
 
+        # Init extracellular stimulation & recording
+        self._init_emfield()
+
 
     def _init_axon(self, axon_class):
         """
@@ -155,6 +159,31 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         @override   EphysModelWrapper._post_build()
         """
         self._init_memb_noise(population, pop_index)
+
+
+    def _init_emfield(self):
+        # Insert mechanism that mediates between extracellular variables and
+        # recording & stimulation routines.
+        for sec in self.icell.all:
+            sec.insert('xtra')
+
+        # Calculate coordinates of each compartment's (segment) center
+        h.xtra_segment_coords_from3d(self.icell.all)
+        h.xtra_setpointers()
+
+        x_elec, y_elec, z_elec = self.electrode_coordinates_um
+        # h.xtra_set_transfer_impedances_analytical(
+        #     self.icell.all, self.rho_extracellular, x_elec, y_elec, z_elec)
+
+        transfer_impedance_generator = self.make_impedance_func(
+            self.electrode_coordinates_um, self.rho_extracellular_ohm_cm)
+        emfield.xtra_set_transfer_impedance(transfer_impedance_generator)
+
+        # TODO: set up stimulation in main script (see stim.hoc)
+
+        # TODO: set up recording functions, see LfpTracker. Except calculation
+        #       doesn't need to happen every timestep, only at recording time
+        #       => modify xtra_summator
 
 
     def _init_memb_noise(self, population, pop_index):
@@ -342,10 +371,8 @@ class StnMorphType(ephys_pynn.MorphCellType):
     #       converting datatypes. It supports only basic numpy-compatible types.
     default_parameters = {
         'calculate_lfp': False,
-        'lfp_sigma_extracellular': 0.3,
-        # 'lfp_electrode_x': 100.0,
-        # 'lfp_electrode_y': 100.0,
-        # 'lfp_electrode_z': 100.0,
+        'electrode_coordinates_um' : ArrayParameter([]),
+        # 'rho_extracellular_ohm_cm' : 0.0,
         'membrane_noise_std': 0.0,
         'max_num_gpe_syn': 19,
         'max_num_ctx_syn': 30,

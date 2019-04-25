@@ -619,6 +619,90 @@ class PynnCellModelBase(object):
             return secs
 
 
+    def __getattr__(self, name):
+        """
+        Override __getattr__ to support dynamic properties that are not
+        explicitly declared.
+        
+        The following dynamic attributes are supported:
+        
+            - scale factors for NEURON RAMGE variables
+
+        @pre    Subclass must define attribute 'rangevar_names'
+
+        @note   __getattr__ is called as last resort and the default behavior
+                is to raise AttributeError
+        """
+        matches_scale_factor = re.search(r'^(\w+)_scale$', name)
+        if (matches_scale_factor is not None) and (any(
+            [v.startswith(matches_scale_factor.groups()[0]) for v in self.rangevar_names])):
+        
+            # search for NEURON RANGE variable to be scaled
+            varname = matches_scale_factor.groups()[0]
+            private_attr_name = '_' + varname + '_scale'
+
+            # Only if it has been scaled before does the scale attribute exist
+            if not hasattr(self, private_attr_name):
+                return 1.0 # not scaled
+            else:
+                # Call will bypass this method if attribute exists
+                return getattr(self, private_attr_name)
+        else:
+            # return super(EphysModelWrapper, self).__getattr__(name)
+            # raise AttributeError
+            return self.__getattribute__(name)
+
+
+    def __setattr__(self, name, value):
+        """
+        Override __setattr__ to support dynamic properties.
+        
+        The following dynamic attributes are supported:
+
+            - scale factors NEURON RANGE variables, by assigning
+              '<rangevar>_scale' where <rangevar> is RANGE variable that is
+              a member of self.rangevar_names
+
+        @pre    Subclass must define attribute 'rangevar_names'
+        """
+        # Check if attribute is of form '<rangevar>_scale' where rangevar
+        # is a member of self.rangevar_names
+        matches = re.search(r'^(\w+)_scale$', name)
+        if (matches is None) or (not any(
+                [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
+            return super(EphysModelWrapper, self).__setattr__(name, value)
+        varname = matches.groups()[0]
+        private_attr_name = '_' + varname + '_scale'
+
+        # Calculate actual scale factor based on previous scale
+        if not hasattr(self, private_attr_name):
+            old_scale = 1.0
+        else:
+            old_scale = getattr(self, private_attr_name)
+        if value == old_scale:
+            return # scale is already correct
+        relative_scale = value / old_scale
+
+        # Find NEURON mechanism name
+        matches = re.search(r'.+_([a-zA-Z0-9]+)$', varname)
+        if matches is None:
+            raise ValueError('Could not extract NEURON mechanism name '
+                             'from RANGE variable name {}'.format(varname))
+        mechname = matches.groups()[0]
+
+        # Scale neuron RANGE variable on sections in target region
+        for region_name in self.rangevar_scaled_regions.get(varname, ['all']):
+            # If no regions defined, use SectionList 'all' containing all sections
+            for sec in getattr(self.icell, region_name):
+                if not h.ismembrane(mechname, sec=sec):
+                    continue
+                for seg in sec:
+                    setattr(seg, varname, relative_scale * getattr(seg, varname))
+        
+        # Indicate the current scale factor applied to attribute
+        setattr(self, private_attr_name, value)
+
+
 class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
     """
     Subclass of Ephys CellModel that conforms to the interface required
@@ -744,7 +828,6 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
 
         # NOTE: _init_lfp() is called by our custom Population class after
         #       updating each cell's position
-        # self._init_lfp()
 
 
     @staticmethod
@@ -923,86 +1006,5 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
 
 
     tau_m_scale = property(fget=_get_tau_m_scale, fset=_set_tau_m_scale)
-
-    # Ion channel & RANGE variable scaling.
-    # - ion channel scaling can be implemented in general way by overriding
-    # __getattr__ and __setattr__, and defining a dict that gives the scaled
-    # SectionLists per ion channel.
-    # - Alternatively, you can make/modify an Ephys parameter.
-
-    def __getattr__(self, name):
-        """
-        Override getattr to support dynamic properties that are not
-        explicitly declared.
-
-        For now, scale factors for NEURON range variables can be set.
-
-        @pre    Subclass must define attribute 'rangevar_names'
-
-        @note   __getattr__ is called as last resort and the default behavior
-                is to raise AttributeError
-        """
-        matches_scale_factor = re.search(r'^(\w+)_scale$', name)
-        if (matches_scale_factor is not None) and (any(
-            [v.startswith(matches_scale_factor.groups()[0]) for v in self.rangevar_names])):
-        
-            # search for NEURON RANGE variable to be scaled
-            varname = matches_scale_factor.groups()[0]
-            private_attr_name = '_' + varname + '_scale'
-
-            # Only if it has been scaled before does the scale attribute exist
-            if not hasattr(self, private_attr_name):
-                return 1.0 # not scaled
-            else:
-                # Call will bypass this method if attribute exists
-                return getattr(self, private_attr_name)
-        else:
-            # return super(EphysModelWrapper, self).__getattr__(name)
-            # raise AttributeError
-            return self.__getattribute__(name)
-
-
-    def __setattr__(self, name, value):
-        """
-        Allow scaling of any NEURON RANGE variables by intercepting
-        assignments to attributes of the format '<rangevar>_scale', i.e.
-        any NEURON range variable names suffixed by '_scale'.
-
-        @pre    Subclass must define attribute 'rangevar_names'
-        """
-        # Attribute must a declared rangevar name + '_scale'
-        matches = re.search(r'^(\w+)_scale$', name)
-        if (matches is None) or (not any(
-                [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
-            return super(EphysModelWrapper, self).__setattr__(name, value)
-        varname = matches.groups()[0]
-        private_attr_name = '_' + varname + '_scale'
-
-        if not hasattr(self, private_attr_name):
-            old_scale = 1.0
-        else:
-            old_scale = getattr(self, private_attr_name)
-        if value == old_scale:
-            return # scale is already correct
-        relative_scale = value / old_scale
-
-        # Extract the mechanism name
-        matches = re.search(r'.+_([a-zA-Z0-9]+)$', varname)
-        if matches is None:
-            raise ValueError('Could not extract NEURON mechanism name '
-                             'from RANGE variable name {}'.format(varname))
-        mechname = matches.groups()[0]
-
-        # Finally, scale range variable
-        for region_name in self.rangevar_scaled_regions.get(varname, ['all']):
-            # If no regions defined, use SectionList 'all' containing all sections
-            for sec in getattr(self.icell, region_name):
-                if not h.ismembrane(mechname, sec=sec):
-                    continue
-                for seg in sec:
-                    setattr(seg, varname, relative_scale * getattr(seg, varname))
-        
-        # Indicate the current scale factor applied to attribute
-        setattr(self, private_attr_name, value)
             
 

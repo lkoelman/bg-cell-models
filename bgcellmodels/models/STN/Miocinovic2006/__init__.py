@@ -38,7 +38,7 @@ def load_template(template_name):
     if template_name not in _loaded_templates:
         prev_wd = os.getcwd()
         os.chdir(pkg_dir)
-        h.xopen(templates[template_name])
+        h.load_file(templates[template_name])
         os.chdir(prev_wd)
         _loaded_templates.append(template_name)
 
