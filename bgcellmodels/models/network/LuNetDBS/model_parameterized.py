@@ -50,7 +50,6 @@ WITH_MPI = mpi_size > 1
 # PyNN library
 import pyNN.neuron as sim
 from pyNN import space
-from pyNN.parameters import ArrayParameter, Sequence
 from pyNN.random import RandomDistribution
 from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
@@ -61,16 +60,11 @@ from bgcellmodels.extensions.pynn.synapses import (
     GabaSynTm2, NativeMultiSynapse)
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
-import bgcellmodels.extensions.pynn.spiketrains as spikegen
+from bgcellmodels.extensions.pynn import spiketrains as spikegen
 
-# Monkey-patching of pyNN.neuron.Population class
-# from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
-# sim.Population._recorder_class = TraceSpecRecorder
-
-# Custom NEURON mechanisms
+# NEURON models and mechanisms
+from bgcellmodels.emfield import stimulation
 from bgcellmodels.mechanisms import synapses, noise # loads MOD files
-
-# Custom cell models
 import bgcellmodels.models.STN.Miocinovic2006.miocinovic_pynn_model as miocinovic
 import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
 
@@ -89,12 +83,18 @@ from bgcellmodels.common.stdutil import getdictvals
 from bgcellmodels.common import logutils, fileutils
 
 # Debug messages
-logutils.setLogLevel('quiet', [
+logutils.setLogLevel('WARNING', [
     'Neo',
     'bpop_ext',
     'bluepyopt.ephys.parameters',
     'bluepyopt.ephys.mechanisms',
-    'bluepyopt.ephys.morphologies'])
+    'bluepyopt.ephys.morphologies',
+    'AxonBuilder'])
+
+logutils.setLogLevel('DEBUG', ['AxonBuilder'])
+
+# Global variables
+h = sim.h
 
 
 def nprint(*args, **kwargs):
@@ -194,15 +194,18 @@ def simulate_model(
     # READ CONFIGURATIONS
     ############################################################################
 
+    sim_params = config['simulation']
+    emf_params = config['electromagnetics']
 
     ############################################################################
     # SIMULATOR SETUP
     ############################################################################
-
-    sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, use_cvode=False)
+    
+    sim.setup(timestep=sim_params['timestep'], 
+              min_delay=0.1, max_delay=10.0, use_cvode=False)
+    
     if mpi_rank == 0:
         init_logging(logfile=None, debug=True)
-
 
     print("""\nRunning net on MPI rank {} with following settings:
     - sim_dur = {}
@@ -211,9 +214,8 @@ def simulate_model(
     print("\nThis is node {} ({} of {})\n".format(
           sim.rank(), sim.rank() + 1, sim.num_processes()))
 
-    h = sim.h
     sim.state.duration = sim_dur # not used by PyNN, only by our custom funcs
-    sim.state.rec_dt = 0.05
+    sim.state.rec_dt = sim_params['recording_timestep']
     sim.state.mcellran4_rng_indices = {} # Keep track of MCellRan4 indices for independent random streams.
     finit_handlers = []
 
@@ -224,7 +226,7 @@ def simulate_model(
     #   objects.
     # - The default RNG for Connectors is NumpyRNG(seed=151985012)
     if seed is None:
-        seed = config['simulation']['shared_rng_seed']
+        seed = sim_params['shared_rng_seed']
     
     # Make RNG seeds accessible
     sim.state.shared_rng_seed = shared_seed = seed # original: 151985012
@@ -242,7 +244,7 @@ def simulate_model(
     # Global physiological conditions
     DD = dopamine_depleted
     if DD is None:
-        DD = dopamine_depleted = config['simulation'].get('DD', None)
+        DD = dopamine_depleted = sim_params.get('DD', None)
     if DD is None:
         raise ValueError("Dopamine depleted condition not specified "
                          "in config file nor as simulation argument.")
@@ -318,8 +320,11 @@ def simulate_model(
             connector.rng = rng
         return connector
 
+    axon_scales = { 'mm' : 1.0, 'um': 1e-3, 'm': 1e3 }
+    axon_scale = axon_scales[cell_config['units']['axons']]
+    
     def get_axon_coordinates(axon_id):
-        return axon_coordinates[axon_id]
+        return np.asarray(axon_coordinates[axon_id]) * axon_scale
 
     def get_morphology_path(morphology_id):
         return os.path.join(morph_dir, morphology_id + '.swc')
@@ -330,9 +335,9 @@ def simulate_model(
         calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
 
     # Set NEURON integrator/solver options
-    if calculate_lfp:
-        sim.state.cvode.use_fast_imem(True)
-    sim.state.cvode.cache_efficient(True) # necessary for lfp, also 33% reduction in simulation time
+    # if emfield_rec and not emfield_stim:
+    #     sim.state.cvode.use_fast_imem(True)
+    # sim.state.cvode.cache_efficient(True) # necessary for fast_imem lfp + 33% reduction in simulation time
 
     ############################################################################
     # POPULATIONS
@@ -342,7 +347,8 @@ def simulate_model(
     # - to query cell model attributes, use population[i]._cell
     print("rank {}: starting phase POPULATIONS.".format(mpi_rank))
 
-    config_pop_labels = [k for k in config.keys() if not k in ('simulation',)]
+    config_pop_labels = [k for k in config.keys() if not k in 
+                            ('simulation', 'electromagnetics')]
 
     #===========================================================================
     # CTX POPULATION
@@ -393,18 +399,20 @@ def simulate_model(
     # see http://neuralensemble.org/docs/PyNN/parameters.html
 
     cell_morph_defs = cell_config['cells']
-    cells_transforms = [np.array(cell['transform'])for cell in cell_morph_defs]
+    cells_transforms = [np.asarray(cell['transform']) for cell in cell_morph_defs]
     cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_morph_defs]
     cells_morph_paths = [get_morphology_path(cell['morphology']) for cell in cell_morph_defs]
 
     # Load default parameters from sim config
     stn_cell_params = get_cell_parameters('STN')
 
-    # Add parameters from other soruces
+    # Add parameters from other sources
     stn_cell_params['calculate_lfp'] = calculate_lfp
     stn_cell_params['morphology_path'] = cells_morph_paths
     stn_cell_params['transform'] = cells_transforms
-    stn_cell_params['streamline_coordinates'] = cells_axon_coords
+    stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
+    stn_cell_params['rho_extracellular_ohm_cm'] = 1.0 / emf_params['sigma_extracellular']
+    stn_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates']
 
     
     stn_type = miocinovic.StnMorphType(**stn_cell_params)
@@ -519,6 +527,31 @@ def simulate_model(
     # Update local context for eval() statements
     params_local_context.update(locals())
 
+    ############################################################################
+    # EXTRACELLULAR FIELD
+    ############################################################################
+
+    # Create DBS waveform
+    pulse_train, pulse_time = stimulation.make_pulse_train(
+                                frequency=emf_params['dbs_frequency'],
+                                pulse_width=emf_params['dbs_pulse_width'],
+                                amp0=emf_params['dbs_pulse0_amplitude'],
+                                amp1=emf_params['dbs_pulse1_amplitude'],
+                                dt=emf_params['dbs_sample_period'],
+                                duration=sim_dur,
+                                coincident_discontinuities=True)
+
+    # Play DBS waveform into GLOBAL variable for this thread
+    pulse_avec = h.Vector(pulse_train)
+    pulse_tvec = h.Vector(pulse_time)
+    dbs_started = False
+    for sec in h.allsec():
+        if h.ismembrane('xtra', sec=sec):
+            pulse_avec.play(h._ref_is_xtra, pulse_tvec, 1)
+            dbs_started = True
+
+    if not dbs_started:
+        raise Exception('Coud not find mechanism "xtra" in any section.')
 
     ############################################################################
     # CONNECTIONS
@@ -673,7 +706,14 @@ def simulate_model(
 
     # Set physiological conditions
     h.celsius = 36.0
-    h.set_aCSF(4) # Hoc function defined in Gillies code
+    h.nai0_na_ion = 15
+    h.nao0_na_ion = 128.5
+    h.ki0_k_ion = 140
+    h.ko0_k_ion = 2.5
+    h.cai0_ca_ion = 1e-04
+    h.cao0_ca_ion = 2.0
+    h("cli0_cl_ion = 4")
+    h("clo0_cl_ion = 132.5")
 
     # Simulation statistics
     num_segments = sum((sec.nseg for sec in h.allsec()))

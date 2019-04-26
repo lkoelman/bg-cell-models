@@ -648,7 +648,7 @@ class PynnCellModelBase(object):
                 # Call will bypass this method if attribute exists
                 return getattr(self, private_attr_name)
         else:
-            # return super(EphysModelWrapper, self).__getattr__(name)
+            # return super(PynnCellModelBase, self).__getattr__(name)
             # raise AttributeError
             return self.__getattribute__(name)
 
@@ -670,7 +670,7 @@ class PynnCellModelBase(object):
         matches = re.search(r'^(\w+)_scale$', name)
         if (matches is None) or (not any(
                 [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
-            return super(EphysModelWrapper, self).__setattr__(name, value)
+            return super(PynnCellModelBase, self).__setattr__(name, value)
         varname = matches.groups()[0]
         private_attr_name = '_' + varname + '_scale'
 

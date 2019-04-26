@@ -19,9 +19,19 @@
     // Global simulation parameters
     "simulation": {
         "duration": 10000,
-        "timestep": 0.025,
+        "timestep": 0.01,
+        "recording_timestep": 0.05,
         "shared_rng_seed": 151985012,
         "DD": true, // dopamine depleted / parkinsonian
+    },
+    "electromagnetics": {
+        "dbs_frequency": 200.0,
+        "dbs_pulse_width": 0.300,
+        "dbs_pulse0_amplitude": 300.0,
+        "dbs_pulse1_amplitude": 0.0,
+        "dbs_sample_period": 0.001, // ms
+        "dbs_electrode_coordinates": [1000.0, 1000.0, 1000.0],
+        "sigma_extracellular": 0.03,
     },
 // =============================================================================
 // CTX Population Parameters
@@ -303,7 +313,6 @@
         // Numerical parameters passed to the PyNN cell type
         "PyNN_cell_parameters": {
             "membrane_noise_std": 0.0075, // 0.0075 calibrated empirically based on Vm trace
-            "lfp_sigma_extracellular": 0.3,
         },
         // Surrogate spike sources
         "surrogate_fraction": 0.1, // fraction of population size
@@ -329,15 +338,14 @@
                     "gGABAB{:d}": {"syn":"GABAsyn2[0:3]", "var":"g_GABAB"},
                     "iGABA{:d}": {"syn":"GABAsyn2[0:8]", "var":"i"},
                     // Dendritic voltages
-                    "v_dend1_dist{:d}": {"secs":"dend1[[4,6,7,9]]", "loc":0.5, "var":"v"},
-                    "v_dend0_dist{:d}": {"secs":"dend0[[8,6,9,11,16,18,19,21]]", "loc":0.5, "var":"v"},
+                    "v_dend_dist{:d}": {"secs":"dend[[4,6,7,9,8,6,9,11,16,18,19,21]]", "loc":0.5, "var":"v"},
                     // Ca2+ ion channels
-                    "STN_cai": {"sec":"dend1[7]", "loc":0.8, "var":"cai"},
-                    "STN_CaT_inact_fast": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"s"},
-                    "STN_CaT_inact_slow": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"d"},
-                    "STN_CaT_open": {"sec":"dend1[7]", "loc":0.8, "mech":"CaT", "var":"o"},
-                    "STN_CaL_inact": {"sec":"dend1[7]", "loc":0.8, "mech":"HVA", "var":"h"},
-                    "STN_CaL_open": {"sec":"dend1[7]", "loc":0.8, "mech":"HVA", "var":"o_L"},
+                    "STN_cai": {"sec":"dend[7]", "loc":0.8, "var":"cai"},
+                    "STN_CaT_inact_fast": {"sec":"dend[7]", "loc":0.8, "mech":"CaT", "var":"s"},
+                    "STN_CaT_inact_slow": {"sec":"dend[7]", "loc":0.8, "mech":"CaT", "var":"d"},
+                    "STN_CaT_open": {"sec":"dend[7]", "loc":0.8, "mech":"CaT", "var":"o"},
+                    "STN_CaL_inact": {"sec":"dend[7]", "loc":0.8, "mech":"HVA", "var":"h"},
+                    "STN_CaL_open": {"sec":"dend[7]", "loc":0.8, "mech":"HVA", "var":"o_L"},
                 },
             },
         ],

@@ -123,8 +123,7 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
 
         @post   self.axon contains references to axonal sections.
         """
-        axon_builder = axon_class(logger=logger,
-                            without_extracellular=self.without_extracellular)
+        axon_builder = axon_class(without_extracellular=self.without_extracellular)
 
         # Build axon
         axonal_secs = list(self.icell.axonal)
@@ -138,10 +137,10 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
             axon_parent_sec = self.icell.soma[0]
 
         axon = axon_builder.build_along_streamline(
-                    self.streamline_coordinates,
+                    self.streamline_coordinates_mm,
                     terminate='nodal_cutoff', interp_method='arclength',
                     parent_cell=self.icell, parent_sec=axon_parent_sec,
-                    connection_method='translate_axon_start')
+                    connection_method='translate_axon_start', tolerance_mm=1e-4)
     
         self.axon = axon
 
@@ -177,7 +176,7 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         # Set transfer impedance between electrode and compartment centers
         x_elec, y_elec, z_elec = self.electrode_coordinates_um
         h.xtra_set_impedances_pointsource(
-            self.icell.all, self.rho_extracellular, x_elec, y_elec, z_elec)
+            self.icell.all, self.rho_extracellular_ohm_cm, x_elec, y_elec, z_elec)
         
         # Alternative using lookup function
         # emfield.xtra_set_transfer_impedances(self.icell.all, 
@@ -186,8 +185,10 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
         # TODO: set up stimulation in main script (see stim.hoc)
 
         # Set up LFP calculation
+        if logger.level <= logging.WARNING:
+            h.XTRA_VERBOSITY = 1
         self.lfp_summator = h.xtra_sum(self.icell.soma[0](0.5))
-        self.lfp_tracker = h.ImembTracker(self.summator, self.icell.all, "xtra")
+        self.lfp_tracker = h.ImembTracker(self.lfp_summator, self.icell.all, "xtra")
 
 
     def _init_memb_noise(self, population, pop_index):
@@ -328,8 +329,11 @@ class GilliesSwcModel(StnMorphModel):
             morph_3d.transform_sections(icell.all, self.transform)
 
         # Create and append axon
-        if len(self.streamline_coordinates) > 0:
+        if len(self.streamline_coordinates_mm) > 0:
             self._init_axon(self.axon_class)
+
+        # Init extracellular stimulation & recording
+        self._init_emfield()
 
 
     def _init_gbar(self):
@@ -376,14 +380,14 @@ class StnMorphType(ephys_pynn.MorphCellType):
     default_parameters = {
         'calculate_lfp': False,
         'electrode_coordinates_um' : ArrayParameter([]),
-        # 'rho_extracellular_ohm_cm' : 0.0,
-        'membrane_noise_std': 0.0,
+        'rho_extracellular_ohm_cm' : 0.03,
+        'membrane_noise_std': 0.1,
         'max_num_gpe_syn': 19,
         'max_num_ctx_syn': 30,
         'max_num_stn_syn': 10,
         'morphology_path': np.array('placeholder/path'), # workaround for strings
         'transform': ArrayParameter([]),
-        'streamline_coordinates': ArrayParameter([]), # Sequence([])
+        'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
         'without_extracellular': False,
     }
 

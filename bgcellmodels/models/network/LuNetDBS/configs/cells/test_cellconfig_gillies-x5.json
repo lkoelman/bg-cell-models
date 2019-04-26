@@ -1,4 +1,9 @@
 {
+  "units": {
+    "transforms": "um",
+    "morphologies": "um",
+    "axons": "um",
+  },
   "cells": [
     {
       "transform": [

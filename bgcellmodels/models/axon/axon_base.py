@@ -10,9 +10,14 @@ import numpy as np
 import neuron
 
 from bgcellmodels.morphology import morph_3d
+from bgcellmodels.common import logutils
 
 h = neuron.h
 PI = math.pi
+
+logger = logging.getLogger('AxonBuilder')
+logger.setLevel(logging.DEBUG)
+logging.basicConfig(format=logutils.DEFAULT_FORMAT)
 
 def normvec(a):
     """
@@ -54,14 +59,13 @@ class AxonBuilder(object):
             - 'morphology': dict[<parameter name>, <value>]
     """
 
-    def __init__(self, logger=None, without_extracellular=False):
+    def __init__(self, without_extracellular=False):
         """
         Define compartments types that constitute the axon model.
 
         @post   attributes 'compartment_defs' and 'repeating_comp_sequence'
                 have been set.
         """
-        self.logger = logger
         self.without_extracellular = without_extracellular
 
 
@@ -461,14 +465,13 @@ class AxonBuilder(object):
         
         sec_by_type = {sec_type: [] for sec_type in self.compartment_defs.keys()}
         sec_ordered = []
-        # num_ax_sec = 0
-        # if parent_cell is not None:
-        #     num_ax_sec = len(list(parent_cell.axonal))
 
         n_repeating = len(self.repeating_comp_sequence)
         MAX_NUM_COMPARTMENTS = int(1e9)
         est_num_comp = self.estimate_num_sections()
-        self.debug("Estimated number of compartments to build axon: {}".format(est_num_comp))
+        tot_num_seg = 0
+        logger.debug("Estimated number of sections to build axon "
+                     " of length {} mm: {:.1f}".format(self.streamline_length, est_num_comp))
         if est_num_comp > MAX_NUM_COMPARTMENTS:
             raise ValueError('Streamline too long (estimated number of '
                 'compartments needed is {}'.format(est_num_comp))
@@ -490,8 +493,6 @@ class AxonBuilder(object):
 
             # Create the compartment
             sec_name = "{:s}[{:d}]".format(sec_type, len(sec_by_type[sec_type]))
-            # sec_name = "axon[{:d}]".format(num_ax_sec)
-            # num_ax_sec += 1
             if parent_cell is None:
                 ax_sec = h.Section(name=sec_name)
             else:
@@ -506,6 +507,7 @@ class AxonBuilder(object):
             parent_sec = ax_sec
             sec_by_type[sec_type].append(ax_sec)
             sec_ordered.append(ax_sec)
+            tot_num_seg += ax_sec.nseg
             
             # Find section endpoint by walking along streamline for sec.L
             num_passed, stop_coord, next_tangent = walk_func(sec_L_mm)
@@ -514,10 +516,9 @@ class AxonBuilder(object):
             # Check compartment length vs tolerance
             real_length = veclen(stop_coord - self.last_coord)
             if not np.isclose(real_length, sec_L_mm, atol=tolerance_mm):
-                self.logger.warning(
-                    'WARNING: exceed length tolerance ({}) '
-                    ' in compartment compartment {} : L = {}'.format(
-                        tolerance_mm, ax_sec, real_length))
+                logger.warning('WARNING: exceed length tolerance ({}) '
+                               ' in compartment compartment {} : L = {}'.format(
+                                    tolerance_mm, ax_sec, real_length))
 
             # Add the 3D start and endpoint
             sec_endpoints = self.last_coord, stop_coord
@@ -557,10 +558,11 @@ class AxonBuilder(object):
             if i_compartment >= MAX_NUM_COMPARTMENTS-1:
                 raise ValueError("Axon too long.")
             elif i_compartment >= 1.1 * est_num_comp:
-                self.warning("Created {}-th section, more than estimate {}".format(
+                logger.warning("Created {}-th section, more than estimate {}".format(
                                 i_compartment, est_num_comp))
         
-        self.debug("Created %i axonal compartments", len(sec_ordered))
+        logger.debug("Created %i axonal segments (%i sections)",
+                     tot_num_seg, len(sec_ordered))
 
         # Add to parent cell
         if parent_cell is not None:
@@ -593,20 +595,20 @@ class AxonBuilder(object):
                     # DOES NOT KEEP ALIVE REFS:
                     for ax_sec in sec_ordered:
                         seclist.append(sec=ax_sec)
-                    self.debug("Updated SectionList '%s' of %s", seclist_name, parent_cell)
+                    logger.debug("Updated SectionList '%s' of %s", seclist_name, parent_cell)
 
 
         return sec_by_type
 
 
 # Make logging functions
-for level in logging.INFO, logging.DEBUG, logging.WARN:
-    def make_func(level=level):
-        # inner function solves late binding issue
-        def log_func(self, *args, **kwargs):
-            if self.logger is None:
-                return
-            self.logger.log(level, *args, **kwargs)
-        return log_func
-    level_name = logging.getLevelName(level).lower()
-    setattr(AxonBuilder, level_name, make_func(level))
+# for level in logging.INFO, logging.DEBUG, logging.WARN:
+#     def make_func(level=level):
+#         # inner function solves late binding issue
+#         def log_func(self, *args, **kwargs):
+#             if self.logger is None:
+#                 return
+#             self.logger.log(level, *args, **kwargs)
+#         return log_func
+#     level_name = logging.getLevelName(level).lower()
+#     setattr(AxonBuilder, level_name, make_func(level))

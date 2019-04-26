@@ -135,14 +135,14 @@ def getLogLevel(level):
 	"""
 	Get log level from string
 	"""
-	if level in ['verbose', 'debug', 'DEBUG']:
+	if level in logging._levelNames:
+		return level
+	elif level.lower() in ['verbose', 'debug']: # DEBUG equivalents
 		return logging.DEBUG
-	elif level in ['silent', 'quiet', 'warning', 'WARNING']:
+	elif level.lower() in ['silent', 'quiet', 'warning']: # WARNING equivalents
 		return logging.WARNING
-	elif level in ['anal', 'highly_verbose']:
+	elif level.lower() in ['anal', 'highly_verbose']: # ANAL equivalents
 		return DEBUG_ANAL_LVL
-	elif level in ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET']:
-		return getattr(logging, level)
 	else:
 		raise ValueError(level)
 

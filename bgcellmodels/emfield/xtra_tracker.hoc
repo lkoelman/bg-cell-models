@@ -12,17 +12,20 @@ Email:          lucas.koelman@gmail.com
 Last updated:   26-April-2019
 */
 
-// Set to higher level to increase verbosity
-VERBOSITY = 0
+// Increase above 1 to increase verbosity
+XTRA_VERBOSITY = 1
+
 
 begintemplate ImembTracker
 
     // List public member variables & functions
-    public summator, update_imemb_ptrs, VERBOSITY
+    public summator, update_imemb_ptrs
 
     // Member variables
     objref this, summator, imemb_ptrs, tracked_seclist
     strdef imemb_source
+
+    external XTRA_VERBOSITY
 
     /**
      * Make membrane current tracker that links segment's membrane currents
@@ -76,7 +79,7 @@ begintemplate ImembTracker
 
         // Pointer vector to keep track of each compartment's transmembrane current
         num_tracked_segs = 0
-        forsec sl {
+        forsec tracked_seclist {
             num_tracked_segs += nseg
         }
         imemb_ptrs = new PtrVector(num_tracked_segs)
@@ -93,20 +96,21 @@ begintemplate ImembTracker
                     // has units of mA/cm2
                     setpointer summator.temp_ptr, i_membrane_(x)
                     imemb_ptrs.pset(i_seg, &i_membrane_(x))
-                    final_factor = factor * 1e2 // [nA == 1e-9A] to [mA/cm2*um2 == 1e-11A]
                 } 
                 if (strcmp(imemb_source, "extracellular") == 0) {
                     setpointer summator.temp_ptr, i_membrane(x)
                     imemb_ptrs.pset(i_seg, &i_membrane(x))
-                    final_factor = factor * area(x)
                 }
                 if (strcmp(imemb_source, "xtra") == 0) {
                     setpointer summator.temp_ptr, im_xtra(x)
                     imemb_ptrs.pset(i_seg, &im_xtra(x))
-                    final_factor = factor * area(x)
                 }
-                summator.add_imemb_source(final_factor)
+                summator.add_imemb_source()
                 i_seg += 1
+
+                if ((i_seg % 1000 == 0) && (XTRA_VERBOSITY > 0)) {
+                    print "Added 1000 segments to tracker. (", i_seg, "/", num_tracked_segs, ")."
+                }
             }
 
             // Ask Hoc to notify us whenever i_membrane range variables have changed
@@ -114,6 +118,10 @@ begintemplate ImembTracker
             imemb_ptrs.ptr_update_callback("update_imemb_ptrs()", this)
 
         } // end forsec
+
+        if (XTRA_VERBOSITY > 0) {
+            print "Tracking membrane currents from ", i_seg, " segments."
+        }
     }
 
 
@@ -146,7 +154,7 @@ begintemplate ImembTracker
                 i_seg += 1
             }
         }
-        if (VERBOSITY > 0) {
+        if (XTRA_VERBOSITY > 0) {
             print "Updated i_memb pointers for sectionlist ", tracked_seclist
         }
     }
