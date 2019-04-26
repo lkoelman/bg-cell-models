@@ -94,24 +94,31 @@ proc xtra_segment_coords_from3d() { \
  * extracellular voltage source and total transmembrane current variables 
  * of the mechanism 'extracellular'
  *
- * @pre     mechanism 'extracellular' is inserted into each Section in
- *          section list.
+ * @pre     either mechanism 'extracellular' is inserted in each Section or
+ *          cvode.use_fast_imem(1) was called so the variable 'i_membrane_'
+ *          is available on each segment.
  *
  * @param   $o1 : SectionList
  *          SectionLists containing sections whose LFP contributions should
  *          be summed.
  *
  */
-proc xtra_setpointers() {
+proc xtra_setpointers() { local im_extracellular
     forsec $o1 {
+        im_extracellular = ismembrane("extracellular")
         if (ismembrane("xtra")) {
             for (x, 0) {
-                setpointer im_xtra(x), i_membrane(x)
-                setpointer ex_xtra(x), e_extracellular(x)
+                if (im_extracellular) {
+                    setpointer im_xtra(x), i_membrane(x)
+                    setpointer ex_xtra(x), e_extracellular(x)
+                } else {
+                    setpointer im_xtra(x), i_membrane_(x)
+                }
             }
         }
     }
 }
+
 
 /**
  * Points monitoring variables 'ex' and 'im' of mechanism 'xtra' to the
@@ -141,7 +148,7 @@ proc xtra_setpointers() {
  *          Z-coordinate of electrode location
  *
  */
-proc xtra_set_transfer_impedances() { \
+proc xtra_set_impedances_pointsource() { \
     local x_elec, y_elec, z_elec \
     localobj seclist
 

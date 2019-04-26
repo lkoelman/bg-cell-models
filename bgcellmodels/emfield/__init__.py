@@ -26,3 +26,5 @@ hoc_files = [
 # Load Hoc files
 for hoc_file in hoc_files:
     neuron.h.load_file(os.path.join(here, hoc_file))
+
+from .xtra_utils import *

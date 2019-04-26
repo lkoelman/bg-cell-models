@@ -162,6 +162,9 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
 
 
     def _init_emfield(self):
+        """
+        Set up extracelullar stimulation and recording.
+        """
         # Insert mechanism that mediates between extracellular variables and
         # recording & stimulation routines.
         for sec in self.icell.all:
@@ -169,21 +172,22 @@ class StnMorphModel(ephys_pynn.PynnCellModelBase):
 
         # Calculate coordinates of each compartment's (segment) center
         h.xtra_segment_coords_from3d(self.icell.all)
-        h.xtra_setpointers()
+        h.xtra_setpointers(self.icell.all)
 
+        # Set transfer impedance between electrode and compartment centers
         x_elec, y_elec, z_elec = self.electrode_coordinates_um
-        # h.xtra_set_transfer_impedances_analytical(
-        #     self.icell.all, self.rho_extracellular, x_elec, y_elec, z_elec)
-
-        transfer_impedance_generator = self.make_impedance_func(
-            self.electrode_coordinates_um, self.rho_extracellular_ohm_cm)
-        emfield.xtra_set_transfer_impedance(transfer_impedance_generator)
+        h.xtra_set_impedances_pointsource(
+            self.icell.all, self.rho_extracellular, x_elec, y_elec, z_elec)
+        
+        # Alternative using lookup function
+        # emfield.xtra_set_transfer_impedances(self.icell.all, 
+        #                                      self.impedance_lookup_func)
 
         # TODO: set up stimulation in main script (see stim.hoc)
 
-        # TODO: set up recording functions, see LfpTracker. Except calculation
-        #       doesn't need to happen every timestep, only at recording time
-        #       => modify xtra_summator
+        # Set up LFP calculation
+        self.lfp_summator = h.xtra_sum(self.icell.soma[0](0.5))
+        self.lfp_tracker = h.ImembTracker(self.summator, self.icell.all, "xtra")
 
 
     def _init_memb_noise(self, population, pop_index):

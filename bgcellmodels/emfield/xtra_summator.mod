@@ -9,7 +9,7 @@ ENDCOMMENT
 
 
 NEURON {
-    POINT_PROCESS LfpSumStep
+    POINT_PROCESS xtra_sum
     POINTER temp_ptr
     POINTER donotuse_sources
     RANGE summed
@@ -20,7 +20,6 @@ VERBATIM
 
 // Linked list node for storing refs to observed hoc variables
 typedef struct node {
-    double factor;      // spatial / conductivity factor
     double* hoc_ref;    // hoc reference to observed LFP source variable
     struct node* next;  // next node in linked list
 } LfpSource;
@@ -47,7 +46,6 @@ VERBATIM {
     LfpSource** sources = (LfpSource**)(&(_p_donotuse_sources));
 
     LfpSource* first_node = emalloc(sizeof(LfpSource));
-    first_node->factor = 0.0;
     first_node->hoc_ref = NULL;
     first_node->next = NULL;
     
@@ -83,12 +81,11 @@ ENDVERBATIM
 : >>> summator = LfpSummator(soma(0.5))
 : >>> for sec in h.allsec():
 : >>>     for seg in sec:
-: >>>         factor = calculate_lfp_factor()
 : >>>         h.setpointer(seg._ref_i_membrane, 'temp_ptr', summator)
-: >>>         summator.add_source(factor)
+: >>>         summator.add_source()
 :
 :
-FUNCTION add_lfp_source(factor) {
+FUNCTION add_imemb_source() {
 VERBATIM
     
     // Look for end of linked list and append observed variable
@@ -97,7 +94,6 @@ VERBATIM
         current = current->next;
     }
     current->hoc_ref = _p_temp_ptr;
-    current->factor = _lfactor;
 
     // Allocate node for next call
     current->next = emalloc(sizeof(LfpSource)); // for next call
@@ -109,6 +105,7 @@ ENDVERBATIM
 }
 
 
+: Update pointer of imemb source, e.g. after it has become invalid.
 FUNCTION update_imemb_ptr(index) {
 VERBATIM
     
@@ -137,7 +134,7 @@ VERBATIM
     while (current != NULL) {
         if (current->hoc_ref != NULL) {
             double i_membrane = *(current->hoc_ref);
-            summed += i_membrane * current->factor;
+            summed += i_membrane;
         }
         current = current->next;
     }
