@@ -284,7 +284,8 @@ class MorphModelBase(object):
             self._init_axon(self.axon_class)
 
         # Init extracellular stimulation & recording
-        self._init_emfield()
+        if self.with_extracellular:
+            self._init_emfield()
 
 
     def _post_build(self, population, pop_index):
@@ -657,7 +658,8 @@ class MorphModelBase(object):
 
         @post   self.axon contains references to axonal sections.
         """
-        axon_builder = axon_class(without_extracellular=self.without_extracellular)
+        axon_builder = axon_class(
+            without_extracellular=not self.with_extracellular)
 
         # Build axon
         axonal_secs = list(self.icell.axonal)
@@ -687,11 +689,16 @@ class MorphModelBase(object):
     def _init_emfield(self):
         """
         Set up extracelullar stimulation and recording.
+
+        @pre    mechanism 'extracullular' must be inserted and parameters set
+                in all compartments that should contribute to the LFP and are
+                targets for stimulation
         """
         # Insert mechanism that mediates between extracellular variables and
         # recording & stimulation routines.
         for sec in self.icell.all:
-            sec.insert('xtra')
+            if h.ismembrane('extracellular', sec=sec):
+                sec.insert('xtra')
 
         # Calculate coordinates of each compartment's (segment) center
         h.xtra_segment_coords_from3d(self.icell.all)
@@ -705,8 +712,6 @@ class MorphModelBase(object):
         # Alternative using lookup function
         # emfield.xtra_set_transfer_impedances(self.icell.all, 
         #                                      self.impedance_lookup_func)
-
-        # TODO: set up stimulation in main script (see stim.hoc)
 
         # Set up LFP calculation
         if logger.level <= logging.WARNING:

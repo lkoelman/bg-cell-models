@@ -101,6 +101,7 @@ class AxonFoust2011(AxonBuilder):
         """
         # Sequence of compartment types that define repeating structure of axon
         self.initial_comp_sequence = ['aisnode', 'aismyelin']
+        self.terminal_comp_sequence = ['node', 'collateral']
         self.repeating_comp_sequence = ['node', 'myelin']
 
         # Name of compartment type representing node of Ranvier
@@ -220,4 +221,35 @@ class AxonFoust2011(AxonBuilder):
                     'nseg': self.axon_parameters['myelin_nseg']
                 },
             },
+            # Collateral sections
+            'collateral': {
+                'mechanisms' : {
+                    'pas_Foust': {
+                        'g': 0.0000333333,
+                    },
+                    'NaF_Foust': {
+                        'g': 0.133333333,
+                    },
+                    'Kv_Foust': {
+                        'g': 0.0010,
+                    },
+                    'Kd_Foust': {
+                        'g': 0.0060,
+                    },
+                    'extracellular': {
+                        'xraxial': self.axon_parameters['node_Rax_extra'],
+                        'xg': self.axon_parameters['node_gm_extra'],
+                        'xc': self.axon_parameters['node_cm_extra'],
+                    }
+                }, 
+                'passive' : {
+                    'Ra': self.axon_parameters['collateral_Ra'],
+                    'cm': self.axon_parameters['collateral_cm'],
+                },
+                'morphology' : {
+                    'diam': self.axon_parameters['collateral_diam'],
+                    'L': self.axon_parameters['collateral_L'],
+                    'nseg': self.axon_parameters['collateral_nseg']
+                },
+            }
         }

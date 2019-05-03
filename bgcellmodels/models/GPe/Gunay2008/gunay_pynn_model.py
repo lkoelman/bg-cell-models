@@ -15,6 +15,7 @@ import numpy as np
 
 from bgcellmodels.extensions.pynn import cell_base, ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
+from bgcellmodels.morphology import morph_3d
 
 import gunay_model
 
@@ -104,6 +105,9 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         'distal':   (1.0, 1e12),  # (um)
     }
 
+    # Regions for extracellular stim (DBS) & rec (LFP)
+    seclists_with_extracellular = ['axonal']
+
     # Spike threshold (mV)
     spike_threshold_source_sec = -10.0
 
@@ -132,6 +136,28 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
         # Adjust compartment dimensions like in GENESIS code
         gunay_model.fix_comp_dimensions(self)
+
+        # Transform morphology
+        if len(self.transform) > 0 and not np.allclose(self.transform, np.eye(4)):
+            morph_3d.transform_sections(self.icell.all, self.transform)
+
+        # Create and append axon
+        if len(self.streamline_coordinates_mm) > 0:
+            self._init_axon(self.axon_class)
+
+        # Init extracellular stimulation & recording
+        if self.with_extracellular:
+            for region in self.seclists_with_extracellular:
+                for sec in getattr(self.icell, region):
+                    if h.ismembrane('extracellular', sec=sec):
+                        continue # assume already configured
+                    sec.insert('extracellular')
+                    for i in range(2):
+                        sec.xraxial[i] = 1e9
+                        sec.xg[i] = 1e9
+                        sec.xc[i] = 0.0
+
+            self._init_emfield()
 
 
     def _update_position(self, xyz):
@@ -171,6 +197,7 @@ class GPeCellType(cell_base.MorphCellType):
         'default_GLU_mechanism': np.array('GLUsyn'),
         'tau_m_scale': 1.0,
         'membrane_noise_std': 0.0,
+        'with_extracellular': False,
     }
 
     # Defaults for Ephys parameters

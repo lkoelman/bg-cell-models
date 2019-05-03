@@ -88,7 +88,7 @@ class GilliesSwcModel(cell_base.MorphModelBase):
         
         # Instantiate template
         self.icell = icell = template_constructor()
-        icell.with_extracellular = not self.without_extracellular
+        icell.with_extracellular = self.with_extracellular
 
         # Load morphology into template
         morphology = ephys.morphologies.NrnFileMorphology(
@@ -115,7 +115,8 @@ class GilliesSwcModel(cell_base.MorphModelBase):
             self._init_axon(self.axon_class)
 
         # Init extracellular stimulation & recording
-        self._init_emfield()
+        if self.with_extracellular:
+            self._init_emfield()
 
 
     def _init_gbar(self):
@@ -151,12 +152,6 @@ class GilliesSwcModel(cell_base.MorphModelBase):
                 seg.gna_NaL = 2.0 * seg.gna_NaL
 
 
-    def get_threshold(self):
-        """
-        Get spike threshold for soma membrane potential (used for NetCon)
-        """
-        return -10.0
-
 
 class StnMorphType(ephys_pynn.MorphCellType):
     """
@@ -167,7 +162,7 @@ class StnMorphType(ephys_pynn.MorphCellType):
     # NOTE: default_parameters is used to make 'schema' for checking and 
     #       converting datatypes. It supports only basic numpy-compatible types.
     default_parameters = {
-        'calculate_lfp': False,
+        'with_extracellular': False,
         'electrode_coordinates_um' : ArrayParameter([]),
         'rho_extracellular_ohm_cm' : 0.03,
         'membrane_noise_std': 0.1,
@@ -177,7 +172,6 @@ class StnMorphType(ephys_pynn.MorphCellType):
         'morphology_path': np.array('placeholder/path'), # workaround for strings
         'transform': ArrayParameter([]),
         'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
-        'without_extracellular': False,
     }
 
     # NOTE: extra_parameters supports non-numpy types. 
