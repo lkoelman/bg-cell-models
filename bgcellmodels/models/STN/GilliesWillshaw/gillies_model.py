@@ -61,7 +61,10 @@ gillies_mechs = list(gillies_gdict.keys()) # all mechanisms
 mechs_list = gillies_mechs
 
 # All gbar (max conductance) names
-gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
+gillies_glist = [
+    gname+'_'+mech for mech,chans in gillies_gdict.iteritems() 
+                    for gname in chans
+]
 gbar_list = gillies_glist
 active_gbar_names = [gname for gname in gillies_glist if gname != gleak_name]
 

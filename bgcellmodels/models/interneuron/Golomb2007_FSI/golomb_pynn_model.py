@@ -21,13 +21,13 @@ h.xopen("fsi_createcell.hoc") # instantiates all functions & data structures on 
 os.chdir(prev_cwd)
 
 from bgcellmodels.extensions.pynn.ephys_models import (
-    PynnCellModelBase, MorphCellType)
+    MorphModelBase, MorphCellType)
 
 # Set error tolerances for adaptive integrator
 h.golomb_set_state_tolerances()
 
 
-class GolombFsiModel(PynnCellModelBase):
+class GolombFsiModel(MorphModelBase):
     """
     Model class for Mahon/Corbit MSN cell.
 
@@ -52,37 +52,17 @@ class GolombFsiModel(PynnCellModelBase):
     default_GLU_mechanism = 'GLUsyn'
     allow_synapse_reuse = False
 
+    spike_threshold_source_sec = 0.0
+
 
     def instantiate(self, sim=None):
         """
         Instantiate cell in simulator
 
         @override       ephys.models.CellModel.instantiate()
-                        
-                        Since the wrapped model is a pure Hoc model completely
-                        defined by its Hoc template, i.e. without ephys
-                        morphology, parameters, or mechanisms definitions,
-                        we have to override instantiate().
         """
         self.icell = h.GolombFSI()
         self.icell.setparams_corbit2016()
-
-
-    def memb_init(self):
-        """
-        Initialization function required by PyNN.
-
-        @override     EphysModelWrapper.memb_init()
-        """
-        for seg in self.icell.soma:
-            seg.v = self.v_init
-
-
-    def get_threshold(self):
-        """
-        Get spike threshold for soma membrane potential (used for NetCon)
-        """
-        return 0.0
 
 
     def get_synapses(self, region, receptors, num_contacts, **kwargs):
@@ -90,7 +70,7 @@ class GolombFsiModel(PynnCellModelBase):
         Get synapse in subcellular region for given receptors.
         Called by Connector object to get synapse for new connection.
 
-        @override   PynnCellModelBase.get_synapse()
+        @override   MorphModelBase.get_synapse()
         """
         syns = [self.make_new_synapse(receptors, self.icell.soma[0](0.5), **kwargs) for i in xrange(num_contacts)]
         synmap_key = tuple(sorted(receptors))

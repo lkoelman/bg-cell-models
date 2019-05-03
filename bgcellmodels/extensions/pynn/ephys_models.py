@@ -15,44 +15,27 @@ https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/standardmodels/ce
 https://github.com/apdavison/BluePyOpt/blob/pynn-models/bluepyopt/ephys_pyNN/models.py
 
 """
+
+# Standrad library
 import re
-import itertools
 import math
 from copy import deepcopy
-# from abc import ABCMeta, abstractmethod
-
-import numpy as np
-import bluepyopt.ephys as ephys
-from pyNN.neuron import state as nrn_state, h
-from pyNN.neuron.cells import NativeCellType
-import quantities as pq
-
-from bgcellmodels.common import nrnutil, configutil
-
 import logging
+
+# Third party libraries
+import bluepyopt.ephys as ephys
+import pyNN.neuron
+
+# Our custom modules
+from bgcellmodels.extensions.pynn import cell_base
+
+# Global variables
 logger = logging.getLogger('ephys_models')
-
 ephys_nrn_sim = None
+h = pyNN.neuron.h
 
-rng_structural_variability = h.Random(
-    nrn_state.mpi_rank + nrn_state.native_rng_baseseed)
-
-
-def ephys_sim_from_pynn():
-    """
-    Get Ephys NrnSimulator without changing parameters of wrapped
-    NEURON simulator from those set by pyNN.
-    """
-    global ephys_nrn_sim
-
-    if ephys_nrn_sim is None:
-        cvode_active = nrn_state.cvode.active()
-        cvode_minstep = nrn_state.cvode.minstep()
-        ephys_nrn_sim = ephys.simulators.NrnSimulator(
-                            dt=nrn_state.dt,
-                            cvode_active=cvode_active,
-                            cvode_minstep=cvode_minstep)
-    return ephys_nrn_sim
+rng_structural_variability = h.Random(pyNN.neuron.state.mpi_rank + 
+                                      pyNN.neuron.state.native_rng_baseseed)
 
 
 def make_valid_attr_name(name):
@@ -65,99 +48,6 @@ def make_valid_attr_name(name):
                 String that is a valid attribute name.
     """
     return name.replace(".", "_")
-
-
-# Define additional units not recognized by quantities module
-pq.UnitQuantity('nanovolt', pq.V * 1e-9, symbol='nV')
-
-class UnitFetcherPlaceHolder(dict):
-    """
-    At the moment there isn't really a robust way to get the correct
-    units for all variables. 
-
-    This can be set explicity for each possible variable that is recordable
-    from the cell type, but with our custom TraceSpecRecorder the variable name 
-    can be anything.
-    """
-    def __getitem__(self, key):
-        """
-        Return units according to trace naming convention.
-
-        @return     units : str
-                    Unit string accepted by 'Quantities' python package
-        """
-        if key.lower().startswith('v'):
-            return 'mV'
-        elif key.lower().startswith('isyn'):
-            return 'nA'
-        elif key.lower().startswith('gsyn'):
-            return 'uS' # can also be nS but this is for our GABAsyn/GLUsyn
-        elif key.lower().startswith('i'):
-            return 'mA/cm^2' # membrane currents of density mechanisms
-        elif key.lower().startswith('g'):
-            return 'S/cm^2' # membrane conductances of density mechanisms
-        elif key.lower().startswith('lfp'):
-            return 'nV' # LFP calculator mechanism 'LfpSumStep'
-        elif key == 'spikes':
-            return 'ms'
-        else:
-            return 'dimensionless'
-
-
-class MorphCellType(NativeCellType):
-    """
-    PyNN native cell type that has Ephys model as 'model' attribute.
-
-    Attributes
-    ----------
-
-    @attr   units : UnitFetcherPlaceHolder
-
-            Required by PyNN, celltype must have method `units(varname)` that
-            returns the units of recorded variables
-
-    
-    @attr   receptor_types : list(str)
-
-            Required by PyNN: receptor types accepted by Projection constructor.
-            This attribute is created dynamically by combining
-            celltype.model.region with the celltype.receptor_types declared
-            in the subclass
-    """
-
-    # Population.find_units() queries this for units
-    units = UnitFetcherPlaceHolder()
-
-    def __init__(self, **kwargs):
-        """
-        The instantated cell type is passed to Population.
-
-        @param      extra_receptors : iterable(str)
-
-                    Synaptic mechanism names of synapses that should be allowed
-                    on this cell type.
-
-        @post       The list of receptors in self.receptor_types will be 
-                    updated with each receptor in 'with_receptors' for every
-                    cell location/region.
-        """
-        extra_receptors = kwargs.pop('extra_receptors', None)
-        super(MorphCellType, self).__init__(**kwargs)
-
-        # Combine receptors defined on the cell type with regions
-        # defined on the model class
-        celltype_receptors = type(self).receptor_types
-        if extra_receptors is None:
-            all_receptors = celltype_receptors
-        else:
-            all_receptors = celltype_receptors + list(extra_receptors)
-        
-        region_receptors = []
-        for region in self.model.regions:
-            for receptor in all_receptors:
-                region_receptors.append(region + "." + receptor)
-
-        self.receptor_types = region_receptors
 
 
 
@@ -247,463 +137,7 @@ class CellModelMeta(type):
 #         setattr(new_class, 'myprop', property(fget=__get_func, fset=__set_func))
 
 
-class PynnCellModelBase(object):
-    """
-    Base functionality for our custom PyNN cell models.
-
-    This class implements all methods required to work with our custom
-    Connector and Recorder classes or marks them as abstract methods
-    for implementation in the subclass.
-    """
-    
-    # FIXME: Problems with conflicting metaclass in subclass
-    # __metaclass__ = ABCMeta
-
-    def __init__(self, *args, **kwargs):
-        """
-        As opposed to the original CellModel class,
-        this class instantiates the cell in its __init__ method.
-
-        @param      **kwargs : dict(str, object)
-                    Parameter name, value pairs
-
-        @post       self.icell contains the instantiated Hoc cell model
-
-        """
-
-        # Create cell in NEURON (Sections, parameters)
-        self.instantiate()
-
-        # NOTE: default params will be passed by pyNN Population
-        for param_name, param_value in kwargs.iteritems():
-            if param_name in self.parameter_names:
-                # self.parameter_names is a list defined in the subclass body.
-                # User is responsible for handling parameters in subclass methods.
-                setattr(self, param_name, param_value)
-            else:
-                logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
-
-        # Make synapse data structure in format 
-        # {'region': {'receptors': list({ 'synapse':syn, 'used':int }) } }
-        self._init_synapses()
-
-        # Attributes required by PyNN
-        self.source_section = self.icell.soma[0]
-        self.source = self.icell.soma[0](0.5)._ref_v
-        
-        self.rec = h.NetCon(self.source, None,
-                            self.get_threshold(), 0.0, 0.0,
-                            sec=self.source_section)
-        self.spike_times = h.Vector(0) # see pyNN.neuron.recording.Recorder._record()
-        self.traces = {}
-        self.recording_time = False
-
-
-    # @abstractmethod
-    def memb_init(self):
-        """
-        Set initial values for all variables in this cell.
-
-        @override   memb_init() required by PyNN interface for cell models.
-        """
-        for sec in self.icell.all:
-            for seg in sec:
-                seg.v = self.v_init # set using pop.init(v=v_init) or default_initial_values
-
-
-    # @abstractmethod
-    def get_threshold(self):
-        """
-        Get spike threshold for self.source variable (usually points to membrane
-        potential). This threshold is used when creating NetCon connections.
-
-        @override   get_threshold() required by pyNN interface for cell models.
-
-        @return     threshold : float
-        """
-        raise NotImplementedError("Please set the spike threshold for your "
-                                  "custom cell model.")
-
-
-    def _init_synapses(self):
-        """
-        Initialize synapse map.
-
-        By default it just creates an empty synapse map, but the subclass
-        can override this to create synapses upon cell creation.
-
-        @post       self._synapses is a nested dict with depth=2 and following
-                    structure:
-                    { region: {receptors: list({ 'synapse':syn, 'used':int }) } }
-        """
-        self._synapses = {region: {} for region in self.regions}
-
-
-    # @abstractmethod
-    def get_synapses(self, region, receptors, num_contacts, **kwargs):
-        """
-        Get synapse in subcellular region for given receptors.
-        Called by Connector object to get synapse for new connection.
-
-        Parameters
-        ---------
-
-        @param      region : str
-                    Region descriptor.
-
-        @param      receptors : enumerable(str)
-                    Receptor descriptors.
-
-        @param      mark_used : bool
-                    Whether synapse is 'consumed' by caller and should be 
-                    marked as used.
-
-        @param      **kwargs
-                    (Unused) extra keyword arguments for use when overriding
-                    this method in a subclass.
-        
-        Returns
-        -------
-
-        @return     synapse, num_used : tuple(nrn.POINT_PROCESS, int)
-                    
-                    NEURON point process object that can serve as the
-                    target of a NetCon object, and the amount of times
-                    the synapse has been used before as the target
-                    of a NetCon.
-        """
-        raise NotImplementedError("Implement get_synapse() in subclass by "
-                                  "making use of any of the available methods. "
-                                  "E.g. get_existing_synapse(), ... ")
-
-
-    def make_synapses_cached_region(self, region, receptors, num_synapses, **kwargs):
-        """
-        Make a new synapse by sampling a cached region.
-
-        @pre    model must have attribute '_cached_region_segments' containing a
-                dict[str, list(nrn.Segment)] that maps the region name
-                to eligible segments in that region.
-        """
-        rng = kwargs.get('rng', np.random)
-        region_segs = self._cached_region_segments[region]
-        seg_ids = rng.choice(len(region_segs), 
-                             num_synapses, replace=False)
-        if 'mechanism' in kwargs:
-            mech_name = kwargs['mechanism']
-        elif all((rec in ('AMPA', 'NMDA') for rec in receptors)):
-            mech_name = self.default_GLU_mechanism
-        elif all((rec in ('GABAA', 'GABAB') for rec in receptors)):
-            mech_name = self.default_GABA_mechanism
-
-        return [getattr(h, mech_name)(region_segs[i]) for i in seg_ids]
-
-
-    def get_synapses_lazy(self, region, receptors, num_synapses, **kwargs):
-        """
-        Get synapses in region for all given receptors.
-        Attempts to re-use existing synapses and only creates new synapses
-        if no synapses are available.
-        """
-        pass # TODO: synapse re-use
-
-
-    def make_new_synapse(self, receptors, segment, mechanism=None):
-        """
-        Make a new synapse that implements given receptors in the
-        given segment.
-
-        @see    get_synapse() for documentation
-        """
-        if mechanism is not None:
-            syn = getattr(h, mechanism)(segment)
-        elif all((rec in ('AMPA', 'NMDA') for rec in receptors)):
-            syn = getattr(h, self.default_GLU_mechanism)(segment)
-        elif all((rec in ('GABAA', 'GABAB') for rec in receptors)):
-            syn = getattr(h, self.default_GABA_mechanism)(segment)
-        else:
-            raise ValueError("No synapse mechanism found that implements all "
-                             "receptors {}".format(receptors))
-        return syn
-
-
-    def make_synmap_tree():
-        """
-        Initialize data structure that tracks location of synapses in
-        dendritic tree.
-        """
-        # Algorithm idea:
-        # - each section is a node of a tree datastructure
-        # - each node keeps its own length =L=, number of synapses =nsyn=, and region =region=
-        # - each node can query same properties for entire subtree by recursive descent
-        # - to find a section:
-        #     - query subtree =L=, =nsyn=, filter nodes using =region=
-        #         - no nodes with matching region: =L=0=
-        #     - descend to child branch where =nsyn/L= is smaller than subtree average
-        #     - if node's =nsyn/L= is smaller than stored average: stop
-        raise NotImplementedError()
-
-
-
-    # def make_synapse_balanced(self, region, receptors, mechanism=None):
-    #     """
-    #     Make a new synapse in location so that synapses are distributed 
-    #     in balanced way over dendritic tree.
-    #     """
-    #     # TODO: decide approach
-    #     # - if completely random -> get unbalanced tree
-    #     # - if completely balanced -> unrealistic layout
-    #     # - decide at which point the choice will be random rather than smallest density
-        
-    #     # TODO: move execute-once code to _init_synapses
-    #     sibling_synapses = self.get_synapse_list(region, receptors)
-    #     total_siblings = len(sibling_synapses)
-    #     dendritic = list(self.icell.basal) + list(self.icell.apical)
-    #     dendritic_segments = [seg for sec in dendritic for seg in sec \
-    #                             if self.segment_in_region(seg, region)]
-    #     region_length = sum((seg.sec.L/seg.sec.nseg for seg in dendritic_segments))
-    #     synapse_density = total_siblings / region_length
-
-    #     # Get roots of dendrite
-    #     dendrite_roots = set()
-    #     for sec in self.icell.somatic:
-    #         for child in sec.children():
-    #             if child in dendritic:
-    #                 dendrite_roots.add(child)
-
-    #     # Ascend breadth-first, check subtree, pick random if criterion OK
-    #     queue = list(dendrite_roots)
-    #     while queue:
-    #         node = queue.pop(0) # FIFO queue
-    #         # Get entire subtree of current node
-    #         subtree_secs = h.SectionList()
-    #         subtree_secs.subtree(sec=node)
-    #         subtree_list = list(subtree_secs)
-    #         region_segments = [seg for sec in subtree_secs for seg in sec \
-    #                             if self.segment_in_region(seg, region)]
-    #         region_length = sum((seg.sec.L/seg.sec.nseg for seg in region_segments))
-    #         num_siblings = sum((1.0 for syn in sibling_synapses if (
-    #                             syn.get_segment().sec in subtree_list)))
-    #         region_density = num_siblings / region_length
-            
-    #         if region_length > 0 and region_density < synapse_density:
-    #             # pick random segment in subtree (filter by region) with nsyn/L < target
-    #             # - set new target density to subtree density
-    #             # - pick random segment with density < subtree density
-    #             target_segments = []
-    #             return pick_random_segment(region_segments)
-
-    #         for child in node.children():
-    #             queue.append(child)
-        
-    #     # If this point reached: tree is perfectly balanced -> imbalance it
-    #     # pick random section in whole tree (filter by region)
-    #     return pick_random_segment(dendritic_segments)
-
-
-    # def get_existing_synapse(self, region, receptors, mark_used):
-    #     """
-    #     Get existing synapse in region with given receptors.
-
-    #     This method is useful for cells that create all synapses upon
-    #     initialization.
-
-    #     @see    get_synapse() for documentation
-    #     """
-    #     syn_list = self.get_synapse_list(region, receptors)
-    #     if len(syn_list) == 0:
-    #         raise Exception("Could not find any synapses for "
-    #             "region '{}' and receptors'{}'".format(region, receptors))
-
-    #     min_used = min((meta.used for meta in syn_list))
-    #     metadata = next((meta for meta in syn_list if meta.used==min_used))
-    #     if mark_used:
-    #         metadata.used += 1 # increment used counter
-    #     return metadata.synapse, min_used
-
-
-    def get_synapse_list(self, region, receptors):
-        """
-        Get synapses in region that implements all given receptors.
-
-        @param      region : str
-                    Region descriptor.
-
-        @param      receptors : enumerable(str)
-                    Receptor descriptors.
-
-        @return     synapse_list : list(dict())
-                    List of synapse containers
-        """
-        return next((syns for recs, syns in self._synapses[region].items() if all(
-                        (ntr in recs for ntr in receptors))), [])
-
-
-    def get_synapses_by_mechanism(self, mechanism):
-        """
-        Get synapses of given NEURON mechanism.
-
-        @param      mechanism : str
-                    NEURON mechanism name
-
-        @return     synapse_list : list(synapse)
-                    List of synapses in region
-        """
-        all_syns = sum((synlist for region in self._synapses.values() for recs, synlist in region.items()), [])
-        return [syn for syn in all_syns if nrnutil.get_mod_name(syn) == mechanism]
-
-
-    def resolve_synapses(self, spec):
-        """
-        Resolve string definition of a synapse or point process
-        on this cell (used by Recorder).
-
-        @param      spec : str
-                    
-                    Synapse specifier in format "mechanism_name[slice]" where
-                    'slice' as a slice expression like '::2' or integer.
-
-        @return     list(nrn.POINT_PROCESS)
-                    List of NEURON synapse objects.
-        """
-        matches = re.search(r'^(?P<mechname>\w+)', spec)
-        mechname = matches.group('mechname')
-        
-        synlist = self.get_synapses_by_mechanism(mechname)
-        if len(synlist) == 0:
-            return []
-        else:
-            return configutil.index_with_str(synlist, spec)
-
-
-    def resolve_section(self, spec, multiple=False):
-        """
-        Resolve a section specification.
-
-        @return     nrn.Section
-                    The section intended by the given section specifier.
-
-
-        @param      spec : str
-                    
-                    Section specifier in the format 'section_container[index]',
-                    where 'section_container' is the name of a secarray, Section,
-                    or SectionList that is a public attribute of the icell,
-                    and the index part is optional.
-
-
-        @note       The default Section arrays for Ephys.CellModel are:
-                    'soma', 'dend', 'apic', 'axon', 'myelin'.
-                    
-                    The default SectionLists are:
-                    'somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all'
-
-                    If 'section_container' matches any of these names, it will
-                    be treated as such. If not, it will be treated as an indexable
-                    attribute of the icell instance.
-        """
-
-        matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>.+)\])?', spec)
-        sec_name = matches.group('secname')
-        sec_index = matches.group('index')
-
-        if sec_index is None:
-            return getattr(self.icell, sec_name)
-
-        seclist = list(getattr(self.icell, sec_name))
-        secs = configutil.index_with_str(seclist, spec)
-        if not multiple:
-            assert len(secs) == 1
-            return secs[0]
-        else:
-            return secs
-
-
-    def __getattr__(self, name):
-        """
-        Override __getattr__ to support dynamic properties that are not
-        explicitly declared.
-        
-        The following dynamic attributes are supported:
-        
-            - scale factors for NEURON RAMGE variables
-
-        @pre    Subclass must define attribute 'rangevar_names'
-
-        @note   __getattr__ is called as last resort and the default behavior
-                is to raise AttributeError
-        """
-        matches_scale_factor = re.search(r'^(\w+)_scale$', name)
-        if (matches_scale_factor is not None) and (any(
-            [v.startswith(matches_scale_factor.groups()[0]) for v in self.rangevar_names])):
-        
-            # search for NEURON RANGE variable to be scaled
-            varname = matches_scale_factor.groups()[0]
-            private_attr_name = '_' + varname + '_scale'
-
-            # Only if it has been scaled before does the scale attribute exist
-            if not hasattr(self, private_attr_name):
-                return 1.0 # not scaled
-            else:
-                # Call will bypass this method if attribute exists
-                return getattr(self, private_attr_name)
-        else:
-            # return super(PynnCellModelBase, self).__getattr__(name)
-            # raise AttributeError
-            return self.__getattribute__(name)
-
-
-    def __setattr__(self, name, value):
-        """
-        Override __setattr__ to support dynamic properties.
-        
-        The following dynamic attributes are supported:
-
-            - scale factors NEURON RANGE variables, by assigning
-              '<rangevar>_scale' where <rangevar> is RANGE variable that is
-              a member of self.rangevar_names
-
-        @pre    Subclass must define attribute 'rangevar_names'
-        """
-        # Check if attribute is of form '<rangevar>_scale' where rangevar
-        # is a member of self.rangevar_names
-        matches = re.search(r'^(\w+)_scale$', name)
-        if (matches is None) or (not any(
-                [v.startswith(matches.groups()[0]) for v in self.rangevar_names])):
-            return super(PynnCellModelBase, self).__setattr__(name, value)
-        varname = matches.groups()[0]
-        private_attr_name = '_' + varname + '_scale'
-
-        # Calculate actual scale factor based on previous scale
-        if not hasattr(self, private_attr_name):
-            old_scale = 1.0
-        else:
-            old_scale = getattr(self, private_attr_name)
-        if value == old_scale:
-            return # scale is already correct
-        relative_scale = value / old_scale
-
-        # Find NEURON mechanism name
-        matches = re.search(r'.+_([a-zA-Z0-9]+)$', varname)
-        if matches is None:
-            raise ValueError('Could not extract NEURON mechanism name '
-                             'from RANGE variable name {}'.format(varname))
-        mechname = matches.groups()[0]
-
-        # Scale neuron RANGE variable on sections in target region
-        for region_name in self.rangevar_scaled_regions.get(varname, ['all']):
-            # If no regions defined, use SectionList 'all' containing all sections
-            for sec in getattr(self.icell, region_name):
-                if not h.ismembrane(mechname, sec=sec):
-                    continue
-                for seg in sec:
-                    setattr(seg, varname, relative_scale * getattr(seg, varname))
-        
-        # Indicate the current scale factor applied to attribute
-        setattr(self, private_attr_name, value)
-
-
-class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
+class EphysModelWrapper(ephys.models.CellModel, cell_base.MorphModelBase):
     """
     Subclass of Ephys CellModel that conforms to the interface required
     by the 'model' attribute of a PyNN CellType class.
@@ -775,6 +209,7 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
             for e_param in params:
                 e_param.name = make_valid_attr_name(e_param.name)
 
+        # Call constructor of first base class
         super(EphysModelWrapper, self).__init__(
             model_name,
             morph=getattr(self, '_ephys_morphology', None),
@@ -782,7 +217,7 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
             params=params)
 
         # Cell must be instantiated _before_ applying parameters
-        self.sim = ephys_sim_from_pynn()
+        self.sim = cell_base.ephys_sim_from_pynn()
         self.instantiate(sim=self.sim)
 
         # NOTE: default params will be passed by pyNN Population
@@ -906,7 +341,7 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
 #        Get synapse in subcellular region for given receptors.
 #        Called by Connector object to get synapse for new connection.
 #
-#        @override   PynnCellModelBase.get_synapse()
+#        @override   MorphModelBase.get_synapse()
 #        """
 #        return self.get_existing_synapse(region, receptors, mark_used)
 
@@ -922,8 +357,12 @@ class EphysModelWrapper(ephys.models.CellModel, PynnCellModelBase):
         @note   called by our custom Population class that overrides
                 Population._create_cells()
         """
+        cell_base.MorphModelBase._post_build(self, population, pop_index)
+
+        # Pass position of cell in Population and use it
         position = population.positions[:, pop_index]
         self._update_position(position)
+        
         self._init_lfp()
 
 

@@ -1,21 +1,20 @@
-import math, logging
+import logging
 
 import numpy as np
 import neuron
 import bluepyopt.ephys as ephys
 
 # PyNN imports
-import pyNN.neuron
 from pyNN.parameters import ArrayParameter
 
-from bgcellmodels.common import electrotonic, nrnutil, treeutils, logutils
+from bgcellmodels.common import logutils
 from bgcellmodels.morphology import morph_3d
-from bgcellmodels import emfield
 from bgcellmodels.models.STN import GilliesWillshaw as gillies
 from bgcellmodels.models.STN import Miocinovic2006 as miocinovic
 # from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002
 from bgcellmodels.models.axon.foust2011 import AxonFoust2011
-from bgcellmodels.extensions.pynn import ephys_models as ephys_pynn
+from bgcellmodels.extensions.pynn import (
+    cell_base, ephys_models as ephys_pynn)
 
 
 h = neuron.h
@@ -26,271 +25,54 @@ logger.setLevel(logging.DEBUG)
 logging.basicConfig(format=logutils.DEFAULT_FORMAT)
 
 
-class StnMorphModel(ephys_pynn.PynnCellModelBase):
+
+class GilliesSwcModel(cell_base.MorphModelBase):
     """
-    Morphological STN model using any morphology in combination
-    with Miocinovic (2006) cell template.
-
-    DEVNOTES
-    --------
-
-    Called by ID._build_cell() defined in module pyNN/neuron/simulator.py
-    
-    - Population._create_cells()
-        - Population.cell_type.model(**cell_parameters)
-            - PynnCellModelBase.__init__()
-                - instantiate()
+    Morphological SWC model that uses the channel density distributions
+    and morphology from the original Gillies (2005) model.
     """
 
     # Combined with celltype.receptors in MorphCellType constructor
     # to make celltype.receptor_types in format 'region.receptor'
     regions = ['proximal', 'distal']
 
-    def __init__(self, **kwargs):
-        """
-        Custom handling of parameters
-        """
-        cell_param_names = StnMorphType.default_parameters.keys() + \
-                           StnMorphType.extra_parameters.keys()
-        
-        # Make parameters accessible as attributes
-        for param_name, param_value in kwargs.iteritems():
-            if isinstance(param_value, ArrayParameter):
-                param_value = param_value.value
-            if param_name in cell_param_names:
-                setattr(self, param_name, param_value)
-            else:
-                raise ValueError('Unknown argument "{}":'.format(
-                        param_name), param_value)
+    # Related to PyNN properties
+    _mechs_params_dict = {
+        'STh':  ['gpas'],
+        'Na':   ['gna'],
+        'NaL':  ['gna'],
+        'KDR':  ['gk'],
+        'Kv31': ['gk'],
+        'sKCa': ['gk'],
+        'Ih':   ['gk'],
+        'CaT':  ['gcaT'],
+        'HVA':  ['gcaL', 'gcaN'],
+        'Cacum':[],
+    }
+    rangevar_names = [p+'_'+m for m,params in _mechs_params_dict.iteritems() for p in params]
+    gleak_name = 'gpas_STh'
 
-        self.instantiate()
-        self._init_synapses()
-
-        # Attributes required by PyNN
-        # TODO: adapt to make NetCon created by Projection come from axon end
-        self.source_section = self.icell.soma[0]
-        self.source = self.icell.soma[0](0.5)._ref_v
-        
-        self.rec = h.NetCon(self.source, None,
-                            self.get_threshold(), 0.0, 0.0,
-                            sec=self.source_section)
-        self.spike_times = h.Vector(0) # see pyNN.neuron.recording.Recorder._record()
-        self.traces = {}
-        self.recording_time = False
-
-
-    def instantiate(self, sim=None):
-        """
-        Instantiate cell in simulator.
-        """
-        # Get arguments from __init__
-        template_name = self.template_name
-        morphology_path = self.morphology_path
-        streamlines_path = self.streamlines_path
-        axon_class = self.axon_class # e.g. AxonMcintyre2002
-        if sim is None:
-            sim = ephys_pynn.ephys_sim_from_pynn()
-
-        # Get the Hoc template
-        miocinovic.load_template(template_name) # xopen -> loads once
-        template_constructor = getattr(h, template_name)
-        
-        # Instantiate template
-        self.icell = icell = template_constructor()
-        icell.with_extracellular = not self.without_extracellular
-
-        # Load morphology into template
-        morphology = ephys.morphologies.NrnFileMorphology(morphology_path, do_replace_axon=False)
-        morphology.instantiate(sim=sim, icell=icell)
-
-        # Setup biophysical properties
-        icell.del_unused_sections()
-        icell.insert_biophys()
-        nseg_extra = electrotonic.set_min_nseg_hines(icell.all, f_lambda=100.0)
-        icell.set_biophys_spatial()
-
-        # Create and append axon
-        if streamlines_path is not None:
-            self._init_axon(axon_class, streamlines_path)
-
-        # Init extracellular stimulation & recording
-        self._init_emfield()
-
-
-    def _init_axon(self, axon_class):
-        """
-        Create and append axon.
-
-        @post   self.axon contains references to axonal sections.
-        """
-        axon_builder = axon_class(without_extracellular=self.without_extracellular)
-
-        # Build axon
-        axonal_secs = list(self.icell.axonal)
-        if len(axonal_secs) > 0:
-            # Attach axon to axon stub/AIS if present
-            axon_terminal_secs = treeutils.leaf_sections(axonal_secs[0], subtree=True)
-            assert len(axon_terminal_secs) == 1
-            axon_parent_sec = axon_terminal_secs[0]
-        else:
-            # Attach axon directly to soma
-            axon_parent_sec = self.icell.soma[0]
-
-        axon = axon_builder.build_along_streamline(
-                    self.streamline_coordinates_mm,
-                    terminate='nodal_cutoff', interp_method='arclength',
-                    parent_cell=self.icell, parent_sec=axon_parent_sec,
-                    connection_method='translate_axon_start', tolerance_mm=1e-4)
+    # Scaling of NEURON RANGE variables
+    rangevar_scaled_seclists = {}
     
-        self.axon = axon
+    spike_threshold_source_sec = -10.0
 
-        # Change source for NetCons (see pyNN.neuron.simulator code)
-        terminal_sec = list(self.icell.axonal)[-1]
-        self.source_section = terminal_sec
-        self.source = terminal_sec(0.5)._ref_v
+    # Regions for synapses
+    regions = ['proximal', 'distal']
+    synapse_spacing = 0.25 # (um)
+    region_boundaries = {
+        'proximal': (0.0, 120.0),   # (um)
+        'distal':   (100.0, 1e12),  # (um)
+    }
 
-
-    def _post_build(self, population, pop_index):
-        """
-        Hook called after Population._create_cells() -> ID._build_cell()
-        is executed.
-
-        @override   EphysModelWrapper._post_build()
-        """
-        self._init_memb_noise(population, pop_index)
-
-
-    def _init_emfield(self):
-        """
-        Set up extracelullar stimulation and recording.
-        """
-        # Insert mechanism that mediates between extracellular variables and
-        # recording & stimulation routines.
-        for sec in self.icell.all:
-            sec.insert('xtra')
-
-        # Calculate coordinates of each compartment's (segment) center
-        h.xtra_segment_coords_from3d(self.icell.all)
-        h.xtra_setpointers(self.icell.all)
-
-        # Set transfer impedance between electrode and compartment centers
-        x_elec, y_elec, z_elec = self.electrode_coordinates_um
-        h.xtra_set_impedances_pointsource(
-            self.icell.all, self.rho_extracellular_ohm_cm, x_elec, y_elec, z_elec)
+    def __init__(self, *args, **kwargs):
+        # Define parameter names before calling superclass constructor
+        self.parameter_names = StnMorphType.default_parameters.keys() + \
+                               StnMorphType.extra_parameters.keys()
+        for rangevar in self.rangevar_names:
+            self.parameter_names.append(rangevar + '_scale')
         
-        # Alternative using lookup function
-        # emfield.xtra_set_transfer_impedances(self.icell.all, 
-        #                                      self.impedance_lookup_func)
-
-        # TODO: set up stimulation in main script (see stim.hoc)
-
-        # Set up LFP calculation
-        if logger.level <= logging.WARNING:
-            h.XTRA_VERBOSITY = 1
-        self.lfp_summator = h.xtra_sum(self.icell.soma[0](0.5))
-        self.lfp_tracker = h.ImembTracker(self.lfp_summator, self.icell.all, "xtra")
-
-
-    def _init_memb_noise(self, population, pop_index):
-        # Insert membrane noise
-        if self.membrane_noise_std > 0:
-            # Configure RNG to generate independent stream of random numbers.
-            num_picks = int(pyNN.neuron.state.duration / pyNN.neuron.state.dt)
-            seed = (1e4 * population.pop_gid) + pop_index
-            rng, init_rng = nrnutil.independent_random_stream(
-                                    num_picks, pyNN.neuron.state.mcellran4_rng_indices,
-                                    force_low_index=seed)
-            rng.normal(0, 1)
-            self.noise_rng = rng
-            self.noise_rng_init = init_rng
-
-            soma = self.icell.soma[0]
-            self.noise_stim = stim = h.ingauss2(soma(0.5))
-            std_scale =  1e-2 * sum((seg.area() for seg in soma)) # [mA/cm2] to [nA]
-            stim.mean = 0.0
-            stim.stdev = self.membrane_noise_std * std_scale
-            stim.noiseFromRandom(rng)
-        else:
-            def fdummy():
-                pass
-            self.noise_rng = None
-            self.noise_rng_init = fdummy
-
-
-    def _init_synapses(self):
-        """
-        Initialize synapses on this neuron.
-
-        @override   EphysModelWrapper._init_synapses()
-        """
-        # Create data structure for synapses
-        super(StnMorphModel, self)._init_synapses()
-
-        # Indicate to Connector that we don't allow multiple NetCon per synapse
-        self.allow_synapse_reuse = False
-
-        # Sample cell regions
-        soma = self.icell.soma[0]
-        h.distance(0, 0.5, sec=soma) # reference for distance measurement
-        is_proximal = lambda seg: h.distance(1, seg.x, sec=seg.sec) < 120.0
-        is_distal = lambda seg: h.distance(1, seg.x, sec=seg.sec) >= 100.0
-
-        # Sample each region uniformly and place synapses there
-        synapse_spacing = 0.25 # [um]
-        target_secs = list(self.icell.somatic) + list(self.icell.basal) + \
-                      list(self.icell.apical)
-        self._cached_region_segments = {}
-        self._cached_region_segments['proximal'] = []
-        self._cached_region_segments['distal'] = []
-        for sec in target_secs:
-            nsyn = math.ceil(sec.L / synapse_spacing)
-            for i in xrange(int(nsyn)):
-                seg = sec((i+1.0)/nsyn)
-                if is_proximal(seg):
-                    self._cached_region_segments['proximal'].append(seg)
-                if is_distal(seg):
-                    self._cached_region_segments['distal'].append(seg)
-
-
-    def get_synapses(self, region, receptors, num_contacts, **kwargs):
-        """
-        Get synapse in subcellular region for given receptors.
-        Called by Connector object to get synapse for new connection.
-
-        @override   PynnCellModelBase.get_synapse()
-        """
-        syns = self.make_synapses_cached_region(region, receptors, 
-                                                num_contacts, **kwargs)
-        synmap_key = tuple(sorted(receptors))
-        self._synapses[region].setdefault(synmap_key, []).extend(syns)
-        return syns
-
-
-    def memb_init(self):
-        """
-        Initialization function required by PyNN.
-
-        @override     EphysModelWrapper.memb_init()
-        """
-        super(StnMorphModel, self).memb_init()
-
-        self.noise_rng_init()
-
-    def get_threshold(self):
-        """
-        Get spike threshold for soma membrane potential (used for NetCon)
-        """
-        return -10.0
-
-
-class GilliesSwcModel(StnMorphModel):
-    """
-    Morphological SWC model that uses the channel density distributions
-    and morphology from the original Gillies (2005) model.
-    """
-
-    def __init__(self, **kwargs):
-        super(GilliesSwcModel, self).__init__(**kwargs)
+        super(GilliesSwcModel, self).__init__(*args, **kwargs)
 
 
     def instantiate(self, sim=None):
@@ -367,6 +149,13 @@ class GilliesSwcModel(StnMorphModel):
         for sec in list(self.icell.somatic) + [self.icell.axon[0]]:
             for seg in sec:
                 seg.gna_NaL = 2.0 * seg.gna_NaL
+
+
+    def get_threshold(self):
+        """
+        Get spike threshold for soma membrane potential (used for NetCon)
+        """
+        return -10.0
 
 
 class StnMorphType(ephys_pynn.MorphCellType):

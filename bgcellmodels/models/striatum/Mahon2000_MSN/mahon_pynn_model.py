@@ -17,13 +17,13 @@ neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms'))
 # Load Hoc functions for cell model
 prev_cwd = os.getcwd()
 os.chdir(script_dir)
-h.xopen("mahon_createcell.hoc") # instantiates all functions & data structures on Hoc object
+h.load_file("mahon_createcell.hoc")
 os.chdir(prev_cwd)
 
 from bgcellmodels.extensions.pynn.ephys_models import (
-    PynnCellModelBase, MorphCellType)
+    MorphModelBase, MorphCellType)
 
-class MsnCellModel(PynnCellModelBase):
+class MsnCellModel(MorphModelBase):
     """
     Model class for Mahon/Corbit MSN cell.
 
@@ -69,16 +69,6 @@ class MsnCellModel(PynnCellModelBase):
             seg.el_Leakm = -90 # Corbit (2016) changes -75 to -90
 
 
-    def memb_init(self):
-        """
-        Initialization function required by PyNN.
-
-        @override     EphysModelWrapper.memb_init()
-        """
-        for seg in self.icell.soma:
-            seg.v = self.v_init
-
-
     def get_threshold(self):
         """
         Get spike threshold for soma membrane potential (used for NetCon)
@@ -91,7 +81,7 @@ class MsnCellModel(PynnCellModelBase):
         Get synapse in subcellular region for given receptors.
         Called by Connector object to get synapse for new connection.
 
-        @override   PynnCellModelBase.get_synapse()
+        @override   MorphModelBase.get_synapse()
         """
         syns = [self.make_new_synapse(receptors, self.icell.soma[0](0.5), **kwargs) for i in xrange(num_contacts)]
         synmap_key = tuple(sorted(receptors))

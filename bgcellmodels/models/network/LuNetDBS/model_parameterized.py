@@ -326,7 +326,14 @@ def simulate_model(
     def get_axon_coordinates(axon_id):
         return np.asarray(axon_coordinates[axon_id]) * axon_scale
 
-    def get_morphology_path(morphology_id):
+    def get_morphology_path(morphology_id, default_morphology=None):
+        """
+        Get morphology file path from morphology name.
+        """
+        if morphology_id is None:
+            if default_morphology is None:
+                return ValueError('No default morphology for empty morphology.')
+            morphology_id = default_morphology
         return os.path.join(morph_dir, morphology_id + '.swc')
 
 
@@ -352,6 +359,10 @@ def simulate_model(
 
     #===========================================================================
     # CTX POPULATION
+
+    # TODO: configure new CTX axon population
+    #   - play spiketrains into synapses configured by John.
+    #   - Make morphological cell type with dummy soma
 
     # CTX spike sources
     ctx_pop_size, = get_pop_parameters('CTX', 'base_population_size')
@@ -390,18 +401,26 @@ def simulate_model(
     #===========================================================================
     # STN POPULATION
 
+    stn_ncell_base, = get_pop_parameters('STN', 'base_population_size')
+    stn_ncell_biophys = int(stn_ncell_base * pop_scale)
+
     #---------------------------------------------------------------------------
     # Define cell model
+
+    # TODO: set electrode coordinates
+
+    # Select cells to simulate
+    pop_cell_defs = [cell for cell in cell_config['cells'] if cell['population'] == 'STN']
+    cell_defs = pop_cell_defs[:stn_ncell_biophys]
     
+    # Get 3D morphology properties of each cell
+    cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
+    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
 
-    # TODO: set electrode coordinates, load morphologies
-    # TODO: wrap in Sequence/ArrayParameter if not working
-    # see http://neuralensemble.org/docs/PyNN/parameters.html
-
-    cell_morph_defs = cell_config['cells']
-    cells_transforms = [np.asarray(cell['transform']) for cell in cell_morph_defs]
-    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_morph_defs]
-    cells_morph_paths = [get_morphology_path(cell['morphology']) for cell in cell_morph_defs]
+    cells_morph_paths = [
+        get_morphology_path(cell['morphology'],
+            default_morphology='gillies_original') for cell in cell_defs
+    ]
 
     # Load default parameters from sim config
     stn_cell_params = get_cell_parameters('STN')
@@ -420,12 +439,10 @@ def simulate_model(
     #---------------------------------------------------------------------------
     # Define population
 
-    stn_ncell_base, stn_dx, = get_pop_parameters('STN',
-                                'base_population_size', 'grid_dx')
-
     # Grid structure for calculating connectivity
+    stn_dx, = get_pop_parameters('STN', 'grid_dx')
     stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
-    stn_ncell_biophys = len(cell_config['cells']) # int(stn_ncell_base * pop_scale)
+    stn_ncell_biophys = int(stn_ncell_base * pop_scale)
 
     vinit = stn_type.default_initial_values['v']
     initial_values={
