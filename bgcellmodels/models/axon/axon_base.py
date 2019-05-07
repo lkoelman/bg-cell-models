@@ -11,6 +11,7 @@ import neuron
 
 from bgcellmodels.morphology import morph_3d
 from bgcellmodels.common import logutils
+from bgcellmodels.common.stdutil import dotdict
 
 h = neuron.h
 PI = math.pi
@@ -385,7 +386,7 @@ class AxonBuilder(object):
                                tolerance_mm=1e-6, interp_method='cartesian',
                                parent_cell=None, parent_sec=None,
                                connection_method='translate_axon',
-                               raise_if_existing=True):
+                               raise_if_existing=True, use_initial_segment=True):
         """
         Build NEURON axon along a sequence of coordinates.
 
@@ -464,7 +465,7 @@ class AxonBuilder(object):
             raise ValueError('Unknown inerpolation method: ', interp_method)
         
         sec_by_type = {sec_type: [] for sec_type in self.compartment_defs.keys()}
-        sec_ordered = []
+        sec_by_type['ordered'] = sec_ordered = []
 
         n_repeating = len(self.repeating_comp_sequence)
         MAX_NUM_COMPARTMENTS = int(1e9)
@@ -480,7 +481,7 @@ class AxonBuilder(object):
 
             # Look up section type for current point in the chain
             self.i_compartment = i_compartment
-            if i_compartment < len(self.initial_comp_sequence):
+            if use_initial_segment and (i_compartment < len(self.initial_comp_sequence)):
                 # We are in the initial section of the axon (non-repeating structure)
                 i_sequence = i_compartment
                 sec_type = self.initial_comp_sequence[i_sequence]
@@ -598,7 +599,7 @@ class AxonBuilder(object):
                     logger.debug("Updated SectionList '%s' of %s", seclist_name, parent_cell)
 
 
-        return sec_by_type
+        return dotdict(sec_by_type)
 
 
 # Make logging functions

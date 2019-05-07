@@ -10,12 +10,13 @@ PyNN compatible cell models for GPe cell model.
 from neuron import h
 import numpy as np
 
-# from pyNN.standardmodels import StandardCellType
-# from pyNN.neuron.cells import NativeCellType
+# PyNN imports
+from pyNN.parameters import ArrayParameter
 
 from bgcellmodels.extensions.pynn import cell_base, ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
 from bgcellmodels.morphology import morph_3d
+from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 
 import gunay_model
 
@@ -113,7 +114,8 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
     def __init__(self, *args, **kwargs):
         # Define parameter names before calling superclass constructor
-        self.parameter_names = GPeCellType.default_parameters.keys()
+        self.parameter_names = GPeCellType.default_parameters.keys() + \
+                               GPeCellType.extra_parameters.keys()
         for rangevar in self.rangevar_names:
             self.parameter_names.append(rangevar + '_scale')
         
@@ -145,6 +147,9 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         if len(self.streamline_coordinates_mm) > 0:
             self._init_axon(self.axon_class)
 
+        # Fix conductances if axon is present (compensate loading)
+        self._init_gbar()
+
         # Init extracellular stimulation & recording
         if self.with_extracellular:
             for region in self.seclists_with_extracellular:
@@ -162,6 +167,60 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
     def _update_position(self, xyz):
         pass
+
+
+    def _init_axon(self, axon_class):
+        """
+        Create and append axon.
+
+        @post   self.axon contains references to axonal sections.
+
+        NOTE: we override this method, since Gunay model has very small sections
+              which causes large discrepancy in input impedance.
+        """
+        super(GPeCellModel, self)._init_axon(axon_class)
+        for sec in self.axon['aisnode'] + self.axon['aismyelin']:
+            sec.diam = 0.5
+        # axon_builder = axon_class(
+        #     without_extracellular=not self.with_extracellular)
+
+        # # Attach axon to axon stub/AIS if present
+        # axon_terminal_secs = list(self.icell.axonal)
+        # assert len(axon_terminal_secs) == 1
+        # axon_parent_sec = axon_terminal_secs[0]
+
+        # axon = axon_builder.build_along_streamline(
+        #             self.streamline_coordinates_mm,
+        #             terminate='nodal_cutoff', interp_method='arclength',
+        #             parent_cell=self.icell, parent_sec=axon_parent_sec,
+        #             connection_method='translate_axon_start', tolerance_mm=1e-4,
+        #             use_initial_segment=False)
+    
+        # self.axon = axon
+
+        # # Change source for NetCons (see pyNN.neuron.simulator code)
+        # terminal_sec = list(self.icell.axonal)[-1]
+        # self.source_section = terminal_sec
+        # self.source = terminal_sec(0.5)._ref_v
+
+        # # To keep high input impedance, we scale the first nodal section
+        # first_node = axon['node'][0]
+        # first_node.diam = 1.0
+        # first_node.L = 1.0
+
+
+    def _init_gbar(self):
+        """
+        Load channel conductances from Gillies & Wilshaw data files.
+        """
+        # Increase persistent Na current to compensate for axon Zin
+        if hasattr(self, 'axon'):
+            for sec in list(self.icell.somatic) + list(self.icell.basal) + [self.icell.axon[0]]:
+                if not h.ismembrane('NaP', sec=sec):
+                    continue
+                for seg in sec:
+                    seg.gmax_NaP = 30.0 * seg.gmax_NaP
+                print('Fixed 1 section NaP conductance')
 
 
 class GPeCellType(cell_base.MorphCellType):
@@ -195,9 +254,16 @@ class GPeCellType(cell_base.MorphCellType):
     default_parameters = {
         'default_GABA_mechanism': np.array('GABAsyn'),
         'default_GLU_mechanism': np.array('GLUsyn'),
-        'tau_m_scale': 1.0,
         'membrane_noise_std': 0.0,
+        # Biophysical properties
+        'tau_m_scale': 1.0,
+        # Extracellular stim & rec
         'with_extracellular': False,
+        'electrode_coordinates_um' : ArrayParameter([]),
+        'rho_extracellular_ohm_cm' : 0.03, 
+        # 3D specification
+        'transform': ArrayParameter([]),
+        'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
     }
 
     # Defaults for Ephys parameters
@@ -206,6 +272,11 @@ class GPeCellType(cell_base.MorphCellType):
         # ephys_param.name is same as key in ephys_model.params
         p.name.replace(".", "_"): p.value for p in model._ephys_parameters
     })
+
+    # NOTE: extra_parameters supports non-numpy types. 
+    extra_parameters = {
+        'axon_class': AxonFoust2011,
+    }
 
 
     # extra_parameters = {}

@@ -215,21 +215,29 @@ class EphysModelWrapper(ephys.models.CellModel, cell_base.MorphModelBase):
             morph=getattr(self, '_ephys_morphology', None),
             mechs=getattr(self, '_ephys_mechanisms', None),
             params=params)
+        ephys_param_names = self.params.keys() # ephys param dict
+
+        # Parameters that are not dynamic must be set before instantiate
+        instantiated_params = set()
+        for param_name, param_value in kwargs.iteritems():
+            if (param_name not in ephys_param_names) and (not param_name.endswith('_scale')):
+                setattr(self, param_name, param_value)
+                instantiated_params.add(param_name)
 
         # Cell must be instantiated _before_ applying parameters
         self.sim = cell_base.ephys_sim_from_pynn()
         self.instantiate(sim=self.sim)
 
-        # NOTE: default params will be passed by pyNN Population
+        # Parse parameters passed by cell type
         for param_name, param_value in kwargs.iteritems():
-            if (param_name in self.params) and (self.params[param_name].value == param_value):
-                # self.params are the Ephys parameters : these are already set
-                # in `self.instantiate()` so don't set them again
+            if param_name in instantiated_params:
+                continue
+            elif (param_name in ephys_param_names) and \
+                 (self.params[param_name].value == param_value):
+                # Ephys parameters are already set in self.instantiate()
                 continue
             elif (param_name in self.parameter_names) or param_name.endswith('_scale'):
-                # self.parameter_names is a list defined in the subclass body.
-                # Ephys parameters are also added to to this list (see metaclass).
-                # User is responsible for handling parameters in subclass methods.
+                # Dynamic parameters are dispatched to approprate method
                 setattr(self, param_name, param_value)
             else:
                 logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
@@ -242,10 +250,6 @@ class EphysModelWrapper(ephys.models.CellModel, cell_base.MorphModelBase):
         #     # loc.icell = self.icell
         #     self.locations[make_valid_attr_name(loc.name)] = loc
 
-        # Synapses will map the mechanism name to the synapse object
-        # and is set by our custom Connection class
-        # self.synapses = {} # mech_name: str -> list(nrn.POINT_PROCESS)
-        # Make synapse objects as targets for connections
         self._init_synapses()
         self._post_instantiate()
 
