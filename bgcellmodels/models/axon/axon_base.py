@@ -116,7 +116,7 @@ class AxonBuilder(object):
         return sec
 
 
-    def _next_node_dist(self, i_sequence, measure_from=1):
+    def next_node_distance(self, i_sequence, measure_from=1):
         """
         Distance to next node in mm.
         """
@@ -126,6 +126,16 @@ class AxonBuilder(object):
         dist_microns = sum((self.compartment_defs[t]['morphology']['L']
                                 for t in self.repeating_comp_sequence[i_start:]))
         return 1e-3 * dist_microns
+
+
+    def compartment_sequence_length(self, compartment_sequence):
+        """
+        Get length of a sequence of compartments in mm.
+
+        @param  compartment_sequence : list[str]
+                Sequence of compartment types.
+        """
+        return 1e-3 * sum((self.compartment_defs[sec]['morphology']['L'] for sec in compartment_sequence))
 
 
     def _set_streamline_length(self):
@@ -382,11 +392,71 @@ class AxonBuilder(object):
             morph_3d.transform_sections(parent_cell.all, translate_mat)
 
 
-    def build_along_streamline(self, streamline_coords, terminate='nodal_cutoff',
-                               tolerance_mm=1e-6, interp_method='cartesian',
-                               parent_cell=None, parent_sec=None,
+    def get_next_compartment_def(self, i_compartment, update_state=True):
+        """
+        Get type and attributes of next compartment to be built.
+
+        @return     sec_type, sec_attrs : tuple[str, dict]
+        """
+
+        # Find properties of next Section (compartment type)
+        if self.use_initial_segment and (i_compartment < len(self.initial_comp_sequence)):
+            # We are in the initial section of the axon (non-repeating structure)
+            current_compartment_sequence = 'initial_comp_sequence'
+            i_sequence = i_compartment
+            sec_type = self.initial_comp_sequence[i_sequence]
+            self.i_initial_offset = len(self.initial_comp_sequence)
+        
+        else:
+            # We are in the repeating part of the axon
+            current_compartment_sequence = 'repeating_comp_sequence'
+            i_sequence = (i_compartment - self.i_initial_offset) % len(self.repeating_comp_sequence)
+            sec_type = self.repeating_comp_sequence[i_sequence]
+        
+        sec_attrs = self.compartment_defs[sec_type]
+
+        remaining_length = self.streamline_length - self.built_length
+        next_remaining_length = remaining_length - sec_attrs['morphology']['L'] * 1e-3
+
+        # Check termination criteria that change sequence
+        if (self.termination_method == 'unmyelinated') and \
+           (self.unmyelinated_terminal_length > 0.0):
+            if next_remaining_length <= self.unmyelinated_terminal_length:
+                # Next compartment will be an unmyelinated section of length 'remaining_length'
+                current_compartment_sequence = 'repeating_comp_sequence'
+                sec_type = self.nodal_compartment_type
+                sec_attrs = dict(self.compartment_defs[sec_type])
+                seg_per_mm = sec_attrs['morphology']['nseg'] / sec_attrs['morphology']['L'] * 1e3
+                sec_attrs['morphology']['nseg'] = int(seg_per_mm * remaining_length) + 1
+                sec_attrs['morphology']['L'] = remaining_length * 1e-3
+
+        elif self.termination_method == 'terminal_sequence':
+            if next_remaining_length <= self.compartment_sequence_length(self.terminal_comp_sequence):
+                current_compartment_sequence = 'terminal_comp_sequence'
+                i_sequence = (i_compartment - self.i_terminal_offset) % len(self.terminal_comp_sequence)
+                sec_type = self.terminal_comp_sequence[i_sequence]
+                sec_attrs = self.compartment_defs[sec_type]
+            else:
+                self.i_terminal_offset = len(self.built_sections['ordered'])
+
+        if update_state:
+            self.current_compartment_sequence = current_compartment_sequence
+            self.i_sequence = i_sequence
+
+        return sec_type, sec_attrs
+
+
+    def build_along_streamline(self,
+                               streamline_coords,
+                               termination_method='terminal_sequence',
+                               tolerance_mm=1e-6,
+                               interp_method='cartesian',
+                               parent_cell=None,
+                               parent_sec=None,
                                connection_method='translate_axon',
-                               raise_if_existing=True, use_initial_segment=True):
+                               raise_if_existing=True,
+                               use_initial_segment=True,
+                               unmyelinated_terminal_length=0.0):
         """
         Build NEURON axon along a sequence of coordinates.
 
@@ -397,6 +467,12 @@ class AxonBuilder(object):
 
                 - 'any' to terminate as soon as last compartment extends beyond
                   endpoint of streamline
+
+                - 'unmyelinated' to end with an unmyelinated segment of length
+                  <unmyelinated_terminal_length>
+
+                - 'terminal_sequence' to use the axon class' <terminal_comp_sequence>
+                  variable for building the final segment
 
                 - 'nodal_extend' to terminate axon with nodal compartment
                    extended beyond streamline endpoint if necessary
@@ -432,11 +508,21 @@ class AxonBuilder(object):
         @return     sections : list[nrn.Section]
                     List of axonal sections
         """
-        # Compartments have fixed distances, so need to advance between streamline
-        # points using interpolation.
-        
-
+        # Parse arguments and check preconditions
+        if termination_method == 'unmyelinated' and \
+           unmyelinated_terminal_length <= 0.0:
+            raise ValueError('Must use positive unmyelinated terminal length'
+                             ' for termination method "unmyelinated"')
+        if termination_method == 'terminal_sequence' and \
+           len(self.terminal_comp_sequence) == 0:
+            raise ValueError('No terminal compartment sequence defined '
+                             'in axon class {}'.format(self.__class__))
+        self.termination_method = termination_method
+        self.use_initial_segment = use_initial_segment
+        self.unmyelinated_terminal_length = unmyelinated_terminal_length
         self.streamline_pts = np.array(streamline_coords)
+
+        # Connect to parent cell
         if parent_sec is not None:
             self._connect_axon(parent_cell, parent_sec, connection_method,
                                tolerance_mm=1e-3)
@@ -447,7 +533,6 @@ class AxonBuilder(object):
         
         # State variables for building algorithm
         self.interp_pts = []        # interpolated points
-        self.i_compartment = 0      # index in sequence of compartments
         self.num_passed = 1         # index of last passed streamline point
                                     # (we already 'passed' starting point)
         
@@ -455,6 +540,7 @@ class AxonBuilder(object):
         self.last_coord = self.streamline_pts[0]
         self.last_tangent = normvec(self.streamline_pts[1] - streamline_coords[0])
         self.built_length = 0.0
+        self.i_sequence_offset = 0
 
         # Walk to its endpoint
         if interp_method == 'arclength':
@@ -464,10 +550,11 @@ class AxonBuilder(object):
         else:
             raise ValueError('Unknown inerpolation method: ', interp_method)
         
-        sec_by_type = {sec_type: [] for sec_type in self.compartment_defs.keys()}
-        sec_by_type['ordered'] = sec_ordered = []
+        # Keep references to newly constructed Sections
+        self.built_sections = {sec_type: [] for sec_type in self.compartment_defs.keys()}
+        self.built_sections['ordered'] = sec_ordered = []
 
-        n_repeating = len(self.repeating_comp_sequence)
+        # Estimate number of Sections needed to build axon
         MAX_NUM_COMPARTMENTS = int(1e9)
         est_num_comp = self.estimate_num_sections()
         tot_num_seg = 0
@@ -477,23 +564,16 @@ class AxonBuilder(object):
             raise ValueError('Streamline too long (estimated number of '
                 'compartments needed is {}'.format(est_num_comp))
 
+        # Build axon progressively by walking along streamline path
         for i_compartment in xrange(MAX_NUM_COMPARTMENTS):
 
-            # Look up section type for current point in the chain
-            self.i_compartment = i_compartment
-            if use_initial_segment and (i_compartment < len(self.initial_comp_sequence)):
-                # We are in the initial section of the axon (non-repeating structure)
-                i_sequence = i_compartment
-                sec_type = self.initial_comp_sequence[i_sequence]
-            else:
-                # We are in the repeating part of the axon
-                i_sequence = i_compartment % n_repeating
-                sec_type = self.repeating_comp_sequence[i_sequence]
-            sec_attrs = self.compartment_defs[sec_type]
+            # Find properties of next Section (compartment type)
+            sec_type, sec_attrs = self.get_next_compartment_def(i_compartment)
             sec_L_mm = sec_attrs['morphology']['L'] * 1e-3 # um to mm
 
+
             # Create the compartment
-            sec_name = "{:s}[{:d}]".format(sec_type, len(sec_by_type[sec_type]))
+            sec_name = "{:s}[{:d}]".format(sec_type, len(self.built_sections[sec_type]))
             if parent_cell is None:
                 ax_sec = h.Section(name=sec_name)
             else:
@@ -506,7 +586,7 @@ class AxonBuilder(object):
                 ax_sec.connect(parent_sec(1.0), 0.0)
             
             parent_sec = ax_sec
-            sec_by_type[sec_type].append(ax_sec)
+            self.built_sections[sec_type].append(ax_sec)
             sec_ordered.append(ax_sec)
             tot_num_seg += ax_sec.nseg
             
@@ -539,19 +619,30 @@ class AxonBuilder(object):
             # remaining_length = self._get_remaining_arclength() # FIXME: fix bug
             remaining_length = self.streamline_length - self.built_length
 
-            if terminate == 'any_extend':
+            if self.termination_method == 'terminal_sequence':
+                if self.current_compartment_sequence == 'terminal_comp_sequence' and \
+                   (self.i_sequence == len(self.terminal_comp_sequence)-1):
+                   break
+            elif self.termination_method == 'unmyelinated':
+                if remaining_length <= self.unmyelinated_terminal_length:
+                    # This check was also done before building previous compartment
+                    # and should have built a compartment of exactly the remaining length
+                    break
+            elif self.termination_method == 'any_extend':
                 if self.num_passed >= len(self.streamline_pts):
                     break
-            elif terminate == 'any_cutoff':
-                next_type = self.repeating_comp_sequence[i_compartment % n_repeating]
-                next_length = self.compartment_defs[next_type]['morphology']['L'] * 1e-3
+            elif self.termination_method == 'any_cutoff':
+                next_type, next_attrs = self.get_next_compartment_def(
+                                            i_compartment + 1, update_state=False)
+                next_length = next_attrs['morphology']['L'] * 1e-3
                 if remaining_length - next_length <= 0:
                     break
-            elif terminate == 'nodal_cutoff' and sec_type == self.nodal_compartment_type:
-                next_node_dist = self._next_node_dist(i_sequence, measure_from=1)
+            elif self.termination_method == 'nodal_cutoff' and sec_type == self.nodal_compartment_type:
+                i_seq = (i_compartment - self.i_sequence_offset) % len(self.repeating_comp_sequence)
+                next_node_dist = self.next_node_distance(i_seq, measure_from=1)
                 if next_node_dist > remaining_length:
                     break
-            elif terminate == 'nodal_extend' and sec_type == self.nodal_compartment_type:
+            elif self.termination_method == 'nodal_extend' and sec_type == self.nodal_compartment_type:
                 if self.num_passed >= len(self.streamline_pts):
                     break
 
@@ -575,7 +666,7 @@ class AxonBuilder(object):
             # lists to the icell, and appending to its SectionLists
             # also does not work.
 
-            # for sec_type, seclist in sec_by_type.items():
+            # for sec_type, seclist in built_sections.items():
             #     existing = getattr(parent_cell, sec_type, None)
             #     if existing is None:
             #         setattr(parent_cell, sec_type, seclist)
@@ -598,8 +689,13 @@ class AxonBuilder(object):
                         seclist.append(sec=ax_sec)
                     logger.debug("Updated SectionList '%s' of %s", seclist_name, parent_cell)
 
+        # Store axonal sections in SectionList for ease of access in Hoc
+        all_seclist = h.SectionList()
+        for sec in self.built_sections['ordered']:
+            all_seclist.append(sec=sec)
+        self.built_sections['all'] = all_seclist
 
-        return dotdict(sec_by_type)
+        return dotdict(self.built_sections)
 
 
 # Make logging functions

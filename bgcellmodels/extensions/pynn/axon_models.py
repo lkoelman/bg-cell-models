@@ -10,6 +10,7 @@ Morphological axon models for PyNN
 import logging
 
 # Third party modules
+import numpy as np
 from neuron import h
 from pyNN.neuron.cells import NativeCellType
 from pyNN.parameters import ArrayParameter
@@ -17,6 +18,7 @@ from pyNN.parameters import ArrayParameter
 # Our custom modules
 from bgcellmodels.extensions.pynn import cell_base
 from bgcellmodels import emfield # Hoc code
+from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 
 logger = logging.getLogger('ext.pynn.cell_base')
 
@@ -51,19 +53,13 @@ class AxonalRelay(object):
 
         self.icell = axon_builder.build_along_streamline(
                         self.streamline_coordinates_mm,
-                        terminate='nodal_cutoff',
+                        termination_method=self.termination_method,
                         interp_method='arclength',
                         tolerance_mm=1e-4)
 
         initial_sec = self.icell.ordered[0]
         terminal_sec = self.icell.ordered[-1]
 
-        # Store axonal sections in SectionList for ease of access in Hoc
-        all_seclist = h.SectionList()
-        for sec in self.icell.ordered:
-            all_seclist.append(sec=sec)
-        self.icell.all = all_seclist
-    
 
         # Change source for NetCons (see pyNN.neuron.simulator code)
         self.source_section = terminal_sec
@@ -157,6 +153,7 @@ class AxonRelayType(NativeCellType):
         # 3D specification
         'transform': ArrayParameter([]),
         'streamline_coordinates_mm': ArrayParameter([]),
+        'termination_method': np.array('terminal_sequence'),
         # Extracellular stim & rec
         'with_extracellular': False,
         'electrode_coordinates_um' : ArrayParameter([]),
@@ -166,7 +163,7 @@ class AxonRelayType(NativeCellType):
 
     # NOTE: extra_parameters supports non-numpy types. 
     extra_parameters = {
-        'axon_class': object,
+        'axon_class': AxonFoust2011,
     }
 
     default_initial_values = {'v': -68.0}
@@ -196,7 +193,6 @@ def test_simulate_population(export_locals=False):
     from pyNN.utility import init_logging
     import pyNN.neuron as nrn
     import numpy as np
-    from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 
     init_logging(logfile=None, debug=True)
     nrn.setup()
