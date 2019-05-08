@@ -53,10 +53,7 @@ def define_synapse_locations():
 
 class GPeCellModel(ephys_pynn.EphysModelWrapper):
     """
-    TODO: make EPhysModelWrapper inherit from MorphModelBase
-    - put MorphModelBase under MorphModelBase (all cells are morphological)
-    - remove stuff from this class and superclass as necessary
-    - add axon-specific stuff in new class? Or do it all optionally in this class
+    Gunay (2008) multi-compartmental GPe cell model.
     """
     _ephys_morphology = gunay_model.define_morphology(
                         'morphology/bg0121b_axonless_GENESIS_import.swc',
@@ -148,7 +145,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
             self._init_axon(self.axon_class)
 
         # Fix conductances if axon is present (compensate loading)
-        self._init_gbar()
+        # self._init_gbar()
 
         # Init extracellular stimulation & recording
         if self.with_extracellular:
@@ -168,59 +165,6 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     def _update_position(self, xyz):
         pass
 
-
-    def _init_axon(self, axon_class):
-        """
-        Create and append axon.
-
-        @post   self.axon contains references to axonal sections.
-
-        NOTE: we override this method, since Gunay model has very small sections
-              which causes large discrepancy in input impedance.
-        """
-        super(GPeCellModel, self)._init_axon(axon_class)
-        for sec in self.axon['aisnode'] + self.axon['aismyelin']:
-            sec.diam = 0.5
-        # axon_builder = axon_class(
-        #     without_extracellular=not self.with_extracellular)
-
-        # # Attach axon to axon stub/AIS if present
-        # axon_terminal_secs = list(self.icell.axonal)
-        # assert len(axon_terminal_secs) == 1
-        # axon_parent_sec = axon_terminal_secs[0]
-
-        # axon = axon_builder.build_along_streamline(
-        #             self.streamline_coordinates_mm,
-        #             terminate='nodal_cutoff', interp_method='arclength',
-        #             parent_cell=self.icell, parent_sec=axon_parent_sec,
-        #             connection_method='translate_axon_start', tolerance_mm=1e-4,
-        #             use_initial_segment=False)
-    
-        # self.axon = axon
-
-        # # Change source for NetCons (see pyNN.neuron.simulator code)
-        # terminal_sec = list(self.icell.axonal)[-1]
-        # self.source_section = terminal_sec
-        # self.source = terminal_sec(0.5)._ref_v
-
-        # # To keep high input impedance, we scale the first nodal section
-        # first_node = axon['node'][0]
-        # first_node.diam = 1.0
-        # first_node.L = 1.0
-
-
-    def _init_gbar(self):
-        """
-        Load channel conductances from Gillies & Wilshaw data files.
-        """
-        # Increase persistent Na current to compensate for axon Zin
-        if hasattr(self, 'axon'):
-            for sec in list(self.icell.somatic) + list(self.icell.basal) + [self.icell.axon[0]]:
-                if not h.ismembrane('NaP', sec=sec):
-                    continue
-                for seg in sec:
-                    seg.gmax_NaP = 30.0 * seg.gmax_NaP
-                print('Fixed 1 section NaP conductance')
 
 
 class GPeCellType(cell_base.MorphCellType):
@@ -306,7 +250,7 @@ class GPeCellType(cell_base.MorphCellType):
 GpeProtoCellType = GPeCellType
 
 
-class GpeArkyCellType(cell_base.MorphCellType):
+class GpeArkyCellType(GPeCellType):
     """
     GPe ArkyPallidal cell. It uses the same Gunay (2008) GPe cell model with
     modified parameters to reduce sponaneous firing rate and rebound firing.
@@ -322,48 +266,13 @@ class GpeArkyCellType(cell_base.MorphCellType):
         - Fig. 3
     """
 
-    # The encapsualted model available as class attribute 'model'
-    model = GPeCellModel
-
     # Defaults for our custom PyNN parameters
-    default_parameters = {
-        'default_GABA_mechanism': np.array('GABAsyn'),
-        'default_GLU_mechanism': np.array('GLUsyn'),
-        'tau_m_scale': 1.0,
-        'gmax_NaP_scale': 0.45,
-        'membrane_noise_std': 0.0,
-    }
+    default_parameters = dict(GPeCellType.default_parameters)
 
-    # Defaults for Ephys parameters
     default_parameters.update({
-        p.name.replace(".", "_"): p.value for p in model._ephys_parameters
+        'gmax_NaP_scale': 0.45,
     })
-
-
-    # extra_parameters = {}
-    default_initial_values = {'v': -65.0}
     
-    # Combined with self.model.regions by MorphCellType constructor
-    receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
-                      'GABAA', 'GABAB', 'GABAA+GABAB']
-
-    def get_schema(self):
-        """
-        Get mapping of parameter names to allowed parameter types.
-        """
-        # Avoids specifying default values for each scale parameter and
-        # thereby calling the property setter for each of them
-        schema = super(GpeArkyCellType, self).get_schema()
-        schema.update({v+'_scale': float for v in self.model.rangevar_names})
-        return schema
-
-
-    def can_record(self, variable):
-        """
-        Override or it uses pynn.neuron.record.recordable_pattern.match(variable)
-        """
-        return super(GpeArkyCellType, self).can_record(variable)
-
 
 def test_record_gpe_model(export_locals=False):
     """

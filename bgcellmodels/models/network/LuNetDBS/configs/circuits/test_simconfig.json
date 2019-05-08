@@ -30,7 +30,7 @@
         "dbs_pulse0_amplitude": 300.0,
         "dbs_pulse1_amplitude": 0.0,
         "dbs_sample_period": 0.001, // ms
-        "dbs_electrode_coordinates": [1000.0, 1000.0, 1000.0],
+        "dbs_electrode_coordinates": [17058.15, 6499.98, 6904.60],
         "sigma_extracellular": 0.03,
     },
 // =============================================================================
@@ -63,6 +63,25 @@
                 // [3500.0, 4500.0],
                 // [6500.0, 8500.0]
             ],
+        },
+    },
+// CTX AXONS
+// =============================================================================
+    "CTX.axons": {
+        "traces": [],
+        // CTX -> CTX.axons Projection
+        // ----------------------------------------------------------------------
+        // Each CTX cell, including surrogates, has their own axon
+        "CTX": {
+            "connector": {
+                "name": "OneToOneConnector",
+                "parameters": {},
+            },
+            "receptor_type": "excitatory",
+            "synapse": {
+                "name": "StaticSynapse",
+                "parameters": {},
+            },
         },
     },
 // =============================================================================
@@ -128,6 +147,10 @@
         // Numerical parameters passed to cell type
         "PyNN_cell_parameters": {
             "membrane_noise_std": 0.1, // 0.1 calibrated empirically based on Vm trace
+            "gmax_HCN_scale": {
+                "statement": "0.5 if DD else 1.0",
+                "locals": null,
+            },
         },
         // Spatial arrangement
         "grid_dx": {
@@ -143,6 +166,25 @@
         // Common traces for all GPE neurons
         // "traces": [],
     }, // end to GPE.all
+// GPE AXONS
+// =============================================================================
+    "GPE.axons": {
+        "traces": [],
+        // GPE.all -> GPE.axons Projection
+        // ----------------------------------------------------------------------
+        // Each GPe cell, including surrogates, has their own axon
+        "GPE.all": {
+            "connector": {
+                "name": "OneToOneConnector",
+                "parameters": {},
+            },
+            "receptor_type": "excitatory",
+            "synapse": {
+                "name": "StaticSynapse",
+                "parameters": {},
+            },
+        },
+    },
 // GPE PROTOTYPIC
 // =============================================================================
     "GPE.proto": {
@@ -164,9 +206,9 @@
                 },
             },
         ],
-// STN -> GPE.proto Projection
-// -----------------------------------------------------------------------------
-// NOTE: - must compensate for both MSN->GPE and GPE->GPE increase
+        // STN -> GPE.proto Projection
+        // -----------------------------------------------------------------------------
+        // NOTE: - must compensate for both MSN->GPE and GPE->GPE increase
         "STN": {
             "connector": {
                 "name": "FixedNumberPreConnector",
@@ -206,9 +248,9 @@
                 },
             },
         },
-// GPE.all -> GPE.proto Projection
-// -----------------------------------------------------------------------------
-// - Strengthened in DA-depleted condition
+        // GPE.all -> GPE.proto Projection
+        // -----------------------------------------------------------------------------
+        // - Strengthened in DA-depleted condition
         "GPE.all": {
             "connector": {
                 "name": "FixedNumberPreConnector",
@@ -254,8 +296,8 @@
                 },
             },
         },
-// STR.MSN -> GPE.proto Projection
-// -----------------------------------------------------------------------------
+        // STR.MSN -> GPE.proto Projection
+        // -----------------------------------------------------------------------------
         "STR.MSN": {
             "connector": {
                 "name": "FixedNumberPreConnector",
@@ -313,6 +355,10 @@
         // Numerical parameters passed to the PyNN cell type
         "PyNN_cell_parameters": {
             "membrane_noise_std": 0.0075, // 0.0075 calibrated empirically based on Vm trace
+            "gk_Ih_scale": {
+                "statement": "0.5 if DD else 1.0", // reduced HCN current in DD condition
+                "locals": null,
+            },
         },
         // Surrogate spike sources
         "surrogate_fraction": 0.1, // fraction of population size
@@ -351,7 +397,7 @@
         ],
 // GPE -> STN Projection
 // -----------------------------------------------------------------------------
-        "GPE.all": {
+        "GPE.axons": {
             "connector": {
                 "name": "FixedNumberPreConnector",
                 "parameters": {
@@ -404,7 +450,7 @@
         },
 // CTX -> STN Projection
 // -----------------------------------------------------------------------------
-        "CTX": {
+        "CTX.axons": {
             "connector": {
                 "name": "FixedNumberPreConnector",
                 "parameters": {

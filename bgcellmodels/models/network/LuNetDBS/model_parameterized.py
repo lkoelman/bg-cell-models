@@ -15,13 +15,17 @@ USAGE
 
 Run distributed using MPI:
 
-mpirun -n 6 python model_parameterized.py --scale 0.5 --dur 3000 --dnorm --no-lfp --seed 888 --transient-period 0.0 --write-interval 3000 -id CALDNORM --outdir ~/storage/BBB_LuNetStnGpe --config configs/StnGpe_template_syn-V8.json 2>&1 | tee CALDNORM.log
+>>> mpirun -n 6 <command>
 
 
 Run single-threaded using IPython:
 
+>>> ipython
+>>> %run <command>
 
-%run model_parameterized.py --scale 0.5 --dd --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_gillies-x5.json --axonfile axon_coords_python2.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
+Example command:
+
+>>> model_parameterized.py --scale 0.5 --dd --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_gillies-x5.json --axonfile axon_coords_python2.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
 
 
@@ -60,23 +64,17 @@ from bgcellmodels.extensions.pynn.synapses import (
     GabaSynTm2, NativeMultiSynapse)
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
+from bgcellmodels.extensions.pynn.axon_models import AxonRelayType
 from bgcellmodels.extensions.pynn import spiketrains as spikegen
 
 # NEURON models and mechanisms
 from bgcellmodels.emfield import stimulation
 from bgcellmodels.mechanisms import synapses, noise # loads MOD files
-import bgcellmodels.models.STN.Miocinovic2006.miocinovic_pynn_model as miocinovic
-import bgcellmodels.models.GPe.Gunay2008.gunay_pynn_model as gunay
+from bgcellmodels.cellpopdata import connectivity # for use in config files
 
-import bgcellmodels.cellpopdata.connectivity as connectivity # for use in config files
-ConnectivityPattern = connectivity.ConnectivityPattern
-make_connection_list = connectivity.make_connection_list
-make_divergent_pattern = connectivity.make_divergent_pattern
-
-# Our physiological parameters
-# from bgcellmodels.cellpopdata.physiotypes import Populations as PopID
-#from bgcellmodels.cellpopdata.physiotypes import ParameterSource as ParamSrc
-# from bgcellmodels.cellpopdata.cellpopdata import CellConnector
+from bgcellmodels.models.STN.Miocinovic2006 import miocinovic_pynn_model as miocinovic
+from bgcellmodels.models.GPe.Gunay2008 import gunay_pynn_model as gunay
+from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 
 from bgcellmodels.common.configutil import eval_params
 from bgcellmodels.common.stdutil import getdictvals
@@ -95,6 +93,9 @@ logutils.setLogLevel('DEBUG', ['AxonBuilder'])
 
 # Global variables
 h = sim.h
+ConnectivityPattern = connectivity.ConnectivityPattern
+make_connection_list = connectivity.make_connection_list
+make_divergent_pattern = connectivity.make_divergent_pattern
 
 
 def nprint(*args, **kwargs):
@@ -358,56 +359,13 @@ def simulate_model(
                             ('simulation', 'electromagnetics')]
 
     #===========================================================================
-    # CTX POPULATION
-
-    # TODO: configure new CTX axon population
-    #   - play spiketrains into synapses configured by John.
-    #   - Make morphological cell type with dummy soma
-
-    # CTX spike sources
-    ctx_pop_size, = get_pop_parameters('CTX', 'base_population_size')
-    ctx_burst_params = get_param_group('CTX', 'spiking_pattern')
-    spikegen_name = ctx_burst_params.pop('algorithm')
-    spikegen_func = getattr(spikegen, spikegen_name)
-
-    ctx_spike_generator = spikegen_func(duration=sim_dur,
-                                        rng=rank_rng,
-                                        **ctx_burst_params)
-
-    pop_ctx = Population(
-        int(ctx_pop_size * pop_scale),
-        cellclass=sim.SpikeSourceArray(spike_times=ctx_spike_generator),
-        label='CTX')
-
-    #===========================================================================
-    # STR.MSN POPULATION
-
-    # STR.MSN spike sources
-    msn_pop_size, = get_pop_parameters(
-        'STR.MSN', 'base_population_size')
-
-    msn_burst_params = get_param_group('STR.MSN', 'spiking_pattern')
-    spikegen_name = msn_burst_params.pop('algorithm')
-    spikegen_func = getattr(spikegen, spikegen_name)
-    msn_spike_generator = spikegen_func(duration=sim_dur,
-                                        rng=rank_rng,
-                                        **msn_burst_params)
-
-    pop_msn = Population(
-        int(msn_pop_size * pop_scale),
-        cellclass=sim.SpikeSourceArray(spike_times=msn_spike_generator),
-        label='STR.MSN')
-
-    #===========================================================================
     # STN POPULATION
 
     stn_ncell_base, = get_pop_parameters('STN', 'base_population_size')
     stn_ncell_biophys = int(stn_ncell_base * pop_scale)
 
     #---------------------------------------------------------------------------
-    # Define cell model
-
-    # TODO: set electrode coordinates
+    # STN cell model
 
     # Select cells to simulate
     pop_cell_defs = [cell for cell in cell_config['cells'] if cell['population'] == 'STN']
@@ -437,15 +395,15 @@ def simulate_model(
     stn_type = miocinovic.StnMorphType(**stn_cell_params)
 
     #---------------------------------------------------------------------------
-    # Define population
+    # STN population
 
     # Grid structure for calculating connectivity
     stn_dx, = get_pop_parameters('STN', 'grid_dx')
     stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
-    stn_ncell_biophys = int(stn_ncell_base * pop_scale)
 
+    # Initial values for state variables
     vinit = stn_type.default_initial_values['v']
-    initial_values={
+    initial_values = {
         'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
     }
 
@@ -476,18 +434,46 @@ def simulate_model(
     #===========================================================================
     # GPE POPULATION (prototypic)
 
+    gpe_ncell_base, = get_pop_parameters('GPE.all', 'base_population_size')
+    gpe_ncell_biophys = int(gpe_ncell_base * pop_scale)
+
+    #---------------------------------------------------------------------------
+    # GPe cells parameters
+
+    # Select cells to simulate
+    pop_cell_defs = [cell for cell in cell_config['cells'] if cell['population'] == 'GPE']
+    cell_defs = pop_cell_defs[:gpe_ncell_biophys]
+    
+    # Get 3D morphology properties of each cell
+    cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
+    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
+
+    # Load default parameters from sim config
+    gpe_cell_params = get_cell_parameters('STN')
+
+    # Add parameters from other sources
+    gpe_cell_params['calculate_lfp'] = calculate_lfp
+    gpe_cell_params['with_extracellular'] = calculate_lfp
+    gpe_cell_params['transform'] = cells_transforms
+    # NOTE: GPe axons are NOT electrically attached to morphology, but work via relay
+    # gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
+    gpe_cell_params['rho_extracellular_ohm_cm'] = 1.0 / emf_params['sigma_extracellular']
+    gpe_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates']
+
+    proto_type = gunay.GpeProtoCellType(**gpe_cell_params)
+
+    #---------------------------------------------------------------------------
+    # GPe prototypic population
+
     # Get common parameters for GPE cells
-    gpe_dx, gpe_ncell_base, frac_proto, frac_arky = get_pop_parameters(
-        'GPE.all', 'grid_dx', 'base_population_size',
-        'prototypic_fraction', 'arkypallidal_fraction')
+    gpe_dx, frac_proto, frac_arky = get_pop_parameters(
+        'GPE.all', 'grid_dx', 'prototypic_fraction', 'arkypallidal_fraction')
 
-    gpe_common_params = get_cell_parameters('GPE.all')
-
+    # Grid structure for calculating connectivity
     gpe_grid = space.Line(x0=0.0, dx=gpe_dx,
                           y=1e6, z=0.0)
 
-    proto_type = gunay.GpeProtoCellType(**gpe_common_params)
-
+    # Initial values for state variables
     vinit = proto_type.default_initial_values['v']
     initial_values={
         'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
@@ -500,9 +486,8 @@ def simulate_model(
                                structure=gpe_grid,
                                initial_values=initial_values)
 
-
     #---------------------------------------------------------------------------
-    # GPE Surrogate spike sources
+    # GPE surrogate population
 
     frac_surrogate, surr_rate = get_pop_parameters('GPE.all',
         'surrogate_fraction', 'surrogate_rate')
@@ -516,33 +501,123 @@ def simulate_model(
         pop_gpe_surrogate = None
 
     #---------------------------------------------------------------------------
-    # GPE Assembly (Proto + Arky + Surrogate)
+    # GPE axon population
+
+    num_gpe_axons = (gpe_ncell_biophys + ncell_surrogate)
+    gpe_cell_defs = pop_cell_defs[:num_gpe_axons]
+    gpe_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
+
+    # Cell type for axons
+    gpe_axon_params = {
+        'axon_class':                   AxonFoust2011,
+        'streamline_coordinates_mm':    gpe_axon_coords,
+        'termination_method':           np.array('terminal_sequence'),
+        'with_extracellular':           calculate_lfp,
+        'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates'],
+        'rho_extracellular_ohm_cm' :    1.0 / emf_params['sigma_extracellular'],         
+    }
+
+    gpe_axon_type = AxonRelayType(**gpe_axon_params)
+
+    # Initial values for state variables
+    vinit = gpe_axon_type.default_initial_values['v']
+    initial_values={
+        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
+    }
+    
+    pop_gpe_axons = Population(ncell_proto,
+                               cellclass=gpe_axon_type,
+                               label='GPE.axons',
+                               initial_values=initial_values)
+
+    #---------------------------------------------------------------------------
+    # GPE Assembly (all GPe subtypes)
 
     if pop_gpe_surrogate is None:
-        asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_surrogate,
-                               label='GPE.all')
+        asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_surrogate, label='GPE.all')
     else:
         asm_gpe = sim.Assembly(pop_gpe_proto, label='GPE.all')
     gpe_pop_size = asm_gpe.size
 
 
     #===========================================================================
+    # CTX POPULATION
 
-    # Make all Population and Projection objects accessible by label
-    all_pops = {pop.label : pop for pop in Population.all_populations}
-    all_asm = {asm.label: asm for asm in (asm_gpe,)}
-    all_proj = {pop.label : {} for pop in Population.all_populations}
-    all_proj[asm_gpe.label] = {} # add Assembly projections manually
+    # TODO: configure new CTX axon population
+    #   - play spiketrains into synapses configured by John.
+    #   - Make morphological cell type with dummy soma
 
-    # Make distinction between 'real' and surrogate subpopulations
-    # (note: NativeCellType is common base class for all NEURON cells)
-    biophysical_pops = [pop for pop in Population.all_populations if isinstance(
-                        pop.celltype, sim.cells.NativeCellType)]
-    artificial_pops = [pop for pop in Population.all_populations if not isinstance(
-                        pop.celltype, sim.cells.NativeCellType)]
+    # CTX spike sources
+    ctx_pop_size, = get_pop_parameters('CTX', 'base_population_size')
+    ctx_burst_params = get_param_group('CTX', 'spiking_pattern')
+    spikegen_name = ctx_burst_params.pop('algorithm')
+    spikegen_func = getattr(spikegen, spikegen_name)
 
-    # Update local context for eval() statements
-    params_local_context.update(locals())
+    ctx_spike_generator = spikegen_func(duration=sim_dur,
+                                        rng=rank_rng,
+                                        **ctx_burst_params)
+
+    ctx_ncell = int(ctx_pop_size * pop_scale)
+    pop_ctx = Population(
+        ctx_ncell,
+        cellclass=sim.SpikeSourceArray(spike_times=ctx_spike_generator),
+        label='CTX')
+
+    #---------------------------------------------------------------------------
+    # GPE axon population
+
+    num_ctx_axons = ctx_ncell
+
+    ctx_conn_defs = [
+        c for c in cell_config['connections'] if (c['projection'] == 'CTX-STN')
+    ]
+
+    ctx_axon_coords = [
+        get_axon_coordinates(connection['axon']) for connection in ctx_conn_defs
+    ]
+
+    # Cell type for axons
+    ctx_axon_params = {
+        'axon_class':                   AxonFoust2011,
+        'streamline_coordinates_mm':    ctx_axon_coords,
+        'termination_method':           np.array('terminal_sequence'),
+        'with_extracellular':           calculate_lfp,
+        'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates'],
+        'rho_extracellular_ohm_cm' :    1.0 / emf_params['sigma_extracellular'],         
+    }
+
+    ctx_axon_type = AxonRelayType(**ctx_axon_params)
+
+    # Initial values for state variables
+    vinit = ctx_axon_type.default_initial_values['v']
+    initial_values={
+        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
+    }
+    
+    pop_ctx_axons = Population(num_ctx_axons,
+                               cellclass=ctx_axon_type,
+                               label='CTX.axons',
+                               initial_values=initial_values)
+
+    #===========================================================================
+    # STR.MSN POPULATION
+
+    # STR.MSN spike sources
+    msn_pop_size, = get_pop_parameters(
+        'STR.MSN', 'base_population_size')
+
+    msn_burst_params = get_param_group('STR.MSN', 'spiking_pattern')
+    spikegen_name = msn_burst_params.pop('algorithm')
+    spikegen_func = getattr(spikegen, spikegen_name)
+    msn_spike_generator = spikegen_func(duration=sim_dur,
+                                        rng=rank_rng,
+                                        **msn_burst_params)
+
+    pop_msn = Population(
+        int(msn_pop_size * pop_scale),
+        cellclass=sim.SpikeSourceArray(spike_times=msn_spike_generator),
+        label='STR.MSN')
+
 
     ############################################################################
     # EXTRACELLULAR FIELD
@@ -574,6 +649,25 @@ def simulate_model(
     # CONNECTIONS
     ############################################################################
 
+    # All populations by label
+    all_pops = {pop.label : pop for pop in Population.all_populations}
+    all_asm = {asm.label: asm for asm in (asm_gpe,)}
+    
+    # All projections by population label
+    all_proj = {pop.label : {} for pop in Population.all_populations}
+    all_proj[asm_gpe.label] = {} # add Assembly projections manually
+
+    # Make distinction between 'real' and surrogate subpopulations
+    # (note: NativeCellType is common base class for all NEURON cells)
+    biophysical_pops = [pop for pop in Population.all_populations if isinstance(
+                        pop.celltype, sim.cells.NativeCellType)]
+
+    artificial_pops = [pop for pop in Population.all_populations if not isinstance(
+                        pop.celltype, sim.cells.NativeCellType)]
+
+    # Update local context for eval() statements
+    params_local_context.update(locals())
+
     # Allowed synapse types (for creation from config file)
     synapse_types = {
         "GluSynapse": GluSynapse,
@@ -585,7 +679,8 @@ def simulate_model(
 
     # Make all Projections directly from (pre, post) pairs in config
     for post_label, pop_config in config.iteritems():
-        # get post-synaptic Population
+        
+        # Get PRE Population from label
         if post_label in all_pops.keys():
             post_pop = all_pops[post_label]
         elif post_label in all_asm.keys():
@@ -594,6 +689,7 @@ def simulate_model(
             continue
         print("rank {}: starting phase {} AFFERENTS.".format(mpi_rank, post_label))
 
+        # Create one Projection per post-synaptic population/assembly
         for pre_label in pop_config.keys():
             # get pre-synaptic Population
             if pre_label in all_pops.keys():
@@ -605,7 +701,8 @@ def simulate_model(
             proj_config = pop_config[pre_label]
 
             # make PyNN Projection
-            all_proj[pre_label][post_label] = sim.Projection(pre_pop, post_pop,
+            all_proj[pre_label][post_label] = sim.Projection(
+                pre_pop, post_pop,
                 connector=connector_from_config(pre_label, post_label, rng=shared_rng_pynn),
                 synapse_type=synapse_from_config(pre_label, post_label),
                 receptor_type=proj_config['receptor_type'])
