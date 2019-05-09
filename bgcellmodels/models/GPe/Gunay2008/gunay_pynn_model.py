@@ -104,7 +104,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     }
 
     # Regions for extracellular stim (DBS) & rec (LFP)
-    seclists_with_extracellular = ['axonal']
+    seclists_with_extracellular = ['all']
 
     # Spike threshold (mV)
     spike_threshold_source_sec = -10.0
@@ -149,16 +149,6 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
         # Init extracellular stimulation & recording
         if self.with_extracellular:
-            for region in self.seclists_with_extracellular:
-                for sec in getattr(self.icell, region):
-                    if h.ismembrane('extracellular', sec=sec):
-                        continue # assume already configured
-                    sec.insert('extracellular')
-                    for i in range(2):
-                        sec.xraxial[i] = 1e9
-                        sec.xg[i] = 1e9
-                        sec.xc[i] = 0.0
-
             self._init_emfield()
 
 
@@ -229,16 +219,6 @@ class GPeCellType(cell_base.MorphCellType):
     # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
-
-    def get_schema(self):
-        """
-        Get mapping of parameter names to allowed parameter types.
-        """
-        # Avoids specifying default values for each scale parameter and
-        # thereby calling the property setter for each of them
-        schema = super(GPeCellType, self).get_schema()
-        schema.update({v+'_scale': float for v in self.model.rangevar_names})
-        return schema
 
 
     def can_record(self, variable):

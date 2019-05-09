@@ -25,6 +25,7 @@ import logging
 # Third party libraries
 import bluepyopt.ephys as ephys
 import pyNN.neuron
+from pyNN.parameters import ArrayParameter
 
 # Our custom modules
 from bgcellmodels.extensions.pynn import cell_base
@@ -204,70 +205,73 @@ class EphysModelWrapper(ephys.models.CellModel, cell_base.MorphModelBase):
         model_name = self.__class__.__name__
 
         # Ensure self.params has valid names, and does not refer to class params
-        params = deepcopy(getattr(self, '_ephys_parameters', None))
-        if params is not None:
-            for e_param in params:
+        ephys_param_defs = deepcopy(getattr(self, '_ephys_parameters', None))
+        if ephys_param_defs is not None:
+            for e_param in ephys_param_defs:
                 e_param.name = make_valid_attr_name(e_param.name)
 
         # Call constructor of first base class
-        super(EphysModelWrapper, self).__init__(
+        # super(EphysModelWrapper, self).__init__(
+        ephys.models.CellModel.__init__(self,
             model_name,
             morph=getattr(self, '_ephys_morphology', None),
             mechs=getattr(self, '_ephys_mechanisms', None),
-            params=params)
+            params=ephys_param_defs)
         ephys_param_names = self.params.keys() # ephys param dict
 
-        # Parameters that are not dynamic must be set before instantiate
-        instantiated_params = set()
-        for param_name, param_value in kwargs.iteritems():
-            if (param_name not in ephys_param_names) and (not param_name.endswith('_scale')):
+        # Don't pass ephys parameters to base class
+        ephys_params_args = {
+            k : kwargs.pop(k) for k in kwargs.keys() if k in ephys_param_names
+        }
+
+        # Call constructor of second base class
+        cell_base.MorphModelBase.__init__(self, *args, **kwargs)
+
+        # Handle post-instantiation parameters
+        for param_name, param_value in ephys_params_args.iteritems():
+            if isinstance(param_value, ArrayParameter):
+                param_value = param_value.value
+            if self.params[param_name].value != param_value:
                 setattr(self, param_name, param_value)
-                instantiated_params.add(param_name)
 
-        # Cell must be instantiated _before_ applying parameters
-        self.sim = cell_base.ephys_sim_from_pynn()
-        self.instantiate(sim=self.sim)
+        # # Parameters that are not dynamic must be set before instantiate
+        # instantiated_params = set()
+        # for param_name, param_value in kwargs.iteritems():
+        #     if (param_name not in ephys_param_names) and (not param_name.endswith('_scale')):
+        #         setattr(self, param_name, param_value)
+        #         instantiated_params.add(param_name)
 
-        # Parse parameters passed by cell type
-        for param_name, param_value in kwargs.iteritems():
-            if param_name in instantiated_params:
-                continue
-            elif (param_name in ephys_param_names) and \
-                 (self.params[param_name].value == param_value):
-                # Ephys parameters are already set in self.instantiate()
-                continue
-            elif (param_name in self.parameter_names) or param_name.endswith('_scale'):
-                # Dynamic parameters are dispatched to approprate method
-                setattr(self, param_name, param_value)
-            else:
-                logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
+        # # Cell must be instantiated _before_ applying parameters
+        # self.sim = cell_base.ephys_sim_from_pynn()
+        # self.instantiate(sim=self.sim)
 
-        # Add locations / regions
-        # self.locations = {}
-        # for static_loc in self._ephys_locations:
-        #     loc = copy(static_loc)
-        #     # loc.sim = self.sim
-        #     # loc.icell = self.icell
-        #     self.locations[make_valid_attr_name(loc.name)] = loc
+        # # Parse parameters passed by cell type
+        # for param_name, param_value in kwargs.iteritems():
+        #     if param_name in instantiated_params:
+        #         continue
+        #     elif (param_name in ephys_param_names) and \
+        #          (self.params[param_name].value == param_value):
+        #         # Ephys parameters are already set in self.instantiate()
+        #         continue
+        #     elif (param_name in self.parameter_names) or param_name.endswith('_scale'):
+        #         # Dynamic parameters are dispatched to approprate method
+        #         setattr(self, param_name, param_value)
+        #     else:
+        #         logger.warning("Unrecognized parameter {}. Ignoring.".format(param_name))
 
-        self._init_synapses()
-        self._post_instantiate()
+        # self._init_synapses()
+        # self._post_instantiate()
 
-        # Attributes required by PyNN
-        self.source_section = self.icell.soma[0]
-        self.source = self.icell.soma[0](0.5)._ref_v
+        # # Attributes required by PyNN
+        # self.source_section = self.icell.soma[0]
+        # self.source = self.icell.soma[0](0.5)._ref_v
         
-        self.rec = h.NetCon(self.source, None,
-                            self.get_threshold(), 0.0, 0.0,
-                            sec=self.source_section)
-        self.spike_times = h.Vector(0) # see pyNN.neuron.recording.Recorder._record()
-        self.traces = {}
-        self.recording_time = False
-        # self.parameter_names = (set in subclass body & metaclass)
-
-        # NOTE: _init_lfp() is called by our custom Population class after
-        #       updating each cell's position
-
+        # self.rec = h.NetCon(self.source, None,
+        #                     self.get_threshold(), 0.0, 0.0,
+        #                     sec=self.source_section)
+        # self.spike_times = h.Vector(0) # see pyNN.neuron.recording.Recorder._record()
+        # self.traces = {}
+        # self.recording_time = False
 
     @staticmethod
     def create_empty_cell(

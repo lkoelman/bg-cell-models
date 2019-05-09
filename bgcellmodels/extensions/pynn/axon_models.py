@@ -67,9 +67,9 @@ class AxonalRelay(object):
 
 
         # Attributes required for recording (see pyNN.neuron.recording.Recorder._record())
-        self.rec = h.NetCon(initial_sec(0.5)._ref_v, None,
+        self.rec = h.NetCon(self.source, None,
                             self.get_threshold(), 0.0, 0.0,
-                            sec=initial_sec)
+                            sec=self.source_section)
         self.spike_times = h.Vector(0)
         self.traces = {}
         self.recording_time = False
@@ -77,7 +77,10 @@ class AxonalRelay(object):
         # Create targets for NetCons
         # (property names must correspond to entries in cell_type.receptor_types)
         self.excitatory = h.Exp2Syn(initial_sec(0.5))
-        # TODO: configure weight/gbar for AxonClass
+        # Synapse properties together with weight of 1 cause good following up to 200 Hz
+        self.excitatory.tau1 = 0.1
+        self.excitatory.tau2 = 0.2
+        self.excitatory.e = 0.0
 
         # Initialize extracellular stim & rec
         if self.with_extracellular:

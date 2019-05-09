@@ -25,7 +25,14 @@ Run single-threaded using IPython:
 
 Example command:
 
->>> model_parameterized.py --scale 0.5 --dd --dur 100 --seed 888 --transient-period 0.0 --write-interval 1000 --no-gui -id test1 --outdir ~/storage --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_gillies-x5.json --axonfile axon_coords_python2.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
+>>> model_parameterized.py -id testrun --dur 100 --scale 0.5 --seed 888 \
+--dd --lfp --dbs \
+--outdir ~/storage --transient-period 0.0 --write-interval 1000 \
+--configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs \
+--simconfig test_simconfig.json \
+--cellconfig test_cellconfig_5.json \
+--axonfile axon_coordinates.pkl \
+--morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
 
 
@@ -59,9 +66,7 @@ from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
 
 # Custom PyNN extensions
-from bgcellmodels.extensions.pynn.synapses import (
-    GluSynapse, GabaSynapse, GabaSynTmHill, GABAAsynTM,
-    GabaSynTm2, NativeMultiSynapse)
+from bgcellmodels.extensions.pynn import synapses as custom_synapses
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
 from bgcellmodels.extensions.pynn.axon_models import AxonRelayType
@@ -80,7 +85,9 @@ from bgcellmodels.common.configutil import eval_params
 from bgcellmodels.common.stdutil import getdictvals
 from bgcellmodels.common import logutils, fileutils
 
-# Debug messages
+# Logging & debugging
+logger = logutils.logging.getLogger('simulation')
+
 logutils.setLogLevel('WARNING', [
     'Neo',
     'bpop_ext',
@@ -89,7 +96,7 @@ logutils.setLogLevel('WARNING', [
     'bluepyopt.ephys.morphologies',
     'AxonBuilder'])
 
-logutils.setLogLevel('DEBUG', ['AxonBuilder'])
+logutils.setLogLevel('DEBUG', ['simulation'])
 
 # Global variables
 h = sim.h
@@ -165,7 +172,6 @@ def simulate_model(
         pop_scale       = 1.0,
         sim_dur         = 500.0,
         export_locals   = True,
-        with_gui        = True,
         output          = None,
         report_progress = None,
         config          = None,
@@ -173,10 +179,12 @@ def simulate_model(
         axon_coordinates = None,
         morph_dir       = None,
         seed            = None,
-        calculate_lfp   = None,
+        with_lfp        = None,
+        with_dbs        = None,
         dopamine_depleted = None,
         transient_period = None,
         max_write_interval = None,
+        report_interval = 50.0,
         **kwargs):
     """
     Run a simple network consisting of an STN and GPe cell population
@@ -298,7 +306,10 @@ def simulate_model(
         config_locals = config[post].get('local_context', {})
         syn_type, syn_params = getdictvals(config[post][pre]['synapse'],
                                            'name', 'parameters')
-        syn_class = synapse_types[syn_type]
+        if hasattr(custom_synapses, syn_type):
+            syn_class = getattr(custom_synapses, syn_type)
+        else:
+            syn_class = getattr(sim, syn_type)
         syn_pvals = eval_params(syn_params, params_global_context,
                                 [params_local_context, config_locals])
         num_contacts = config[post][pre].get('num_contacts', 1)
@@ -338,10 +349,6 @@ def simulate_model(
         return os.path.join(morph_dir, morphology_id + '.swc')
 
 
-    # LFP calculation: command line args get priority over config file
-    if calculate_lfp is None:
-        calculate_lfp, = get_pop_parameters('STN', 'calculate_lfp')
-
     # Set NEURON integrator/solver options
     # if emfield_rec and not emfield_stim:
     #     sim.state.cvode.use_fast_imem(True)
@@ -368,7 +375,10 @@ def simulate_model(
     # STN cell model
 
     # Select cells to simulate
-    pop_cell_defs = [cell for cell in cell_config['cells'] if cell['population'] == 'STN']
+    pop_cell_defs = [
+        cell for cell in cell_config['cells'] if 
+            (cell['population'] == 'STN') and (cell['axon'] is not None)
+    ]
     cell_defs = pop_cell_defs[:stn_ncell_biophys]
     
     # Get 3D morphology properties of each cell
@@ -384,7 +394,7 @@ def simulate_model(
     stn_cell_params = get_cell_parameters('STN')
 
     # Add parameters from other sources
-    stn_cell_params['calculate_lfp'] = calculate_lfp
+    stn_cell_params['with_extracellular'] = with_lfp or with_dbs
     stn_cell_params['morphology_path'] = cells_morph_paths
     stn_cell_params['transform'] = cells_transforms
     stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
@@ -434,8 +444,9 @@ def simulate_model(
     #===========================================================================
     # GPE POPULATION (prototypic)
 
-    gpe_ncell_base, = get_pop_parameters('GPE.all', 'base_population_size')
-    gpe_ncell_biophys = int(gpe_ncell_base * pop_scale)
+    gpe_ncell_base, frac_proto = get_pop_parameters('GPE.all', 
+                        'base_population_size', 'prototypic_fraction')
+    gpe_ncell_biophys = int(gpe_ncell_base *frac_proto * pop_scale)
 
     #---------------------------------------------------------------------------
     # GPe cells parameters
@@ -446,14 +457,12 @@ def simulate_model(
     
     # Get 3D morphology properties of each cell
     cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
-    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
 
     # Load default parameters from sim config
-    gpe_cell_params = get_cell_parameters('STN')
+    gpe_cell_params = get_cell_parameters('GPE.all')
 
     # Add parameters from other sources
-    gpe_cell_params['calculate_lfp'] = calculate_lfp
-    gpe_cell_params['with_extracellular'] = calculate_lfp
+    gpe_cell_params['with_extracellular'] = with_lfp or with_dbs
     gpe_cell_params['transform'] = cells_transforms
     # NOTE: GPe axons are NOT electrically attached to morphology, but work via relay
     # gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
@@ -466,8 +475,8 @@ def simulate_model(
     # GPe prototypic population
 
     # Get common parameters for GPE cells
-    gpe_dx, frac_proto, frac_arky = get_pop_parameters(
-        'GPE.all', 'grid_dx', 'prototypic_fraction', 'arkypallidal_fraction')
+    gpe_dx, frac_proto, = get_pop_parameters('GPE.all',
+                            'grid_dx', 'prototypic_fraction',)
 
     # Grid structure for calculating connectivity
     gpe_grid = space.Line(x0=0.0, dx=gpe_dx,
@@ -479,8 +488,7 @@ def simulate_model(
         'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
     }
 
-    ncell_proto = int(gpe_ncell_base * pop_scale * frac_proto)
-    pop_gpe_proto = Population(ncell_proto,
+    pop_gpe_proto = Population(gpe_ncell_biophys,
                                cellclass=proto_type,
                                label='GPE.proto',
                                structure=gpe_grid,
@@ -504,15 +512,25 @@ def simulate_model(
     # GPE axon population
 
     num_gpe_axons = (gpe_ncell_biophys + ncell_surrogate)
-    gpe_cell_defs = pop_cell_defs[:num_gpe_axons]
-    gpe_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
+
+    # NOTE: can use any axon per cell, since they are not electrically connected
+    gpe_axon_coords = [
+        get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if 
+            (cell['axon'] is not None)
+    ][:num_gpe_axons]
+
+    # Re-use axon definitions if insufficient
+    while len(gpe_axon_coords) < num_gpe_axons:
+        num_additional = num_gpe_axons - len(gpe_axon_coords)
+        gpe_axon_coords += gpe_axon_coords[:num_additional]
+        logger.warning('GPe: Re-using %d axon definitions', num_additional)
 
     # Cell type for axons
     gpe_axon_params = {
         'axon_class':                   AxonFoust2011,
         'streamline_coordinates_mm':    gpe_axon_coords,
         'termination_method':           np.array('terminal_sequence'),
-        'with_extracellular':           calculate_lfp,
+        'with_extracellular':           with_lfp or with_dbs,
         'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates'],
         'rho_extracellular_ohm_cm' :    1.0 / emf_params['sigma_extracellular'],         
     }
@@ -525,7 +543,7 @@ def simulate_model(
         'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
     }
     
-    pop_gpe_axons = Population(ncell_proto,
+    pop_gpe_axons = Population(num_gpe_axons,
                                cellclass=gpe_axon_type,
                                label='GPE.axons',
                                initial_values=initial_values)
@@ -542,10 +560,6 @@ def simulate_model(
 
     #===========================================================================
     # CTX POPULATION
-
-    # TODO: configure new CTX axon population
-    #   - play spiketrains into synapses configured by John.
-    #   - Make morphological cell type with dummy soma
 
     # CTX spike sources
     ctx_pop_size, = get_pop_parameters('CTX', 'base_population_size')
@@ -564,7 +578,7 @@ def simulate_model(
         label='CTX')
 
     #---------------------------------------------------------------------------
-    # GPE axon population
+    # CTX axon population
 
     num_ctx_axons = ctx_ncell
 
@@ -576,12 +590,17 @@ def simulate_model(
         get_axon_coordinates(connection['axon']) for connection in ctx_conn_defs
     ]
 
+    while len(ctx_axon_coords) < num_ctx_axons:
+        num_additional = num_ctx_axons - len(ctx_axon_coords)
+        ctx_axon_coords += ctx_axon_coords[:num_additional]
+        logger.warning('CTX: Re-using %d axon definitions', num_additional)
+
     # Cell type for axons
     ctx_axon_params = {
         'axon_class':                   AxonFoust2011,
         'streamline_coordinates_mm':    ctx_axon_coords,
         'termination_method':           np.array('terminal_sequence'),
-        'with_extracellular':           calculate_lfp,
+        'with_extracellular':           with_lfp or with_dbs,
         'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates'],
         'rho_extracellular_ohm_cm' :    1.0 / emf_params['sigma_extracellular'],         
     }
@@ -659,23 +678,17 @@ def simulate_model(
 
     # Make distinction between 'real' and surrogate subpopulations
     # (note: NativeCellType is common base class for all NEURON cells)
-    biophysical_pops = [pop for pop in Population.all_populations if isinstance(
-                        pop.celltype, sim.cells.NativeCellType)]
+    biophysical_pops = [
+        pop for pop in Population.all_populations if 
+            isinstance(pop.celltype, sim.cells.NativeCellType)
+            and not isinstance(pop.celltype, AxonRelayType)
+    ]
 
     artificial_pops = [pop for pop in Population.all_populations if not isinstance(
                         pop.celltype, sim.cells.NativeCellType)]
 
     # Update local context for eval() statements
     params_local_context.update(locals())
-
-    # Allowed synapse types (for creation from config file)
-    synapse_types = {
-        "GluSynapse": GluSynapse,
-        "GABAAsynTM": GABAAsynTM,
-        "GabaSynTm2": GabaSynTm2,
-        "GabaSynTmHill" : GabaSynTmHill, # Desthexhe-like signaling pathway
-        "NativeMultiSynapse" : NativeMultiSynapse,
-    }
 
     # Make all Projections directly from (pre, post) pairs in config
     for post_label, pop_config in config.iteritems():
@@ -770,11 +783,6 @@ def simulate_model(
     # Default traces
     traces_biophys = {
         'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
-        # Can use SynMech[a:b:c], key must be formattable with index.
-        # 'gAMPA{:d}': {'syn':'GLUsyn[0]', 'var':'g_AMPA'},
-        # 'gNMDA{:d}': {'syn':'GLUsyn[::2]', 'var':'g_NMDA'},
-        # 'gGABAA{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAA'},
-        # 'gGABAB{:d}': {'syn':'GABAsyn[1]', 'var':'g_GABAB'},
     }
 
     for pop in biophysical_pops:
@@ -783,8 +791,15 @@ def simulate_model(
     for pop in all_pops.values():
         pop.record(['spikes'], sampling_interval=.05)
 
-    if calculate_lfp:
-        pop_stn.record(['lfp'], sampling_interval=.05)
+    if with_lfp:
+        for pop in Population.all_populations:
+            if pop.celltype.has_parameter('with_extracellular'):
+                # Check if there is at least one cell with extracellular mechanisms
+                has_extracellular = reduce(
+                    lambda x,y: x or y,
+                    pop.celltype.parameter_space['with_extracellular'])
+                if has_extracellular:
+                    pop.record(['lfp'], sampling_interval=.05)
 
     # Traces defined in config file
     for pop_label, pop_config in config.iteritems():
@@ -838,7 +853,6 @@ def simulate_model(
     outdir, filespec = os.path.split(output)
     progress_file = os.path.join(outdir, '{}_sim_progress.log'.format(
         datetime.fromtimestamp(tstart).strftime('%Y.%m.%d-%H.%M.%S')))
-    report_interval = 50.0 # (ms) in simulator time
     last_report_time = tstart
 
     # Times for writing out data to file
@@ -967,18 +981,6 @@ def simulate_model(
         with open(params_outfile, 'wb') as fout:
             pickle.dump(saved_params, fout)
 
-    ############################################################################
-    # PLOT DATA
-    ############################################################################
-
-    if mpi_rank==0 and with_gui:
-        # Only plot on one process, and if GUI available
-        import analysis
-        pop_neo_data = {
-            pop.label: pop.get_data().segments[0] for pop in all_pops.values()
-        }
-        analysis.plot_population_signals(pop_neo_data)
-
     if export_locals:
         globals().update(locals())
 
@@ -1009,13 +1011,19 @@ if __name__ == '__main__':
                         help=('Duration of transient period at start of simulation. '
                               'First data write-out is after transient period'))
 
+    parser.add_argument('-ri', '--report-interval', nargs='?', type=float, default=50.0,
+                        dest='report_interval',
+                        help='Interval between reports of simulation time.')
+
     parser.add_argument('--lfp',
-                        dest='calculate_lfp', action='store_true',
+                        dest='with_lfp', action='store_true',
                         help='Calculate Local Field Potential.')
-    parser.add_argument('--no-lfp',
-                        dest='calculate_lfp', action='store_false',
-                        help='Calculate Local Field Potential.')
-    parser.set_defaults(calculate_lfp=None)
+    parser.set_defaults(with_lfp=None)
+
+    parser.add_argument('--dbs',
+                        dest='with_dbs', action='store_true',
+                        help='Apply deep brain stimulation.')
+    parser.set_defaults(with_dbs=None)
 
     parser.add_argument('--dd',
                         dest='dopamine_depleted', action='store_true',
@@ -1025,15 +1033,6 @@ if __name__ == '__main__':
                         help='Set dopamine normal condition.')
     parser.set_defaults(dopamine_depleted=None)
 
-    parser.add_argument('-g', '--gui',
-                        dest='with_gui',
-                        action='store_true',
-                        help='Enable graphical output')
-    parser.add_argument('-ng', '--no-gui',
-                        dest='with_gui',
-                        action='store_false',
-                        help='Enable graphical output')
-    parser.set_defaults(with_gui=False)
 
     parser.add_argument('-o', '--outdir', nargs='?', type=str,
                         default='~/storage/',

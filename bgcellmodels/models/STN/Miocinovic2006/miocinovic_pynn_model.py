@@ -13,8 +13,7 @@ from bgcellmodels.models.STN import GilliesWillshaw as gillies
 from bgcellmodels.models.STN import Miocinovic2006 as miocinovic
 # from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002
 from bgcellmodels.models.axon.foust2011 import AxonFoust2011
-from bgcellmodels.extensions.pynn import (
-    cell_base, ephys_models as ephys_pynn)
+from bgcellmodels.extensions.pynn import cell_base
 
 
 h = neuron.h
@@ -80,7 +79,7 @@ class GilliesSwcModel(cell_base.MorphModelBase):
         Instantiate cell in simulator.
         """
         if sim is None:
-            sim = ephys_pynn.ephys_sim_from_pynn()
+            sim = cell_base.ephys_sim_from_pynn()
 
         # Get the Hoc template
         miocinovic.load_template(self.template_name) # xopen -> loads once
@@ -119,6 +118,19 @@ class GilliesSwcModel(cell_base.MorphModelBase):
             self._init_emfield()
 
 
+    def _init_axon(self, axon_class):
+        """
+        Initialize axon and adjust conductances.
+        """
+        super(GilliesSwcModel, self)._init_axon(axon_class)
+        # Set nodal conductances to values of AIS for firing > 100 Hz
+        for sec in self.axon.node:
+            sec.g_pas_Foust = 0.000033
+            sec.g_NaF_Foust = 0.4
+            sec.g_Kv_Foust = 0.002
+            sec.g_Kd_Foust = 0.015
+
+
     def _init_gbar(self):
         """
         Load channel conductances from Gillies & Wilshaw data files.
@@ -153,7 +165,7 @@ class GilliesSwcModel(cell_base.MorphModelBase):
 
 
 
-class StnMorphType(ephys_pynn.MorphCellType):
+class StnMorphType(cell_base.MorphCellType):
     """
     Cell type associated with a PyNN population.
     """
@@ -199,7 +211,7 @@ class StnMorphType(ephys_pynn.MorphCellType):
         self.extra_parameters = {
             k: parameters.pop(k, v) for k,v in StnMorphType.extra_parameters.items()
         }
-        ephys_pynn.MorphCellType.__init__(self, **parameters)
+        cell_base.MorphCellType.__init__(self, **parameters)
 
 
     def can_record(self, variable):

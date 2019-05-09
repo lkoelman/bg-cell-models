@@ -141,6 +141,19 @@ class MorphCellType(NativeCellType):
         self.receptor_types = region_receptors
 
 
+    def get_schema(self):
+        """
+        Get mapping of parameter names to allowed parameter types.
+        """
+        # Avoids specifying default values for each scale parameter and
+        # thereby calling the property setter for each of them
+        schema = super(MorphCellType, self).get_schema()
+        if hasattr(self.model, 'rangevar_names'):
+            schema.update({
+                varname + '_scale': float for varname in self.model.rangevar_names
+            })
+        return schema
+
 
 class MorphModelBase(object):
     """
@@ -215,19 +228,32 @@ class MorphModelBase(object):
         # self.parameter_names must be defined in the subclass body.
         
         # Make parameters accessible as attributes
-        for param_name, param_value in kwargs.iteritems():
+        for param_name in kwargs.keys():
+
+            # Check if we should handle the parameter
             if param_name not in self.parameter_names:
-                raise ValueError('Unknown parameter "{}":'.format( param_name), param_value)
-                # logger.warning("Unknown parameter {}. Ignoring.".format(param_name))
+                raise ValueError('Unknown parameter "{}":'.format(
+                    param_name), kwargs[param_name])
+
+            elif param_name.endswith('_scale'):
+                continue # handle after instantiation
             
+            # Set the parameter
+            param_value = kwargs.pop(param_name)
             if isinstance(param_value, ArrayParameter):
                 param_value = param_value.value
             
             setattr(self, param_name, param_value)
 
         # Instantiate cell and synapses in NEURON
-        self.instantiate()
+        self.instantiate(sim=ephys_sim_from_pynn())
         self._init_synapses()
+
+        # Handle post-instantiation parameters
+        for param_name, param_value in kwargs.iteritems():
+            if isinstance(param_value, ArrayParameter):
+                param_value = param_value.value
+            setattr(self, param_name, param_value)
 
         # Attributes required by PyNN
         self.source_section = self.icell.soma[0]
@@ -697,6 +723,20 @@ class MorphModelBase(object):
                 in all compartments that should contribute to the LFP and are
                 targets for stimulation
         """
+        # Insert extracellular mechanism
+        layer_idx = range(2)
+        for seclist_name in getattr(self, 'seclists_with_extracellular', ['all']):
+            for sec in getattr(self.icell, seclist_name):
+                if h.ismembrane('extracellular', sec=sec):
+                    # assume already configured
+                    continue
+
+                sec.insert('extracellular')
+                for i in layer_idx:
+                    sec.xraxial[i] = 1e9
+                    sec.xg[i] = 1e9
+                    sec.xc[i] = 0.0
+
         # Insert mechanism that mediates between extracellular variables and
         # recording & stimulation routines.
         for sec in self.icell.all:
@@ -717,6 +757,7 @@ class MorphModelBase(object):
         #                                      self.impedance_lookup_func)
 
         # Set up LFP calculation
+        # NOTE: Recorder class records lfp_tracker.summator._ref_summed
         if logger.level <= logging.WARNING:
             h.XTRA_VERBOSITY = 1
         self.lfp_summator = h.xtra_sum(self.icell.soma[0](0.5))

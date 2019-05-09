@@ -564,6 +564,8 @@ class AxonBuilder(object):
             raise ValueError('Streamline too long (estimated number of '
                 'compartments needed is {}'.format(est_num_comp))
 
+        num_tol_exceeded = 0
+
         # Build axon progressively by walking along streamline path
         for i_compartment in xrange(MAX_NUM_COMPARTMENTS):
 
@@ -597,9 +599,10 @@ class AxonBuilder(object):
             # Check compartment length vs tolerance
             real_length = veclen(stop_coord - self.last_coord)
             if not np.isclose(real_length, sec_L_mm, atol=tolerance_mm):
-                logger.warning('WARNING: exceed length tolerance ({}) '
-                               ' in compartment compartment {} : L = {}'.format(
-                                    tolerance_mm, ax_sec, real_length))
+                num_tol_exceeded += 1
+                # logger.warning('exceed length tolerance ({}) '
+                #                ' in compartment compartment {} : L = {}'.format(
+                #                     tolerance_mm, ax_sec, real_length))
 
             # Add the 3D start and endpoint
             sec_endpoints = self.last_coord, stop_coord
@@ -655,6 +658,10 @@ class AxonBuilder(object):
         
         logger.debug("Created %i axonal segments (%i sections)",
                      tot_num_seg, len(sec_ordered))
+
+        if num_tol_exceeded > 0:
+            logger.warning('exceeded length tolerance in %d compartments (tolerance = %f)',
+                            num_tol_exceeded, tolerance_mm)
 
         # Add to parent cell
         if parent_cell is not None:
