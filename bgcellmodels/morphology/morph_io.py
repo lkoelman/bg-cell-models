@@ -1,3 +1,19 @@
+"""
+Reading and writing of neuron morphologies.
+
+
+Notes
+-----
+
+Additional libraries for working with NEURON morphologies:
+
+- PyNeuron-Toolbox:https://github.com/ahwillia/PyNeuron-Toolbox
+- btmorph : https://btmorph.readthedocs.io/en/latest/index.html#
+- NeuroM : https://github.com/BlueBrain/NeuroM
+- AllenSDK : https://github.com/AllenInstitute/AllenSDK
+- Hoc2Swc : https://github.com/JustasB/hoc2swc/
+"""
+
 from neuron import h
 from neuron.rxd.morphology import parent, parent_loc
 import json, io, re
@@ -129,6 +145,49 @@ def uniform_morphology_to_SWC(sections, filename, encoding='ascii'):
             outfile.write(u"{segment_id:d} {region_id:d} {x:f} {y:f} {z:f} {radius:f} {parent_id:d}\n".format(**sample_1))
 
             outfile.write(u"{segment_id:d} {region_id:d} {x:f} {y:f} {z:f} {radius:f} {parent_id:d}\n".format(**sample_2))
+
+
+def read_SWC_samples(file_path):
+    """
+    Read samples in SWC file.
+
+    @return     samples : list[list[<7 sample elements>]]
+
+                A sample consists of 7 elements, i.e. [sample_number (int), 
+                structure_identifier (int), x (float), y (float), z (float),
+                radius (float), parent_sample_number (int)]
+
+    """
+    sample_data_types = [int, int, float, float, float, float, int]
+    samples = []
+
+    with open(file_path, 'r') as swc_file:
+        for line in swc_file:
+            if line.startswith('#'):
+                continue
+
+            sample_data = line.split() # default using whitespace
+            sample_parsed = [
+                value_type(sample_data[i]) for i, value_type in enumerate(
+                    sample_data_types)
+            ]
+            samples.append(sample_parsed)
+            # sample_idx, sample_type, x, y, z, radius, parent_idx = sample_parsed
+
+    return samples
+
+
+def write_SWC_samples(samples, file_path, comment=None):
+    """
+    Write samples to SWC file.
+    """
+    sample_format = "{:.0f} {:.0f} {:f} {:f} {:f} {:f} {:.0f}\n"
+    with open(file_path, 'w') as file:
+        if comment:
+            file.writelines(
+                ['# ' + comment + '\n' for line in comment.splitlines()])
+        for sample in samples:
+            file.write(sample_format.format(*sample))
 
 
 def save_json(sections, filename, encoding='utf-8'):
