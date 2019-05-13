@@ -344,8 +344,8 @@ begintemplate STN_morph_arcdist
 
 
     /**
-     * Create axon hillock as conical section attached to soma.
-     * This ensures there is a taper from soma to axon.
+     * Create axon hillock as tapering section attached to soma.
+     * Adjusts somatic area to compensate for added area of hillock.
      *
      * @param   $1 (end_diam) : float
      *          Diameter that section should taper to

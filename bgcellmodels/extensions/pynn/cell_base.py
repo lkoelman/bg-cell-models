@@ -87,6 +87,62 @@ class UnitFetcherPlaceHolder(dict):
             return 'dimensionless'
 
 
+################################################################################
+# INTERFACE METHODS
+################################################################################
+
+# NOTE: can assign to class or put in mixin object representing interface
+
+
+def irec_resolve_section(self, spec, multiple=False):
+    """
+    Resolve a section specification.
+
+    Part of interface for compabitibility with TraceSpecRecorder.
+
+    @return     nrn.Section
+                The section intended by the given section specifier.
+
+
+    @param      spec : str
+                
+                Section specifier in the format 'section_container[index]',
+                where 'section_container' is the name of a secarray, Section,
+                or SectionList that is a public attribute of the icell,
+                and the index part is optional.
+
+
+    @note       The default Section arrays for Ephys.CellModel are:
+                'soma', 'dend', 'apic', 'axon', 'myelin'.
+                
+                The default SectionLists are:
+                'somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all'
+
+                If 'section_container' matches any of these names, it will
+                be treated as such. If not, it will be treated as an indexable
+                attribute of the icell instance.
+    """
+
+    matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>.+)\])?', spec)
+    sec_name = matches.group('secname')
+    sec_index = matches.group('index')
+
+    if sec_index is None:
+        return getattr(self.icell, sec_name)
+
+    seclist = list(getattr(self.icell, sec_name))
+    secs = configutil.index_with_str(seclist, spec)
+    if not multiple:
+        assert len(secs) == 1
+        return secs[0]
+    else:
+        return secs
+
+
+################################################################################
+# BASE CLASSES
+################################################################################
+
 class MorphCellType(NativeCellType):
     """
     PyNN native cell type that has Ephys model as 'model' attribute.
@@ -545,47 +601,8 @@ class MorphModelBase(object):
             return configutil.index_with_str(synlist, spec)
 
 
-    def resolve_section(self, spec, multiple=False):
-        """
-        Resolve a section specification.
-
-        @return     nrn.Section
-                    The section intended by the given section specifier.
-
-
-        @param      spec : str
-                    
-                    Section specifier in the format 'section_container[index]',
-                    where 'section_container' is the name of a secarray, Section,
-                    or SectionList that is a public attribute of the icell,
-                    and the index part is optional.
-
-
-        @note       The default Section arrays for Ephys.CellModel are:
-                    'soma', 'dend', 'apic', 'axon', 'myelin'.
-                    
-                    The default SectionLists are:
-                    'somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all'
-
-                    If 'section_container' matches any of these names, it will
-                    be treated as such. If not, it will be treated as an indexable
-                    attribute of the icell instance.
-        """
-
-        matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>.+)\])?', spec)
-        sec_name = matches.group('secname')
-        sec_index = matches.group('index')
-
-        if sec_index is None:
-            return getattr(self.icell, sec_name)
-
-        seclist = list(getattr(self.icell, sec_name))
-        secs = configutil.index_with_str(seclist, spec)
-        if not multiple:
-            assert len(secs) == 1
-            return secs[0]
-        else:
-            return secs
+    # Bind interface method
+    resolve_section = irec_resolve_section
 
 
     def __getattr__(self, name):

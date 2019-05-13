@@ -171,6 +171,7 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
 def simulate_model(
         pop_scale       = 1.0,
         sim_dur         = 500.0,
+        sim_dt          = None,
         export_locals   = True,
         output          = None,
         report_progress = None,
@@ -210,7 +211,12 @@ def simulate_model(
     # SIMULATOR SETUP
     ############################################################################
     
-    sim.setup(timestep=sim_params['timestep'], 
+    if sim_dt is None:
+        sim_dt = sim_params['timestep']
+    else:
+        logger.warning("Simulation timestep overridden from command line: dt = %f", sim_dt)
+
+    sim.setup(timestep=sim_dt, 
               min_delay=0.1, max_delay=10.0, use_cvode=False)
     
     if mpi_rank == 0:
@@ -642,27 +648,30 @@ def simulate_model(
     # EXTRACELLULAR FIELD
     ############################################################################
 
-    # Create DBS waveform
-    pulse_train, pulse_time = stimulation.make_pulse_train(
-                                frequency=emf_params['dbs_frequency'],
-                                pulse_width=emf_params['dbs_pulse_width'],
-                                amp0=emf_params['dbs_pulse0_amplitude'],
-                                amp1=emf_params['dbs_pulse1_amplitude'],
-                                dt=emf_params['dbs_sample_period'],
-                                duration=sim_dur,
-                                coincident_discontinuities=True)
+    if with_dbs:
 
-    # Play DBS waveform into GLOBAL variable for this thread
-    pulse_avec = h.Vector(pulse_train)
-    pulse_tvec = h.Vector(pulse_time)
-    dbs_started = False
-    for sec in h.allsec():
-        if h.ismembrane('xtra', sec=sec):
-            pulse_avec.play(h._ref_is_xtra, pulse_tvec, 1)
-            dbs_started = True
+        # Create DBS waveform
+        pulse_train, pulse_time = stimulation.make_pulse_train(
+                                    frequency=emf_params['dbs_frequency'],
+                                    pulse_width=emf_params['dbs_pulse_width'],
+                                    amp0=emf_params['dbs_pulse0_amplitude'],
+                                    amp1=emf_params['dbs_pulse1_amplitude'],
+                                    dt=emf_params['dbs_sample_period'],
+                                    duration=sim_dur,
+                                    coincident_discontinuities=True)
 
-    if not dbs_started:
-        raise Exception('Coud not find mechanism "xtra" in any section.')
+        # Play DBS waveform into GLOBAL variable for this thread
+        pulse_avec = h.Vector(pulse_train)
+        pulse_tvec = h.Vector(pulse_time)
+        dbs_started = False
+        for sec in h.allsec():
+            if h.ismembrane('xtra', sec=sec):
+                pulse_avec.play(h._ref_is_xtra, pulse_tvec, 1)
+                dbs_started = True
+                break
+
+        if not dbs_started:
+            raise Exception('Coud not find mechanism "xtra" in any section.')
 
     ############################################################################
     # CONNECTIONS
@@ -815,7 +824,9 @@ def simulate_model(
         # Translate trace group specifier to Population.record() call
         for trace_group in pop_config['traces']:
             pop_sample = trace_group['cells']
-            if isinstance(pop_sample, int):
+            if pop_sample in (':', 'all'):
+                target_cells = target_pop
+            elif isinstance(pop_sample, int):
                 target_cells = target_pop.sample(pop_sample, rng=shared_rng_pynn)
             elif isinstance(pop_sample, str):
                 slice_args = [int(i) if i!='' else None for i in pop_sample.split(':')]
@@ -996,6 +1007,9 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--dur', nargs='?', type=float, default=500.0,
                         dest='sim_dur', help='Simulation duration')
 
+    parser.add_argument('-dt', '--simdt', nargs='?', type=float, default=None,
+                        dest='sim_dt', help='Simulation time step')
+
     parser.add_argument('--scale', nargs='?', type=float, default=1.0,
                         dest='pop_scale', help='Scale for population sizes')
 
@@ -1018,12 +1032,18 @@ if __name__ == '__main__':
     parser.add_argument('--lfp',
                         dest='with_lfp', action='store_true',
                         help='Calculate Local Field Potential.')
-    parser.set_defaults(with_lfp=None)
+    parser.add_argument('--nolfp',
+                        dest='with_lfp', action='store_false',
+                        help='Calculate Local Field Potential.')
+    parser.set_defaults(with_lfp=False)
 
     parser.add_argument('--dbs',
                         dest='with_dbs', action='store_true',
                         help='Apply deep brain stimulation.')
-    parser.set_defaults(with_dbs=None)
+    parser.add_argument('--nodbs',
+                        dest='with_dbs', action='store_false',
+                        help='Apply deep brain stimulation.')
+    parser.set_defaults(with_dbs=False)
 
     parser.add_argument('--dd',
                         dest='dopamine_depleted', action='store_true',

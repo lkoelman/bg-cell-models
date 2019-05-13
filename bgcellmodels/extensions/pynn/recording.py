@@ -230,7 +230,8 @@ class TraceSpecRecorder(Recorder):
         elif 'sec' in trace_spec.keys():
             # spec is in NetPyne format
             hoc_obj = cell.resolve_section(trace_spec['sec'])
-            vec, marker = self._record_trace(hoc_obj, trace_spec, sampling_interval)
+            vec, marker = self._record_trace(hoc_obj, trace_spec, sampling_interval,
+                            threshold=cell.get_threshold())
             if marker is not None:
                 _pp_markers = getattr(cell, '_pp_markers', [])
                 _pp_markers.append(marker)
@@ -242,7 +243,8 @@ class TraceSpecRecorder(Recorder):
             # spec is in NetPyne format
             hoc_objs = cell.resolve_section(trace_spec['secs'], multiple=True)
             for i, hoc_obj in enumerate(hoc_objs):
-                vec, marker = self._record_trace(hoc_obj, trace_spec, sampling_interval)
+                vec, marker = self._record_trace(hoc_obj, trace_spec, sampling_interval,
+                                threshold=cell.get_threshold())
                 if marker is not None:
                     _pp_markers = getattr(cell, '_pp_markers', [])
                     _pp_markers.append(marker)
@@ -296,9 +298,12 @@ class TraceSpecRecorder(Recorder):
             cell.recording_time += 1
 
 
-    def _record_trace(self, hoc_obj, spec, rec_dt, duration=None):
+    def _record_trace(self, hoc_obj, spec, rec_dt, duration=None, threshold=None):
         """
         Record the given traces from section
+
+        @param  threshold : float
+                Spike threshold if trace spec contains 'spikes' as its var
 
         WARNING: For multithreaded execution, section _must_ have POINT_PROCESS
                  associated with it to identify the tread. Hence, a PointProcessMark
@@ -308,6 +313,7 @@ class TraceSpecRecorder(Recorder):
         hoc_ptr = None  # pointer to Hoc variable that will be recorded
         pp = None       # Hoc POINT_PROCESS instance
         vec = None      # Hoc.Vector that will be recorded into
+        recorded = False
 
         # Get Section and segment
         if isinstance(hoc_obj, neuron.nrn.Segment):
@@ -323,11 +329,19 @@ class TraceSpecRecorder(Recorder):
         if 'loc' in spec: # hoc_obj is Section
 
             # Get pointer/reference to variable to record
-            if 'mech' in spec:  # eg. soma(0.5).hh._ref_gna
+            if spec['var'] == 'spikes':
+                pp_marker = h.NetCon(seg._ref_v, None, threshold, 0.0, 0.0, sec=sec)
+                vec = h.Vector(0)
+                pp_marker.record(vec)
+                recorded = True
+
+            # Mechanism RANGE variable, e.g. soma(0.5).hh._ref_gna
+            elif 'mech' in spec:
                 mech_instance = getattr(seg, spec['mech'])
                 hoc_ptr = getattr(mech_instance, '_ref_'+spec['var'])
+
+            # Section RANGE variable, e.g. soma(0.5)._ref_v
             else:
-                # No mechanism. E.g. soma(0.5)._ref_v
                 hoc_ptr = getattr(seg, '_ref_'+spec['var'])
 
             # find a POINT_PROCESS in segment to improve efficiency
@@ -335,8 +349,9 @@ class TraceSpecRecorder(Recorder):
             # if any(seg_pps):
             #     pp = seg_pps[0]
             # else:
-            pp = h.PointProcessMark(seg)
-            pp_marker = pp
+            if pp_marker is None:
+                pp = h.PointProcessMark(seg)
+                pp_marker = pp
 
 
         elif 'pointp' in spec: # hoc_obj is POINT_PROCESS
@@ -364,9 +379,9 @@ class TraceSpecRecorder(Recorder):
         else:
             vec = h.Vector()
 
-        if pp is not None:
+        if pp and not recorded:
             vec.record(pp, hoc_ptr, rec_dt)
-        else:
+        elif not recorded:
             vec.record(hoc_ptr, rec_dt)
 
         return vec, pp_marker
@@ -381,7 +396,7 @@ class TraceSpecRecorder(Recorder):
                               description=self.population.describe(),
                               rec_datetime=datetime.now())  # would be nice to get the time at the start of the recording, not the end
         variables_to_include = set(self.recorded.keys())
-        if variables is not 'all':
+        if variables != 'all':
             variables_to_include = variables_to_include.intersection(set(variables))
         for variable in variables_to_include:
             if variable == 'spikes':

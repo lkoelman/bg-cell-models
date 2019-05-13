@@ -564,7 +564,9 @@ class AxonBuilder(object):
             raise ValueError('Streamline too long (estimated number of '
                 'compartments needed is {}'.format(est_num_comp))
 
+        # Keep track of compartments that exceed geometry tolerance
         num_tol_exceeded = 0
+        diffs_tol_exceeded = []
 
         # Build axon progressively by walking along streamline path
         for i_compartment in xrange(MAX_NUM_COMPARTMENTS):
@@ -600,6 +602,7 @@ class AxonBuilder(object):
             real_length = veclen(stop_coord - self.last_coord)
             if not np.isclose(real_length, sec_L_mm, atol=tolerance_mm):
                 num_tol_exceeded += 1
+                diffs_tol_exceeded.append(abs(real_length - sec_L_mm))
                 # logger.warning('exceed length tolerance ({}) '
                 #                ' in compartment compartment {} : L = {}'.format(
                 #                     tolerance_mm, ax_sec, real_length))
@@ -660,8 +663,9 @@ class AxonBuilder(object):
                      tot_num_seg, len(sec_ordered))
 
         if num_tol_exceeded > 0:
-            logger.warning('exceeded length tolerance in %d compartments (tolerance = %f)',
-                            num_tol_exceeded, tolerance_mm)
+            logger.warning('exceeded length tolerance in %d compartments '
+                            '(max = %f, tolerance = %f)', num_tol_exceeded,
+                            max(diffs_tol_exceeded), tolerance_mm)
 
         # Add to parent cell
         if parent_cell is not None:
@@ -696,11 +700,12 @@ class AxonBuilder(object):
                         seclist.append(sec=ax_sec)
                     logger.debug("Updated SectionList '%s' of %s", seclist_name, parent_cell)
 
-        # Store axonal sections in SectionList for ease of access in Hoc
+        # Make SectionList objects with names conforming to MorphologyImporter interface
         all_seclist = h.SectionList()
         for sec in self.built_sections['ordered']:
             all_seclist.append(sec=sec)
         self.built_sections['all'] = all_seclist
+        self.built_sections['axonal'] = all_seclist
 
         return dotdict(self.built_sections)
 

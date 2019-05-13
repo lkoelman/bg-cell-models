@@ -50,7 +50,7 @@ def index_with_str(target, index_expr, prefix=r'\w*'):
             [0:10:2] or [[1,2,3]]. It can also include a prefix, e.g.
             mylist[2:8].
     """
-    regexp = r'^({})(\[(?P<slice>[\[\],\d:]+)\])'.format(prefix)
+    regexp = r'^({})(\[(?P<slice>[\[\],\d:-]+)\])'.format(prefix)
     matches = re.search(regexp, index_expr)
     slice_expr = matches.group('slice') # numpy-like: "i:j:k" or "[i,j,k]"
 

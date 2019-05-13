@@ -18,6 +18,7 @@ from pyNN.parameters import ArrayParameter
 # Our custom modules
 from bgcellmodels.extensions.pynn import cell_base
 from bgcellmodels import emfield # Hoc code
+from bgcellmodels.extensions.pynn import cell_base
 from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 
 logger = logging.getLogger('ext.pynn.cell_base')
@@ -108,6 +109,10 @@ class AxonalRelay(object):
         @return     threshold : float
         """
         return -10.0
+
+
+    # Bind interface method
+    resolve_section = cell_base.irec_resolve_section
 
 
     def _init_emfield(self):

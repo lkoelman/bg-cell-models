@@ -143,14 +143,19 @@ class GilliesSwcModel(cell_base.MorphModelBase):
             gbar_mat = gillies.load_gbar_dist(gbar_name)
             for secarray_name, seclist_name in sec_arrays_lists.items():
                 for i, sec in enumerate(getattr(self.icell, seclist_name)):
+
+                    # Get location of compartment in original Gillies
+                    # schematic morphology
                     tree_index, array_index = miocinovic.swc_to_gillies_index(
                                                 i, secarray_name=secarray_name)
+
                     # Get samples for section
                     sample_mask = (gbar_mat[:,0] == tree_index) & (gbar_mat[:,1] == array_index)
                     gbar_samples = gbar_mat[sample_mask]
                     if gbar_samples.ndim == 1:
                         gbar_samples = gbar_samples[np.newaxis, :]
                     xvals_gvals = gbar_samples[:, [2, 3]]
+
                     # Choose closest sample to assign gbar (nseg discretization mismatch)
                     for seg in sec:
                         i_close = np.abs(xvals_gvals[:,0] - seg.x).argmin()
@@ -161,7 +166,7 @@ class GilliesSwcModel(cell_base.MorphModelBase):
         # Increase persistent Na current to compensate for axon Zin
         for sec in list(self.icell.somatic) + [self.icell.axon[0]]:
             for seg in sec:
-                seg.gna_NaL = 2.0 * seg.gna_NaL
+                seg.gna_NaL = self.somatic_gNaP_factor * seg.gna_NaL
 
 
 
@@ -174,16 +179,22 @@ class StnMorphType(cell_base.MorphCellType):
     # NOTE: default_parameters is used to make 'schema' for checking and 
     #       converting datatypes. It supports only basic numpy-compatible types.
     default_parameters = {
-        'with_extracellular': False,
-        'electrode_coordinates_um' : ArrayParameter([]),
-        'rho_extracellular_ohm_cm' : 0.03,
+        # Cell biophysics
+        'somatic_gNaP_factor': 3.0,
         'membrane_noise_std': 0.1,
-        'max_num_gpe_syn': 19,
-        'max_num_ctx_syn': 30,
-        'max_num_stn_syn': 10,
+        # Morphology & 3D specification
         'morphology_path': np.array('placeholder/path'), # workaround for strings
         'transform': ArrayParameter([]),
         'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
+        # Extraceullular stim
+        'with_extracellular': False,
+        'electrode_coordinates_um' : ArrayParameter([]),
+        'rho_extracellular_ohm_cm' : 0.03,
+        # Inputs
+        'max_num_gpe_syn': 19,
+        'max_num_ctx_syn': 30,
+        'max_num_stn_syn': 10,
+        
     }
 
     # NOTE: extra_parameters supports non-numpy types. 

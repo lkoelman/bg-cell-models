@@ -68,7 +68,17 @@
 // CTX AXONS
 // =============================================================================
     "CTX.axons": {
-        "traces": [],
+        // Recorded traces
+        "traces": [
+            {
+                "cells": ":",
+                "sampling_period": 0.05,
+                "specs": {
+                    // Axon terminal spikes:
+                    "spikes_axterm{:d}": {"sec":"axonal[-1]", "loc":0.5, "var":"spikes"},
+                },
+            },
+        ],
         // CTX -> CTX.axons Projection
         // ----------------------------------------------------------------------
         // Each CTX cell, including surrogates, has their own axon
@@ -169,7 +179,17 @@
 // GPE AXONS
 // =============================================================================
     "GPE.axons": {
-        "traces": [],
+        // Recorded traces
+        "traces": [
+            {
+                "cells": ":",
+                "sampling_period": 0.05,
+                "specs": {
+                    // Axon terminal spikes:
+                    "spikes_axterm{:d}": {"sec":"axonal[-1]", "loc":0.5, "var":"spikes"},
+                },
+            },
+        ],
         // GPE.all -> GPE.axons Projection
         // ----------------------------------------------------------------------
         // Each GPe cell, including surrogates, has their own axon
@@ -372,6 +392,8 @@
                 "cells": 3,
                 "sampling_period": 0.05,
                 "specs": {
+                    // Axon terminal spikes:
+                    "spikes_axterm{:d}": {"sec":"axonal[-1]", "loc":0.5, "var":"spikes"},
                     // CTX inputs
                     "g_AMPA{:d}": {"syn":"GLUsyn[0:3]", "var":"g_AMPA"},
                     "g_NR2BD{:d}": {"syn":"GLUsyn[0:3]", "var":"g_NMDA"},
