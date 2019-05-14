@@ -399,19 +399,19 @@ class TraceSpecRecorder(Recorder):
         if variables != 'all':
             variables_to_include = variables_to_include.intersection(set(variables))
         for variable in variables_to_include:
-            if variable == 'spikes':
+            if variable.startswith('spikes'):
                 t_stop = self._simulator.state.t * pq.ms  # must run on all MPI nodes
-                sids = sorted(self.filter_recorded('spikes', filter_ids))
-                data = self._get_spiketimes(sids)
-
-                segment.spiketrains = [
+                sids = sorted(self.filter_recorded(variable, filter_ids))
+                data = self._get_spiketimes(sids, variable)
+                segment.spiketrains.extend([
                     neo.SpikeTrain(data.get(int(id),[]),
                                    t_start=self._recording_start_time,
                                    t_stop=t_stop,
                                    units='ms',
+                                   name=variable,
                                    source_population=self.population.label,
                                    source_id=int(id),source_index=self.population.id_to_index(int(id)))
-                    for id in sids]
+                    for id in sids])
             else:
                 ids = sorted(self.filter_recorded(variable, filter_ids))
                 signal_array = self._get_all_signals(variable, ids, clear=clear)
@@ -442,14 +442,17 @@ class TraceSpecRecorder(Recorder):
         return segment
 
 
-    def _get_spiketimes(self, id):
+    def _get_spiketimes(self, id, trace_name='spikes'):
         """
         Copied from PyNN master (latest version) to solve bug
         """
         if hasattr(id, "__len__"):
             all_spiketimes = {}
             for cell_id in id:
-                spikes = numpy.array(cell_id._cell.spike_times)
+                if trace_name == 'spikes':
+                    spikes = numpy.array(cell_id._cell.spike_times)
+                else:
+                    spikes = numpy.array(cell_id._cell.traces[trace_name])
                 # add OR mask: self._recording_start_time <= spikes
                 mask = ((spikes >= self._recording_start_time) &
                         (spikes <= simulator.state.t + 1e-9))

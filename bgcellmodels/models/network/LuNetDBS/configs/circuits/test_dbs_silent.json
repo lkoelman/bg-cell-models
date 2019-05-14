@@ -1,17 +1,7 @@
-// Configuration file for Basal Ganglia network simulation.
-// Parameters can be specified in format:
-// "param_name": {
-//     "statement": "a + b - c(lol)",
-//     "do_format": false, // if true, statement must contain format specs, and
-//                         // substitutions will be made from parent contexts
-//     "locals": {         // locals for call to eval(),
-//                         // <null> means use surrounding "local_context" entries
-//         "a": 6,
-//         "b": 50.0,
-//     },
-//     "globals": {},      // <null> to copy globals from code, {} for specific values
-// },
-//
+// Network with silent cells recording elcited APs in axons
+//  - all weights set to zero
+//  - all NaP channel conductances set to zero (prevent spontaneous spiking)
+//  - record representative axon along length
 {
 // =============================================================================
 // Global Simulation Parameters
@@ -83,7 +73,7 @@
             "synapse": {
                 "name": "StaticSynapse",
                 "parameters": {
-                    "weight":   1.0,
+                    "weight":   0.0,
                 },
             },
         },
@@ -155,6 +145,7 @@
                 "statement": "0.5 if DD else 1.0",
                 "locals": null,
             },
+            "gmax_NaP_scale": 0.0,
         },
         // Spatial arrangement
         "grid_dx": {
@@ -187,7 +178,7 @@
             "synapse": {
                 "name": "StaticSynapse",
                 "parameters": {
-                    "weight":   1.0,
+                    "weight":   0.0,
                 },
             },
         },
@@ -227,7 +218,7 @@
             "synapse": {
                 "name": "GluSynapse",
                 "parameters": {
-                    "weight":       1.0,
+                    "weight":       0.0,
                     "delay":        2.0, // [ms] delay from literature
                     "U1":           0.1, // baseline release probability
                     "tau_rec":      200.0, // [ms] recovery from STD
@@ -270,7 +261,7 @@
             "synapse": {
                 "name": "GabaSynTmHill",
                 "parameters": {
-                    "weight": 1.0,
+                    "weight":       0.0,
                     "delay":        0.5, // [ms] delay from literature
                     // STP parameters
                     "U1":           0.2, // baseline release probability
@@ -318,7 +309,7 @@
                 // NOTE: DD mostly captured by increased baseline firing rate
                 "name": "GABAAsynTM",
                 "parameters": {
-                    "weight":       1.0,
+                    "weight":       0.0,
                     "delay":        5.0, // [ms] delay from Kita, Kita (2011)
                     // STP parameters
                     "U1":           { // baseline release probability
@@ -366,6 +357,7 @@
                 "statement": "0.5 if DD else 1.0", // reduced HCN current in DD condition
                 "locals": null,
             },
+            "gna_NaL_scale": 0.0,
         },
         // Surrogate spike sources
         "surrogate_fraction": 0.1, // fraction of population size
@@ -418,7 +410,7 @@
             "synapse": {
                 "name": "GabaSynTmHill",
                 "parameters": {
-                    "weight":       1.0,
+                    "weight":       0.0,
                     "delay":        2.0,    // [ms] delay from literature
                     // STP parameters
                     "U1":           0.2,    // baseline release probability
@@ -484,7 +476,7 @@
                         "NMDAsynTM": "proximal.NMDA"
                     },
                     // Common NetCon parameters
-                    "weight":       1.0,
+                    "weight":       0.0,
                     "delay":        5.9, // [ms] delay from Kita, Kita (2011)
                     // GLUsyn parameters: AMPA + NMDA NR2B/D receptor (slow kinetics)
                     // ---------------------------------------------------------
@@ -546,7 +538,7 @@
             "synapse": {
                 "name": "GluSynapse",
                 "parameters": {
-                    "weight":       1.0,
+                    "weight":       0.0,
                     "delay":        0.5, // [ms] FIXME: guesstimate delay, no source
                     // STP parameters
                     "U1":           0.1, // baseline release probability

@@ -13,12 +13,13 @@ import numpy as np
 
 def make_pulse_train(
         frequency=250.0,
-        pulse_width=0.300,
+        pulse_width_ms=0.300,
         amp0=1.0,
         amp1=0.0, 
         duration=10e3,
         dt=0.01,
-        coincident_discontinuities=False):
+        coincident_discontinuities=False,
+        off_intervals=None):
     """
     Make monphasic or biphasic pulse train.
 
@@ -41,17 +42,24 @@ def make_pulse_train(
     """
     
     freq_ms = frequency * 1e-3
-    duty_cycle = pulse_width * freq_ms # duty cycle = PW / period
+    duty_cycle = pulse_width_ms * freq_ms # duty cycle = PW / period
     time_axis = np.arange(0, duration + dt, dt)
     omega = 2 * np.pi * freq_ms
 
-    if pulse_width  >= 1 / freq_ms:
+    if pulse_width_ms  >= 1 / freq_ms:
         raise ValueError('Pulse width must be smaller than period')
     
     # square wave between [+1, -1] (2 peak-to-peak, baseline 0)
     raw_square = signal.square(omega * time_axis, duty_cycle)
     dbs_vec = amp0 * raw_square
     dbs_vec[dbs_vec < 0] = amp1
+
+    # turn DBS off in silent intervals
+    if off_intervals is not None:
+        silent_mask = np.zeros_like(time_axis, dtype=bool)
+        for (t_off, t_on) in off_intervals:
+            silent_mask = silent_mask | ((time_axis >= t_off) & (time_axis <= t_on))
+        dbs_vec[silent_mask] = 0.0
 
     if coincident_discontinuities:
         edge_indices = np.where(np.diff(dbs_vec[:-1]))[0]

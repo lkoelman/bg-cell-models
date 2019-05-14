@@ -23,7 +23,7 @@ Run single-threaded using IPython:
 >>> ipython
 >>> %run <command>
 
-Example command:
+Example commands:
 
 >>> model_parameterized.py -id testrun --dur 100 --scale 0.5 --seed 888 \
 --dd --lfp --dbs \
@@ -34,6 +34,8 @@ Example command:
 --axonfile axon_coordinates.pkl \
 --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
+
+>>> mpirun -n 6 python model_parameterized.py -id calibrate1 --dur 1000 --scale 1.0 --seed 888 --nodbs --nolfp --dd -dt 0.025 --outdir ~/storage --transient-period 0.0 --write-interval 1000 --report-interval 25.0 --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_5.json --axonfile axon_coordinates.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
 
 NOTES
@@ -206,6 +208,8 @@ def simulate_model(
 
     sim_params = config['simulation']
     emf_params = config['electromagnetics']
+
+    rho_ohm_cm = 1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
 
     ############################################################################
     # SIMULATOR SETUP
@@ -404,8 +408,8 @@ def simulate_model(
     stn_cell_params['morphology_path'] = cells_morph_paths
     stn_cell_params['transform'] = cells_transforms
     stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
-    stn_cell_params['rho_extracellular_ohm_cm'] = 1.0 / emf_params['sigma_extracellular']
-    stn_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates']
+    stn_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
+    stn_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates_um']
 
     
     stn_type = miocinovic.StnMorphType(**stn_cell_params)
@@ -472,8 +476,8 @@ def simulate_model(
     gpe_cell_params['transform'] = cells_transforms
     # NOTE: GPe axons are NOT electrically attached to morphology, but work via relay
     # gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
-    gpe_cell_params['rho_extracellular_ohm_cm'] = 1.0 / emf_params['sigma_extracellular']
-    gpe_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates']
+    gpe_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
+    gpe_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates_um']
 
     proto_type = gunay.GpeProtoCellType(**gpe_cell_params)
 
@@ -537,8 +541,8 @@ def simulate_model(
         'streamline_coordinates_mm':    gpe_axon_coords,
         'termination_method':           np.array('terminal_sequence'),
         'with_extracellular':           with_lfp or with_dbs,
-        'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates'],
-        'rho_extracellular_ohm_cm' :    1.0 / emf_params['sigma_extracellular'],         
+        'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates_um'],
+        'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
     }
 
     gpe_axon_type = AxonRelayType(**gpe_axon_params)
@@ -607,8 +611,8 @@ def simulate_model(
         'streamline_coordinates_mm':    ctx_axon_coords,
         'termination_method':           np.array('terminal_sequence'),
         'with_extracellular':           with_lfp or with_dbs,
-        'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates'],
-        'rho_extracellular_ohm_cm' :    1.0 / emf_params['sigma_extracellular'],         
+        'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates_um'],
+        'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
     }
 
     ctx_axon_type = AxonRelayType(**ctx_axon_params)
@@ -652,12 +656,13 @@ def simulate_model(
 
         # Create DBS waveform
         pulse_train, pulse_time = stimulation.make_pulse_train(
-                                    frequency=emf_params['dbs_frequency'],
-                                    pulse_width=emf_params['dbs_pulse_width'],
-                                    amp0=emf_params['dbs_pulse0_amplitude'],
-                                    amp1=emf_params['dbs_pulse1_amplitude'],
-                                    dt=emf_params['dbs_sample_period'],
+                                    frequency=emf_params['dbs_frequency_hz'],
+                                    pulse_width_ms=emf_params['dbs_pulse_width_ms'],
+                                    amp0=emf_params['dbs_pulse0_amplitude_mA'],
+                                    amp1=emf_params['dbs_pulse1_amplitude_mA'],
+                                    dt=emf_params['dbs_sample_period_ms'],
                                     duration=sim_dur,
+                                    off_intervals=emf_params['dbs_off_intervals'],
                                     coincident_discontinuities=True)
 
         # Play DBS waveform into GLOBAL variable for this thread
@@ -858,7 +863,7 @@ def simulate_model(
     # Simulation statistics
     num_segments = sum((sec.nseg for sec in h.allsec()))
     num_cell = sum((1 for sec in h.allsec()))
-    print("Will simulate {} sections ({} compartments) for {} seconds on MPI rank {}.".format(
+    print("Will simulate {} sections ({} compartments) for {} ms on MPI rank {}.".format(
             num_cell, num_segments, sim_dur, mpi_rank))
     tstart = time.time()
     outdir, filespec = os.path.split(output)
