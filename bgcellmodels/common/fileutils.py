@@ -7,6 +7,7 @@ File handling utilities.
 import re
 import json
 import collections
+from _ctypes import PyObj_FromPtr
 
 
 def parse_json_file(filename, nonstrict=True, ordered=False):
@@ -187,3 +188,69 @@ def validate_minify_json(string):
     new_string += string[index:]
     return new_string
 
+
+class NoIndent(object):
+    """
+    Wrapper for lists/dicts that should not be indented in JSON representation.
+    """
+    def __init__(self, value):
+        self.value = value
+
+
+class VariableIndentEncoder(json.JSONEncoder):
+    """
+    JSON encoder that lets you combine indentation with 'flat' (not indented)
+    representations of objects.
+
+    This makes the JSON file more readable for example when writing matrices
+    as nested attributes.
+
+    Credit to StackOverflow user martineau, https://stackoverflow.com/a/13252112
+
+    EXAMPLE
+    -------
+
+    >>> properties = {
+    >>>     'flat_dict': NoIndent([{"x":1,"y":7}, {"x":0,"y":4}, {"x":5,"y":3}]),
+    >>>     'flat_list': NoIndent([[1,2,3],[2,3,1],[3,2,1]])
+    >>> }
+    >>>
+    >>> json.dumps(properties, cls=VariableIndentEncoder indent=2, sort_keys=False)
+
+    """
+    FORMAT_SPEC = '@@{}@@'
+    regex = re.compile(FORMAT_SPEC.format(r'(\d+)'))
+
+    def __init__(self, **kwargs):
+        # Save copy of any keyword argument values needed for use here.
+        self.__sort_keys = kwargs.get('sort_keys', None)
+        super(VariableIndentEncoder, self).__init__(**kwargs)
+
+
+    def default(self, obj):
+        # The default JSON representation of a NoIndent object is its id (memory address)
+        if isinstance(obj, NoIndent):
+            return self.FORMAT_SPEC.format(id(obj))
+        else:
+            return super(VariableIndentEncoder, self).default(obj)
+
+
+    def encode(self, obj):
+        format_spec = self.FORMAT_SPEC  # Local var to expedite access.
+        json_repr = super(VariableIndentEncoder, self).encode(obj)  # Default JSON.
+
+        # Replace any marked-up object ids in the JSON repr with the
+        # value returned from the json.dumps() of the corresponding
+        # wrapped Python object.
+        for match in self.regex.finditer(json_repr):
+            # Get id (memory address) of wrapper object and retrieve it
+            id = int(match.group(1))
+            no_indent = PyObj_FromPtr(id)
+            json_obj_repr = json.dumps(no_indent.value, sort_keys=self.__sort_keys)
+
+            # Replace the matched id string with json formatted representation
+            # of the corresponding Python object.
+            json_repr = json_repr.replace(
+                            '"{}"'.format(format_spec.format(id)), json_obj_repr)
+
+        return json_repr

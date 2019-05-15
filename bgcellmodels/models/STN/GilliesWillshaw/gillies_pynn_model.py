@@ -8,7 +8,6 @@ PyNN compatible cell models for Gillies STN cell model.
 """
 
 import neuron
-h = neuron.h
 import numpy as np
 
 # Load NEURON libraries, mechanisms
@@ -17,17 +16,14 @@ script_dir = os.path.dirname(__file__)
 neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms'))
 
 # Load STN cell Hoc libraries
+h = neuron.h
 prev_cwd = os.getcwd()
 os.chdir(script_dir)
-# os.environ['HOC_LIBRARY_PATH'] = os.environ.get('HOC_LIBRARY_PATH', '') + ':' + script_dir
-h.xopen("gillies_createcell.hoc") # instantiates all functions & data structures on Hoc object
+h.load_file("gillies_create_factory.hoc") 
 os.chdir(prev_cwd)
 
-import bgcellmodels.extensions.pynn.ephys_models as ephys_pynn
+from bgcellmodels.extensions.pynn import cell_base, ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
-from bgcellmodels.common.stdutil import dotdict
-from bgcellmodels.common import treeutils, nrnutil #, logutils
-import pyNN.neuron as nrnsim
 import lfpsim # loads Hoc functions
 
 # Debug messages
@@ -87,31 +83,6 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
 
     # _ephys_locations = define_locations()
 
-    # Combined with celltype.receptors in EphysCellType constructor
-    # to make celltype.receptor_types in format 'region.receptor'
-    regions = ['proximal', 'distal']
-
-    # Must define 'default_parameters' in associated cell type
-    parameter_names = [
-        # See workaround for non-numerical parameters
-        # 'default_GABA_mechanism',
-        # 'default_GLU_mechanism',
-        'calculate_lfp',
-        'lfp_sigma_extracellular',
-        'lfp_electrode_x',
-        'lfp_electrode_y',
-        'lfp_electrode_z',
-        'tau_m_scale',
-        'membrane_noise_std',
-        'max_num_gpe_syn',
-        'max_num_ctx_syn',
-        'max_num_stn_syn',
-    ]
-
-    # FIXME: workaround: set directly as property on the class because
-    # PyNN only allows numerical parameters
-    default_GABA_mechanism = 'GABAsyn2'
-    default_GLU_mechanism = 'GLUsyn'
 
     # Related to PyNN properties
     _mechs_params_dict = {
@@ -128,10 +99,28 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     }
     rangevar_names = [p+'_'+m for m,params in _mechs_params_dict.iteritems() for p in params]
     gleak_name = 'gpas_STh'
+
     tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
-    rangevar_scaled_regions = {}
-    for rangevar in rangevar_names:
-        parameter_names.append(rangevar + '_scale')
+    rangevar_scaled_seclists = {}
+
+    spike_threshold_source_sec = -10.0
+
+    # Combined with celltype.receptors in MorphCellType constructor
+    # to make celltype.receptor_types in format 'region.receptor'
+    regions = ['proximal', 'distal']
+    synapse_spacing = 0.25 # (um)
+    region_boundaries = {
+        'proximal': (0.0, 120.0),   # (um)
+        'distal':   (100.0, 1e12),  # (um)
+    }
+
+    def __init__(self, *args, **kwargs):
+        # Define parameter names before calling superclass constructor
+        self.parameter_names = StnCellType.default_parameters.keys()
+        for rangevar in self.rangevar_names:
+            self.parameter_names.append(rangevar + '_scale')
+        
+        super(StnCellModel, self).__init__(*args, **kwargs)
 
 
     def instantiate(self, sim=None):
@@ -150,34 +139,6 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
         self.icell = h.SThcells[cell_idx]
 
 
-    def _post_instantiate(self):
-        """
-        Post-instantiation setup code. Inserts noise sources if requested.
-        """
-        # Insert membrane noise
-        if self.membrane_noise_std > 0:
-            # Configure RNG to generate independent stream of random numbers.
-            num_picks = int(nrnsim.state.duration / nrnsim.state.dt)
-            rng, init_rng = nrnutil.independent_random_stream(
-                                    num_picks, nrnsim.state.mcellran4_rng_indices,
-                                    start_low_index=nrnsim.state.rank_rng_seed)
-            rng.normal(0, 1)
-            self.noise_rng = rng
-            self.noise_rng_init = init_rng
-
-            soma = self.icell.soma[0]
-            self.noise_stim = stim = h.ingauss2(soma(0.5))
-            std_scale =  1e-2 * sum((seg.area() for seg in soma)) # [mA/cm2] to [nA]
-            stim.mean = 0.0
-            stim.stdev = self.membrane_noise_std * std_scale
-            stim.noiseFromRandom(rng)
-        else:
-            def fdummy():
-                pass
-            self.noise_rng = None
-            self.noise_rng_init = fdummy
-
-
     def memb_init(self):
         """
         Initialization function required by PyNN.
@@ -190,132 +151,6 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
             h.ion_style("na_ion",1,2,1,0,1, sec=sec)
             h.ion_style("k_ion",1,2,1,0,1, sec=sec)
             h.ion_style("ca_ion",3,2,1,1,1, sec=sec)
-
-        self.noise_rng_init()
-
-
-    def get_threshold(self):
-        """
-        Get spike threshold for soma membrane potential (used for NetCon)
-        """
-        return -10.0
-
-
-    def _init_synapses(self):
-        """
-        Initialize synapses on this neuron.
-
-        @override   EphysModelWrapper._init_synapses()
-        """
-        # Create data structure for synapses
-        super(StnCellModel, self)._init_synapses()
-
-        # Indicate to Connector that we don't allow multiple NetCon per synapse
-        self.allow_synapse_reuse = False
-
-        # Sample cell regions
-        soma = self.icell.soma[0]
-        h.distance(0, 0.5, sec=soma) # reference for distance measurement
-        is_proximal = lambda seg: h.distance(1, seg.x, sec=seg.sec) < 120.0
-        is_distal = lambda seg: h.distance(1, seg.x, sec=seg.sec) >= 100.0
-
-        # Sample each region uniformly and place synapses there
-        synapse_spacing = 0.25 # [um]
-        target_secs = list(self.icell.somatic) + list(self.icell.basal) + \
-                      list(self.icell.apical)
-        self._cached_region_segments = {}
-        self._cached_region_segments['proximal'] = []
-        self._cached_region_segments['distal'] = []
-        for sec in target_secs:
-            nsyn = np.ceil(sec.L / synapse_spacing)
-            for i in xrange(int(nsyn)):
-                seg = sec((i+1.0)/nsyn)
-                if is_proximal(seg):
-                    self._cached_region_segments['proximal'].append(seg)
-                if is_distal(seg):
-                    self._cached_region_segments['distal'].append(seg)
-
-        # Preallocate synapses that will be shared/re-used between afferents.
-        # We create one GABA-B synapse in each of the tree trunk sections
-        # of the STN cable model.
-        # TODO: uncomment below when synapse re-use implemented in Connection
-        # trunk_secs = [self.icell.dend0[1], self.icell.dend0[2], self.icell.dend1[0]]
-        # prox_gabab_syns = self._synapses['proximal'].setdefault('GABAB', [])
-        # for sec in trunk_secs:
-        #     syn = getattr(h, self.default_GABA_mechanism)(sec(0.8))
-        #     prox_gabab_syns.append(syn)
-
-
-    def get_synapses(self, region, receptors, num_contacts, **kwargs):
-        """
-        Get synapse in subcellular region for given receptors.
-        Called by Connector object to get synapse for new connection.
-
-        @override   PynnCellModelBase.get_synapse()
-        """
-        syns = self.make_synapses_cached_region(region, receptors, 
-                                                num_contacts, **kwargs)
-        synmap_key = tuple(sorted(receptors))
-        self._synapses[region].setdefault(synmap_key, []).extend(syns)
-        return syns
-
-    # def _init_synapses(self):
-    #     """
-    #     Initialize synapses on this neuron.
-
-    #     @override   EphysModelWrapper._init_synapses()
-    #     """
-    #     # Indicate to Connector that we don't allow multiple NetCon per synapse
-    #     self.allow_synapse_reuse = False
-
-    #     # Sample each region uniformly and place synapses there
-    #     soma = self.icell.soma[0]
-    #     synapse_spacing = 0.25
-    #     segment_gen = treeutils.ascend_with_fixed_spacing(
-    #                         soma(0.5), synapse_spacing)
-    #     uniform_segments = [seg for seg in segment_gen]
-
-    #     # Sample cell regions
-    #     h.distance(0, 0.5, sec=soma) # reference for distance measurement
-
-    #     is_proximal = lambda seg: h.distance(1, seg.x, sec=seg.sec) < 120.0
-    #     proximal_segments = [seg for seg in uniform_segments if is_proximal(seg)]
-
-    #     is_distal = lambda seg: h.distance(1, seg.x, sec=seg.sec) >= 100.0
-    #     distal_segments = [seg for seg in uniform_segments if is_distal(seg)]
-
-    #     # Synapses counts are fixed
-    #     num_gpe_syn = self.max_num_gpe_syn
-    #     num_ctx_syn = self.max_num_ctx_syn
-    #     num_stn_syn = self.max_num_stn_syn
-    #     rng = np.random # TODO: make from base seed + self ID
-        
-    #     proximal_indices = rng.choice(len(proximal_segments), 
-    #                             num_gpe_syn, replace=False)
-
-    #     distal_indices = rng.choice(len(distal_segments), 
-    #                             num_ctx_syn+num_stn_syn, replace=False)
-
-    #     # Fill synapse lists
-    #     self._synapses = {}
-    #     self._synapses['proximal'] = prox_syns = {}
-    #     self._synapses['distal'] = dist_syns = {}
-
-    #     # Get constuctors for NEURON synapse mechanisms
-    #     make_gaba_syn = getattr(h, self.default_GABA_mechanism)
-    #     make_glu_syn = getattr(h, self.default_GLU_mechanism)
-
-    #     prox_syns[('GABAA', 'GABAB')] = prox_gaba_syns = []
-    #     for seg_index in proximal_indices:
-    #         syn = make_gaba_syn(proximal_segments[seg_index])
-    #         prox_gaba_syns.append(dotdict(synapse=syn, used=0,
-    #             mechanism=self.default_GABA_mechanism))
-        
-    #     dist_syns[('AMPA', 'NMDA')] = dist_glu_syns = []
-    #     for seg_index in distal_indices:
-    #         syn = make_glu_syn(distal_segments[seg_index])
-    #         dist_glu_syns.append(dotdict(synapse=syn, used=0,
-    #             mechanism=self.default_GLU_mechanism))
 
 
     def _update_position(self, xyz):
@@ -384,7 +219,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
                                 coords, self.icell.somatic, self.icell.basal)
 
 
-class StnCellType(ephys_pynn.EphysCellType):
+class StnCellType(cell_base.MorphCellType):
     """
     Encapsulates an STN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -407,12 +242,14 @@ class StnCellType(ephys_pynn.EphysCellType):
         'max_num_gpe_syn': 19,
         'max_num_ctx_syn': 30,
         'max_num_stn_syn': 10,
+        'default_GABA_mechanism': np.array('GABAsyn2'),
+        'default_GLU_mechanism': np.array('GLUsyn'),
     }
     # extra_parameters = {}
     default_initial_values = {'v': -65.0}
     # recordable = ['spikes', 'v', 'lfp']
 
-    # Combined with self.model.regions by EphysCellType constructor
+    # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
 

@@ -606,7 +606,7 @@ def reduce_gillies_incremental(n_passes, zips_per_pass):
 	# 	if not sec.name().startswith('SThcell') and delete_old_cells:
 	# 		h.delete_section() # delete existing cells
 	if not hasattr(h, 'SThcells'):
-		h.xopen("createcell.hoc")
+		h.xopen("gillies_cell_singleton.hoc")
 
 	# Make sections accesible by name and index
 	somaref = ExtSecRef(sec=h.SThcell[0].soma)

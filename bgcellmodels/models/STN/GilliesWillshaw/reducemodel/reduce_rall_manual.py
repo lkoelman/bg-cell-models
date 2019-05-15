@@ -211,7 +211,7 @@ def gillies_rallreduction():
 		trees using Rall algorithm """
 
 	# Create cell and three IClamp in soma
-	h.xopen("createcell.hoc")
+	h.xopen("gillies_cell_singleton.hoc")
 	somasec = h.SThcell[0].soma
 	dend0secs = h.SThcell[0].dend0
 	dend1secs = h.SThcell[0].dend1

@@ -6,6 +6,10 @@ print " "
 print "loading STh cell data structures..."
 print " "
 
+/**
+ * Template describing only the properties and structure of the cell.
+ * It does not instantiate any cells.
+ */
 begintemplate SThproto
 
     public ntrees,ntree0,ntree1,nsoma,somadiam,somaL,PI
@@ -262,157 +266,163 @@ endtemplate SThproto
 /*******************************************************************************
  *  THE STh CELL OBJECT
  ******************************************************************************/
+
+/**
+ * Template for instantiating an STN cell.
+ * It uses the cell definition in SThproto to query cell properties.
+ */
 begintemplate SThcell
 
-public soma, dend0, dend1
+    public soma, dend0, dend1
 
- // declare the variables we will be using
+    // declare the variables we will be using
 
- create soma[1], dend0[1], dend1[1]
+    create soma[1], dend0[1], dend1[1]
 
- objref sthtype, all, somatic, basal, apical, axonal, myelinated
+    objref sthtype, all, somatic, basal, apical, axonal, myelinated
 
- strdef cmd
+    strdef cmd
 
- proc init() {local i, j, me, child1, child2
+    proc init() {local i, j, me, child1, child2
 
-   // $1   = cell reference number
-   // $o2  = cell prototype
+        // $1   = cell reference number
+        // $o2  = cell prototype
    
-   cellref = $1
-   
-   sthtype = $o2
+        cellref = $1
+        
+        sthtype = $o2
+ 
+        SThnsoma   = sthtype.nsoma
+        SThndend0  = sthtype.ntree0
+        SThndend1  = sthtype.ntree1
+ 
+        create soma[SThnsoma], dend0[SThndend0], dend1[SThndend1]
+ 
+        // Create named SectionLists for compatibility with imported morphologies
+        all = new SectionList()
+        somatic = new SectionList()
+        basal = new SectionList()
+        apical = new SectionList()
+        axonal = new SectionList()
+        myelinated = new SectionList()
 
-   SThnsoma   = sthtype.nsoma
-   SThndend0  = sthtype.ntree0
-   SThndend1  = sthtype.ntree1
+        soma[0] {
+            nseg = sthtype.nseg(-1,-1)
+            Ra = sthtype.Ra(-1)
+            diam = sthtype.diam(-1,-1)
+            L = sthtype.L(-1,-1)
+            cm = sthtype.Cm(-1)
 
-   create soma[SThnsoma], dend0[SThndend0], dend1[SThndend1]
+            // channels
 
-   // Create named SectionLists for compatibility with imported morphologies
-   all = new SectionList()
-   somatic = new SectionList()
-   basal = new SectionList()
-   apical = new SectionList()
-   axonal = new SectionList()
-   myelinated = new SectionList()
+            insert STh
+            insert Na
+            insert NaL
+            insert KDR
+            insert Kv31
+            insert Ih
+            insert Cacum
+            insert sKCa
+            insert CaT
+            insert HVA
 
-   soma[0] {
-       nseg = sthtype.nseg(-1,-1)
-       Ra = sthtype.Ra(-1)
-       diam = sthtype.diam(-1,-1)
-       L = sthtype.L(-1,-1)
-       cm = sthtype.Cm(-1)
+            // copy to named SectionLists
+            all.append()
+            somatic.append()
+        }
 
-     // channels
+        for i = 0,SThndend0-1 {
+
+            me = sthtype.ref(0,i)
+            child1 = sthtype.child(0,i,0)
+            child2 = sthtype.child(0,i,1)
+
+            dend0[me] {
+
+                if (child1 >= 0) {
+                    connect dend0[child1](0), 1
+                }
+
+                if (child2 >= 0) {
+                    connect dend0[child2](0), 1
+                }
+
+                diam = sthtype.diam(0,i)
+                L = sthtype.L(0,i)
+                Ra = sthtype.Ra(0)
+                nseg = sthtype.nseg(0,i)
+                cm = sthtype.Cm(0)
+
+                // channels
+                insert STh
+                insert Na
+                insert NaL
+                insert KDR
+                insert Kv31
+                insert Ih
+                insert Cacum
+                insert sKCa       
+                insert CaT
+                insert HVA
      
-     insert STh
-     insert Na
-     insert NaL
-     insert KDR
-     insert Kv31
-     insert Ih
-     insert Cacum
-     insert sKCa
-     insert CaT
-     insert HVA
+                // copy to named SectionLists
+                all.append()
+                basal.append()
+            }
+        }
 
-     // copy to named SectionLists
-     all.append()
-     somatic.append()
- }
+        for i = 0,SThndend1-1 {
 
- for i = 0,SThndend0-1 {
+           me = sthtype.ref(1,i)
+           child1 = sthtype.child(1,i,0)
+           child2 = sthtype.child(1,i,1)
 
-   me = sthtype.ref(0,i)
-   child1 = sthtype.child(0,i,0)
-   child2 = sthtype.child(0,i,1)
+           dend1[me] {
 
-   dend0[me] {
+             if (child1 >= 0) {
+                connect dend1[child1](0), 1
+            }
 
-     if (child1 >= 0) {
-        connect dend0[child1](0), 1
-    }
+            if (child2 >= 0) {
+                connect dend1[child2](0), 1
+            }
 
-    if (child2 >= 0) {
-        connect dend0[child2](0), 1
-    }
+            diam = sthtype.diam(1,i)
+            L = sthtype.L(1,i)
+            Ra = sthtype.Ra(1)
+            nseg = sthtype.nseg(1,i)
+            cm = sthtype.Cm(0)       
 
-    diam = sthtype.diam(0,i)
-    L = sthtype.L(0,i)
-    Ra = sthtype.Ra(0)
-    nseg = sthtype.nseg(0,i)
-    cm = sthtype.Cm(0)
+               // channels
+               
+               insert STh
+               insert Na
+               insert NaL
+               insert KDR
+               insert Kv31
+               insert Ih
+               insert Cacum
+               insert sKCa       
+               insert CaT
+               insert HVA
 
-       // channels
-       
-       insert STh
-       insert Na
-       insert NaL
-       insert KDR
-       insert Kv31
-       insert Ih
-       insert Cacum
-       insert sKCa       
-       insert CaT
-       insert HVA
+               // copy to named SectionLists
+               all.append()
+               basal.append()
+           }
+        }
 
-       // copy to named SectionLists
-       all.append()
-       basal.append()
-   }
-}
-
-for i = 0,SThndend1-1 {
-
-   me = sthtype.ref(1,i)
-   child1 = sthtype.child(1,i,0)
-   child2 = sthtype.child(1,i,1)
-
-   dend1[me] {
-
-     if (child1 >= 0) {
-        connect dend1[child1](0), 1
-    }
-
-    if (child2 >= 0) {
-        connect dend1[child2](0), 1
-    }
-
-    diam = sthtype.diam(1,i)
-    L = sthtype.L(1,i)
-    Ra = sthtype.Ra(1)
-    nseg = sthtype.nseg(1,i)
-    cm = sthtype.Cm(0)       
-
-       // channels
-       
-       insert STh
-       insert Na
-       insert NaL
-       insert KDR
-       insert Kv31
-       insert Ih
-       insert Cacum
-       insert sKCa       
-       insert CaT
-       insert HVA
-
-       // copy to named SectionLists
-       all.append()
-       basal.append()
-   }
-}
-
-   // connect trees to soma
-   connect dend0[0](0), soma[0](1)
-   connect dend1[0](0), soma[0](0)
+        // connect trees to soma
+        connect dend0[0](0), soma[0](1)
+        connect dend1[0](0), soma[0](0)
 
 
-   // set the ion styles
-   forall ion_style("na_ion",1,2,1,0,1)
-   forall ion_style("k_ion",1,2,1,0,1)
-   forall ion_style("ca_ion",3,2,1,1,1)
-}
+        // set the ion styles
+        // (Within an object, forall refers to all the sections declared in the object)
+        forall ion_style("na_ion",1,2,1,0,1)
+        forall ion_style("k_ion",1,2,1,0,1)
+        forall ion_style("ca_ion",3,2,1,1,1)
+    
+    } // end init()
 
 endtemplate SThcell

@@ -58,7 +58,7 @@ def stn_cell_gillies(resurgent=False):
 	# Create cell and three IClamp in soma
 	global soma
 	if soma is None:
-		h.xopen("createcell.hoc")
+		h.xopen("gillies_cell_singleton.hoc")
 		soma = h.SThcell[0].soma
 	dends = h.SThcell[0].dend0, h.SThcell[0].dend1
 	stims = h.stim1, h.stim2, h.stim3

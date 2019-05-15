@@ -19,7 +19,7 @@ from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
 import os.path
 script_dir = os.path.dirname(__file__)
 neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms'))
-neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms_extra'))
+# neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms_extra'))
 
 # Map of channel mechanisms to max conductance parameters (key = suffix of mod mechanism)
 gillies_gdict = {
@@ -61,7 +61,10 @@ gillies_mechs = list(gillies_gdict.keys()) # all mechanisms
 mechs_list = gillies_mechs
 
 # All gbar (max conductance) names
-gillies_glist = [gname+'_'+mech for mech,chans in gillies_gdict.iteritems() for gname in chans]
+gillies_glist = [
+    gname+'_'+mech for mech,chans in gillies_gdict.iteritems() 
+                    for gname in chans
+]
 gbar_list = gillies_glist
 active_gbar_names = [gname for gname in gillies_glist if gname != gleak_name]
 
@@ -72,7 +75,7 @@ def stn_cell_gillies():
     (only one copy of cell possible)
     """
     if not hasattr(h, 'SThcell'):
-        neuron.h.load_file(os.path.join(script_dir, 'createcell.hoc'))
+        neuron.h.load_file(os.path.join(script_dir, 'gillies_create_singleton.hoc'))
     else:
         print("Gillies STN cell already exists. Cannot create more than one instance.")
     
@@ -90,7 +93,7 @@ def stn_cell_standardized():
     simulations.
     """
     if not hasattr(h, 'SThcell'):
-        neuron.h.load_file(os.path.join(script_dir, 'gillies_createcell.hoc'))
+        neuron.h.load_file(os.path.join(script_dir, 'gillies_cell_factory.hoc'))
     cell_idx = h.make_stn_cell_global()
     cell_idx = int(cell_idx)
     return h.SThcells[cell_idx]
@@ -182,7 +185,7 @@ def reset_channel_gbar():
     """
     Reset all channel conductances to initial state.
 
-    NOTE: initialization copied from sample.hoc/createcell.hoc
+    NOTE: initialization copied from sample.hoc/gillies_cell_singleton.hoc
     """
     # Soma
     h.SThcells[0].soma.gna_Na = h.default_gNa_soma

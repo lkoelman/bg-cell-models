@@ -20,9 +20,9 @@ os.chdir(script_dir)
 h.xopen("fujita_createcell.hoc") # instantiates all functions & data structures on Hoc object
 os.chdir(prev_cwd)
 
-from bgcellmodels.extensions.pynn.ephys_models import PynnCellModelBase, EphysCellType
+from bgcellmodels.extensions.pynn.ephys_models import MorphModelBase, MorphCellType
 
-class GpeCellModel(PynnCellModelBase):
+class GpeCellModel(MorphModelBase):
     """
     Model class for Mahon/Corbit MSN cell.
 
@@ -38,7 +38,7 @@ class GpeCellModel(PynnCellModelBase):
     
     """
 
-    # Combined with celltype.receptors in EphysCellType constructor
+    # Combined with celltype.receptors in MorphCellType constructor
     # to make celltype.receptor_types in format 'region.receptor'
     regions = ['proximal']
 
@@ -50,6 +50,8 @@ class GpeCellModel(PynnCellModelBase):
     default_GABA_mechanism = 'GABAsyn'
     default_GLU_mechanism = 'GLUsyn'
     allow_synapse_reuse = False
+
+    spike_threshold_source_sec = 0.0
 
 
     def instantiate(self):
@@ -67,29 +69,12 @@ class GpeCellModel(PynnCellModelBase):
         self.icell.setparams_corbit_2016()
 
 
-    def memb_init(self):
-        """
-        Initialization function required by PyNN.
-
-        @override     EphysModelWrapper.memb_init()
-        """
-        for seg in self.icell.soma:
-            seg.v = self.v_init
-
-
-    def get_threshold(self):
-        """
-        Get spike threshold for soma membrane potential (used for NetCon)
-        """
-        return 0.0
-
-
     def get_synapses(self, region, receptors, num_contacts, **kwargs):
         """
         Get synapse in subcellular region for given receptors.
         Called by Connector object to get synapse for new connection.
 
-        @override   PynnCellModelBase.get_synapse()
+        @override   MorphModelBase.get_synapse()
         """
         syns = [self.make_new_synapse(receptors, self.icell.soma[0](0.5), **kwargs) for i in xrange(num_contacts)]
         synmap_key = tuple(sorted(receptors))
@@ -98,7 +83,7 @@ class GpeCellModel(PynnCellModelBase):
 
 
 
-class GpeProtoType(EphysCellType):
+class GpeProtoType(MorphCellType):
     """
     Encapsulates an MSN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -113,7 +98,7 @@ class GpeProtoType(EphysCellType):
     default_initial_values = {'v': -65.0}
     # recordable = ['spikes', 'v']
 
-    # Combined with self.model.regions by EphysCellType constructor
+    # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
 
@@ -125,7 +110,7 @@ class GpeProtoType(EphysCellType):
         return super(GpeProtoType, self).can_record(variable)
 
 
-class GpeArkyType(EphysCellType):
+class GpeArkyType(MorphCellType):
     """
     Encapsulates an MSN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
@@ -141,7 +126,7 @@ class GpeArkyType(EphysCellType):
     # TODO: decrease NaP for arky type
     # recordable = ['spikes', 'v']
 
-    # Combined with self.model.regions by EphysCellType constructor
+    # Combined with self.model.regions by MorphCellType constructor
     receptor_types = ['AMPA', 'NMDA', 'AMPA+NMDA',
                       'GABAA', 'GABAB', 'GABAA+GABAB']
 
