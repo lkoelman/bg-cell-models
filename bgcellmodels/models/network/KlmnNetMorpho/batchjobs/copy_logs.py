@@ -34,4 +34,4 @@ for fname in files:
         fpath = os.path.join(logs_dir, fname)
         opath = os.path.join(sim_dir, fname)
         shutil.copy2(fpath, opath)
-        print("{} -> {}".format(fname, sim_dir))
+        print("{0} -> {1}".format(fname, sim_dir))

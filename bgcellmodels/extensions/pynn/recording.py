@@ -172,7 +172,8 @@ class TraceSpecRecorder(Recorder):
             if not match:
                 raise KeyError(trace_name)
             trace_prefix = match.group(1)
-            trace_template = next((k for k in self.trace_opts.keys() if re.match(trace_prefix + r'\{.+?\}', k)), None)
+            trace_template = next((k for k in self.trace_opts.keys() if
+                                   re.match(trace_prefix + r'\{.+?\}', k)), None)
             if not trace_template:
                 raise KeyError(trace_name)
             return self.trace_opts[trace_template][opt_name]
@@ -437,10 +438,10 @@ class TraceSpecRecorder(Recorder):
                             channel_ids=source_index)
                     segment.analogsignals.append(signal)
                     logger.debug("%d **** ids=%s, channels=%s", mpi_node, source_ids, signal.channel_index)
-                    assert segment.analogsignals[0].t_stop - current_time - 2 * sampling_period < 1e-10
+                    # assert abs(signal.t_stop - current_time) < 2 * sampling_period + 1e-10 * pq.ms
                     # need to add `Unit` and `RecordingChannelGroup` objects
         return segment
-
+n
 
     def _get_spiketimes(self, id, trace_name='spikes'):
         """
