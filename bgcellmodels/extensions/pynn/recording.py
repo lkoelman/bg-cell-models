@@ -441,7 +441,7 @@ class TraceSpecRecorder(Recorder):
                     # assert abs(signal.t_stop - current_time) < 2 * sampling_period + 1e-10 * pq.ms
                     # need to add `Unit` and `RecordingChannelGroup` objects
         return segment
-n
+
 
     def _get_spiketimes(self, id, trace_name='spikes'):
         """

@@ -6,7 +6,7 @@ USAGE
 
 Build NMODL files:
 
-    >>> python setup.py build
+    >>> python setup.py mechanisms
 
 Install editable version (symlink to this directory):
 
@@ -216,6 +216,11 @@ setup(
         'numpy',
         'matplotlib',
         'pint',
+        'transforms3d',
+        'BluePyOpt',
+        'lazyarray',
+        'pint',
+        'elephant',
     ],
 
     # List additional groups of dependencies here (e.g. development
@@ -225,8 +230,8 @@ setup(
     #   $ pip install sampleproject[dev]
     #
     extras_require={  # Optional
-        'optimisation': ['BluePyOpt', 'cython', 'numba', 'elephant', 'PySpike'],
-        'network': ['PyNN', 'BluePyOpt', 'nixio'],
+        'optimisation': ['cython', 'numba', 'PySpike'],
+        'network': ['PyNN', 'nixio'],
         'devtools': ['nb_conda', 'nbstripout', 'jupyter_contrib_nbextensions'],
     },
 

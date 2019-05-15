@@ -27,7 +27,7 @@ Example commands:
 
 >>> model_parameterized.py -id testrun --dur 100 --scale 0.5 --seed 888 \
 --dd --lfp --dbs \
---outdir ~/storage --transient-period 0.0 --write-interval 1000 \
+--outdir ~/storage --transientperiod 0.0 --writeinterval 1000 \
 --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs \
 --simconfig test_simconfig.json \
 --cellconfig test_cellconfig_5.json \
@@ -35,7 +35,7 @@ Example commands:
 --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
 
->>> mpirun -n 6 python model_parameterized.py -id calibrate1 --dur 1000 --scale 1.0 --seed 888 --nodbs --nolfp --dd -dt 0.025 --outdir ~/storage --transient-period 0.0 --write-interval 1000 --report-interval 25.0 --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_5.json --axonfile axon_coordinates.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
+>>> mpirun -n 6 python model_parameterized.py -id calibrate1 --dur 1000 --scale 1.0 --seed 888 --nodbs --nolfp --dd -dt 0.025 --outdir ~/storage --transientperiod 0.0 --writeinterval 1000 --reportinterval 25.0 --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_5.json --axonfile axon_coordinates.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
 
 NOTES
@@ -1021,16 +1021,16 @@ if __name__ == '__main__':
     parser.add_argument('--seed', nargs='?', type=int, default=None,
                         dest='seed', help='Seed for random number generator')
 
-    parser.add_argument('-wi', '--write-interval', nargs='?', type=float, default=None,
+    parser.add_argument('-wi', '--writeinterval', nargs='?', type=float, default=None,
                         dest='max_write_interval',
                         help='Interval between successive write out of recording data')
 
-    parser.add_argument('-tp', '--transient-period', nargs='?', type=float, default=None,
+    parser.add_argument('-tp', '--transientperiod', nargs='?', type=float, default=None,
                         dest='transient_period',
                         help=('Duration of transient period at start of simulation. '
                               'First data write-out is after transient period'))
 
-    parser.add_argument('-ri', '--report-interval', nargs='?', type=float, default=50.0,
+    parser.add_argument('-ri', '--reportinterval', nargs='?', type=float, default=50.0,
                         dest='report_interval',
                         help='Interval between reports of simulation time.')
 
