@@ -380,7 +380,7 @@
                 "sampling_period": 0.05,
                 "specs": {
                     // Axon terminal spikes:
-                    "spikes_axterm{:d}": {"sec":"axonal[-1]", "loc":0.5, "var":"spikes"},
+                    "v_axterm": {"sec":"axonal[-1]", "loc":0.5, "var":"v"},
                     // CTX inputs
                     "g_AMPA{:d}": {"syn":"GLUsyn[0:3]", "var":"g_AMPA"},
                     "g_NR2BD{:d}": {"syn":"GLUsyn[0:3]", "var":"g_NMDA"},

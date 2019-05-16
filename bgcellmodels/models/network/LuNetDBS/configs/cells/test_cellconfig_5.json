@@ -1,4 +1,19 @@
 {
+  "default_morphologies": {
+    "STN": [
+      "gillies_original_alpha-30deg",
+      "gillies_original_alpha-30deg_seed-0",
+      "gillies_original_alpha-30deg_seed-1",
+      "gillies_original_alpha-30deg_seed-2",
+      "gillies_original_alpha-30deg_seed-3",
+      "gillies_original_alpha-30deg_seed-4",
+      "gillies_original_alpha-30deg_seed-5",
+      "gillies_original_alpha-30deg_seed-6",
+      "gillies_original_alpha-30deg_seed-7",
+      "gillies_original_alpha-30deg_seed-8",
+      "gillies_original_alpha-30deg_seed-9",
+    ]
+  },
   "cells": [
     {
       "gid": 144,

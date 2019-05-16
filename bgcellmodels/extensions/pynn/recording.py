@@ -404,15 +404,22 @@ class TraceSpecRecorder(Recorder):
                 t_stop = self._simulator.state.t * pq.ms  # must run on all MPI nodes
                 sids = sorted(self.filter_recorded(variable, filter_ids))
                 data = self._get_spiketimes(sids, variable)
-                segment.spiketrains.extend([
+                spiketrains = [
                     neo.SpikeTrain(data.get(int(id),[]),
                                    t_start=self._recording_start_time,
                                    t_stop=t_stop,
                                    units='ms',
-                                   name=variable,
                                    source_population=self.population.label,
-                                   source_id=int(id),source_index=self.population.id_to_index(int(id)))
-                    for id in sids])
+                                   source_id=int(id),
+                                   source_index=self.population.id_to_index(int(id)))
+                    for id in sids]
+
+                # FIXME: spike recording
+                # if variable == 'spikes':
+                #     segment.spiketrains = spiketrains
+                # else:
+                #     setattr(segment, variable, spiketrains)
+                segment.spiketrains.extend(spiketrains)
             else:
                 ids = sorted(self.filter_recorded(variable, filter_ids))
                 signal_array = self._get_all_signals(variable, ids, clear=clear)

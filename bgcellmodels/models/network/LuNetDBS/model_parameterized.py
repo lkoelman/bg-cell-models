@@ -87,6 +87,12 @@ from bgcellmodels.common.configutil import eval_params
 from bgcellmodels.common.stdutil import getdictvals
 from bgcellmodels.common import logutils, fileutils
 
+# Global variables
+h = sim.h
+ConnectivityPattern = connectivity.ConnectivityPattern
+make_connection_list = connectivity.make_connection_list
+make_divergent_pattern = connectivity.make_divergent_pattern
+
 # Logging & debugging
 logger = logutils.logging.getLogger('simulation')
 
@@ -100,11 +106,7 @@ logutils.setLogLevel('WARNING', [
 
 logutils.setLogLevel('DEBUG', ['simulation'])
 
-# Global variables
-h = sim.h
-ConnectivityPattern = connectivity.ConnectivityPattern
-make_connection_list = connectivity.make_connection_list
-make_divergent_pattern = connectivity.make_divergent_pattern
+h("XTRA_VERBOSITY = 0")
 
 
 def nprint(*args, **kwargs):
@@ -228,7 +230,8 @@ def simulate_model(
 
     print("""\nRunning net on MPI rank {} with following settings:
     - sim_dur = {}
-    - output = {}""".format(mpi_rank, sim_dur, output))
+    - sim_dt = {}
+    - output = {}""".format(mpi_rank, sim_dt, sim_dur, output))
 
     print("\nThis is node {} ({} of {})\n".format(
           sim.rank(), sim.rank() + 1, sim.num_processes()))
@@ -395,9 +398,11 @@ def simulate_model(
     cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
     cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
 
+    # Choose a random morphology for each cell
+    candidate_morphologies = np.array(cell_config['default_morphologies']['STN'])
+    candidates_sampled = shared_rng.choice(len(candidate_morphologies), stn_ncell_biophys)
     cells_morph_paths = [
-        get_morphology_path(cell['morphology'],
-            default_morphology='gillies_original') for cell in cell_defs
+        get_morphology_path(m) for m in candidate_morphologies[candidates_sampled]
     ]
 
     # Load default parameters from sim config
@@ -863,13 +868,22 @@ def simulate_model(
     # Simulation statistics
     num_segments = sum((sec.nseg for sec in h.allsec()))
     num_cell = sum((1 for sec in h.allsec()))
-    print("Will simulate {} sections ({} compartments) for {} ms on MPI rank {}.".format(
-            num_cell, num_segments, sim_dur, mpi_rank))
+    each_num_segments = comm.gather(num_segments, root=0)
+    if mpi_rank == 0:
+        # only rank 0 receives broadcast result
+        total_num_segments = sum(each_num_segments)
+        print("Entire network consists of {} segments (compartments)".format(
+              total_num_segments))
+
+    print("Will simulate {} segments ({} sections) for {} ms on MPI rank {}.".format(
+            num_segments, num_cell, sim_dur, mpi_rank))
+
+
     tstart = time.time()
     outdir, filespec = os.path.split(output)
     progress_file = os.path.join(outdir, '{}_sim_progress.log'.format(
         datetime.fromtimestamp(tstart).strftime('%Y.%m.%d-%H.%M.%S')))
-    last_report_time = tstart
+    
 
     # Times for writing out data to file
     if transient_period is None:
@@ -888,6 +902,7 @@ def simulate_model(
         first_write_time = transient_period
     write_times = list(np.arange(first_write_time, sim_dur, write_interval)) + [sim_dur]
     last_write_time = 0.0
+    last_report_time = tstart
 
     # SIMULATE
     while sim.state.t < sim_dur:
