@@ -31,11 +31,11 @@ Example commands:
 --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs \
 --simconfig test_simconfig.json \
 --cellconfig test_cellconfig_5.json \
---axonfile axon_coordinates.pkl \
+--axonfile axon_coordinates_cutoff.pkl \
 --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
 
->>> mpirun -n 6 python model_parameterized.py -id calibrate1 --dur 1000 --scale 1.0 --seed 888 --nodbs --nolfp --dd -dt 0.025 --outdir ~/storage --transientperiod 0.0 --writeinterval 1000 --reportinterval 25.0 --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_5.json --axonfile axon_coordinates.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
+>>> mpirun -n 6 python model_parameterized.py -id calibrate1 --dur 1000 --scale 1.0 --seed 888 --nodbs --nolfp --dd -dt 0.025 --outdir ~/storage --transientperiod 0.0 --writeinterval 1000 --reportinterval 25.0 --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs --simconfig test_simconfig.json --cellconfig test_cellconfig_5.json --axonfile axon_coordinates_cutoff.pkl --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
 
 NOTES
@@ -529,10 +529,19 @@ def simulate_model(
     num_gpe_axons = (gpe_ncell_biophys + ncell_surrogate)
 
     # NOTE: can use any axon per cell, since they are not electrically connected
+    gpe_conn_defs = [
+        c for c in cell_config['connections'] if (c['projection'] == 'GPE-STN')
+    ]
+
     gpe_axon_coords = [
-        get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if 
-            (cell['axon'] is not None)
+        get_axon_coordinates(connection['axon']) for connection in gpe_conn_defs
     ][:num_gpe_axons]
+
+    # Get axon associated with cell (not necessary if no electrical connection)
+    # gpe_axon_coords = [
+    #     get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if 
+    #         (cell['axon'] is not None)
+    # ][:num_gpe_axons]
 
     # Re-use axon definitions if insufficient
     while len(gpe_axon_coords) < num_gpe_axons:
@@ -964,8 +973,10 @@ def simulate_model(
 
             # Plot connectivity matrix ('O' is connection, ' ' is no connection)
             utf_matrix, float_matrix = connection_plot(proj)
-            nprint("{}->{} connectivity matrix (dim[0,1] = [src,target]: \n".format(
-                proj.pre.label, proj.post.label) + utf_matrix)
+            max_line_length = 500
+            if mpi_rank == 0 and proj.post.size < max_line_length:
+                logger.debug("{}->{} connectivity matrix (dim[0,1] = [src,target]: \n".format(
+                    proj.pre.label, proj.post.label) + utf_matrix)
 
             # This does an mpi gather() on all the parameters
             conn_params = ["delay", "weight"]
@@ -980,11 +991,14 @@ def simulate_model(
             maxd = max(pre_post_params[:,2])
             minw = min(pre_post_params[:,3])
             maxw = max(pre_post_params[:,3])
-            nprint("Error check for projection {pre}->{post}:\n"
-                  "    - delay  [min, max] = [{mind}, {maxd}]\n"
-                  "    - weight [min, max] = [{minw}, {maxw}]\n".format(
-                    pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
-                    minw=minw, maxw=maxw))
+
+            if mpi_rank == 0:
+                logger.debug(
+                    "Error check for projection {pre}->{post}:\n"
+                    "    - delay  [min, max] = [{mind}, {maxd}]\n"
+                    "    - weight [min, max] = [{minw}, {maxw}]\n".format(
+                        pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
+                        minw=minw, maxw=maxw))
 
             # Make (gid, gid) connectivity pairs
             pop_idx_pairs = [tuple(pair) for pair in pre_post_params[:, 0:2].astype(int)]
