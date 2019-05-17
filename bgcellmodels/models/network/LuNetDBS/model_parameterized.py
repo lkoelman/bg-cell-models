@@ -367,6 +367,9 @@ def simulate_model(
     #     sim.state.cvode.use_fast_imem(True)
     # sim.state.cvode.cache_efficient(True) # necessary for fast_imem lfp + 33% reduction in simulation time
 
+    # Parameters to be saved to pickle file
+    saved_params = {'dopamine_depleted': DD}
+
     ############################################################################
     # POPULATIONS
     ############################################################################
@@ -418,6 +421,16 @@ def simulate_model(
 
     
     stn_type = miocinovic.StnMorphType(**stn_cell_params)
+
+    # Trace back cell indices to morphology definitions:
+    if mpi_rank == 0:
+        for param_name in 'morphology_path', 'transform':
+            saved_params.setdefault('STN', {})[param_name] = stn_cell_params[param_name]
+        saved_params.setdefault('STN', {})['cell_defs'] = cell_defs
+        # logger.debug("Mapping of STN cell indices to morphologies is:\n" + 
+        #     "\n".join(("{}: {}\n".format(i, c) for i,c in enumerate(cells_morph_paths))))
+        # logger.debug("Mapping of STN cell indices to transforms is:\n" + 
+        #     "\n".join(("{}: {}\n".format(i, c) for i,c in enumerate(cells_transforms))))
 
     #---------------------------------------------------------------------------
     # STN population
@@ -537,6 +550,10 @@ def simulate_model(
         get_axon_coordinates(connection['axon']) for connection in gpe_conn_defs
     ][:num_gpe_axons]
 
+    # Trace back cell indices to axon definitions used:
+    if mpi_rank == 0:
+        saved_params.setdefault('GPE.axons', {})['axon_definitions'] = gpe_conn_defs[:num_gpe_axons]
+
     # Get axon associated with cell (not necessary if no electrical connection)
     # gpe_axon_coords = [
     #     get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if 
@@ -610,14 +627,19 @@ def simulate_model(
         c for c in cell_config['connections'] if (c['projection'] == 'CTX-STN')
     ]
 
+    while len(ctx_conn_defs) < num_ctx_axons:
+        num_additional = num_ctx_axons - len(ctx_conn_defs)
+        ctx_conn_defs += ctx_conn_defs[:num_additional]
+        logger.warning('CTX: Re-using %d axon definitions', num_additional)
+
+    # Trace back cell indices to axon definitions used:
+    if mpi_rank == 0:
+        saved_params.setdefault('CTX.axons', {})['axon_definitions'] = ctx_conn_defs
+
     ctx_axon_coords = [
         get_axon_coordinates(connection['axon']) for connection in ctx_conn_defs
     ]
 
-    while len(ctx_axon_coords) < num_ctx_axons:
-        num_additional = num_ctx_axons - len(ctx_axon_coords)
-        ctx_axon_coords += ctx_axon_coords[:num_additional]
-        logger.warning('CTX: Re-using %d axon definitions', num_additional)
 
     # Cell type for axons
     ctx_axon_params = {
@@ -884,8 +906,8 @@ def simulate_model(
         print("Entire network consists of {} segments (compartments)".format(
               total_num_segments))
 
-    print("Will simulate {} segments ({} sections) for {} ms on MPI rank {}.".format(
-            num_segments, num_cell, sim_dur, mpi_rank))
+    print("MPI rank {} will simulate {} segments ({} sections) for {} ms.".format(
+            mpi_rank, num_segments, num_cell, sim_dur))
 
 
     tstart = time.time()
@@ -960,7 +982,6 @@ def simulate_model(
     # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
     #       - cannot perform any gather() operations before initializing MPI transfer
     #       - must do gather() operations on all nodes
-    saved_params = {'dopamine_depleted': DD}
 
     # Save cell information
     for pop in all_pops.values() + all_asm.values():
