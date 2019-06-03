@@ -15,7 +15,7 @@ USAGE
 
 Run distributed using MPI:
 
->>> mpirun -n 6 <command>
+>>> mpirun -n 6 python <command>
 
 
 Run single-threaded using IPython:
@@ -211,6 +211,9 @@ def simulate_model(
     sim_params = config['simulation']
     emf_params = config['electromagnetics']
 
+    with_dbs = bool(with_dbs) or emf_params['with_dbs']
+    with_lfp = bool(with_lfp) or emf_params['with_lfp']
+    
     rho_ohm_cm = 1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
 
     ############################################################################

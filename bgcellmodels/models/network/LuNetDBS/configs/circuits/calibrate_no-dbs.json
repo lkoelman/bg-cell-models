@@ -18,15 +18,15 @@
 // =============================================================================
     // Global simulation parameters
     "simulation": {
-        "duration": 10000,
-        "timestep": 0.01,
+        "duration": 7000,
+        "timestep": 0.025,
         "recording_timestep": 0.05,
         "shared_rng_seed": 151985012,
         "DD": true, // dopamine depleted / parkinsonian
     },
     "electromagnetics": {
-        "with_dbs": true,
-        "with_lfp": true,
+        "with_dbs": false,
+        "with_lfp": false,
         "dbs_frequency_hz": 130.0,
         "dbs_pulse_width_ms": 0.060,
         "dbs_pulse0_amplitude_mA": 3.0, // mA
@@ -60,11 +60,7 @@
             "t_refrac_pre": 20.0,
             "t_refrac_post": 10.0,
             "intervals": [
-                [10e3, 20e3],
-                // [1000.0, 1250.0],
-                // [2000.0, 2500.0], 
-                // [3500.0, 4500.0],
-                // [6500.0, 8500.0]
+                [2000.0, 20e3],
             ],
         },
     },
