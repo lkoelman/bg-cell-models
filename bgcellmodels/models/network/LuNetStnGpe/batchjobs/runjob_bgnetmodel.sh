@@ -6,7 +6,7 @@
 
 # Set the number of nodes & processors per node
 # 24 cores (threads) available per node, so max ppn=24
-#PBS -l nodes=1:ppn=8
+## PBS -l nodes=1:ppn=8
 
 
 # Set the walltime of the job to 1 hour (format is hh:mm:ss)
@@ -73,7 +73,7 @@ config_file="configs/${config}"
 model_config="${model_dir}/${config_file}"
 
 # Command with minimum required arguments
-mpi_command="mpirun -n 12 python ${model} \
+mpi_command="mpirun -n ${numproc} python ${model} \
 --scale 1.0 --dur ${dur} \
 --no-gui --progress --config ${model_config} \
 --outdir ${outdir} -id ${PBS_JOBID}"
