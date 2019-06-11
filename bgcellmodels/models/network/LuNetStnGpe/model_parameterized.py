@@ -828,11 +828,11 @@ if __name__ == '__main__':
     parser.add_argument('--seed', nargs='?', type=int, default=None,
                         dest='seed', help='Seed for random number generator')
 
-    parser.add_argument('-wi', '--write-interval', nargs='?', type=float, default=None,
+    parser.add_argument('-wi', '--writeinterval', nargs='?', type=float, default=None,
                         dest='max_write_interval',
                         help='Interval between successive write out of recording data')
 
-    parser.add_argument('-tp', '--transient-period', nargs='?', type=float, default=None,
+    parser.add_argument('-tp', '--transientperiod', nargs='?', type=float, default=None,
                         dest='transient_period',
                         help=('Duration of transient period at start of simulation. '
                               'First data write-out is after transient period'))
@@ -857,7 +857,7 @@ if __name__ == '__main__':
                         dest='with_gui',
                         action='store_true',
                         help='Enable graphical output')
-    parser.add_argument('-ng', '--no-gui',
+    parser.add_argument('-ng', '--nogui',
                         dest='with_gui',
                         action='store_false',
                         help='Enable graphical output')

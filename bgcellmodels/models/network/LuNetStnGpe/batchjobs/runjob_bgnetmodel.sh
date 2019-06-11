@@ -75,7 +75,7 @@ model_config="${model_dir}/${config_file}"
 # Command with minimum required arguments
 mpi_command="mpirun -n ${numproc} python ${model} \
 --scale 1.0 --dur ${dur} \
---no-gui --progress --config ${model_config} \
+--nogui --progress --config ${model_config} \
 --outdir ${outdir} -id ${PBS_JOBID}"
 
 # Optional arguments passed to python script
