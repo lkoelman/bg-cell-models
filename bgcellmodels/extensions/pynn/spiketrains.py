@@ -252,6 +252,9 @@ def synchronous_permuted_bursts_varfreq(
         rng             = None,
         min_spk_dt      = 4.0):
     """
+    Same as synchronous_permuted_bursts except each interval can have its own
+    bursting parameters.
+
     Spiketrains that burst synchronously during each interval and fire at a
     background rate between those intervals. During the bursting intervals, 
     in each period of the bursting frequency only a given fraction of cells
@@ -262,6 +265,7 @@ def synchronous_permuted_bursts_varfreq(
     ---------
 
     @see    synchronous_permuted_bursts()
+            
             Parameters that can be set per interval are:
             T_burst, num_spk_burst, bursting_fraction
     """
@@ -363,6 +367,8 @@ def test_spiketime_generator(gen_func, num_spiketrains, *args, **kwargs):
     generator = gen_func(*args, **kwargs)
     cells_spiketimes = generator(np.arange(num_spiketrains))
 
+    f_avg = 0.0
+
     for i, sequence in enumerate(cells_spiketimes):
         spiketimes = sequence.value
         print(min(np.diff(spiketimes)))
@@ -375,10 +381,17 @@ def test_spiketime_generator(gen_func, num_spiketrains, *args, **kwargs):
         err_spk = spiketimes[err_idx]
         ax.plot(err_spk, np.ones_like(err_spk) * i, 'go', markerfacecolor=None)
 
+        f_avg += len(spiketimes) / kwargs['duration'] * 1e3
+
+    f_avg /= num_spiketrains
+    print("Mean population spike rate is %f Hz" % f_avg)
+
     # Plot zero-phase times
     all_t_phi0 = []
     for i, interval in enumerate(kwargs['intervals']):
-        T_burst = kwargs['T_burst'][i]
+        T_burst = kwargs['T_burst']
+        if not isinstance(T_burst, float):
+            T_burst = T_burst[i]
         num_periods = int((interval[1] - interval[0]) // T_burst) + 1
         all_t_phi0.extend([interval[0] + j*T_burst for j in range(num_periods)])
     y0, y1 = ax.get_ylim()
@@ -396,21 +409,37 @@ if __name__ == '__main__':
     T_burst = [75., 50., 30.]
     intervals = [(2e3, 4e3), (6e3, 8e3), (10e3, 12e3)]
     phi_burst = 0.0
-    f_intra = 180.
-    f_background = 5.
-    num_spiketrains = 20
+    f_intra = 200.
+    f_background = 10.
+    num_spiketrains = 1000
     num_spk_burst = (3, 5)
-
-    # Test for 'bursty_permuted_spiketrains'
     max_dt_spk = 1.0
-    refrac = 20.0, 20.0
-    frac_bursting = 0.25
+    refrac = 20.0, 10.0
+    frac_bursting = 0.50
+
+    # Test for synchronous_permuted_burst
+    T_burst = 16.666666666666668 # 18.51851851851852
+    f_background = 2.0
+    frac_bursting = 0.0641025641025641
+    intervals = [(1.0, 12e3)]
     test_spiketime_generator(
         # First two arguments are for test functions
-        synchronous_permuted_bursts_varfreq, num_spiketrains, 
+        synchronous_permuted_bursts, num_spiketrains, 
         # Generator function args and kwargs:
         T_burst=T_burst, phi_burst=phi_burst, num_spk_burst=num_spk_burst, 
         f_intra=f_intra, f_background=f_background, max_dt_spk=max_dt_spk,
         t_refrac_pre=refrac[0], t_refrac_post=refrac[1], 
         bursting_fraction=frac_bursting, intervals=intervals, 
         duration=duration, rng=np.random)
+
+    # Test for 'bursty_permuted_spiketrains'
+    # T_burst = [75., 50., 30.]
+    # test_spiketime_generator(
+    #     # First two arguments are for test functions
+    #     synchronous_permuted_bursts_varfreq, num_spiketrains, 
+    #     # Generator function args and kwargs:
+    #     T_burst=T_burst, phi_burst=phi_burst, num_spk_burst=num_spk_burst, 
+    #     f_intra=f_intra, f_background=f_background, max_dt_spk=max_dt_spk,
+    #     t_refrac_pre=refrac[0], t_refrac_post=refrac[1], 
+    #     bursting_fraction=frac_bursting, intervals=intervals, 
+    #     duration=duration, rng=np.random)

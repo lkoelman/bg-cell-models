@@ -23,15 +23,17 @@ Run single-threaded using IPython:
 >>> ipython
 >>> %run <command>
 
+
 Example commands:
 
 >>> model_parameterized.py -id testrun --dur 100 --scale 0.5 --seed 888 \
 --dd --lfp --dbs \
---outdir ~/storage --transientperiod 0.0 --writeinterval 1000 \
---configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs \
---simconfig test_simconfig.json \
---cellconfig test_cellconfig_5.json \
+--outdir ~/storage \
+--transientperiod 0.0 --writeinterval 1000 --reportinterval 25.0 \
+--simconfig template_with-dbs.json \
+--cellconfig dummy-cells_axons-cutoff.json \
 --axonfile axon_coordinates_cutoff.pkl \
+--configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs \
 --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
 
@@ -68,6 +70,7 @@ from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
 
 # Custom PyNN extensions
+# from bgcellmodels.extensions.pynn import simulator as pynn_sim_ext
 from bgcellmodels.extensions.pynn import synapses as custom_synapses
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
@@ -190,6 +193,8 @@ def simulate_model(
         transient_period = None,
         max_write_interval = None,
         report_interval = 50.0,
+        restore_state   = None,
+        save_state      = None,
         **kwargs):
     """
     Run a simple network consisting of an STN and GPe cell population
@@ -213,7 +218,7 @@ def simulate_model(
 
     with_dbs = bool(with_dbs) or emf_params['with_dbs']
     with_lfp = bool(with_lfp) or emf_params['with_lfp']
-    
+
     rho_ohm_cm = 1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
 
     ############################################################################
@@ -483,11 +488,15 @@ def simulate_model(
     # GPe cells parameters
 
     # Select cells to simulate
-    pop_cell_defs = [cell for cell in cell_config['cells'] if cell['population'] == 'GPE']
+    pop_cell_defs = [
+        cell for cell in cell_config['cells'] if 
+            (cell['population'] == 'GPE') and (cell['axon'] is not None)
+    ]
     cell_defs = pop_cell_defs[:gpe_ncell_biophys]
     
     # Get 3D morphology properties of each cell
     cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
+    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
 
     # Load default parameters from sim config
     gpe_cell_params = get_cell_parameters('GPE.all')
@@ -495,8 +504,7 @@ def simulate_model(
     # Add parameters from other sources
     gpe_cell_params['with_extracellular'] = with_lfp or with_dbs
     gpe_cell_params['transform'] = cells_transforms
-    # NOTE: GPe axons are NOT electrically attached to morphology, but work via relay
-    # gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
+    gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
     gpe_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
     gpe_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates_um']
 
@@ -540,57 +548,57 @@ def simulate_model(
         pop_gpe_surrogate = None
 
     #---------------------------------------------------------------------------
-    # GPE axon population
+    # GPE axon population (relay)
 
-    num_gpe_axons = (gpe_ncell_biophys + ncell_surrogate)
+    # num_gpe_axons = (gpe_ncell_biophys + ncell_surrogate)
 
-    # NOTE: can use any axon per cell, since they are not electrically connected
-    gpe_conn_defs = [
-        c for c in cell_config['connections'] if (c['projection'] == 'GPE-STN')
-    ]
+    # # NOTE: can use any axon per cell, since they are not electrically connected
+    # gpe_conn_defs = [
+    #     c for c in cell_config['connections'] if (c['projection'] == 'GPE-STN')
+    # ]
 
-    gpe_axon_coords = [
-        get_axon_coordinates(connection['axon']) for connection in gpe_conn_defs
-    ][:num_gpe_axons]
-
-    # Trace back cell indices to axon definitions used:
-    if mpi_rank == 0:
-        saved_params.setdefault('GPE.axons', {})['axon_definitions'] = gpe_conn_defs[:num_gpe_axons]
-
-    # Get axon associated with cell (not necessary if no electrical connection)
     # gpe_axon_coords = [
-    #     get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if 
-    #         (cell['axon'] is not None)
+    #     get_axon_coordinates(connection['axon']) for connection in gpe_conn_defs
     # ][:num_gpe_axons]
 
-    # Re-use axon definitions if insufficient
-    while len(gpe_axon_coords) < num_gpe_axons:
-        num_additional = num_gpe_axons - len(gpe_axon_coords)
-        gpe_axon_coords += gpe_axon_coords[:num_additional]
-        logger.warning('GPe: Re-using %d axon definitions', num_additional)
+    # # Trace back cell indices to axon definitions used:
+    # if mpi_rank == 0:
+    #     saved_params.setdefault('GPE.axons', {})['axon_definitions'] = gpe_conn_defs[:num_gpe_axons]
 
-    # Cell type for axons
-    gpe_axon_params = {
-        'axon_class':                   AxonFoust2011,
-        'streamline_coordinates_mm':    gpe_axon_coords,
-        'termination_method':           np.array('terminal_sequence'),
-        'with_extracellular':           with_lfp or with_dbs,
-        'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates_um'],
-        'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
-    }
+    # # Get axon associated with cell (not necessary if no electrical connection)
+    # # gpe_axon_coords = [
+    # #     get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if 
+    # #         (cell['axon'] is not None)
+    # # ][:num_gpe_axons]
 
-    gpe_axon_type = AxonRelayType(**gpe_axon_params)
+    # # Re-use axon definitions if insufficient
+    # while len(gpe_axon_coords) < num_gpe_axons:
+    #     num_additional = num_gpe_axons - len(gpe_axon_coords)
+    #     gpe_axon_coords += gpe_axon_coords[:num_additional]
+    #     logger.warning('GPe: Re-using %d axon definitions', num_additional)
 
-    # Initial values for state variables
-    vinit = gpe_axon_type.default_initial_values['v']
-    initial_values={
-        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
-    }
+    # # Cell type for axons
+    # gpe_axon_params = {
+    #     'axon_class':                   AxonFoust2011,
+    #     'streamline_coordinates_mm':    gpe_axon_coords,
+    #     'termination_method':           np.array('terminal_sequence'),
+    #     'with_extracellular':           with_lfp or with_dbs,
+    #     'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates_um'],
+    #     'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
+    # }
+
+    # gpe_axon_type = AxonRelayType(**gpe_axon_params)
+
+    # # Initial values for state variables
+    # vinit = gpe_axon_type.default_initial_values['v']
+    # initial_values={
+    #     'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
+    # }
     
-    pop_gpe_axons = Population(num_gpe_axons,
-                               cellclass=gpe_axon_type,
-                               label='GPE.axons',
-                               initial_values=initial_values)
+    # pop_gpe_axons = Population(num_gpe_axons,
+    #                            cellclass=gpe_axon_type,
+    #                            label='GPE.axons',
+    #                            initial_values=initial_values)
 
     #---------------------------------------------------------------------------
     # GPE Assembly (all GPe subtypes)
@@ -938,6 +946,10 @@ def simulate_model(
     last_write_time = 0.0
     last_report_time = tstart
 
+    # Restore state
+    if restore_state:
+        sim.state.restore = True
+
     # SIMULATE
     while sim.state.t < sim_dur:
         sim.run(report_interval)
@@ -975,6 +987,10 @@ def simulate_model(
         total_num_segments = sum(each_num_segments)
         print("Simulated {} segments for {} ms in {} ms CPU time".format(
                 total_num_segments, sim.state.tstop, cputime))
+
+    # Save simulator state
+    if save_state:
+        sim.state.save_state()
 
 
     ############################################################################
@@ -1123,6 +1139,16 @@ if __name__ == '__main__':
                         help='Report progress periodically to progress file')
     parser.set_defaults(report_progress=False)
 
+    parser.add_argument('--restorestate',
+                        dest='restore_state', action='store_true',
+                        help='Restore simulator state from ./in/ directory.')
+    parser.set_defaults(restore_state=False)
+
+    parser.add_argument('--savestate',
+                        dest='save_state', action='store_true',
+                        help='Save simulator state to ./out/ directory.')
+    parser.set_defaults(save_state=False)
+
     parser.add_argument('-id', '--identifier', nargs=1, type=str,
                         metavar='<job identifer>',
                         dest='job_id',
@@ -1139,7 +1165,9 @@ if __name__ == '__main__':
     parser.add_argument('-cs', '--simconfig', nargs=1, type=str,
                         metavar='sim_config.json',
                         dest='sim_config_file',
-                        help='Simulation configuration (JSON file).')
+                        help='Simulation configuration (JSON file).'
+                             ' Either provide full path or filename located'
+                             ' in configdir/circuits/.')
 
     parser.add_argument('-cc', '--cellconfig', nargs=1, type=str,
                         metavar='cell_config.json',
@@ -1176,6 +1204,7 @@ if __name__ == '__main__':
     # Locate each configuration file
     for conf, parent_dir in default_dirs.items():
         conf_filedir, conf_filename = os.path.split(parsed_dict[conf][0])
+        # If directories are prepended, look there. Otherwise look in default dir.
         if conf_filedir == '':
             conf_filepath = os.path.join(parent_dir, conf_filename)
         else:

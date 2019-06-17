@@ -454,6 +454,8 @@ class AxonBuilder(object):
                                parent_cell=None,
                                parent_sec=None,
                                connection_method='translate_axon',
+                               connect_gap_junction=False,
+                               gap_conductances=None,
                                raise_if_existing=True,
                                use_initial_segment=True,
                                unmyelinated_terminal_length=0.0):
@@ -501,6 +503,13 @@ class AxonBuilder(object):
 
                 'translate_cell_<start/end>': Translate cell so that connection 
                 point is coincident with start or end of streamline
+
+        @param  connect_gap_junction : bool
+
+                If true, connect axon to cell using gap junction instead of
+                electrical connection between compartments. In this case the
+                new axonal compartmetns are not added to SectionLists in 
+                the parent cell object (wrapper for compartments).
 
         Returns
         -------
@@ -578,16 +587,29 @@ class AxonBuilder(object):
 
             # Create the compartment
             sec_name = "{:s}[{:d}]".format(sec_type, len(self.built_sections[sec_type]))
-            if parent_cell is None:
-                ax_sec = h.Section(name=sec_name)
-            else:
+            if (parent_cell is not None) and not connect_gap_junction:
                 # see module neuron.__init__
                 ax_sec = h.Section(name=sec_name, cell=parent_cell)
+            else:
+                ax_sec = h.Section(name=sec_name)
             
             # Set its properties and connect it
             self._set_comp_attributes(ax_sec, sec_attrs)
             if parent_sec is not None:
-                ax_sec.connect(parent_sec(1.0), 0.0)
+                if i_compartment == 0 and connect_gap_junction:
+                    # use mechanism gap.mod, comes with PyNN
+                    seg_pre = parent_sec(0.5)
+                    seg_post = ax_sec(0.5)
+                    gap_pre = h.Gap(seg_pre)
+                    gap_post = h.Gap(seg_post)
+                    gap_pre.g = gap_conductances[0]
+                    gap_post.g = gap_conductances[1]
+                    h.setpointer(seg_pre._ref_v, 'vgap', gap_post)
+                    h.setpointer(seg_post._ref_v, 'vgap', gap_pre)
+                    # Save reference to gap junctions
+                    self.built_sections['gap_junctions'] = (gap_pre, gap_post)
+                else:
+                    ax_sec.connect(parent_sec(1.0), 0.0)
             
             parent_sec = ax_sec
             self.built_sections[sec_type].append(ax_sec)
@@ -668,7 +690,7 @@ class AxonBuilder(object):
                             max(diffs_tol_exceeded), tolerance_mm)
 
         # Add to parent cell
-        if parent_cell is not None:
+        if (parent_cell is not None) and not connect_gap_junction:
             # NOTE: refs to sections are not kept alive by appending them
             # to one of the the instantiated template's (icell's) SectionList.
             # There does not seem a way to store newly created sections

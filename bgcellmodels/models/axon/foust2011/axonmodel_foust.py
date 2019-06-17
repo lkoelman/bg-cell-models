@@ -169,16 +169,16 @@ class AxonFoust2011(AxonBuilder):
             'node': {
                 'mechanisms' : {
                     'pas_Foust': {
-                        'g': 0.02,
+                        'g': 0.000033,  # original: 0.02,
                     },
                     'NaF_Foust': {
-                        'g': 0.28,
+                        'g': 0.4,       # original: 0.28,
                     },
                     'Kv_Foust': {
-                        'g': 0.0005,
+                        'g': 0.002,     # original: 0.0003
                     },
                     'Kd_Foust': {
-                        'g': 0.0072,
+                        'g': 0.015,     # original: 0.0072
                     },
                     'extracellular': {
                         'xraxial': self.axon_parameters['node_Rax_extra'],

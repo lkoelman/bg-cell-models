@@ -107,7 +107,11 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     seclists_with_extracellular = ['all']
 
     # Spike threshold (mV)
-    spike_threshold_source_sec = -10.0
+    spike_threshold = {
+        'soma': -10.0,
+        'AIS': -10.0,
+        'axon_terminal': -10.0,
+    }
 
     def __init__(self, *args, **kwargs):
         # Define parameter names before calling superclass constructor
@@ -123,15 +127,19 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         """
         Instantiate cell in simulator
 
-        @override       ephys.models.CellModel.instantiate()
-                        
-                        Since the wrapped model is a pure Hoc model completely
-                        defined by its Hoc template, i.e. without ephys
-                        morphology, parameters, or mechanisms definitions,
-                        we have to override instantiate().
-        """
+        @note   The call order is:
 
-        super(GPeCellModel, self).instantiate(sim)
+                - GpeCellModel.__init__()
+                `- EphysModelWrapper.__init__()
+                    `- ephys.models.CellModel.__init__()
+                    `- cell_base.MorphModelBase.__init__()
+                     `- GpeCellModel.instantiate()
+                      `- EphysModelWrapper.instantiate()
+
+        @override       ephys.models.CellModel.instantiate()
+        """
+        # Call instantiate method from Ephys model class
+        ephys_pynn.EphysModelWrapper.instantiate(self, sim)
 
         # Adjust compartment dimensions like in GENESIS code
         gunay_model.fix_comp_dimensions(self)
@@ -151,6 +159,21 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         if self.with_extracellular:
             self._init_emfield()
 
+
+    def _init_axon(self, axon_class):
+        """
+        Initialize axon and update source sections for spike connections.
+        """
+        super(GPeCellModel, self)._init_axon(axon_class)
+
+        # Add AIS as a source section for connections
+        source_sec = self.axon['aisnode'][0]
+        source_gid = self.owning_gid + int(2e6)
+
+        self.region_to_gid['AIS'] = source_gid
+        self.gid_to_source[source_gid] = source_sec(0.5)._ref_v
+        self.gid_to_section[source_gid] = source_sec
+        
 
     def _update_position(self, xyz):
         pass
@@ -197,7 +220,11 @@ class GPeCellType(cell_base.MorphCellType):
         'rho_extracellular_ohm_cm' : 0.03, 
         # 3D specification
         'transform': ArrayParameter([]),
+        # Axon
         'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
+        'axon_using_gap_junction': True,
+        'gap_pre_conductance': 1e-5,
+        'gap_post_conductance': 1e-3,
     }
 
     # Defaults for Ephys parameters

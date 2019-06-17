@@ -82,6 +82,7 @@
                 "name": "StaticSynapse",
                 "parameters": {
                     "weight":   1.0,
+                    "delay":    1.0,
                 },
             },
         },
@@ -186,6 +187,7 @@
                 "name": "StaticSynapse",
                 "parameters": {
                     "weight":   1.0,
+                    "delay":    0.35, // 2.0 (total from literature) - 0.1 (terminal delay) - 1.55 (physical axon delay)
                 },
             },
         },
@@ -226,7 +228,7 @@
                 "name": "GluSynapse",
                 "parameters": {
                     "weight":       1.0,
-                    "delay":        2.0, // [ms] delay from literature
+                    "delay":        0.55, // 2 ms from literature minus 1.45 simulated axon propagation delay
                     "U1":           0.1, // baseline release probability
                     "tau_rec":      200.0, // [ms] recovery from STD
                     "tau_facil":    800.0, // [ms] recovery from facilitation
@@ -417,7 +419,7 @@
                 "name": "GabaSynTmHill",
                 "parameters": {
                     "weight":       1.0,
-                    "delay":        2.0,    // [ms] delay from literature
+                    "delay":        0.1,    // [ms] delay from axon terminal
                     // STP parameters
                     "U1":           0.2,    // baseline release probability
                     "tau_rec":      400.0,  // [ms] recovery from STD

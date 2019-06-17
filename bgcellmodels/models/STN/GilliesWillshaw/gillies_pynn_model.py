@@ -103,7 +103,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
     tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
     rangevar_scaled_seclists = {}
 
-    spike_threshold_source_sec = -10.0
+    spike_threshold = {'soma': -10.0}
 
     # Combined with celltype.receptors in MorphCellType constructor
     # to make celltype.receptor_types in format 'region.receptor'

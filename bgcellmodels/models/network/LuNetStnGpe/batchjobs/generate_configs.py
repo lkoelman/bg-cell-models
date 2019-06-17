@@ -19,21 +19,38 @@ import numpy as np
 
 # SETPARAM: template file and output directory
 template_paths = """
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/syn-V18_template.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/syn-V18_severe-gpe-to-stn.json
 """.strip().split()
 
 for template_path in template_paths:
 
     template_dir, template_name = os.path.split(template_path)
-    outdir = "../configs/sweeps_gaba-A-B-ratio" # SETPARAM: output dir
+    outdir = "../configs/sweeps_f-burst-input" # SETPARAM: output dir
     config = fileutils.parse_json_file(template_path, nonstrict=True, ordered=True)
 
     # SETPARAM: substitutions
-    factors = [16.0] # np.arange(2.0, 12.0, 2.0)
-    gs_gabaa = config['STN']['GPE.all']['synapse']['parameters'][
-                      'gmax_GABAA']['locals']['gmax_base']
-    gs_gabab = config['STN']['GPE.all']['synapse']['parameters'][
-                      'gmax_GABAB']['locals']['gmax_base']
+    factors = f_beta = np.arange(3.0, 63.0, 3.0)
+
+    # Partial derivatives: correct changes in average population spike rate
+    dfavg_dfbeta = 0.1 * 0.050 * (4.0/0.050 - 10.0)
+    dfavg_from_dfbeta = 0.35 * (f_beta - 20.0) # d(f_spk)/d(f_beta) * d(f_beta) : change in average rate because of reduction in beta, increase for f_beta > 20
+    dfavg_dfbg = 1 - (0.1 * 0.050 * f_beta) # d(f_spk)/d(f_spk_bg) : 
+    dfbg = dfavg_from_dfbeta / dfavg_dfbg
+    f_bg = 10.0 - dfbg
+
+    f_bg_min = 2.0
+    f_bg[f_bg < f_bg_min] = f_bg_min
+    dfavg_dpcell = f_beta * 0.050 * (4.0/0.050 - f_bg_min) # fill in f_bg at this point
+    dfavg_from_dfbeta_dfbg = (dfavg_from_dfbeta - dfavg_dfbg * (10.0 - f_bg_min))
+    dpcell = dfavg_from_dfbeta_dfbg / dfavg_dpcell
+    dpcell[dpcell < 0] = 0.0
+    pcell = 0.1 - dpcell
+
+    
+    # gs_gabaa = config['STN']['GPE.all']['synapse']['parameters'][
+    #                   'gmax_GABAA']['locals']['gmax_base']
+    # gs_gabab = config['STN']['GPE.all']['synapse']['parameters'][
+    #                   'gmax_GABAB']['locals']['gmax_base']
     # cs_ampa = config['STN']['CTX']['synapse']['parameters'][
     #                   'GLUsyn_gmax_AMPA']['locals']['gmax_base']
     # cs_nmda_dend = config['STN']['CTX']['synapse']['parameters'][
@@ -55,10 +72,10 @@ for template_path in template_paths:
 
     # Replace all occurrences of format keywords
     substitutions = {
-        ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
-            'gmax_base'): [f*gs_gabaa for f in factors],
-        ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAB', 'locals', 
-            'gmax_base'): [0.2*gs_gabab for f in factors],
+        # ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
+        #     'gmax_base'): [f*gs_gabaa for f in factors],
+        # ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAB', 'locals', 
+        #     'gmax_base'): [0.2*gs_gabab for f in factors],
         # ('STN', 'CTX', 'synapse', 'parameters', 'GLUsyn_gmax_AMPA', 'locals', 
         #     'gmax_base'): [f*cs_ampa for f in factors],
         # ('STN', 'CTX', 'synapse', 'parameters', 'GLUsyn_gmax_NMDA', 'locals', 
@@ -73,8 +90,11 @@ for template_path in template_paths:
         #     'gmax_base'): [f*sg_ampa for f in factors],
         # ('GPE.proto', 'STR.MSN', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
         #     'gmax_base'): [f*mg_gabaa for f in factors],
+        ('CTX', 'spiking_pattern', 'T_burst'): [1e3/f for f in factors],
+        ('CTX', 'spiking_pattern', 'f_background'): f_bg,
+        ('CTX', 'spiking_pattern', 'bursting_fraction'): pcell,
     }
-    suffix_format = 'gabaB-x-0.2_gabaA-x-{:.1f}' # SETPARAM: format string for json filename
+    suffix_format = 'severe_gpe2stn_f-burst-{:.1f}-Hz' # SETPARAM: format string for json filename
     suffix_substitutions = factors
     sweep_length = len(suffix_substitutions)
 
@@ -101,7 +121,7 @@ for template_path in template_paths:
 
         # Write config after doing all substitutions for current sweep value
         # SETPARAM: config filename substitution
-        outname = template_name.replace('template.json',
+        outname = template_name.replace('severe-gpe-to-stn.json',
                         suffix_format.format(suffix_substitutions[i]) + '.json')
         outfile = os.path.join(outdir, outname)
         

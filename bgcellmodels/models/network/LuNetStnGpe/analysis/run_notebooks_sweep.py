@@ -24,26 +24,22 @@ nb_path = os.path.join(nb_dir, nb_infile)
 
 # SETPARAM: List simulation output directories to analyze
 output_dirs = """
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.32_job-1252856.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.90
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.34_job-1252861.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.40
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.34_job-1252862.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.50
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.41_job-1252857.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.0
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.43_job-1252851.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.40
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.46_job-1252855.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.80
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.46_job-1252858.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.10
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.46_job-1252860.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.30
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.47_job-1252859.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-1.20
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.50_job-1252850.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.30
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.50_job-1252852.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.50
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.50_job-1252853.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.60
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.51_job-1252849.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.20
-/home/luye/Documents/sim_data/LuNetStnGpe/q1a_sweep-g-ctx-stn_SPONT/LuNetStnGpe_2019.03.21_15.47.51_job-1252854.sonic-head_syn-V18_2xgaba-A-to-B_g-ctx-stn-x-0.70
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_20.28.42_job-1293013.sonic-head_syn-V18_f-burst-33.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_20.35.06_job-1293014.sonic-head_syn-V18_f-burst-36.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_20.45.15_job-1293015.sonic-head_syn-V18_f-burst-39.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_20.54.28_job-1293016.sonic-head_syn-V18_f-burst-42.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_21.02.55_job-1293017.sonic-head_syn-V18_f-burst-45.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_21.10.28_job-1293018.sonic-head_syn-V18_f-burst-48.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_21.11.02_job-1293019.sonic-head_syn-V18_f-burst-51.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_21.11.07_job-1293020.sonic-head_syn-V18_f-burst-54.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_21.19.58_job-1293021.sonic-head_syn-V18_f-burst-57.0-Hz
+/home/luye/Documents/sim_data/LuNetStnGpe/q9_sweep-f-burst/LuNetStnGpe_2019.06.10_21.23.25_job-1293022.sonic-head_syn-V18_f-burst-60.0-Hz
 """.strip().split()
 
 
 # SETPARAM: change filenames for simultaneous runs of this script
-log_path = os.path.join(nb_dir, "nb_exec_list_copy1.log") # change for copies of this script
-conf_path = os.path.join(nb_dir, "nb_exec_conf_copy1.py") # change for copies of this script
+log_path = os.path.join(nb_dir, "nb_exec_list_copy2.log") # change for copies of this script
+conf_path = os.path.join(nb_dir, "nb_exec_conf_copy2.py") # change for copies of this script
 
 # SETPARAM: name of sweep variable
 sweep_name = "gmax_ctx_stn"
@@ -51,7 +47,7 @@ sweep_name = "gmax_ctx_stn"
 for sweep_index, sim_outdir in enumerate(output_dirs):
 
     # SETPARAM: pattern for extraction of sweep variable from filename
-    sweep_val_pattern = r"x-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
+    sweep_val_pattern = r"burst-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
     match = re.search(sweep_val_pattern, sim_outdir)
     sweep_val = match.groups()[0]
 
@@ -63,9 +59,12 @@ for sweep_index, sim_outdir in enumerate(output_dirs):
     nb_pyvars['matfile_common_pattern'] = '-7000ms'
     ival_sec = [t/1e3 for t in ROI_INTERVAL]
     # SETPARAM: suffix for pickle file and jupyter notebook files
-    out_suffix = '{:.1f}s-{:.1f}s_phase-from-gpe'.format(*ival_sec)
+    out_suffix = '{:.1f}s-{:.1f}s_phase-from-ctx'.format(*ival_sec)
     # SETPARAM: refence phase signal and frequency band
-    nb_pyvars['reference_phase'] = {'method': 'from_gpe', 'passband': (12.0, 30.0)}
+    f_center = float(sweep_val)
+    f_low = max(1.0, f_center - 4)
+    f_high = f_low + 8.0
+    nb_pyvars['reference_phase'] = {'method': 'from_ctx', 'passband': (f_low, f_high)}
 
     # prepare executable Python script using property eval(repr(object)) == object.
     nb_pyvars.update({

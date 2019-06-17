@@ -11,27 +11,30 @@ See features in PyElectro: https://pyelectro.readthedocs.io/en/latest/pyelectro.
 See features in eFEL: https://efel.readthedocs.io/en/latest/eFeatures.html
 """
 
+from __future__ import division # always float division, never trunc to int
+
 import neuron
 h = neuron.h
 import numpy as np
 import scipy.signal
+import scipy.stats
 
 
-def spike_indices(vrec, thresh, loc='onset'):
+def spike_indices(v_rec, v_th, loc='onset'):
     """
     Get spike indices in voltage trace.
     
-    @param  vrec : np.array
+    @param  v_rec : np.array
             membrane voltage
     
-    @param threshold : float
-            spike threshold
+    @param  v_th : float
+            voltage threshold for spike
 
     @param  loc : str
             'onset' : time of spike onset, i.e. where threshold is first reached
             'offset' : time of spike offset, i.e. where v dips below threshold
     """
-    thresholded = np.array((vrec - thresh) >= 0, dtype=float)
+    thresholded = np.array((v_rec - v_th) >= 0, dtype=float)
     i_onset = np.where(np.diff(thresholded) == 1)[0] + 1
     i_offset = np.where(np.diff(thresholded) == -1)[0] + 1
     if loc == 'onset':
@@ -46,25 +49,13 @@ def spike_times(v_rec, t_rec, v_th, loc='onset'):
     """
     Get spike times in voltage trace.
     
-    @param  vrec : np.array
-            membrane voltage
-    
-    @param threshold : float
-            spike threshold
+    @see    spike_indices(...)
 
-    @param  loc : str
-            'onset' : time of spike onset, i.e. where threshold is first reached
-            'offset' : time of spike offset, i.e. where v dips below threshold
+    @param  t_rec : np.array
+            Sample times of v_rec.
     """
-    thresholded = np.array((v_rec - v_th) >= 0, dtype=float)
-    i_onset = np.where(np.diff(thresholded) == 1)[0] + 1
-    i_offset = np.where(np.diff(thresholded) == -1)[0] + 1
-    if loc == 'onset':
-        return t_rec[i_onset]
-    elif loc == 'offset':
-        return t_rec[i_offset]
-    else:
-        raise ValueError("Unrecognized value for argument 'loc' : {}".format(loc))
+    spike_idx = spike_indices(v_rec, v_th, loc=loc)
+    return t_rec[spike_idx]
 
 
 def coefficient_of_variation(v_rec, t_rec, v_th):
@@ -88,9 +79,16 @@ def burst_metrics(
     After burst identification, calculate burst rate, inter-burst intervals, 
     intra-burst rates, number of spikes per burst.
 
+    @return     dict[str, <float or list[float]>]
 
-    @return     dict[str, float / list[float]]
-                Dictionary containing burst metrics.
+                Dictionary containing burst metrics:
+
+                'spikes_per_burst':         number of spikes in each burst,
+                'intra_burst_rates':        firing rate inside each burst,
+                'inter_burst_intervals':    time intervals between bursts,
+                'burst_rate':               number of bursts per second,
+                'ISI_CV':                   coefficient of variation,
+
     """
     # Using eFEL: use peak indices
     # FIXME: indices are half the values of our own function ???
@@ -170,14 +168,23 @@ def burst_metrics(
 
 
 def burst_metrics_surprise(
-        v_rec, t_rec, threshold=-20.0, 
-        onset_isi=20.0, offset_isi=20.0, min_spk=4):
+        ISI,
+        fac=1.5,
+        sampling_rate=1000,
+        min_length_of_burst=2,
+        local_length=0,
+        surprise_cutoff=10):
     """
     Identify bursts using Poisson 'surprise' method (Legendy and Salcman 1985)
     and calculate various burst metrics.
 
     This method is used and described in Wichmann and Soares 2006, 
     Sanders et al. 2013, Sharott et al. 2014.
+
+    Algorithm from MATLAB version implemented by Thomas Wichmann
+
+    @pre        Code relies on float division, i.e. in Python2 this function
+                definition must be preceded by 'from __future__ import division'
 
     @return     dict[str, float / list[float]]
                 Dictionary containing following burst metrics.
@@ -190,7 +197,216 @@ def burst_metrics_surprise(
                 - proportion of spikes in a burst
                 - coefficient of variation (CV)
     """
-    raise NotImplementedError('TODO')
+    burst_metrics = {
+        'begin': [],
+        'num_spikes': [],
+        'surpise': [],
+        'rate': [],
+        'max_rate': [],
+        'baseline_rate': [],
+        'num_bursts': [],
+        'mean_spikes_per_burst':[],
+        'median_spikes_per_burst':[],
+        'total_spikes_in_bursts':[],
+        'mean_intra_burst_frequency':[],
+        'median_intra_burst_frequency':[],
+        'proportion_time_in_bursts':[],
+        'proportion_spikes_in_bursts':[]
+    }
+
+    CA = np.cumsum(ISI)
+
+    if local_length == 0:
+        # entire data stream should be used to yield the firing rate for comparisin
+        mean_FR = len(ISI) / (np.sum(ISI) / sampling_rate)
+        fr_thr = sampling_rate / (fac * mean_FR)
+        beg_idx = -1
+    else:
+        # finds last index within the 'local length' - incremented by one, this will result in the first index that can be evaluate.
+        beg_idx = max(np.where(CA < local_length * sampling_rate)[0])
+
+    n = beg_idx
+
+    while n < (len(ISI) - min_length_of_burst):
+
+        # n is a running parameter that points to ISIs
+        n += 1
+
+        if local_length > 0:
+            # find the ISI data segment I that is fully contained within the local_length
+            start_idx = np.where(CA > CA[n] - local_length * sampling_rate)[0][0]
+            I = ISI[start_idx:n]
+
+            # calculation of frequency threshold
+            mean_FR = len(I) / (np.sum(I) / sampling_rate)
+            fr_thr = sampling_rate / (fac * mean_FR)
+
+
+        # 1. selection step - find runs of short ISIs
+        if ISI[n] < fr_thr:
+            # find areas of the spike train which fulfill the length_of_burst criterion
+
+            q = 0 # running parameter that points to the number of spikes to be added
+
+            while (n + q < len(ISI)) and (ISI[n+q] < fr_thr):
+                q += 1
+
+            if q > 0:
+                q -= 1
+
+            # at this point, the provisional burst starts at n and ends at n+q;
+            # it has q + 1 spikes in it
+
+            # 2. selection step - adjust length of burst to maximize surprise value
+            if q + 1 >= min_length_of_burst:
+                m = min_length_of_burst
+
+                while ((n + m <= len(ISI)) & 
+                       (ISI[n + m] < fr_thr) & 
+                       (surprise(mean_FR, ISI[n:n+m+1], sampling_rate) >= 
+                        surprise(mean_FR, ISI[n:n+m], sampling_rate))):
+
+                    m += 1
+
+                if m > min_length_of_burst:
+                    m -= 1
+
+            # 3. selection step - test whether adding up to 10 more ISIs will enhance surprise value
+            if n + m + 10 <= len(ISI):
+                # mmax is set to 10 unless one couldn't add 10 to n before reaching the end of FR
+                mmax = 10
+            else:
+                mmax = len(ISI) - (n + m)
+
+            # looking for 'slow spikes' within the next 10 spikes after the current burst end
+            ind_long_ISI = np.where(ISI[n+m+1:n+m+mmax+1] > fr_thr)[0]
+
+            # pmax is set to be the index of the slow spike
+            if len(ind_long_ISI) > 0:
+                pmax = ind_long_ISI[0] - 1
+            else:
+                pmax = mmax
+
+            # formation of an array that will contain surprise values.
+            # The first one is that of the burst defined by the ISIs between n and n+m.
+            # Additional entries into S are surprise values that would result 
+            # from adding up to pmax additional spikes (S2 will be the surprise 
+            # values for ISI(n:n+m+1), S3 the one for ISI(n:n+m+2) etc.)
+            S = np.zeros(pmax + 1)
+            S[0] = surprise(mean_FR, ISI[n:n+m+1], sampling_rate)
+
+            #  forms array of surprise values for this burst, starting from the end of the burst to pmax values later
+            for p in range(1, pmax + 1):
+                S[p] = surprise(mean_FR, ISI[n:n+m+p+1], sampling_rate)
+
+            ind_max_S = np.argmax(S)
+
+            if n+m < len(ISI):
+                # this will set the m-value to the previous m, if the first 
+                # entry into the S array is the highest (i.e., if adding additional
+                # ISIs didn't increase the surprise value), or, it will correct m 
+                # to the highest value
+                m += ind_max_S - 1
+            else:
+                m = len(ISI) - n
+
+            # at this point, the end of the index of the end of the burst
+            # is settled to be n+m
+
+            # 4. selection step - test whether adjusting the front end of the burst enhances the surprise value
+            if n > 1:
+                o = 1
+
+                while ((m - o > min_length_of_burst) &
+                       (surprise(mean_FR, ISI[n+o:n+m+1], sampling_rate) >=
+                        surprise(mean_FR, ISI[n+o-1:n+m+1], sampling_rate))):
+                    o += 1
+
+                if o > 1:
+                    o -= 1 # reducing o by one to correct for the addition that resulted in the end of the while loop
+                    n += o # adjust the beginning of the burst
+                    m -= o # adjust the length of the burst
+
+            # at this point, the beginning of the burst is settled to be n, and the length is m+1
+
+            if ((m + 1 >= min_length_of_burst) and
+                (surprise(mean_FR, ISI[n:n+m+1], sampling_rate) > surprise_cutoff)):
+
+                burst_ISIs = ISI[n:n+m+1]
+
+                burst_metrics['begin'].append(n)
+                burst_metrics['num_spikes'].append(m+1)
+                burst_metrics['surprise'].append(
+                    surprise(mean_FR, burst_ISIs, sampling_rate))
+                burst_metrics['rate'].append(
+                    len(burst_ISIs / (np.sum(burst_ISIs) / sampling_rate)))
+                burst_metrics['max_rate'].append(sampling_rate / min(burst_ISIs))
+                burst_metrics['baseline_rate'] = mean_FR
+
+            # adjust ISI pointer to the ISI following the burst
+            n += (m + 1)
+
+        # end if ISI[n] < fr_thr:
+    # end while n < (len(ISI) - min_length_of_burst)
+
+    # Calculate aggregate metrics for all bursts
+    burst_metrics['num_bursts'] = len(burst_metrics['begin'])
+
+    if burst_metrics['num_bursts'] > 0:
+        all_num_spikes = burst_metrics['num_spikes']
+        burst_metrics['mean_spikes_per_burst'] = np.mean(all_num_spikes)
+        burst_metrics['median_spikes_per_burst'] = np.median(all_num_spikes)
+        burst_metrics['total_spikes_in_bursts'] = np.sum(all_num_spikes)
+
+        all_rates = burst_metrics['rate']
+        burst_metrics['mean_intra_burst_frequency'] = np.mean(all_rates)
+        burst_metrics['median_intra_burst_frequency'] = np.median(all_rates)
+        burst_metrics['proportion_time_in_bursts'] = burst_metrics['total_spikes_in_bursts'] / burst_metrics['mean_inta_burst_frequency'] / (np.sum(ISI[beg_idx+1:len(ISI)]) / sampling_rate)
+        burst_metrics['proportion_spikes_in_bursts'] = burst_metrics['total_spikes_in_bursts'] / (len(ISI) - beg_idx)
+    else:
+        burst_metrics['mean_spikes_per_burst'] = 0.
+        burst_metrics['median_spikes_per_burst'] = 0.
+        burst_metrics['total_spikes_per_burst'] = 0.
+        burst_metrics['mean_intra_burst_frequency'] = 0.
+        burst_metrics['median_intra_burst_frequency'] = 0.
+        burst_metrics['proportion_time_in_bursts'] = 0.
+        burst_metrics['proportion_spikes_in_bursts'] = 0.
+
+
+    return burst_metrics
+
+
+def surprise(r, data, sampling_rate):
+    """
+    Calculate surprise index.
+
+    @param  r : float
+            comparison firing rate (spikes per second)
+
+    @param  data : np.array[float]
+            ISI values to be included in the burst
+
+    @param  sampling_rate : float
+            Sampling rate of ISI measurements
+    """
+
+    T = np.sum(data) / sampling_rate
+    num_spikes = len(data)
+
+    p = scipy.stats.poisscdf(num_spikes, r*T)
+
+    if p == 0:
+        burst = 0
+        deceleration = 100
+    elif p == 1:
+        burst = 100
+        deceleration = 0
+    else:
+        burst = -np.log(1-p)
+        deceleration = -np.log10(p)
+
+    return burst, deceleration
+
 
 
 def numpy_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):

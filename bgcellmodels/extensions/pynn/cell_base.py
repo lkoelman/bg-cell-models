@@ -255,10 +255,10 @@ class MorphModelBase(object):
                 - instantiate()
     """
     
-
     # Combined with celltype.receptors in MorphCellType constructor
     # to make celltype.receptor_types in format 'region.receptor'
     regions = []
+    multicompartment = True
 
     def __init__(self, *args, **kwargs):
         """
@@ -282,6 +282,7 @@ class MorphModelBase(object):
         """
         # Pass param names from cell_type.(default_parameters + extra_parameters)
         # self.parameter_names must be defined in the subclass body.
+        self.parameter_names.append('owning_gid') # gid of owning ID object
         
         # Make parameters accessible as attributes
         for param_name in kwargs.keys():
@@ -301,6 +302,11 @@ class MorphModelBase(object):
             
             setattr(self, param_name, param_value)
 
+        # Support for multi-compartment connections
+        self.region_to_gid = {}
+        self.gid_to_source = {}
+        self.gid_to_section = {}
+
         # Instantiate cell and synapses in NEURON
         self.instantiate(sim=ephys_sim_from_pynn())
         self._init_synapses()
@@ -317,6 +323,11 @@ class MorphModelBase(object):
         self.rec = h.NetCon(self.source, None,
                             self.get_threshold(), 0.0, 0.0,
                             sec=self.source_section)
+        
+        # Update sources for connections
+        self.region_to_gid['soma'] = self.owning_gid
+        self.gid_to_source[self.owning_gid] = self.source
+        self.gid_to_section[self.owning_gid] = self.source_section
 
         # See pyNN.neuron.recording.Recorder._record()
         self.spike_times = h.Vector(0)
@@ -394,7 +405,7 @@ class MorphModelBase(object):
             noise_init()
 
 
-    def get_threshold(self):
+    def get_threshold(self, region='soma'):
         """
         Get spike threshold for self.source variable (usually points to membrane
         potential). This threshold is used when creating NetCon connections.
@@ -403,7 +414,7 @@ class MorphModelBase(object):
 
         @return     threshold : float
         """
-        return self.spike_threshold_source_sec
+        return self.spike_threshold[region]
 
     # Properties defined for synapse position
     synapse_spacing = None          # (um)
@@ -722,14 +733,24 @@ class MorphModelBase(object):
                     parent_cell=self.icell,
                     parent_sec=axon_parent_sec,
                     connection_method='translate_axon_start',
+                    connect_gap_junction=getattr(self, 'axon_using_gap_junction', False),
+                    gap_conductances=(getattr(self, 'gap_pre_conductance', None),
+                                      getattr(self, 'gap_post_conductance', None)),
                     tolerance_mm=1e-4)
     
         self.axon = axon
 
         # Change source for NetCons (see pyNN.neuron.simulator code)
         terminal_sec = list(self.icell.axonal)[-1]
+        terminal_source = terminal_sec(0.5)._ref_v # source for connections
         self.source_section = terminal_sec
-        self.source = terminal_sec(0.5)._ref_v
+        self.source = terminal_source
+
+        # Support for multicompartment connections
+        terminal_gid = self.owning_gid + int(1e6)
+        self.region_to_gid['axon_terminal'] = terminal_gid
+        self.gid_to_source[terminal_gid] = terminal_source
+        self.gid_to_section[terminal_gid] = terminal_sec
 
 
     def _init_emfield(self):
@@ -740,37 +761,55 @@ class MorphModelBase(object):
                 in all compartments that should contribute to the LFP and are
                 targets for stimulation
         """
+        # If axon is not connected to compartment tree of main cell
+        if getattr(self, 'axon_using_gap_junctions', False):
+            all_sections = h.SectionList()
+            axonal_sections = self.axon['all'] # is a SectionList
+            for sec in self.icell.all:
+                all_sections.append(sec=sec)
+            for sec in axonal_sections:
+                all_sections.append(sec=sec)
+        else:
+            all_sections = self.icell.all
+            axonal_sections = self.icell.axonal
+
         # Insert extracellular mechanism
-        layer_idx = range(2)
+        extracellular_layers = range(2)
         for seclist_name in getattr(self, 'seclists_with_extracellular', ['all']):
-            for sec in getattr(self.icell, seclist_name):
+            if seclist_name == 'all':
+                seclist = all_sections
+            elif seclist_name == 'axonal':
+                seclist = axonal_sections
+            else:
+                seclist = getattr(self.icell, seclist_name)
+            for sec in seclist:
                 if h.ismembrane('extracellular', sec=sec):
                     # assume already configured
                     continue
 
                 sec.insert('extracellular')
-                for i in layer_idx:
+                for i in extracellular_layers:
                     sec.xraxial[i] = 1e9
                     sec.xg[i] = 1e9
                     sec.xc[i] = 0.0
 
         # Insert mechanism that mediates between extracellular variables and
         # recording & stimulation routines.
-        for sec in self.icell.all:
+        for sec in all_sections:
             if h.ismembrane('extracellular', sec=sec):
                 sec.insert('xtra')
 
         # Calculate coordinates of each compartment's (segment) center
-        h.xtra_segment_coords_from3d(self.icell.all)
-        h.xtra_setpointers(self.icell.all)
+        h.xtra_segment_coords_from3d(all_sections)
+        h.xtra_setpointers(all_sections)
 
         # Set transfer impedance between electrode and compartment centers
         x_elec, y_elec, z_elec = self.electrode_coordinates_um
         h.xtra_set_impedances_pointsource(
-            self.icell.all, self.rho_extracellular_ohm_cm, x_elec, y_elec, z_elec)
+            all_sections, self.rho_extracellular_ohm_cm, x_elec, y_elec, z_elec)
         
         # Alternative using lookup function
-        # emfield.xtra_set_transfer_impedances(self.icell.all, 
+        # emfield.xtra_set_transfer_impedances(all_sections, 
         #                                      self.impedance_lookup_func)
 
         # Set up LFP calculation
@@ -778,7 +817,7 @@ class MorphModelBase(object):
         if logger.level <= logging.WARNING:
             h.XTRA_VERBOSITY = 1
         self.lfp_summator = h.xtra_sum(self.icell.soma[0](0.5))
-        self.lfp_tracker = h.ImembTracker(self.lfp_summator, self.icell.all, "xtra")
+        self.lfp_tracker = h.ImembTracker(self.lfp_summator, all_sections, "xtra")
 
 
     def _init_memb_noise(self, population, pop_index):

@@ -54,7 +54,11 @@ class GilliesSwcModel(cell_base.MorphModelBase):
     # Scaling of NEURON RANGE variables
     rangevar_scaled_seclists = {}
     
-    spike_threshold_source_sec = -10.0
+    spike_threshold = {
+        'soma': -10.0,
+        'AIS': -10.0,
+        'axon_terminal': -10.0,
+    }
 
     # Regions for synapses
     regions = ['proximal', 'distal']
@@ -116,19 +120,6 @@ class GilliesSwcModel(cell_base.MorphModelBase):
         # Init extracellular stimulation & recording
         if self.with_extracellular:
             self._init_emfield()
-
-
-    def _init_axon(self, axon_class):
-        """
-        Initialize axon and adjust conductances.
-        """
-        super(GilliesSwcModel, self)._init_axon(axon_class)
-        # Set nodal conductances to values of AIS for firing > 100 Hz
-        for sec in self.axon.node:
-            sec.g_pas_Foust = 0.000033
-            sec.g_NaF_Foust = 0.4
-            sec.g_Kv_Foust = 0.002
-            sec.g_Kd_Foust = 0.015
 
 
     def _init_gbar(self):

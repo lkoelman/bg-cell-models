@@ -186,8 +186,16 @@ class ConnectionNrnWrapped(Connection):
 
         # Get the target region on the cell and the receptor type
         # syn_mech_name = projection.synapse_type.mechanism
-        region, receptor = projection.receptor_type.split(".")
+        regions_spec, receptor = projection.receptor_type.split(".")
         receptors = receptor.split("+")
+        regions = regions_spec.split("2")
+        if len(regions) == 2:
+            pre_region, post_region = regions
+        elif len(regions) == 1:
+            pre_region = None
+            post_region = regions[0]
+        elif len(regions) != 1:
+            raise ValueError('Region specification must be "<post>" or "<pre>2<post>"')
 
         # Plastic synapses use SynapseType.model to store weight adjuster,
         # we use it for the NEURON synapse mechanism
@@ -195,13 +203,18 @@ class ConnectionNrnWrapped(Connection):
 
         # Ask cell for segment in target region
         num_contacts = getattr(projection.synapse_type, 'num_contacts', 1)
-        self.synapses = post_cell.get_synapses(region, receptors, num_contacts, 
+        self.synapses = post_cell.get_synapses(post_region, receptors, num_contacts, 
                                                mechanism=mech_name)
         # if used > 0 and not post_cell.allow_synapse_reuse:
         #     raise Exception("No unused synapses on target cell {}".format(type(post_cell)))
+
+        # Get pre-synaptic source
+        if pre_region is not None:
+            pre_gid = self.presynaptic_cell._cell.region_to_gid[pre_region]
+        else:
+            pre_gid = int(self.presynaptic_cell)
         
         # Create NEURON NetCon
-        pre_gid = int(self.presynaptic_cell)
         self.ncs = []
         weight = parameters.pop('weight')
         delay = parameters.pop('delay')

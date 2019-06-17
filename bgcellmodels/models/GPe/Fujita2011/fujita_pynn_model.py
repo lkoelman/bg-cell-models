@@ -51,7 +51,7 @@ class GpeCellModel(MorphModelBase):
     default_GLU_mechanism = 'GLUsyn'
     allow_synapse_reuse = False
 
-    spike_threshold_source_sec = 0.0
+    spike_threshold = {'soma': 0.0}
 
 
     def instantiate(self):
