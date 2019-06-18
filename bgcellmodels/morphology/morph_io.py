@@ -7,16 +7,18 @@ Notes
 
 Additional libraries for working with NEURON morphologies:
 
-- PyNeuron-Toolbox:https://github.com/ahwillia/PyNeuron-Toolbox
-- btmorph : https://btmorph.readthedocs.io/en/latest/index.html#
-- NeuroM : https://github.com/BlueBrain/NeuroM
-- AllenSDK : https://github.com/AllenInstitute/AllenSDK
-- Hoc2Swc : https://github.com/JustasB/hoc2swc/
+- PyNeuron-Toolbox: https://github.com/ahwillia/PyNeuron-Toolbox
+- btmorph :         https://btmorph.readthedocs.io/en/latest/index.html#
+- NeuroM :          https://github.com/BlueBrain/NeuroM
+- AllenSDK :        https://github.com/AllenInstitute/AllenSDK
+- Hoc2Swc :         https://github.com/JustasB/hoc2swc/
+- NeuroMorphoVis:   https://github.com/BlueBrain/NeuroMorphoVis
 """
 
 from neuron import h
 from neuron.rxd.morphology import parent, parent_loc
 import json, io, re
+import numpy as np
 
 
 def morphology_to_dict(sections):
@@ -287,16 +289,6 @@ def prepare_hoc_morphology_for_SWC_export(hoc_script_path, hoc_out_path):
         out_script.write(hoc_clean_morph)
 
 
-def morphology_to_STL(secs, filepath):
-    """
-    Write neuron morphology to STL file using degenerate faces.
-
-    Each segment is represented by a degenerate face, i.e. a triangle
-    with vertices [a b a].
-    """
-    raise NotImplementedError()
-
-
 def morphology_to_STEP_1D(secs, filepath):
     """
     Write morphology as one-dimensional STEP file.
@@ -352,6 +344,126 @@ def morphology_to_STEP_1D(secs, filepath):
     status = step_writer.Write(filepath)
     if status != IFSelect_RetDone:
         raise Exception("Failed to write STEP file")
+
+
+def morphology_to_PLY(section_lists, filepath, segment_centers=True,
+                      rgb=(0.0, 0.0, 0.0), text=False):
+    """
+    Write neuron morphology to PLY file using degenerate faces.
+
+    Each segment is represented by a degenerate face, i.e. a triangle
+    with vertices [a b a].
+
+    @pre    requires package plyfile, e.g. `pip install plyfile`
+
+    @param  segment_centers : bool
+            If true, write 3D locations of segment centers (nodes, i.e. centers
+            of simulated compartments). This is useful for knowing the locations
+            of compartments, and their current/voltage sources in 3D space.
+    """
+    from plyfile import PlyData, PlyElement
+
+    # Get 3D samples
+    if segment_centers:
+        samples_xyz, secs_num3d = get_segment_centers(section_lists, 
+                                        samples_as_rows=True)
+    else:
+        raise ValueError('Only segment centers are supported for now.')
+
+
+    # Create vertices as PLY elements
+    vertex_dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
+    vertices = np.array(samples_xyz, dtype=vertex_dtype)
+    verts_element = PlyElement.describe(vertices, 'vertex')
+
+    # Create faces as PLY elements
+    face_dtype = [
+        ('vertex_indices', 'i4', (3,)), 
+        ('red',   'u1'),
+        ('green', 'u1'),
+        ('blue',  'u1')
+    ]
+
+    secs_faces = []
+
+    sample_offset = 0
+    for i_sec, num_samples in enumerate(secs_num3d):
+
+        # Face is degenerate face [a, b, a]
+        faces = [
+            ([i, i+1, i], rgb[0], rgb[1], rgb[2])
+                for i in xrange(sample_offset, sample_offset + num_samples - 1)
+        ]
+        secs_faces.extend(faces)
+        sample_offset += num_samples
+
+
+    # Concatenate all faces
+    faces = np.array(secs_faces, dtype=face_dtype)
+    faces_element = PlyElement.describe(faces, 'face')
+
+    # Write vertices and faces to PLY file
+    PlyData([verts_element, faces_element], text=text).write(filepath)
+
+
+def get_segment_centers(section_lists, samples_as_rows=False):
+    """
+    Calculate segment center coordinates for Section that has 3d sample points 
+    assigned to it.
+
+    @param  section_lists
+            Individual iterables of neuron.Section (can be list, SectionList, etc.)
+
+    @pre    All section in sectionlist have 3d sample points assigned, either
+            using Hoc.pt3dadd() or Hoc.define_shape()
+    """
+    x_allsec = []
+    y_allsec = []
+    z_allsec = []
+    sections_numsample = []
+
+    for sections in section_lists:
+        for sec in sections:
+            num_samples = int(h.n3d(sec=sec))
+            nseg = sec.nseg
+            sections_numsample.append(nseg + 2)
+
+            # Get 3D sample points for section
+            xx = h.Vector([h.x3d(i, sec=sec) for i in xrange(num_samples)])
+            yy = h.Vector([h.y3d(i, sec=sec) for i in xrange(num_samples)])
+            zz = h.Vector([h.z3d(i, sec=sec) for i in xrange(num_samples)])
+
+            # Length in micron from start of section to sample i
+            pt_locs = h.Vector([h.arc3d(i, sec=sec) for i in xrange(num_samples)])
+            L = pt_locs.x[num_samples-1]
+
+            # Normalized location of 3D sample points (0-1)
+            pt_locs.div(L)
+
+            # Normalized locations of nodes (0-1)
+            node_locs = h.Vector(nseg + 2)
+            node_locs.indgen(1.0 / nseg)
+            node_locs.sub(1.0 / (2 * nseg))
+            node_locs.x[0] = 0.0
+            node_locs.x[nseg+1] = 1.0
+
+            # Now calculate 3D locations of nodes (segment centers + 0 + 1)
+            # by interpolating 3D locations of samples
+            node_xlocs = h.Vector(nseg+2)
+            node_ylocs = h.Vector(nseg+2)
+            node_zlocs = h.Vector(nseg+2)
+            node_xlocs.interpolate(node_locs, pt_locs, xx)
+            node_ylocs.interpolate(node_locs, pt_locs, yy)
+            node_zlocs.interpolate(node_locs, pt_locs, zz)
+
+            x_allsec.extend(list(node_xlocs))
+            y_allsec.extend(list(node_ylocs))
+            z_allsec.extend(list(node_zlocs))
+
+    if samples_as_rows:
+        return zip(x_allsec, y_allsec, z_allsec), sections_numsample
+    else:
+        return (x_allsec, y_allsec, z_allsec), sections_numsample
 
 
 if __name__ == '__main__':

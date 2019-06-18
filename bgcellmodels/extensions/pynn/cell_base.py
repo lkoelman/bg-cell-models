@@ -706,6 +706,25 @@ class MorphModelBase(object):
         setattr(self, scale_factor_name, value)
 
 
+    def get_all_sections(self):
+        """
+        Get all neuron.Section objects that make up this cell.
+
+        @return     neuron.SectionList containing all sections
+        """
+        if getattr(self, 'axon_using_gap_junctions', False):
+            # axon is not connected to compartment tree of main cell
+            all_sections = h.SectionList()
+            for sec in self.icell.all:
+                all_sections.append(sec=sec)
+            for sec in self.axon['all']:
+                all_sections.append(sec=sec)
+        else:
+            all_sections = self.icell.all
+
+        return all_sections
+
+
     def _init_axon(self, axon_class):
         """
         Create and append axon.

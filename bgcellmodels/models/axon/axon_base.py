@@ -351,7 +351,7 @@ class AxonBuilder(object):
         n3d = int(h.n3d(sec=parent_sec))
         parent_coords = np.array([h.x3d(n3d-1, sec=parent_sec),
                                   h.y3d(n3d-1, sec=parent_sec),
-                                  h.z3d(n3d-1, sec=parent_sec)])
+                                  h.z3d(n3d-1, sec=parent_sec)]) * 1e-3 # um to mm
 
         # Connect axon according to method
         if connection_method == 'orient_coincident':
@@ -374,7 +374,8 @@ class AxonBuilder(object):
                 raise ValueError(connection_method)
 
             translate_vec = parent_coords - streamline_origin
-            self.streamline_pts = self.streamline_pts - translate_vec # broadcasts
+            self.streamline_pts = self.streamline_pts + translate_vec # broadcasts
+            logger.debug('Axon coordinates were translated by vector {}'.format(translate_vec))
 
         elif connection_method.startswith('translate_cell'):
             # Translate cell so that connection point is coincident with
@@ -390,6 +391,7 @@ class AxonBuilder(object):
             translate_mat = np.eye(4)
             translate_mat[:3,3] = translate_vec
             morph_3d.transform_sections(parent_cell.all, translate_mat)
+            logger.debug('Cell morphology was transformed using matrix {}'.format(translate_mat))
 
 
     def get_next_compartment_def(self, i_compartment, update_state=True):

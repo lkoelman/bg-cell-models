@@ -11,6 +11,7 @@ import math
 PI = math.pi
 sqrt = math.sqrt
 
+
 def xtra_set_transfer_impedances(seclist, impedance_lookup_func):
     """
     Set transfer resistances of 'xtra' mechanism using impedance

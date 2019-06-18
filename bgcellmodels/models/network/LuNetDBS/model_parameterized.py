@@ -411,7 +411,7 @@ def simulate_model(
 
     # Choose a random morphology for each cell
     candidate_morphologies = np.array(cell_config['default_morphologies']['STN'])
-    candidates_sampled = shared_rng.choice(len(candidate_morphologies), stn_ncell_biophys)
+    candidates_sampled = np.array(config['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies) # deterministic instead of rng.choice(...)
     cells_morph_paths = [
         get_morphology_path(m) for m in candidate_morphologies[candidates_sampled]
     ]
