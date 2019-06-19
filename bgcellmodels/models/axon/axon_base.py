@@ -559,7 +559,7 @@ class AxonBuilder(object):
         elif interp_method == 'cartesian':
             walk_func = self._walk_cartesian_length
         else:
-            raise ValueError('Unknown inerpolation method: ', interp_method)
+            raise ValueError('Unknown interpolation method: ', interp_method)
         
         # Keep references to newly constructed Sections
         self.built_sections = {sec_type: [] for sec_type in self.compartment_defs.keys()}

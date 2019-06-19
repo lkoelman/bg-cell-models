@@ -20,6 +20,8 @@ from neuron.rxd.morphology import parent, parent_loc
 import json, io, re
 import numpy as np
 
+from . import morph_3d
+
 
 def morphology_to_dict(sections):
     """
@@ -347,7 +349,9 @@ def morphology_to_STEP_1D(secs, filepath):
 
 
 def morphology_to_PLY(section_lists, filepath, segment_centers=True,
-                      rgb=(0.0, 0.0, 0.0), text=False):
+                      scale=1.0, rgb=(0.0, 0.0, 0.0), text=False,
+                      translation=None, transform=None,
+                      make_edges=True, make_faces=False):
     """
     Write neuron morphology to PLY file using degenerate faces.
 
@@ -365,15 +369,27 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
 
     # Get 3D samples
     if segment_centers:
-        samples_xyz, secs_num3d = get_segment_centers(section_lists, 
+        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
                                         samples_as_rows=True)
     else:
-        raise ValueError('Only segment centers are supported for now.')
+        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
+                                        include_diam=False)
 
+    # Apply transformation before writing
+    if translation or transform:
+        samples_mat = np.ones((len(samples_xyz), 4))
+        samples_mat[:,:3] = samples_xyz
+        A = np.array(transform) if transform else np.eye(4)
+        if translation:
+            A[:-1, 3] += translation
+        samples_mat = np.dot(samples_mat, A.T)
+        samples_xyz = [tuple(row[:3]) for row in samples_mat]
 
     # Create vertices as PLY elements
     vertex_dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
-    vertices = np.array(samples_xyz, dtype=vertex_dtype)
+    vertices = np.array(samples_xyz, dtype=vertex_dtype) # argument must be list of tuple
+    if scale != 1.0:
+        vertices = vertices * scale
     verts_element = PlyElement.describe(vertices, 'vertex')
 
     # Create faces as PLY elements
@@ -384,7 +400,17 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
         ('blue',  'u1')
     ]
 
+    # Create edges (edge format: http://paulbourke.net/dataformats/ply/)
+    edge_dtype = [
+        ('vertex1', 'i4'),
+        ('vertex2', 'i4'), 
+        ('red',   'u1'),
+        ('green', 'u1'),
+        ('blue',  'u1')
+    ]
+
     secs_faces = []
+    secs_edges = []
 
     sample_offset = 0
     for i_sec, num_samples in enumerate(secs_num3d):
@@ -395,6 +421,14 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
                 for i in xrange(sample_offset, sample_offset + num_samples - 1)
         ]
         secs_faces.extend(faces)
+
+        # Add edge [a, b]
+        edges = [
+            (i, i+1, rgb[0], rgb[1], rgb[2])
+                for i in xrange(sample_offset, sample_offset + num_samples - 1)
+        ]
+        secs_edges.extend(edges)
+
         sample_offset += num_samples
 
 
@@ -402,68 +436,20 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
     faces = np.array(secs_faces, dtype=face_dtype)
     faces_element = PlyElement.describe(faces, 'face')
 
+    # Concatenate all edges
+    edges = np.array(secs_edges, dtype=edge_dtype)
+    edges_element = PlyElement.describe(edges, 'edge')
+
     # Write vertices and faces to PLY file
-    PlyData([verts_element, faces_element], text=text).write(filepath)
+    elements = [verts_element]
+    if make_faces:
+        elements.append(faces_element)
+    if make_edges:
+        elements.append(edges_element)
+    PlyData(elements, text=text).write(filepath)
 
 
-def get_segment_centers(section_lists, samples_as_rows=False):
-    """
-    Calculate segment center coordinates for Section that has 3d sample points 
-    assigned to it.
 
-    @param  section_lists
-            Individual iterables of neuron.Section (can be list, SectionList, etc.)
-
-    @pre    All section in sectionlist have 3d sample points assigned, either
-            using Hoc.pt3dadd() or Hoc.define_shape()
-    """
-    x_allsec = []
-    y_allsec = []
-    z_allsec = []
-    sections_numsample = []
-
-    for sections in section_lists:
-        for sec in sections:
-            num_samples = int(h.n3d(sec=sec))
-            nseg = sec.nseg
-            sections_numsample.append(nseg + 2)
-
-            # Get 3D sample points for section
-            xx = h.Vector([h.x3d(i, sec=sec) for i in xrange(num_samples)])
-            yy = h.Vector([h.y3d(i, sec=sec) for i in xrange(num_samples)])
-            zz = h.Vector([h.z3d(i, sec=sec) for i in xrange(num_samples)])
-
-            # Length in micron from start of section to sample i
-            pt_locs = h.Vector([h.arc3d(i, sec=sec) for i in xrange(num_samples)])
-            L = pt_locs.x[num_samples-1]
-
-            # Normalized location of 3D sample points (0-1)
-            pt_locs.div(L)
-
-            # Normalized locations of nodes (0-1)
-            node_locs = h.Vector(nseg + 2)
-            node_locs.indgen(1.0 / nseg)
-            node_locs.sub(1.0 / (2 * nseg))
-            node_locs.x[0] = 0.0
-            node_locs.x[nseg+1] = 1.0
-
-            # Now calculate 3D locations of nodes (segment centers + 0 + 1)
-            # by interpolating 3D locations of samples
-            node_xlocs = h.Vector(nseg+2)
-            node_ylocs = h.Vector(nseg+2)
-            node_zlocs = h.Vector(nseg+2)
-            node_xlocs.interpolate(node_locs, pt_locs, xx)
-            node_ylocs.interpolate(node_locs, pt_locs, yy)
-            node_zlocs.interpolate(node_locs, pt_locs, zz)
-
-            x_allsec.extend(list(node_xlocs))
-            y_allsec.extend(list(node_ylocs))
-            z_allsec.extend(list(node_zlocs))
-
-    if samples_as_rows:
-        return zip(x_allsec, y_allsec, z_allsec), sections_numsample
-    else:
-        return (x_allsec, y_allsec, z_allsec), sections_numsample
 
 
 if __name__ == '__main__':

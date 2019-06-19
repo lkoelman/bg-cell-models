@@ -195,6 +195,7 @@ def simulate_model(
         report_interval = 50.0,
         restore_state   = None,
         save_state      = None,
+        export_compartment_coordinates = False,
         **kwargs):
     """
     Run a simple network consisting of an STN and GPe cell population
@@ -209,6 +210,9 @@ def simulate_model(
                 Dictionary with one entry per population label and one
                 key 'simulation' for simulation parameters.
     """
+    if export_compartment_coordinates:
+        from bgcellmodels.morphology import morph_io, morph_3d
+
     ############################################################################
     # READ CONFIGURATIONS
     ############################################################################
@@ -411,9 +415,10 @@ def simulate_model(
 
     # Choose a random morphology for each cell
     candidate_morphologies = np.array(cell_config['default_morphologies']['STN'])
-    candidates_sampled = np.array(config['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies) # deterministic instead of rng.choice(...)
+    morph_indices = np.array(config['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies)
+    
     cells_morph_paths = [
-        get_morphology_path(m) for m in candidate_morphologies[candidates_sampled]
+        get_morphology_path(m) for m in candidate_morphologies[morph_indices]
     ]
 
     # Load default parameters from sim config
@@ -458,6 +463,33 @@ def simulate_model(
                          label='STN',
                          structure=stn_grid,
                          initial_values=initial_values)
+
+    
+    # Export 3D coordinates of compartment centers
+    if export_compartment_coordinates:
+        stn_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_stn]
+        morph_io.morphology_to_PLY(stn_allsec, 'STN_compartment_locs.ply', text=False)
+
+    # Check coordinates
+    # for cell_id in pop_stn:
+    #     model = cell_id._cell
+
+    #     # Export cell
+    #     morph_io.morphology_to_PLY([model.icell.all],
+    #         'STN_after_{}.ply'.format(int(cell_id)),
+    #         segment_centers=True)
+
+    #     # Check coordinates
+    #     all_centers, all_n3d = morph_3d.get_segment_centers([model.icell.all], samples_as_rows=True)
+    #     sec_start = np.array([[h.x3d(0, sec=sec), h.y3d(0, sec=sec), h.z3d(0, sec=sec)]
+    #                             for sec in model.icell.all])
+    #     node_xyz = np.array(all_centers)
+    #     ref_coord = [17113.8, 6340.13, 6848.05]
+    #     node_diffs = node_xyz - ref_coord
+
+    #     node_dists = np.linalg.norm(node_diffs, axis=1)
+    #     if any(node_dists > 5000.0):
+    #         raise Exception('too far from STN center! Check morphology')
 
     #---------------------------------------------------------------------------
     # STN Surrogate spike sources
@@ -532,6 +564,11 @@ def simulate_model(
                                label='GPE.proto',
                                structure=gpe_grid,
                                initial_values=initial_values)
+
+    # Export 3D coordinates of compartment centers
+    if export_compartment_coordinates:
+        gpe_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_gpe_proto]
+        morph_io.morphology_to_PLY(gpe_allsec, 'GPE_compartment_locs.ply', text=False)
 
     #---------------------------------------------------------------------------
     # GPE surrogate population
@@ -1118,6 +1155,11 @@ if __name__ == '__main__':
                         dest='with_dbs', action='store_false',
                         help='Apply deep brain stimulation.')
     parser.set_defaults(with_dbs=False)
+
+    parser.add_argument('--exportcomplocs',
+                        dest='export_compartment_coordinates', action='store_true',
+                        help='Export compartment coordinates')
+    parser.set_defaults(export_compartment_coordinates=False)
 
     parser.add_argument('--dd',
                         dest='dopamine_depleted', action='store_true',

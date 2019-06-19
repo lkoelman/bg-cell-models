@@ -357,7 +357,8 @@ begintemplate STN_morph_arcdist
      */
      proc create_hillock() { \
         local end_diam, start_diam, hillock_area, relative_length, \
-              style, soma_area, soma_x, soma_dL, soma_length
+              style, soma_area, soma_x, soma_dL, soma_length, \
+              xx, yy, zz, dx, dy, dz, dd, ii
         
         end_diam = $1
         relative_length = $2
@@ -374,14 +375,47 @@ begintemplate STN_morph_arcdist
             soma_length = soma_length + L
         }
         soma[soma_i] {
+            // Find end diameter of location where AIS will be connected
             start_diam = diam(soma_x)
+
+            // Unit vector pointing from 0-end to 1-end
+            ii = n3d()
+            dx = x3d(ii-1) - x3d(0)
+            dy = y3d(ii-1) - y3d(0)
+            dz = z3d(ii-1) - z3d(0)
+            dd = sqrt(dx^2 + dy^2 + dz^2)
+            dx = dx / dd
+            dy = dy / dd
+            dz = dz / dd
+            
+            // Set connection point for axon
+            if (soma_x == 0) {
+                // axon will be connected at 0-end of soma
+                xx = x3d(0)
+                yy = y3d(0)
+                zz = z3d(0)
+                dx = -dx
+                dy = -dy
+                dz = -dz
+            } else {
+                // axon will be connected at 0-end of soma
+                xx = x3d(ii-1)
+                yy = y3d(ii-1)
+                zz = z3d(ii-1)
+            }
         }
+
+        // Connect AIS to soma first, so default pt3dstyle(0) does its work
+        connect axon[0](0), soma[soma_i](soma_x)
 
         // Create AIS Section
         // Could directly use pt3dadd(), create points colinear with soma, but
         // we choose to set basic geometry, and then use define_shape().
         hillock_area = 0
         axon[0] {
+            style = pt3dconst(0) // geometry will affect 3d points
+            pt3dstyle(0)         // translated to parent connection point (default)
+
             nseg = 2
             L = relative_length * soma_length
 
@@ -390,11 +424,13 @@ begintemplate STN_morph_arcdist
             cm = 1
 
             // Create tapering diam
-            diam(0) = start_diam
-            diam(1) = end_diam
-
+            pt3dadd(xx, yy, zz, start_diam)
+            pt3dadd(xx+(L*dx), yy+(L*dy), zz+(L*dz), end_diam)
+            
             // Add 3D points based on geometry
-            define_shape()
+            //diam(0) = start_diam
+            //diam(1) = end_diam
+            // define_shape()
 
             // Measure AIS area (must be _after_ define_shape())
             for (x, 0) {
@@ -405,11 +441,13 @@ begintemplate STN_morph_arcdist
             // Insert biophysical mechanisms (same as soma)
             // NOTE: inserted in insert_biophys()
 
+            pt3dconst(style) // restore
         }
 
         // Reduce somatic length to compensate for increase of area
-        style = pt3dconst(0) // diam & L affect 3d points
         soma[0] {
+            style = pt3dconst(0) // geometry will affect 3d points
+
             soma_dL = hillock_area / (PI * start_diam)
             if (soma_dL <= 0.75 * L) {
                 L = L - soma_dL
@@ -417,11 +455,10 @@ begintemplate STN_morph_arcdist
             } else {
                 print "Soma will be too small"
             }
-        }
-        pt3dconst(style) // restore style
 
-        // Connect AIS to soma
-        connect axon[0](0), soma[soma_i](soma_x)
+            pt3dconst(style) // restore
+        }
+        
      }
 
     // =========================================================================

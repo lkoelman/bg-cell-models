@@ -8,7 +8,7 @@ import bluepyopt.ephys as ephys
 from pyNN.parameters import ArrayParameter
 
 from bgcellmodels.common import logutils
-from bgcellmodels.morphology import morph_3d
+from bgcellmodels.morphology import morph_3d, morph_io
 from bgcellmodels.models.STN import GilliesWillshaw as gillies
 from bgcellmodels.models.STN import Miocinovic2006 as miocinovic
 # from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002

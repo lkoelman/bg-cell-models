@@ -23,6 +23,99 @@ import numpy as np
 from transforms3d import axangles
 
 
+def get_section_samples(section_lists, include_diam=True):
+    """
+    Return 3D sample points for all sections as Nx4 matrix.
+
+    @return     N x 4 numpy array with samples (x, y, z, diam) as rows.
+    """
+    all_samples = []
+    sections_numsample = []
+
+    for sections in section_lists:
+        for sec in sections:
+            num_samples = int(h.n3d(sec=sec))
+            if include_diam:
+                sec_samples = [
+                    (h.x3d(i, sec=sec),
+                     h.y3d(i, sec=sec),
+                     h.z3d(i, sec=sec),
+                     h.diam3d(i, sec=sec))
+                        for i in xrange(num_samples)
+                ]
+            else:
+                sec_samples = [
+                    (h.x3d(i, sec=sec),
+                     h.y3d(i, sec=sec),
+                     h.z3d(i, sec=sec))
+                        for i in xrange(num_samples)
+                ]
+            all_samples.extend(sec_samples)
+            sections_numsample.append(num_samples)
+
+    return all_samples, sections_numsample
+
+
+def get_segment_centers(section_lists, samples_as_rows=False):
+    """
+    Calculate segment center coordinates for Section that has 3d sample points 
+    assigned to it.
+
+    @param  section_lists
+            Individual iterables of neuron.Section (can be list, SectionList, etc.)
+
+    @pre    All section in sectionlist have 3d sample points assigned, either
+            using Hoc.pt3dadd() or Hoc.define_shape()
+    """
+    x_allsec = []
+    y_allsec = []
+    z_allsec = []
+    sections_numsample = []
+
+    for sections in section_lists:
+        for sec in sections:
+            num_samples = int(h.n3d(sec=sec))
+            nseg = sec.nseg
+            sections_numsample.append(nseg + 2)
+
+            # Get 3D sample points for section
+            xx = h.Vector([h.x3d(i, sec=sec) for i in xrange(num_samples)])
+            yy = h.Vector([h.y3d(i, sec=sec) for i in xrange(num_samples)])
+            zz = h.Vector([h.z3d(i, sec=sec) for i in xrange(num_samples)])
+
+            # Length in micron from start of section to sample i
+            pt_locs = h.Vector([h.arc3d(i, sec=sec) for i in xrange(num_samples)])
+            L = pt_locs.x[num_samples-1]
+
+            # Normalized location of 3D sample points (0-1)
+            pt_locs.div(L)
+
+            # Normalized locations of nodes (0-1)
+            node_locs = h.Vector(nseg + 2)
+            node_locs.indgen(1.0 / nseg)
+            node_locs.sub(1.0 / (2 * nseg))
+            node_locs.x[0] = 0.0
+            node_locs.x[nseg+1] = 1.0
+
+            # Now calculate 3D locations of nodes (segment centers + 0 + 1)
+            # by interpolating 3D locations of samples
+            node_xlocs = h.Vector(nseg+2)
+            node_ylocs = h.Vector(nseg+2)
+            node_zlocs = h.Vector(nseg+2)
+            node_xlocs.interpolate(node_locs, pt_locs, xx)
+            node_ylocs.interpolate(node_locs, pt_locs, yy)
+            node_zlocs.interpolate(node_locs, pt_locs, zz)
+
+            x_allsec.extend(list(node_xlocs))
+            y_allsec.extend(list(node_ylocs))
+            z_allsec.extend(list(node_zlocs))
+
+    if samples_as_rows:
+        return zip(x_allsec, y_allsec, z_allsec), sections_numsample
+    else:
+        return (x_allsec, y_allsec, z_allsec), sections_numsample
+
+
 def transform_sections(secs, A):
     """
     Apply transformation to sections

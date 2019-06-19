@@ -339,46 +339,18 @@ class MorphModelBase(object):
         """
         Instantiate cell in simulator.
 
-        THIS IS AN EXAMPLE METHOD. IMPLEMENT YOUR OWN INSTANTIATE
+        Virtual method. Implement your own instantiate.
 
         @pre    self.template_name is a Hoc template that is loaded
                 by Hoc interpreter
+
+        @note   The call order is:
+
+                - MyCellModel.__init__()
+                    `- cell_base.MorphModelBase.__init__()
+                     `- MyCellModel.instantiate()
         """
-        if sim is None:
-            sim = ephys_sim_from_pynn()
-
-        # Get the Hoc template
-        # Load_template(self.template_name) # xopen -> loads once
-        template_constructor = getattr(h, self.template_name)
-        
-        # Instantiate template
-        self.icell = icell = template_constructor()
-        icell.with_extracellular = not self.without_extracellular
-
-        # Load morphology into template
-        morphology = ephys.morphologies.NrnFileMorphology(
-                        str(self.morphology_path), do_replace_axon=False)
-        morphology.instantiate(sim=sim, icell=icell)
-
-        # Setup biophysical properties
-        ais_diam = 1.2 # nodal diam from Foust axon
-        ais_relative_length = 0.2
-        icell.create_hillock(ais_diam, ais_relative_length, 0, 0.0)
-        icell.del_unused_sections()
-        icell.set_biophys_spatial()
-
-
-        # Transform morphology
-        if len(self.transform) > 0 and not np.allclose(self.transform, np.eye(4)):
-            morph_3d.transform_sections(icell.all, self.transform)
-
-        # Create and append axon
-        if len(self.streamline_coordinates_mm) > 0:
-            self._init_axon(self.axon_class)
-
-        # Init extracellular stimulation & recording
-        if self.with_extracellular:
-            self._init_emfield()
+        raise NotImplementedError("Virtual method. Implement your own instantiate")
 
 
     def _post_build(self, population, pop_index):
@@ -833,8 +805,8 @@ class MorphModelBase(object):
 
         # Set up LFP calculation
         # NOTE: Recorder class records lfp_tracker.summator._ref_summed
-        if logger.level <= logging.WARNING:
-            h.XTRA_VERBOSITY = 1
+        # if logger.level <= logging.WARNING:
+        #     h.XTRA_VERBOSITY = 1
         self.lfp_summator = h.xtra_sum(self.icell.soma[0](0.5))
         self.lfp_tracker = h.ImembTracker(self.lfp_summator, all_sections, "xtra")
 

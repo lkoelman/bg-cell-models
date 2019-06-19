@@ -13,7 +13,7 @@ Last updated:   26-April-2019
 */
 
 // Increase above 1 to increase verbosity
-XTRA_VERBOSITY = 1
+XTRA_VERBOSITY = 0
 
 
 begintemplate ImembTracker
