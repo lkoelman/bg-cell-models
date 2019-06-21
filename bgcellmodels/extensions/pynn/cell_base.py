@@ -26,7 +26,7 @@ from pyNN.neuron.cells import NativeCellType
 # Our own imports
 from bgcellmodels.common import nrnutil, configutil
 from bgcellmodels.common import treeutils
-from bgcellmodels.morphology import morph_3d
+from bgcellmodels.emfield import xtra_utils
 
 # Global variables
 logger = logging.getLogger('ext.pynn.cell_base')
@@ -308,6 +308,7 @@ class MorphModelBase(object):
         self.gid_to_section = {}
 
         # Instantiate cell and synapses in NEURON
+        self.axon = None
         self.instantiate(sim=ephys_sim_from_pynn())
         self._init_synapses()
 
@@ -684,7 +685,7 @@ class MorphModelBase(object):
 
         @return     neuron.SectionList containing all sections
         """
-        if getattr(self, 'axon_using_gap_junctions', False):
+        if getattr(self, 'axon_using_gap_junction', False):
             # axon is not connected to compartment tree of main cell
             all_sections = h.SectionList()
             for sec in self.icell.all:
@@ -723,7 +724,7 @@ class MorphModelBase(object):
                     interp_method='arclength',
                     parent_cell=self.icell,
                     parent_sec=axon_parent_sec,
-                    connection_method='translate_axon_start',
+                    connection_method='translate_axon_closest',
                     connect_gap_junction=getattr(self, 'axon_using_gap_junction', False),
                     gap_conductances=(getattr(self, 'gap_pre_conductance', None),
                                       getattr(self, 'gap_post_conductance', None)),
@@ -753,7 +754,7 @@ class MorphModelBase(object):
                 targets for stimulation
         """
         # If axon is not connected to compartment tree of main cell
-        if getattr(self, 'axon_using_gap_junctions', False):
+        if getattr(self, 'axon_using_gap_junction', False):
             all_sections = h.SectionList()
             axonal_sections = self.axon['all'] # is a SectionList
             for sec in self.icell.all:
@@ -793,15 +794,20 @@ class MorphModelBase(object):
         # Calculate coordinates of each compartment's (segment) center
         h.xtra_segment_coords_from3d(all_sections)
         h.xtra_setpointers(all_sections)
-
-        # Set transfer impedance between electrode and compartment centers
-        x_elec, y_elec, z_elec = self.electrode_coordinates_um
-        h.xtra_set_impedances_pointsource(
-            all_sections, self.rho_extracellular_ohm_cm, x_elec, y_elec, z_elec)
         
         # Alternative using lookup function
-        # emfield.xtra_set_transfer_impedances(all_sections, 
-        #                                      self.impedance_lookup_func)
+        if self.transfer_impedance_matrix is None or len(self.transfer_impedance_matrix) == 0:
+            # Set transfer impedance analytically
+            x_elec, y_elec, z_elec = self.electrode_coordinates_um
+            h.xtra_set_impedances_pointsource(all_sections,
+                self.rho_extracellular_ohm_cm,
+                x_elec, y_elec, z_elec)
+        else:
+            # Set using look-up table / nearest-neigbhors
+            Z_coords = self.transfer_impedance_matrix[:, :3]
+            Z_values = self.transfer_impedance_matrix[:, -1]
+            xtra_utils.set_transfer_impedances_nearest(
+                all_sections, Z_coords, Z_values, max_dist=5.0, warn_dist=0.1)
 
         # Set up LFP calculation
         # NOTE: Recorder class records lfp_tracker.summator._ref_summed

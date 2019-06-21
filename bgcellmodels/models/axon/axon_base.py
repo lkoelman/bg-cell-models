@@ -370,6 +370,12 @@ class AxonBuilder(object):
                 streamline_origin = self.streamline_pts[0]
             elif connection_method.endswith('end'):
                 streamline_origin = self.streamline_pts[-1]
+            elif connection_method.endswith('closest'):
+                dist_ax_start = np.linalg.norm(parent_coords - self.streamline_pts[0])
+                dist_ax_end = np.linalg.norm(parent_coords - self.streamline_pts[-1])
+                if dist_ax_end < dist_ax_start:
+                    self.streamline_pts = self.streamline_pts[::-1]
+                streamline_origin = self.streamline_pts[0]
             else:
                 raise ValueError(connection_method)
 

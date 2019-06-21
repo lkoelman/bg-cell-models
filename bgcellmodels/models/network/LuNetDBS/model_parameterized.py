@@ -66,6 +66,7 @@ WITH_MPI = mpi_size > 1
 import pyNN.neuron as sim
 from pyNN import space
 from pyNN.random import RandomDistribution
+from pyNN.parameters import ArrayParameter
 from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
 
@@ -184,6 +185,7 @@ def simulate_model(
         report_progress = None,
         config          = None,
         cell_config     = None,
+        fem_config      = None,
         axon_coordinates = None,
         morph_dir       = None,
         seed            = None,
@@ -224,6 +226,8 @@ def simulate_model(
     with_lfp = bool(with_lfp) or emf_params['with_lfp']
 
     rho_ohm_cm = 1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
+    electrode_coordinates_um = emf_params['dbs_electrode_coordinates_um']
+    transfer_impedance_matrix = [] if fem_config is None else fem_config
 
     ############################################################################
     # SIMULATOR SETUP
@@ -430,7 +434,8 @@ def simulate_model(
     stn_cell_params['transform'] = cells_transforms
     stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
     stn_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
-    stn_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates_um']
+    stn_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
+    stn_cell_params['transfer_impedance_matrix'] = ArrayParameter(transfer_impedance_matrix)
 
     
     stn_type = miocinovic.StnMorphType(**stn_cell_params)
@@ -468,19 +473,24 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
         stn_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_stn]
-        morph_io.morphology_to_PLY(stn_allsec, 'STN_compartment_locs.ply', text=False)
+        morph_io.morphology_to_PLY(stn_allsec, 'STN_nodes_dwi-micron.ply',
+                    text=False) #, scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
 
     # Check coordinates
-    # for cell_id in pop_stn:
-    #     model = cell_id._cell
+    stn_gpe_all_nodes = []
+    for cell_id in pop_stn:
+        model = cell_id._cell
+
+        # Save compartment centers
+        all_centers, all_n3d = morph_3d.get_segment_centers([model.get_all_sections()], samples_as_rows=True)
+        stn_gpe_all_nodes.extend(all_centers)
 
     #     # Export cell
-    #     morph_io.morphology_to_PLY([model.icell.all],
+    #     morph_io.morphology_to_PLY([model.get_all_sections()],
     #         'STN_after_{}.ply'.format(int(cell_id)),
     #         segment_centers=True)
 
     #     # Check coordinates
-    #     all_centers, all_n3d = morph_3d.get_segment_centers([model.icell.all], samples_as_rows=True)
     #     sec_start = np.array([[h.x3d(0, sec=sec), h.y3d(0, sec=sec), h.z3d(0, sec=sec)]
     #                             for sec in model.icell.all])
     #     node_xyz = np.array(all_centers)
@@ -538,7 +548,8 @@ def simulate_model(
     gpe_cell_params['transform'] = cells_transforms
     gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
     gpe_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
-    gpe_cell_params['electrode_coordinates_um'] = emf_params['dbs_electrode_coordinates_um']
+    gpe_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
+    gpe_cell_params['transfer_impedance_matrix'] = ArrayParameter(transfer_impedance_matrix)
 
     proto_type = gunay.GpeProtoCellType(**gpe_cell_params)
 
@@ -568,7 +579,35 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
         gpe_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_gpe_proto]
-        morph_io.morphology_to_PLY(gpe_allsec, 'GPE_compartment_locs.ply', text=False)
+        morph_io.morphology_to_PLY(gpe_allsec, 'GPE_nodes_dwi-micron.ply',
+            text=False) #, scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+
+    # # Check coordinates
+    # for cell_id in pop_gpe_proto:
+    #     model = cell_id._cell
+
+    #     # Save compartment centers
+    #     all_centers, all_n3d = morph_3d.get_segment_centers([model.get_all_sections()], samples_as_rows=True)
+    #     stn_gpe_all_nodes.extend(all_centers)
+
+
+    # # Write out analytical Ztransfer
+    # def impedance_func(xyz):
+    #     x1, y1, z1 = xyz
+    #     x2, y2, z2 = electrode_coordinates_um
+    #     dist = np.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
+
+    #     if dist == 0:
+    #         dist = 0.5 # seg.diam / 2
+
+    #     # 0.01 converts rho's cm to um and ohm to megohm
+    #     return (rho_ohm_cm / 4 / np.pi) * (1 / dist) * 0.01
+    
+    # stn_gpe_Zmat = np.array(
+    #     [(xyz[0], xyz[1], xyz[2], impedance_func(xyz))
+    #         for xyz in stn_gpe_all_nodes])
+
+    # np.save('transfer_impedance_matrix.npy', stn_gpe_Zmat)
 
     #---------------------------------------------------------------------------
     # GPE surrogate population
@@ -620,7 +659,7 @@ def simulate_model(
     #     'streamline_coordinates_mm':    gpe_axon_coords,
     #     'termination_method':           np.array('terminal_sequence'),
     #     'with_extracellular':           with_lfp or with_dbs,
-    #     'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates_um'],
+    #     'electrode_coordinates_um' :    electrode_coordinates_um,
     #     'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
     # }
 
@@ -695,7 +734,7 @@ def simulate_model(
         'streamline_coordinates_mm':    ctx_axon_coords,
         'termination_method':           np.array('terminal_sequence'),
         'with_extracellular':           with_lfp or with_dbs,
-        'electrode_coordinates_um' :    emf_params['dbs_electrode_coordinates_um'],
+        'electrode_coordinates_um' :    electrode_coordinates_um,
         'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
     }
 
@@ -1198,6 +1237,7 @@ if __name__ == '__main__':
 
     parser.add_argument('-dc', '--configdir', nargs=1, type=str,
                         metavar='/path/to/circuit_config',
+                        default='config',
                         dest='config_root',
                         help='Directory containing circuit configuration.'
                              ' All other configuration files will be considered'
@@ -1206,15 +1246,20 @@ if __name__ == '__main__':
 
     parser.add_argument('-cs', '--simconfig', nargs=1, type=str,
                         metavar='sim_config.json',
-                        dest='sim_config_file',
+                        dest='sim_config',
                         help='Simulation configuration (JSON file).'
                              ' Either provide full path or filename located'
                              ' in configdir/circuits/.')
 
     parser.add_argument('-cc', '--cellconfig', nargs=1, type=str,
                         metavar='cell_config.json',
-                        dest='cell_config_file',
+                        dest='cell_config',
                         help='Cell configuration file (pickle file).')
+
+    parser.add_argument('-cf', '--femconfig', nargs=1, type=str,
+                        metavar='fem_config.npy',
+                        dest='fem_config', default=None,
+                        help='FEM configuration file (numpy file).')
 
     parser.add_argument('-ca', '--axonfile', nargs=1, type=str,
                         metavar='/path/to/axon_coordinates.pkl',
@@ -1238,26 +1283,31 @@ if __name__ == '__main__':
 
     # Default parent directory of each configuration file
     default_dirs = {
+        'sim_config': os.path.join(config_root, 'circuits'),
+        'cell_config': os.path.join(config_root, 'cells'),
+        'fem_config': os.path.join(config_root, 'fem'),
         'morph_dir': config_root,
-        'sim_config_file': os.path.join(config_root, 'circuits'),
-        'cell_config_file': os.path.join(config_root, 'cells'),
         'axon_coord_file': os.path.join(config_root, 'axons'),
     }
+
     # Locate each configuration file
-    for conf, parent_dir in default_dirs.items():
-        conf_filedir, conf_filename = os.path.split(parsed_dict[conf][0])
+    for conf_name, default_dir in default_dirs.items():
+        if parsed_dict[conf_name] is None:
+            continue
+        conf_dir, conf_filename = os.path.split(parsed_dict[conf_name][0])
         # If directories are prepended, look there. Otherwise look in default dir.
-        if conf_filedir == '':
-            conf_filepath = os.path.join(parent_dir, conf_filename)
+        if conf_dir == '':
+            parsed_dict[conf_name] = os.path.join(default_dir, conf_filename)
         else:
-            conf_filepath = os.path.join(os.path.expanduser(conf_filedir), conf_filename)
-        parsed_dict[conf] = conf_filepath
+            parsed_dict[conf_name] = os.path.join(os.path.expanduser(conf_dir), conf_filename)
 
     # Read configuration files
     parsed_dict['config'] = fileutils.parse_json_file(
-                            parsed_dict['sim_config_file'], nonstrict=True)
+                            parsed_dict['sim_config'], nonstrict=True)
     parsed_dict['cell_config'] = fileutils.parse_json_file(
-                            parsed_dict['cell_config_file'], nonstrict=True)
+                            parsed_dict['cell_config'], nonstrict=True)
+    if parsed_dict['fem_config'] is not None:
+        parsed_dict['fem_config'] = np.load(parsed_dict['fem_config'])
     with open(parsed_dict['axon_coord_file'], 'rb') as axon_file:
         parsed_dict['axon_coordinates'] = pickle.load(axon_file)
 
@@ -1272,7 +1322,7 @@ if __name__ == '__main__':
 
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames
-    config_name, ext = os.path.splitext(os.path.basename(parsed_dict['sim_config_file']))
+    config_name, ext = os.path.splitext(os.path.basename(parsed_dict['sim_config']))
     out_subdir = 'LuNetStnGpe_{stamp}_job-{job_id}_{config_name}'.format(
                                             stamp=timestamp,
                                             job_id=job_id,
@@ -1302,7 +1352,7 @@ if __name__ == '__main__':
         import shutil
         shutil.copytree(config_root,
                 os.path.join(out_fulldir, 'simconfig'))
-        shutil.copy2(parsed_dict['sim_config_file'],
+        shutil.copy2(parsed_dict['sim_config'],
                 os.path.join(out_fulldir, 'simconfig', 'sim_config.json'))
 
     # Run the simulation

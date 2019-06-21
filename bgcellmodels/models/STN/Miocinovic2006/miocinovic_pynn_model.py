@@ -181,6 +181,7 @@ class StnMorphType(cell_base.MorphCellType):
         'with_extracellular': False,
         'electrode_coordinates_um' : ArrayParameter([]),
         'rho_extracellular_ohm_cm' : 0.03,
+        'transfer_impedance_matrix': ArrayParameter([]),
         # Inputs
         'max_num_gpe_syn': 19,
         'max_num_ctx_syn': 30,

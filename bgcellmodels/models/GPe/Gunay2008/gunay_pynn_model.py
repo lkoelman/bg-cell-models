@@ -141,9 +141,6 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         # Call instantiate method from Ephys model class
         ephys_pynn.EphysModelWrapper.instantiate(self, sim)
 
-        # Adjust compartment dimensions like in GENESIS code
-        gunay_model.fix_comp_dimensions(self)
-
         # Transform morphology
         if len(self.transform) > 0 and not np.allclose(self.transform, np.eye(4)):
             morph_3d.transform_sections(self.icell.all, self.transform)
@@ -159,6 +156,9 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         if self.with_extracellular:
             self._init_emfield()
 
+        # Adjust compartment dimensions like in GENESIS code
+        self._fix_compartment_dimensions()
+
 
     def _init_axon(self, axon_class):
         """
@@ -173,6 +173,68 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         self.region_to_gid['AIS'] = source_gid
         self.gid_to_source[source_gid] = source_sec(0.5)._ref_v
         self.gid_to_section[source_gid] = source_sec
+
+
+    def _fix_compartment_dimensions(self):
+        """
+        Normalizes all compartment dimensions to 1 um as in original
+        Gunay (2008) model code.
+
+        Note that this is a huge headache since dimensions are not
+        biphysically realistic anymore.
+        """
+        def fix_dims(secs):
+            for sec in secs:
+                sec.L = 1.0
+                for seg in sec:
+                    seg.diam = 1.0
+
+        # Only fix section defined in SWC morphology
+        fix_dims(self.icell.somatic)
+        fix_dims(self.icell.basal)
+
+        axonal_sections = list(self.icell.axonal)
+        axon_stub = axonal_sections[0]
+        fix_dims([axon_stub])
+
+        # NOTE: in unscaled morphology axon_diam / soma_diam = 1.5 / 13.4 = 0.112
+        
+        # Taper AIS section only
+        # - AIS is 20 micron long over 5 segments. 
+        # - Taper this so input resistance is low but there is still enough current to jump myelinated section.
+        sec = axonal_sections[1]
+        assert 'aisnode' in sec.name()
+        old_area = sum((seg.area() for seg in sec))
+        # Trapezoidal interpolation rule will automatically result in taper 
+        # in 5 consecutive segments of AIS
+        start_diam = self.axon_taper_diam
+        h.pt3dchange(0, start_diam, sec=sec)
+
+        # Rescale AIS conductances
+        # new_area = sum((seg.area() for seg in sec))
+        # new_diams = [seg.diam for seg in sec]
+        # fac_area = new_area/old_area
+        # print("New diams {}, area reduction {}".format(new_diams, fac_area))
+        # for seg in sec:
+        #     seg.g_NaF_Foust = seg.g_NaF_Foust * old_area / new_area
+
+        # Taper axon diameter
+        # start_diam = 0.05    # ~= 0.112 * soma_diam
+        # stop_diam = 1.2     # diam of Foust (2011) nodal sections
+        # delta_diam = stop_diam - start_diam
+        # stop_length = 250.0 # taper diam over this distance
+        # for i, sec in enumerate(self.axon['ordered']):
+        #     for j in range(int(h.n3d(sec=sec))):
+        #         loc = h.arc3d(j, sec=sec) / sec.L # x of 3d sample
+        #         seg = sec(loc)
+        #         if i == j == 0:
+        #             h.distance(0, loc, sec=sec)
+        #         stub_dist = h.distance(seg.x, sec=sec)
+        #         if stub_dist > stop_length:
+        #             return
+        #         taper_diam = start_diam + stub_dist / stop_length * delta_diam
+        #         h.pt3dchange(j, taper_diam, sec=sec)
+        #         print("Stub dist is %f (x=%f), diam is %f (assigned %f)" % (stub_dist, loc, seg.diam, taper_diam))
         
 
     def _update_position(self, xyz):
@@ -218,6 +280,7 @@ class GPeCellType(cell_base.MorphCellType):
         'with_extracellular': False,
         'electrode_coordinates_um' : ArrayParameter([]),
         'rho_extracellular_ohm_cm' : 0.03, 
+        'transfer_impedance_matrix': ArrayParameter([]),
         # 3D specification
         'transform': ArrayParameter([]),
         # Axon
@@ -225,6 +288,7 @@ class GPeCellType(cell_base.MorphCellType):
         'axon_using_gap_junction': True,
         'gap_pre_conductance': 1e-5,
         'gap_post_conductance': 1e-3,
+        'axon_taper_diam': 0.05,
     }
 
     # Defaults for Ephys parameters

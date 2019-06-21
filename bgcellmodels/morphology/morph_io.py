@@ -364,6 +364,10 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
             If true, write 3D locations of segment centers (nodes, i.e. centers
             of simulated compartments). This is useful for knowing the locations
             of compartments, and their current/voltage sources in 3D space.
+
+    @param  scale : float
+            Scale factor applied to coordinates after transform and translation
+            is applied. Translation and transform not affected by scale.
     """
     from plyfile import PlyData, PlyElement
 
@@ -376,39 +380,23 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
                                         include_diam=False)
 
     # Apply transformation before writing
-    if translation or transform:
+    if translation or transform or (scale != 1.0):
         samples_mat = np.ones((len(samples_xyz), 4))
         samples_mat[:,:3] = samples_xyz
         A = np.array(transform) if transform else np.eye(4)
         if translation:
             A[:-1, 3] += translation
         samples_mat = np.dot(samples_mat, A.T)
+        if scale != 1.0:
+            samples_mat *= scale
         samples_xyz = [tuple(row[:3]) for row in samples_mat]
 
     # Create vertices as PLY elements
     vertex_dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
     vertices = np.array(samples_xyz, dtype=vertex_dtype) # argument must be list of tuple
-    if scale != 1.0:
-        vertices = vertices * scale
     verts_element = PlyElement.describe(vertices, 'vertex')
-
-    # Create faces as PLY elements
-    face_dtype = [
-        ('vertex_indices', 'i4', (3,)), 
-        ('red',   'u1'),
-        ('green', 'u1'),
-        ('blue',  'u1')
-    ]
-
-    # Create edges (edge format: http://paulbourke.net/dataformats/ply/)
-    edge_dtype = [
-        ('vertex1', 'i4'),
-        ('vertex2', 'i4'), 
-        ('red',   'u1'),
-        ('green', 'u1'),
-        ('blue',  'u1')
-    ]
-
+    
+    # Create all faces and edges
     secs_faces = []
     secs_edges = []
 
@@ -433,10 +421,23 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
 
 
     # Concatenate all faces
+    face_dtype = [
+        ('vertex_indices', 'i4', (3,)), 
+        ('red',   'u1'),
+        ('green', 'u1'),
+        ('blue',  'u1')
+    ]
     faces = np.array(secs_faces, dtype=face_dtype)
     faces_element = PlyElement.describe(faces, 'face')
 
     # Concatenate all edges
+    edge_dtype = [ # edge format: http://paulbourke.net/dataformats/ply/
+        ('vertex1', 'i4'),
+        ('vertex2', 'i4'), 
+        ('red',   'u1'),
+        ('green', 'u1'),
+        ('blue',  'u1')
+    ]
     edges = np.array(secs_edges, dtype=edge_dtype)
     edges_element = PlyElement.describe(edges, 'edge')
 
