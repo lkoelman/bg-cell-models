@@ -52,7 +52,8 @@ logutils.setLogLevel('quiet', ['gunay'])
 gbar_dict = {
     # Nonspecific channels
     'HCN':      ['gmax'],
-    'leak':     ['gmax'],
+    'HCN2':     ['gmax'],
+    'pas':      ['g'],
     # Na channels
     'NaF':      ['gmax'],
     'NaP':      ['gmax'],
@@ -64,7 +65,7 @@ gbar_dict = {
     'KCNQ':     ['gmax'],
     'SK':       ['gmax'],
     # Calcium channels / buffering
-    'CaH':      ['gmax'],
+    'CaHVA':      ['gmax'],
 }
 gleak_name = 'gmax_leak'
 

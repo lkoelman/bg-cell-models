@@ -76,20 +76,26 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
 
     # Related to PyNN properties
     _mechs_params_dict = {
+        # Nonspecific channels
         'HCN':      ['gmax'],
-        'leak':     ['gmax'],
+        'HCN2':     ['gmax'],
+        'pas':      ['g'],
+        # Na channels
         'NaF':      ['gmax'],
         'NaP':      ['gmax'],
+        # K-channels
         'Kv2':      ['gmax'],
         'Kv3':      ['gmax'],
         'Kv4f':     ['gmax'],
         'Kv4s':     ['gmax'],
         'KCNQ':     ['gmax'],
         'SK':       ['gmax'],
-        'CaH':      ['gmax'],
+        # Calcium channels / buffering
+        'CaHVA':    ['gmax'],
+        # 'Calcium':  [''],
     }
     rangevar_names = [p+'_'+m for m,params in _mechs_params_dict.iteritems() for p in params]
-    gleak_name = 'gmax_leak'
+    gleak_name = 'g_pas'
 
     # map rangevar to cell region where it should be scaled, default is 'all'
     tau_m_scaled_regions = ['somatic', 'basal', 'apical', 'axonal']
@@ -164,15 +170,61 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         """
         Initialize axon and update source sections for spike connections.
         """
-        super(GPeCellModel, self)._init_axon(axon_class)
+        axon_builder = axon_class(
+            without_extracellular=not self.with_extracellular)
 
-        # Add AIS as a source section for connections
-        source_sec = self.axon['aisnode'][0]
-        source_gid = self.owning_gid + int(2e6)
+        use_gap_junction = getattr(self, 'axon_using_gap_junction', False)
 
-        self.region_to_gid['AIS'] = source_gid
-        self.gid_to_source[source_gid] = source_sec(0.5)._ref_v
-        self.gid_to_section[source_gid] = source_sec
+        # Choose parent section for axon
+        axonal_secs = list(self.icell.axonal)
+        if len(axonal_secs) > 0:
+            axon_parent_sec = axonal_secs[-1]
+            assert len(axon_parent_sec.children()) == 0
+        else:
+            # Attach axon directly to soma
+            axon_parent_sec = self.icell.soma[0]
+
+        # We already have an AIS so don't build it
+        axon_builder.initial_comp_sequence.pop(0) # = ['aismyelin']
+
+        # Build entire axon
+        axon = axon_builder.build_along_streamline(
+                    self.streamline_coordinates_mm,
+                    termination_method='nodal_cutoff',
+                    interp_method='arclength',
+                    parent_cell=self.icell,
+                    parent_sec=axon_parent_sec,
+                    connection_method='translate_axon_closest',
+                    connect_gap_junction=use_gap_junction,
+                    gap_conductances=(getattr(self, 'gap_pre_conductance', None),
+                                      getattr(self, 'gap_post_conductance', None)),
+                    tolerance_mm=1e-4)
+    
+        self.axon = axon
+
+        # Change source for NetCons (see pyNN.neuron.simulator code)
+        terminal_sec = list(self.icell.axonal)[-1]
+        terminal_source = terminal_sec(0.5)._ref_v # source for connections
+        self.source_section = terminal_sec
+        self.source = terminal_source
+
+        # Support for multicompartment connections
+        terminal_gid = self.owning_gid + int(1e6)
+        self.region_to_gid['axon_terminal'] = terminal_gid
+        self.gid_to_source[terminal_gid] = terminal_source
+        self.gid_to_section[terminal_gid] = terminal_sec
+
+        # Uncomment for gap junction solution
+        if use_gap_junction:
+            # super(GPeCellModel, self)._init_axon(axon_class)
+
+            # Add AIS as a source section for connections
+            source_sec = self.axon['aisnode'][0]
+            source_gid = self.owning_gid + int(2e6)
+
+            self.region_to_gid['AIS'] = source_gid
+            self.gid_to_source[source_gid] = source_sec(0.5)._ref_v
+            self.gid_to_section[source_gid] = source_sec
 
 
     def _fix_compartment_dimensions(self):
@@ -202,13 +254,15 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         # Taper AIS section only
         # - AIS is 20 micron long over 5 segments. 
         # - Taper this so input resistance is low but there is still enough current to jump myelinated section.
-        sec = axonal_sections[1]
-        assert 'aisnode' in sec.name()
-        old_area = sum((seg.area() for seg in sec))
-        # Trapezoidal interpolation rule will automatically result in taper 
-        # in 5 consecutive segments of AIS
-        start_diam = self.axon_taper_diam
-        h.pt3dchange(0, start_diam, sec=sec)
+        # sec = axonal_sections[1]
+        # assert 'aisnode' in sec.name()
+        # old_area = sum((seg.area() for seg in sec))
+
+        # Because there are only two samples per section, the trapezoidal
+        # interpolation rule will automatically result in tapering diameter in
+        # the 5 consecutive segments of the AIS
+        # start_diam = self.axon_taper_diam
+        # h.pt3dchange(0, start_diam, sec=sec)
 
         # Rescale AIS conductances
         # new_area = sum((seg.area() for seg in sec))
