@@ -6,23 +6,37 @@ PyNN compatible version of Fujita, Kitano et al. (2011) GPe cell model.
 @date       14/09/2018
 """
 
-import neuron
-h = neuron.h
+# Python standard library
+import os, os.path, logging
 
-# Load NEURON libraries, mechanisms
-import os, os.path
+# Third party libraries
+import numpy as np
+import neuron
+from pyNN.parameters import ArrayParameter
+
+# Our own modules
+from bgcellmodels.common import logutils
+from bgcellmodels.morphology import morph_3d, morph_io
+from bgcellmodels.models.axon.foust2011 import AxonFoust2011
+from bgcellmodels.extensions.pynn import cell_base
+
+
+# Load mechanisms and Hoc functions for cell model
+h = neuron.h
 script_dir = os.path.dirname(__file__)
 neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms'))
-
-# Load Hoc functions for cell model
 prev_cwd = os.getcwd()
 os.chdir(script_dir)
 h.xopen("fujita_createcell.hoc") # instantiates all functions & data structures on Hoc object
 os.chdir(prev_cwd)
 
-from bgcellmodels.extensions.pynn.ephys_models import MorphModelBase, MorphCellType
+# Set up logging
+logger = logging.getLogger('fujita2011')
+logger.setLevel(logging.DEBUG)
+logging.basicConfig(format=logutils.DEFAULT_FORMAT)
 
-class GpeCellModel(MorphModelBase):
+
+class GpeCellModel(cell_base.MorphModelBase):
     """
     Model class for Mahon/Corbit MSN cell.
 
@@ -38,23 +52,61 @@ class GpeCellModel(MorphModelBase):
     
     """
 
+    # Related to PyNN properties
+    _mechs_params_dict = {
+        # Nonspecific channels
+        'HCN':      ['gmax'],
+        'leak':     ['gmax'],
+        # Na channels
+        'NaF':      ['gmax'],
+        'NaP':      ['gmax'],
+        # K-channels
+        'Kv2':      ['gmax'],
+        'Kv3':      ['gmax'],
+        'Kv4f':     ['gmax'],
+        'Kv4s':     ['gmax'],
+        'KCNQ':     ['gmax'],
+        'SK':       ['gmax'],
+        # Calcium channels / buffering
+        'CaH':    ['gmax'],
+        # 'Calcium':  [''],
+    }
+    rangevar_names = [
+        rvar + '_' + mech for mech, params in _mechs_params_dict.iteritems() 
+            for rvar in params
+    ]
+    gleak_name = 'gmax_leak'
+
+    # map rangevar to cell region where it should be scaled, default is 'all'
+    tau_m_scaled_regions = ['somatic']
+
     # Combined with celltype.receptors in MorphCellType constructor
     # to make celltype.receptor_types in format 'region.receptor'
     regions = ['proximal']
+    synapse_spacing = 0.1 # single compartment so doesn't matter
 
-    # Must define 'default_parameters' in associated cell type
-    # parameter_names = []
+    spike_threshold = {
+        'soma': -10.0,
+    }
 
-    # Workaround: set directly as property on the class because
-    # PyNN only allows numerical parameters
-    default_GABA_mechanism = 'GABAsyn'
-    default_GLU_mechanism = 'GLUsyn'
     allow_synapse_reuse = False
 
     spike_threshold = {'soma': 0.0}
 
 
-    def instantiate(self):
+    def __init__(self, *args, **kwargs):
+        """
+        Populate self.parameter names with eligible parameters.
+        """
+        self.parameter_names = FujitaGpePrototypic.default_parameters.keys() + \
+                               FujitaGpePrototypic.extra_parameters.keys()
+        for rangevar in self.rangevar_names:
+            self.parameter_names.append(rangevar + '_scale')
+        
+        super(GpeCellModel, self).__init__(*args, **kwargs)
+
+
+    def instantiate(self, sim=None):
         """
         Instantiate cell in simulator
 
@@ -67,34 +119,64 @@ class GpeCellModel(MorphModelBase):
         """
         self.icell = h.FujitaGPE()
         self.icell.setparams_corbit_2016()
+        
+        with_transform = len(self.transform) > 0 and not np.allclose(self.transform, np.eye(4))
+        with_axon = len(self.streamline_coordinates_mm) > 0
+
+        # Assign 3D shape
+        if with_transform or with_axon:
+            h.define_shape(sec=self.icell.soma[0])
+            logger.debug("Assigned 3D shape to cell {}".format(self))
+
+        # Transform morphology
+        if with_transform:
+            morph_3d.transform_sections(self.icell.all, self.transform)
+
+        # Create and append axon
+        if with_axon:
+            self._init_axon(self.axon_class, axonmodel_use_ais=False)
+
+        # Init extracellular stimulation & recording
+        if self.with_extracellular:
+            self._init_emfield()
+
+        self.region_boundaries = {
+            'proximal': (0.0, self.icell.soma[0].L),
+        }
 
 
-    def get_synapses(self, region, receptors, num_contacts, **kwargs):
-        """
-        Get synapse in subcellular region for given receptors.
-        Called by Connector object to get synapse for new connection.
-
-        @override   MorphModelBase.get_synapse()
-        """
-        syns = [self.make_new_synapse(receptors, self.icell.soma[0](0.5), **kwargs) for i in xrange(num_contacts)]
-        synmap_key = tuple(sorted(receptors))
-        self._synapses['proximal'].setdefault(synmap_key, []).extend(syns)
-        return syns
-
-
-
-class GpeProtoType(MorphCellType):
+class FujitaGpePrototypic(cell_base.MorphCellType):
     """
     Encapsulates an MSN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
     """
 
-    # The encapsualted model available as class attribute 'model'
+    # The encapsulated model available as class attribute 'model'
     model = GpeCellModel
 
-    # NOTE: default_parameters is used to make 'schema' for checking & converting datatypes
-    default_parameters = {}
-    # extra_parameters = {}
+    
+    # Defaults for our custom PyNN parameters
+    default_parameters = {
+        'default_GABA_mechanism': np.array('GABAsyn'),
+        'default_GLU_mechanism': np.array('GLUsyn'),
+        'membrane_noise_std': 0.0,
+        # Biophysical properties
+        'tau_m_scale': 1.0,
+        # Extracellular stim & rec
+        'with_extracellular': False,
+        'electrode_coordinates_um' : ArrayParameter([]),
+        'rho_extracellular_ohm_cm' : 0.03, 
+        'transfer_impedance_matrix': ArrayParameter([]),
+        # 3D specification
+        'transform': ArrayParameter([]),
+        'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
+    }
+
+    # NOTE: extra_parameters supports non-numpy types. 
+    extra_parameters = {
+        'axon_class': AxonFoust2011,
+    }
+
     default_initial_values = {'v': -65.0}
     # recordable = ['spikes', 'v']
 
@@ -107,16 +189,15 @@ class GpeProtoType(MorphCellType):
         """
         Override or it uses pynn.neuron.record.recordable_pattern.match(variable)
         """
-        return super(GpeProtoType, self).can_record(variable)
+        return super(FujitaGpePrototypic, self).can_record(variable)
 
 
-class GpeArkyType(MorphCellType):
+class FujitaGpeArkypallidal(cell_base.MorphCellType):
     """
     Encapsulates an MSN model described as a BluePyOpt Ephys model 
     for interoperability with PyNN.
     """
-
-    # The encapsualted model available as class attribute 'model'
+    # The encapsulated model available as class attribute 'model'
     model = GpeCellModel
 
     # NOTE: default_parameters is used to make 'schema' for checking & converting datatypes
@@ -135,7 +216,7 @@ class GpeArkyType(MorphCellType):
         """
         Override or it uses pynn.neuron.record.recordable_pattern.match(variable)
         """
-        return super(GpeArkyType, self).can_record(variable)
+        return super(FujitaGpeArkypallidal, self).can_record(variable)
 
 
 def test_gpe_population(export_locals=True):
@@ -149,7 +230,7 @@ def test_gpe_population(export_locals=True):
     nrn.setup()
 
     # STN cell population
-    cell_type = GpeProtoType()
+    cell_type = FujitaGpePrototypic()
     p1 = nrn.Population(5, cell_type)
 
     # Stimulation electrode
@@ -170,4 +251,4 @@ def test_gpe_population(export_locals=True):
 
 
 if __name__ == '__main__':
-    test_msn_population()
+    test_gpe_population()

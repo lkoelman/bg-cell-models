@@ -408,6 +408,7 @@ class AxonBuilder(object):
         """
 
         # Find properties of next Section (compartment type)
+        self.i_initial_offset = 0
         if self.use_initial_segment and (i_compartment < len(self.initial_comp_sequence)):
             # We are in the initial section of the axon (non-repeating structure)
             current_compartment_sequence = 'initial_comp_sequence'

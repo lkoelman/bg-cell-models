@@ -698,7 +698,7 @@ class MorphModelBase(object):
         return all_sections
 
 
-    def _init_axon(self, axon_class):
+    def _init_axon(self, axon_class, axonmodel_use_ais=True):
         """
         Create and append axon.
 
@@ -717,6 +717,10 @@ class MorphModelBase(object):
         else:
             # Attach axon directly to soma
             axon_parent_sec = self.icell.soma[0]
+
+        # If cell model already has AIS, remove it from axon model
+        if not axonmodel_use_ais:
+            axon_builder.initial_comp_sequence.pop(0) # = ['aismyelin']
 
         axon = axon_builder.build_along_streamline(
                     self.streamline_coordinates_mm,
