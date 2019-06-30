@@ -36,7 +36,8 @@ def set_transfer_impedances(seclist, impedance_lookup_func):
 
 
 def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
-                                    max_dist, warn_dist):
+                                    max_dist, warn_dist, min_electrode_dist,
+                                    electrode_coords, Z_intersect=1e12):
     """
     Set transfer impedances using nearest neighbor interpolation, or using
     matching coordinates (set max_dist=eps).
@@ -95,13 +96,25 @@ def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
         # Query KD tree
         nn_dists, nn_idx = tree.query(node_coords, k=1, distance_upper_bound=max_dist)
         for i, c in enumerate(node_locs):
-            if nn_dists[i] > max_dist:
+            node_xyz = node_coords[i]
+            if np.linalg.norm(node_xyz - electrode_coords) <= min_electrode_dist:
+                # Node is too close to electride
+                Z_node = Z_intersect
+            elif nn_dists[i] > max_dist:
+                # Node is too far from nearest neighbor
                 raise ValueError("No transfer impedance value found within distance "
                                  "{} of point {}".format(max_dist, node_coords[i]))
             elif nn_dists[i] > warn_dist:
+                # Node is too far from nearest neighbor
+                Z_node = Z_values[nn_idx[i]]
                 logger.debug("Transfer impedance at point {} exceeds warning "
                              "distance of {} um".format(node_coords[i], warn_dist))
-            sec(c).rx_xtra = Z_values[nn_idx[i]]
+            else:
+                # No issues, nearest neighbor and electrode distance OK
+                Z_node = Z_values[nn_idx[i]]
+            
+            # Assign transfer impedance
+            sec(c).rx_xtra = Z_node
 
 
 def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):

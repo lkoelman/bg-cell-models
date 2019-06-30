@@ -27,12 +27,12 @@ Run single-threaded using IPython:
 Example commands:
 
 >>> model_parameterized.py -id testrun --dur 100 --scale 0.5 --seed 888 \
---dd --lfp --dbs \
+--dd --lfp --nodbs \
 --outdir ~/storage \
 --transientperiod 0.0 --writeinterval 1000 --reportinterval 25.0 \
---simconfig template_with-dbs.json \
---cellconfig dummy-cells_axons-cutoff.json \
---axonfile axon_coordinates_cutoff.pkl \
+--simconfig template_axon-norelay.json \
+--cellconfig dummy-cells_axons-full.json \
+--axonfile axon_coordinates_full.pkl \
 --configdir ~/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs \
 --morphdir ~/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies
 
@@ -435,7 +435,7 @@ def simulate_model(
     stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
     stn_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
     stn_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
-    stn_cell_params['transfer_impedance_matrix'] = ArrayParameter(transfer_impedance_matrix)
+    stn_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
 
     
     stn_type = miocinovic.StnMorphType(**stn_cell_params)
@@ -473,17 +473,17 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
         stn_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_stn]
-        morph_io.morphology_to_PLY(stn_allsec, 'STN_nodes_dwi-micron.ply',
-                    text=False) #, scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+        morph_io.morphology_to_PLY(stn_allsec, 'STN_nodes_anat-mm.ply',
+                    text=False, scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
 
-    # Check coordinates
-    stn_gpe_all_nodes = []
-    for cell_id in pop_stn:
-        model = cell_id._cell
+    # # Check coordinates
+    # stn_gpe_all_nodes = []
+    # for cell_id in pop_stn:
+    #     model = cell_id._cell
 
-        # Save compartment centers
-        all_centers, all_n3d = morph_3d.get_segment_centers([model.get_all_sections()], samples_as_rows=True)
-        stn_gpe_all_nodes.extend(all_centers)
+    #     # Save compartment centers
+    #     all_centers, all_n3d = morph_3d.get_segment_centers([model.get_all_sections()], samples_as_rows=True)
+    #     stn_gpe_all_nodes.extend(all_centers)
 
     #     # Export cell
     #     morph_io.morphology_to_PLY([model.get_all_sections()],
@@ -549,7 +549,7 @@ def simulate_model(
     gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
     gpe_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
     gpe_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
-    gpe_cell_params['transfer_impedance_matrix'] = ArrayParameter(transfer_impedance_matrix)
+    gpe_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
 
     proto_type = gunay.GpeProtoCellType(**gpe_cell_params)
 
@@ -579,8 +579,8 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
         gpe_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_gpe_proto]
-        morph_io.morphology_to_PLY(gpe_allsec, 'GPE_nodes_dwi-micron.ply',
-            text=False) #, scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+        morph_io.morphology_to_PLY(gpe_allsec, 'GPE_nodes_anat-mm.ply',
+            text=False, scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
 
     # # Check coordinates
     # for cell_id in pop_gpe_proto:

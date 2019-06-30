@@ -170,61 +170,8 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         """
         Initialize axon and update source sections for spike connections.
         """
-        axon_builder = axon_class(
-            without_extracellular=not self.with_extracellular)
-
-        use_gap_junction = getattr(self, 'axon_using_gap_junction', False)
-
-        # Choose parent section for axon
-        axonal_secs = list(self.icell.axonal)
-        if len(axonal_secs) > 0:
-            axon_parent_sec = axonal_secs[-1]
-            assert len(axon_parent_sec.children()) == 0
-        else:
-            # Attach axon directly to soma
-            axon_parent_sec = self.icell.soma[0]
-
-        # We already have an AIS so don't build it
-        axon_builder.initial_comp_sequence.pop(0) # = ['aismyelin']
-
-        # Build entire axon
-        axon = axon_builder.build_along_streamline(
-                    self.streamline_coordinates_mm,
-                    termination_method='nodal_cutoff',
-                    interp_method='arclength',
-                    parent_cell=self.icell,
-                    parent_sec=axon_parent_sec,
-                    connection_method='translate_axon_closest',
-                    connect_gap_junction=use_gap_junction,
-                    gap_conductances=(getattr(self, 'gap_pre_conductance', None),
-                                      getattr(self, 'gap_post_conductance', None)),
-                    tolerance_mm=1e-4)
-    
-        self.axon = axon
-
-        # Change source for NetCons (see pyNN.neuron.simulator code)
-        terminal_sec = list(self.icell.axonal)[-1]
-        terminal_source = terminal_sec(0.5)._ref_v # source for connections
-        self.source_section = terminal_sec
-        self.source = terminal_source
-
-        # Support for multicompartment connections
-        terminal_gid = self.owning_gid + int(1e6)
-        self.region_to_gid['axon_terminal'] = terminal_gid
-        self.gid_to_source[terminal_gid] = terminal_source
-        self.gid_to_section[terminal_gid] = terminal_sec
-
-        # Uncomment for gap junction solution
-        if use_gap_junction:
-            # super(GPeCellModel, self)._init_axon(axon_class)
-
-            # Add AIS as a source section for connections
-            source_sec = self.axon['aisnode'][0]
-            source_gid = self.owning_gid + int(2e6)
-
-            self.region_to_gid['AIS'] = source_gid
-            self.gid_to_source[source_gid] = source_sec(0.5)._ref_v
-            self.gid_to_section[source_gid] = source_sec
+        super(GPeCellModel, self)._init_axon(axon_class,
+                                             with_ais_compartment=False)
 
 
     def _fix_compartment_dimensions(self):
@@ -235,60 +182,32 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         Note that this is a huge headache since dimensions are not
         biphysically realistic anymore.
         """
-        def fix_dims(secs):
+        def normalize_dimensions(secs):
             for sec in secs:
                 sec.L = 1.0
                 for seg in sec:
                     seg.diam = 1.0
 
-        # Only fix section defined in SWC morphology
-        fix_dims(self.icell.somatic)
-        fix_dims(self.icell.basal)
-
+        soma = self.icell.soma[0]
         axonal_sections = list(self.icell.axonal)
-        axon_stub = axonal_sections[0]
-        fix_dims([axon_stub])
+        ais = axonal_sections[0]
 
-        # NOTE: in unscaled morphology axon_diam / soma_diam = 1.5 / 13.4 = 0.112
-        
-        # Taper AIS section only
-        # - AIS is 20 micron long over 5 segments. 
-        # - Taper this so input resistance is low but there is still enough current to jump myelinated section.
-        # sec = axonal_sections[1]
-        # assert 'aisnode' in sec.name()
-        # old_area = sum((seg.area() for seg in sec))
+        if len(self.streamline_coordinates_mm) > 0:
+            # With axon: compensate for input impedance decrase
+            soma.diam = 25.0
+            ais.diam = 20.0
 
-        # Because there are only two samples per section, the trapezoidal
-        # interpolation rule will automatically result in tapering diameter in
-        # the 5 consecutive segments of the AIS
-        # start_diam = self.axon_taper_diam
-        # h.pt3dchange(0, start_diam, sec=sec)
+            for seg in soma:
+                seg.gmax_NaP = 9.1 * 0.000102 # last factor is default
+            for seg in ais:
+                seg.gmax_NaP = 9.1 * 0.004000 # last factor is default
+        else:
+            # Without axon: normalize like in article
+            normalize_dimensions(self.icell.somatic)
+            normalize_dimensions([ais])
 
-        # Rescale AIS conductances
-        # new_area = sum((seg.area() for seg in sec))
-        # new_diams = [seg.diam for seg in sec]
-        # fac_area = new_area/old_area
-        # print("New diams {}, area reduction {}".format(new_diams, fac_area))
-        # for seg in sec:
-        #     seg.g_NaF_Foust = seg.g_NaF_Foust * old_area / new_area
-
-        # Taper axon diameter
-        # start_diam = 0.05    # ~= 0.112 * soma_diam
-        # stop_diam = 1.2     # diam of Foust (2011) nodal sections
-        # delta_diam = stop_diam - start_diam
-        # stop_length = 250.0 # taper diam over this distance
-        # for i, sec in enumerate(self.axon['ordered']):
-        #     for j in range(int(h.n3d(sec=sec))):
-        #         loc = h.arc3d(j, sec=sec) / sec.L # x of 3d sample
-        #         seg = sec(loc)
-        #         if i == j == 0:
-        #             h.distance(0, loc, sec=sec)
-        #         stub_dist = h.distance(seg.x, sec=sec)
-        #         if stub_dist > stop_length:
-        #             return
-        #         taper_diam = start_diam + stub_dist / stop_length * delta_diam
-        #         h.pt3dchange(j, taper_diam, sec=sec)
-        #         print("Stub dist is %f (x=%f), diam is %f (assigned %f)" % (stub_dist, loc, seg.diam, taper_diam))
+        # Only fix section defined in SWC morphology
+        normalize_dimensions(self.icell.basal)
         
 
     def _update_position(self, xyz):
@@ -334,15 +253,10 @@ class GPeCellType(cell_base.MorphCellType):
         'with_extracellular': False,
         'electrode_coordinates_um' : ArrayParameter([]),
         'rho_extracellular_ohm_cm' : 0.03, 
-        'transfer_impedance_matrix': ArrayParameter([]),
-        # 3D specification
+        'transfer_impedance_matrix_um': ArrayParameter([]),
+        # Morphology & 3D specification
         'transform': ArrayParameter([]),
-        # Axon
         'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
-        'axon_using_gap_junction': True,
-        'gap_pre_conductance': 1e-5,
-        'gap_post_conductance': 1e-3,
-        'axon_taper_diam': 0.05,
     }
 
     # Defaults for Ephys parameters

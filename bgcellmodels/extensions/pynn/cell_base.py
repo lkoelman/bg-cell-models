@@ -96,9 +96,15 @@ class UnitFetcherPlaceHolder(dict):
 
 def irec_resolve_section(self, spec, multiple=False):
     """
-    Resolve a section specification.
+    Resolve a section specification in the following format: 
+    
+        "seclist:secname[index]"
 
-    Part of interface for compabitibility with TraceSpecRecorder.
+    where seclist is the SectionList name on the NEURON cell object, secname
+    is a string that mathces part of the section name, and index is an index
+    in the resulting collection of matches.
+
+    Provides compabitibility with TraceSpecRecorder.
 
     @return     nrn.Section
                 The section intended by the given section specifier.
@@ -123,17 +129,23 @@ def irec_resolve_section(self, spec, multiple=False):
                 attribute of the icell instance.
     """
 
-    matches = re.search(r'^(?P<secname>\w+)(\[(?P<index>.+)\])?', spec)
+    matches = re.search(
+        r'^(?P<seclist>\w+)(:(?P<secname>\w+))?(?P<slice>\[(?P<index>.+)\])?', spec)
+    sec_list = matches.group('seclist')
     sec_name = matches.group('secname')
-    sec_index = matches.group('index')
+    sec_slice = matches.group('slice')
 
-    if sec_index is None:
-        return getattr(self.icell, sec_name)
+    # No index: spec refers to single section
+    if sec_slice is None:
+        assert sec_name is None
+        return getattr(self.icell, sec_list)
 
-    seclist = list(getattr(self.icell, sec_name))
-    secs = configutil.index_with_str(seclist, spec)
-    if not multiple:
-        assert len(secs) == 1
+    seclist = list(getattr(self.icell, sec_list))
+    if sec_name is not None:
+        seclist = [sec for sec in seclist if sec_name in sec.name()]
+    
+    secs = configutil.index_with_str(seclist, sec_slice)
+    if not multiple and isinstance(secs, list):
         return secs[0]
     else:
         return secs
@@ -698,7 +710,7 @@ class MorphModelBase(object):
         return all_sections
 
 
-    def _init_axon(self, axon_class, axonmodel_use_ais=True):
+    def _init_axon(self, axon_class, with_ais_compartment=True):
         """
         Create and append axon.
 
@@ -719,7 +731,7 @@ class MorphModelBase(object):
             axon_parent_sec = self.icell.soma[0]
 
         # If cell model already has AIS, remove it from axon model
-        if not axonmodel_use_ais:
+        if not with_ais_compartment:
             axon_builder.initial_comp_sequence.pop(0) # = ['aismyelin']
 
         axon = axon_builder.build_along_streamline(
@@ -800,7 +812,7 @@ class MorphModelBase(object):
         h.xtra_setpointers(all_sections)
         
         # Alternative using lookup function
-        if self.transfer_impedance_matrix is None or len(self.transfer_impedance_matrix) == 0:
+        if self.transfer_impedance_matrix_um is None or len(self.transfer_impedance_matrix_um) == 0:
             # Set transfer impedance analytically
             x_elec, y_elec, z_elec = self.electrode_coordinates_um
             h.xtra_set_impedances_pointsource(all_sections,
@@ -808,10 +820,12 @@ class MorphModelBase(object):
                 x_elec, y_elec, z_elec)
         else:
             # Set using look-up table / nearest-neigbhors
-            Z_coords = self.transfer_impedance_matrix[:, :3]
-            Z_values = self.transfer_impedance_matrix[:, -1]
+            Z_coords = self.transfer_impedance_matrix_um[:, :3]
+            Z_values = self.transfer_impedance_matrix_um[:, -1]
             xtra_utils.set_transfer_impedances_nearest(
-                all_sections, Z_coords, Z_values, max_dist=5.0, warn_dist=0.1)
+                all_sections, Z_coords, Z_values, max_dist=5.0, warn_dist=0.1,
+                min_electrode_dist=10.0, electrode_coords=self.electrode_coordinates_um, 
+                Z_intersect=1e12)
 
         # Set up LFP calculation
         # NOTE: Recorder class records lfp_tracker.summator._ref_summed

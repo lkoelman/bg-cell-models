@@ -68,7 +68,19 @@
 // =============================================================================
     "CTX.axons": {
         // Recorded traces
-        "traces": [],
+        "traces": [
+            {
+                "cells": "all",
+                "sampling_period": 0.05,
+                "specs": {
+                    // Axonal spikes:
+                    "v_axterm": {"sec":"axonal[-1]", "loc":0.5, "var":"v"},
+                    "v_axnode0": {"sec":"axonal:node[0]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg2": {"sec":"axonal:node[-2]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg4": {"sec":"axonal:node[-4]", "loc":0.5, "var":"v"},
+                },
+            },
+        ],
         // CTX -> CTX.axons Projection
         // ----------------------------------------------------------------------
         // Each CTX cell, including surrogates, has their own axon
@@ -174,6 +186,18 @@
     "GPE.proto": {
         "traces": [
             {
+                "cells": "all",
+                "sampling_period": 0.05,
+                "specs": {
+                    // Axonal spikes:
+                    "v_axterm": {"sec":"axonal[-1]", "loc":0.5, "var":"v"},
+                    "v_axnode0": {"sec":"axonal:node[0]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg3": {"sec":"axonal:node[-3]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg6": {"sec":"axonal:node[-6]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg9": {"sec":"axonal:node[-9]", "loc":0.5, "var":"v"},
+                },
+            },
+            {
                 "cells": 3,
                 "sampling_period": 0.05,
                 "specs": {
@@ -200,7 +224,7 @@
                     "n": 10,
                 },
             },
-            "receptor_type": "distal.AMPA+NMDA",
+            "receptor_type": "axon_terminal2distal.AMPA+NMDA",
             "synapse": {
                 "name": "GluSynapse",
                 "parameters": {
@@ -243,7 +267,7 @@
                     "allow_self_connections": false,
                 },
             },
-            "receptor_type": "AIS2proximal.GABAA+GABAB",
+            "receptor_type": "soma2proximal.GABAA+GABAB",
             "synapse": {
                 "name": "GabaSynTmHill",
                 "parameters": {
@@ -362,11 +386,21 @@
         // Recorded traces
         "traces": [
             {
+                "cells": "all",
+                "sampling_period": 0.05,
+                "specs": {
+                    // Axonal spikes:
+                    "v_axterm": {"sec":"axonal[-1]", "loc":0.5, "var":"v"},
+                    "v_axnode0": {"sec":"axonal:node[0]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg3": {"sec":"axonal:node[-3]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg6": {"sec":"axonal:node[-6]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg9": {"sec":"axonal:node[-9]", "loc":0.5, "var":"v"},
+                },
+            },
+            {
                 "cells": 3,
                 "sampling_period": 0.05,
                 "specs": {
-                    // Axon terminal spikes:
-                    "v_axterm": {"sec":"axonal[-1]", "loc":0.5, "var":"v"},
                     // CTX inputs
                     "g_AMPA{:d}": {"syn":"GLUsyn[0:3]", "var":"g_AMPA"},
                     "g_NR2BD{:d}": {"syn":"GLUsyn[0:3]", "var":"g_NMDA"},
@@ -528,7 +562,7 @@
                     },
                 },
             },
-            "receptor_type": "distal.AMPA+NMDA",
+            "receptor_type": "soma2distal.AMPA+NMDA",
             "synapse": {
                 "name": "GluSynapse",
                 "parameters": {
