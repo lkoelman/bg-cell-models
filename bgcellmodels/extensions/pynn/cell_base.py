@@ -27,6 +27,7 @@ from pyNN.neuron.cells import NativeCellType
 from bgcellmodels.common import nrnutil, configutil
 from bgcellmodels.common import treeutils
 from bgcellmodels.emfield import xtra_utils
+from bgcellmodels.extensions.pynn import connection as ext_conn
 
 # Global variables
 logger = logging.getLogger('ext.pynn.cell_base')
@@ -56,10 +57,10 @@ def ephys_sim_from_pynn():
 class UnitFetcherPlaceHolder(dict):
     """
     At the moment there isn't really a robust way to get the correct
-    units for all variables. 
+    units for all variables.
 
     This can be set explicity for each possible variable that is recordable
-    from the cell type, but with our custom TraceSpecRecorder the variable name 
+    from the cell type, but with our custom TraceSpecRecorder the variable name
     can be anything.
     """
     def __getitem__(self, key):
@@ -96,8 +97,8 @@ class UnitFetcherPlaceHolder(dict):
 
 def irec_resolve_section(self, spec, multiple=False):
     """
-    Resolve a section specification in the following format: 
-    
+    Resolve a section specification in the following format:
+
         "seclist:secname[index]"
 
     where seclist is the SectionList name on the NEURON cell object, secname
@@ -111,7 +112,7 @@ def irec_resolve_section(self, spec, multiple=False):
 
 
     @param      spec : str
-                
+
                 Section specifier in the format 'section_container[index]',
                 where 'section_container' is the name of a secarray, Section,
                 or SectionList that is a public attribute of the icell,
@@ -120,7 +121,7 @@ def irec_resolve_section(self, spec, multiple=False):
 
     @note       The default Section arrays for Ephys.CellModel are:
                 'soma', 'dend', 'apic', 'axon', 'myelin'.
-                
+
                 The default SectionLists are:
                 'somatic', 'basal', 'apical', 'axonal', 'myelinated', 'all'
 
@@ -143,7 +144,7 @@ def irec_resolve_section(self, spec, multiple=False):
     seclist = list(getattr(self.icell, sec_list))
     if sec_name is not None:
         seclist = [sec for sec in seclist if sec_name in sec.name()]
-    
+
     secs = configutil.index_with_str(seclist, sec_slice)
     if not multiple and isinstance(secs, list):
         return secs[0]
@@ -166,7 +167,7 @@ class MorphCellType(NativeCellType):
             Required by PyNN, celltype must have method `units(varname)` that
             returns the units of recorded variables
 
-    
+
     @attr   receptor_types : list(str)
             Required by PyNN: receptor types accepted by Projection constructor.
             This attribute is created dynamically by combining
@@ -186,7 +187,7 @@ class MorphCellType(NativeCellType):
                     Synaptic mechanism names of synapses that should be allowed
                     on this cell type.
 
-        @post       The list of receptors in self.receptor_types will be 
+        @post       The list of receptors in self.receptor_types will be
                     updated with each receptor in 'with_receptors' for every
                     cell location/region.
         """
@@ -200,7 +201,7 @@ class MorphCellType(NativeCellType):
             all_receptors = celltype_receptors
         else:
             all_receptors = celltype_receptors + list(extra_receptors)
-        
+
         region_receptors = []
         for region in self.model.regions:
             for receptor in all_receptors:
@@ -260,13 +261,13 @@ class MorphModelBase(object):
     --------
 
     Called by ID._build_cell() defined in module pyNN/neuron/simulator.py
-    
+
     - Population._create_cells()
         - Population.cell_type.model(**cell_parameters)
             - MorphModelBase.__init__()
                 - instantiate()
     """
-    
+
     # Combined with celltype.receptors in MorphCellType constructor
     # to make celltype.receptor_types in format 'region.receptor'
     regions = []
@@ -295,7 +296,7 @@ class MorphModelBase(object):
         # Pass param names from cell_type.(default_parameters + extra_parameters)
         # self.parameter_names must be defined in the subclass body.
         self.parameter_names.append('owning_gid') # gid of owning ID object
-        
+
         # Make parameters accessible as attributes
         for param_name in kwargs.keys():
 
@@ -306,12 +307,12 @@ class MorphModelBase(object):
 
             elif param_name.endswith('_scale'):
                 continue # handle after instantiation
-            
+
             # Set the parameter
             param_value = kwargs.pop(param_name)
             if isinstance(param_value, ArrayParameter):
                 param_value = param_value.value
-            
+
             setattr(self, param_name, param_value)
 
         # Support for multi-compartment connections
@@ -336,7 +337,7 @@ class MorphModelBase(object):
         self.rec = h.NetCon(self.source, None,
                             self.get_threshold(), 0.0, 0.0,
                             sec=self.source_section)
-        
+
         # Update sources for connections
         self.region_to_gid['soma'] = self.owning_gid
         self.gid_to_source[self.owning_gid] = self.source
@@ -472,24 +473,24 @@ class MorphModelBase(object):
                     Receptor descriptors.
 
         @param      mark_used : bool
-                    Whether synapse is 'consumed' by caller and should be 
+                    Whether synapse is 'consumed' by caller and should be
                     marked as used.
 
         @param      **kwargs
                     (Unused) extra keyword arguments for use when overriding
                     this method in a subclass.
-        
+
         Returns
         -------
 
         @return     synapse, num_used : tuple(nrn.POINT_PROCESS, int)
-                    
+
                     NEURON point process object that can serve as the
                     target of a NetCon object, and the amount of times
                     the synapse has been used before as the target
                     of a NetCon.
         """
-        syns = self.make_synapses_cached_region(region, receptors, 
+        syns = self.make_synapses_cached_region(region, receptors,
                                                 num_contacts, **kwargs)
         synmap_key = tuple(sorted(receptors))
         self._synapses[region].setdefault(synmap_key, []).extend(syns)
@@ -506,7 +507,7 @@ class MorphModelBase(object):
         """
         rng = kwargs.get('rng', np.random)
         region_segs = self._cached_region_segments[region]
-        seg_ids = rng.choice(len(region_segs), 
+        seg_ids = rng.choice(len(region_segs),
                              num_synapses, replace=False)
         if 'mechanism' in kwargs:
             mech_name = kwargs['mechanism']
@@ -580,7 +581,7 @@ class MorphModelBase(object):
         on this cell (used by Recorder).
 
         @param      spec : str
-                    
+
                     Synapse specifier in format "mechanism_name[slice]" where
                     'slice' as a slice expression like '::2' or integer.
 
@@ -589,7 +590,7 @@ class MorphModelBase(object):
         """
         matches = re.search(r'^(?P<mechname>\w+)', spec)
         mechname = matches.group('mechname')
-        
+
         synlist = self.get_synapses_by_mechanism(mechname)
         if len(synlist) == 0:
             return []
@@ -605,9 +606,9 @@ class MorphModelBase(object):
         """
         Override __getattr__ to support dynamic properties that are not
         explicitly declared.
-        
+
         The following dynamic attributes are supported:
-        
+
             - scale factors for NEURON RAMGE variables
 
         @pre    Subclass must define attribute 'rangevar_names'
@@ -620,7 +621,7 @@ class MorphModelBase(object):
 
         if handle_attribute and (any(
             [v.startswith(attr_name_matches.groups()[0]) for v in self.rangevar_names])):
-        
+
             # search for NEURON RANGE variable to be scaled
             varname = attr_name_matches.groups()[0]
             scale_factor_name = '_' + varname + '_scale'
@@ -640,7 +641,7 @@ class MorphModelBase(object):
     def __setattr__(self, name, value):
         """
         Override __setattr__ to support dynamic properties.
-        
+
         The following dynamic attributes are supported:
 
             - scale factors NEURON RANGE variables, by assigning
@@ -686,7 +687,7 @@ class MorphModelBase(object):
                     continue
                 for seg in sec:
                     setattr(seg, varname, relative_scale * getattr(seg, varname))
-        
+
         # Save scale factor as self._<varname>_scale
         setattr(self, scale_factor_name, value)
 
@@ -745,7 +746,7 @@ class MorphModelBase(object):
                     gap_conductances=(getattr(self, 'gap_pre_conductance', None),
                                       getattr(self, 'gap_post_conductance', None)),
                     tolerance_mm=1e-4)
-    
+
         self.axon = axon
 
         # Change source for NetCons (see pyNN.neuron.simulator code)
@@ -755,7 +756,7 @@ class MorphModelBase(object):
         self.source = terminal_source
 
         # Support for multicompartment connections
-        terminal_gid = self.owning_gid + int(1e6)
+        terminal_gid = ext_conn.gid_by_region(self.owning_gid, 'axon_terminal')
         self.region_to_gid['axon_terminal'] = terminal_gid
         self.gid_to_source[terminal_gid] = terminal_source
         self.gid_to_section[terminal_gid] = terminal_sec
@@ -810,7 +811,7 @@ class MorphModelBase(object):
         # Calculate coordinates of each compartment's (segment) center
         h.xtra_segment_coords_from3d(all_sections)
         h.xtra_setpointers(all_sections)
-        
+
         # Alternative using lookup function
         if self.transfer_impedance_matrix_um is None or len(self.transfer_impedance_matrix_um) == 0:
             # Set transfer impedance analytically
@@ -824,7 +825,7 @@ class MorphModelBase(object):
             Z_values = self.transfer_impedance_matrix_um[:, -1]
             xtra_utils.set_transfer_impedances_nearest(
                 all_sections, Z_coords, Z_values, max_dist=5.0, warn_dist=0.1,
-                min_electrode_dist=10.0, electrode_coords=self.electrode_coordinates_um, 
+                min_electrode_dist=10.0, electrode_coords=self.electrode_coordinates_um,
                 Z_intersect=1e12)
 
         # Set up LFP calculation

@@ -12,10 +12,10 @@ Example
 
 >>> pop_A = Population(num_cell, cell_type, label, initial_vals)
 >>> pop_B = Population(num_cell, cell_type, label, initial_vals)
->>> 
+>>>
 >>> connector = ConnectorType(**connector_params) # connection pattern
 >>> synapse = SynapseType(**synapse_params) # has Connection type in class definition
->>> 
+>>>
 >>> proj = Projection(pop_A, pop_B, connector=connector
 >>>                   synapse_type=synapse, receptor_type='GABAA')
 
@@ -48,22 +48,35 @@ import re
 
 from pyNN.neuron.simulator import Connection, state
 
+# Multicompartment cell support: one PyNN cell model can have multiple gids associated
+# with it. Each subcellular region is mapped to the base gid plus an offset.
+region_to_gid_offset = {
+    "soma": 0,
+    "axon_terminal": int(1e6),
+}
+
+def gid_by_region(base_gid, region_name):
+    """
+    Return GID for subcellular region on cell associated with given base gid.
+    """
+    return int(base_gid) + region_to_gid_offset[region_name]
+
 
 class NativeSynToRegion(Connection):
     """
     Connect a synaptic mechanism (MOD file name) to a cell region
-    pecified as Ephys location. 
+    pecified as Ephys location.
 
-    This Connection class can represent a multi-synaptic connection and hence 
+    This Connection class can represent a multi-synaptic connection and hence
     encapsulate multiple NEURON synapse and NetCon objects.
 
-    This Connection class can obly be used with NativeSynapse defined in 
+    This Connection class can obly be used with NativeSynapse defined in
     this module.
 
     USAGE
     -----
 
-        >>> syn_params = {'netcon:weight[0]': 1.0, 'netcon:weight[1]: 0.5', 
+        >>> syn_params = {'netcon:weight[0]': 1.0, 'netcon:weight[1]: 0.5',
         >>>               'netcon:delay': 3.0, 'syn:e_rev': 80.0,
         >>>               'syn:tau_fall': 15.0, 'syn:tau_rise': 5.0}
         >>>
@@ -72,7 +85,7 @@ class NativeSynToRegion(Connection):
         >>>
         >>> proj = sim.Projection(pop_pre, pop_post, connector, syn,
                                   receptor_type='distal_region.AMPA+NMDA')
-    
+
     """
 
     def __init__(self, projection, pre, post, **parameters):
@@ -112,8 +125,8 @@ class NativeSynToRegion(Connection):
         self.synapse = synapse
         if used > 0:
             raise Exception("No unused synapses on target cell {}".format())
-        
-        
+
+
         # Create NEURON synapse and NetCon
         pre_gid = int(self.presynaptic_cell)
         self.nc = state.parallel_context.gid_connect(pre_gid, self.synapse)
@@ -128,7 +141,7 @@ class NativeSynToRegion(Connection):
 
         pynn_weight = parameters.pop('weight')
         parameters.setdefault('netcon:weight[0]', pynn_weight)
-        
+
         for param_spec, value_spec in parameters.iteritems():
             # Convert value specification to actual parameter value
             if callable(value_spec):
@@ -149,7 +162,7 @@ class NativeSynToRegion(Connection):
 
             # interpret parameter specification in format "target:attribute[index]"
             matches = re.search(
-                r'^(?P<target>\w+):(?P<parname>\w+)(\[(?P<index>\d+)\])?', 
+                r'^(?P<target>\w+):(?P<parname>\w+)(\[(?P<index>\d+)\])?',
                 param_spec)
             target_name = matches.group('target')
             param_name = matches.group('parname')
@@ -203,17 +216,18 @@ class ConnectionNrnWrapped(Connection):
 
         # Ask cell for segment in target region
         num_contacts = getattr(projection.synapse_type, 'num_contacts', 1)
-        self.synapses = post_cell.get_synapses(post_region, receptors, num_contacts, 
+        self.synapses = post_cell.get_synapses(post_region, receptors, num_contacts,
                                                mechanism=mech_name)
         # if used > 0 and not post_cell.allow_synapse_reuse:
         #     raise Exception("No unused synapses on target cell {}".format(type(post_cell)))
 
         # Get pre-synaptic source
         if pre_region is not None:
-            pre_gid = self.presynaptic_cell._cell.region_to_gid[pre_region]
+            # pre_gid = self.presynaptic_cell._cell.region_to_gid[pre_region]
+            pre_gid = gid_by_region(int(self.presynaptic_cell), pre_region)
         else:
             pre_gid = int(self.presynaptic_cell)
-        
+
         # Create NEURON NetCon
         self.ncs = []
         weight = parameters.pop('weight')
@@ -228,12 +242,12 @@ class ConnectionNrnWrapped(Connection):
         # Store first element, should all have same parameter values for Projection.get(...)
         self.synapse = self.synapses[0]
         self.nc = self.ncs[0]
-        
+
         # if we have a mechanism (e.g. from 9ML) that includes multiple
         # synaptic channels, need to set nc.weight[1] here
         if self.nc.wcnt() > 1 and hasattr(self.postsynaptic_cell._cell, "type"):
             self.nc.weight[1] = self.postsynaptic_cell._cell.type.receptor_types.index(projection.receptor_type)
-        
+
         # Plastic synapses use SynapseType.model to store weight adjuster,
         # we use it for the synapse model
         if mech_name is not None:
@@ -271,12 +285,12 @@ class ConnectionNrnWrapped(Connection):
         -----
 
         - this hides properties of the base class (see Python data model)
-    
-        - in original Connector class properties are added for each attribute 
+
+        - in original Connector class properties are added for each attribute
           of the associated synapse type  and weight adjuster. See
           See https://github.com/NeuralEnsemble/PyNN/blob/master/pyNN/neuron/simulator.py#L340
 
-        - We catch the property assignments here so we don't have to create 
+        - We catch the property assignments here so we don't have to create
           explicit properties.
         """
         if hasattr(self, 'synapse_type') and (name in self.synapse_type.get_parameter_names()):
@@ -329,8 +343,8 @@ class MultiMechanismConnection(Connection):
         for mech_name, subcell_conn in projection.synapse_type.subcellular_conn.iteritems():
             region, mech_receptors = subcell_conn['receptors'].split(".")
             receptor_list = mech_receptors.split("+")
-            synapses = post_cell.get_synapses(region, receptor_list, 
-                                              subcell_conn['num_contacts'], 
+            synapses = post_cell.get_synapses(region, receptor_list,
+                                              subcell_conn['num_contacts'],
                                               mechanism=mech_name,
                                               synapse_reuse=subcell_conn['num_converge'])
             self.synapses[mech_name] = synapses
@@ -346,8 +360,8 @@ class MultiMechanismConnection(Connection):
             nc.weight[0] = weight
             nc.delay = delay
             self.ncs.append(nc)
-        
-        # Apply synapse parameters        
+
+        # Apply synapse parameters
         wrapper_params = self.synapse_type.get_parameter_names()
         for name, value in parameters.items():
             if name in wrapper_params:
@@ -357,7 +371,7 @@ class MultiMechanismConnection(Connection):
         # Store first element, should all have same parameter values for Projection.get(...)
         self.synapse = all_synapses[0]
         self.nc = self.ncs[0]
-        
+
         # if we have a mechanism (e.g. from 9ML) that includes multiple
         # synaptic channels, need to set nc.weight[1] here
         if self.nc.wcnt() > 1 and hasattr(self.postsynaptic_cell._cell, "type"):
