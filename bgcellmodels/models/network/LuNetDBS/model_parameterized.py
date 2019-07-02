@@ -473,8 +473,8 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
         stn_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_stn]
-        morph_io.morphology_to_PLY(stn_allsec, 'STN_nodes_anat-mm.ply',
-                    text=False, scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+        morph_io.morphology_to_TXT(stn_allsec, 'STN_nodes_anat-mm.txt',
+            scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
 
     # # Check coordinates
     # stn_gpe_all_nodes = []
@@ -579,8 +579,8 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
         gpe_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_gpe_proto]
-        morph_io.morphology_to_PLY(gpe_allsec, 'GPE_nodes_anat-mm.ply',
-            text=False, scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+        morph_io.morphology_to_TXT(gpe_allsec, 'GPE_nodes_anat-mm.txt',
+            scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
 
     # # Check coordinates
     # for cell_id in pop_gpe_proto:

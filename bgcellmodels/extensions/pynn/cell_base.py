@@ -737,7 +737,7 @@ class MorphModelBase(object):
 
         axon = axon_builder.build_along_streamline(
                     self.streamline_coordinates_mm,
-                    termination_method='nodal_cutoff',
+                    termination_method='terminal_sequence',
                     interp_method='arclength',
                     parent_cell=self.icell,
                     parent_sec=axon_parent_sec,

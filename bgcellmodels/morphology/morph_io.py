@@ -450,7 +450,55 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
     PlyData(elements, text=text).write(filepath)
 
 
+def morphology_to_TXT(section_lists, filepath, segment_centers=True,
+                      scale=1.0, rgb=(0.0, 0.0, 0.0),
+                      translation=None, transform=None, precision_mm=1e-6):
+    """
+    Write neuron morphology to PLY file using degenerate faces.
 
+    Each segment is represented by a degenerate face, i.e. a triangle
+    with vertices [a b a].
+
+    @pre    requires package plyfile, e.g. `pip install plyfile`
+
+    @param  segment_centers : bool
+            If true, write 3D locations of segment centers (nodes, i.e. centers
+            of simulated compartments). This is useful for knowing the locations
+            of compartments, and their current/voltage sources in 3D space.
+
+    @param  scale : float
+            Scale factor applied to coordinates after transform and translation
+            is applied. Translation and transform not affected by scale.
+    """
+
+    # Get 3D samples
+    if segment_centers:
+        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
+                                        samples_as_rows=True)
+    else:
+        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
+                                        include_diam=False)
+
+    # Apply transformation before writing
+    if translation or transform or (scale != 1.0):
+        samples_mat = np.ones((len(samples_xyz), 4))
+        samples_mat[:,:3] = samples_xyz
+        A = np.array(transform) if transform else np.eye(4)
+        if translation:
+            A[:-1, 3] += translation
+        samples_mat = np.dot(samples_mat, A.T)
+        if scale != 1.0:
+            samples_mat *= scale
+        samples_xyz = samples_mat[:, :3]
+    else:
+        samples_xyz = np.array(samples_xyz)
+
+    # Set precision to 0.001 um
+    num_significant = int(-np.log10(precision_mm) - 3 - np.log10(scale))
+    fmt = '%.{:d}e'.format(num_significant)
+
+    # Save to text file
+    np.savetxt(filepath, samples_xyz, fmt=fmt)
 
 
 if __name__ == '__main__':
