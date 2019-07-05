@@ -70,7 +70,7 @@
         // Recorded traces
         "traces": [
             {
-                "cells": "all",
+                "cells": "::50",
                 "sampling_period": 0.05,
                 "specs": {
                     // Axonal spikes:

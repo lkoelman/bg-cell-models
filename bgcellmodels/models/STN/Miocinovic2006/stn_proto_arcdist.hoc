@@ -403,6 +403,7 @@ begintemplate STN_morph_arcdist
                 yy = y3d(ii-1)
                 zz = z3d(ii-1)
             }
+
         }
 
         // Connect AIS to soma first, so default pt3dstyle(0) does its work
@@ -417,17 +418,18 @@ begintemplate STN_morph_arcdist
             pt3dstyle(0)         // translated to parent connection point (default)
 
             nseg = 2
-            L = relative_length * soma_length
 
             // Set biophysical properties
             Ra = 150.2
             cm = 1
 
             // Create tapering diam
+            dd = relative_length * soma_length
             pt3dadd(xx, yy, zz, start_diam)
-            pt3dadd(xx+(L*dx), yy+(L*dy), zz+(L*dz), end_diam)
+            pt3dadd(xx+(dd*dx), yy+(dd*dy), zz+(dd*dz), end_diam)
             
             // Add 3D points based on geometry
+            // L = relative_length * soma_length
             //diam(0) = start_diam
             //diam(1) = end_diam
             // define_shape()

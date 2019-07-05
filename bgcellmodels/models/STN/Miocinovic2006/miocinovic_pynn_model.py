@@ -115,7 +115,7 @@ class GilliesSwcModel(cell_base.MorphModelBase):
 
         # Create and append axon
         if len(self.streamline_coordinates_mm) > 0:
-            self._init_axon(self.axon_class)
+            self._init_axon(self.axon_class, with_ais_compartment=False)
 
         # Init extracellular stimulation & recording
         if self.with_extracellular:
@@ -171,7 +171,7 @@ class StnMorphType(cell_base.MorphCellType):
     #       converting datatypes. It supports only basic numpy-compatible types.
     default_parameters = {
         # Cell biophysics
-        'somatic_gNaP_factor': 3.0,
+        'somatic_gNaP_factor': 1.0,
         'membrane_noise_std': 0.1,
         # Morphology & 3D specification
         'morphology_path': np.array('placeholder/path'), # workaround for strings
