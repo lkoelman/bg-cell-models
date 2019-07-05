@@ -145,7 +145,12 @@ def irec_resolve_section(self, spec, multiple=False):
     if sec_name is not None:
         seclist = [sec for sec in seclist if sec_name in sec.name()]
 
-    secs = configutil.index_with_str(seclist, sec_slice)
+    try:
+        secs = configutil.index_with_str(seclist, sec_slice)
+    except IndexError:
+        raise IndexError("Invalid index expression {} for seclist {} in cell {}".format(
+            spec, seclist, self))
+
     if not multiple and isinstance(secs, list):
         return secs[0]
     else:
