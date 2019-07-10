@@ -694,7 +694,7 @@ class AxonBuilder(object):
                      tot_num_seg, len(sec_ordered))
 
         if num_tol_exceeded > 0:
-            logger.warning('exceeded length tolerance in %d compartments '
+            logger.debug('exceeded length tolerance in %d compartments '
                             '(worst = %f mm, tolerance = %f mm)', num_tol_exceeded,
                             max(diffs_tol_exceeded), tolerance_mm)
 
