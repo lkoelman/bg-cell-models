@@ -7,6 +7,8 @@ Signal manipulation tools for Neo
 
 import numpy as np
 import scipy.signal
+import bgcellmodels.common.signal as sig_anal
+import neo
 
 
 def make_slice(signal, interval):
@@ -17,6 +19,32 @@ def make_slice(signal, interval):
     tstart = signal.t_start.magnitude
     irange = [int((t-tstart)/Ts) for t in interval]
     return np.s_[irange[0]:irange[1]] # slice object
+
+
+def make_spiketrains(signal, threshold, **spiketrain_kwargs):
+    """
+    Make Neo.SpikeTrain objects from Neo.AnalogSignal.
+    """
+    assert (signal.shape[0] > signal.shape[1]) or (signal.ndim == 1)
+    vv = signal.magnitude
+    tv = signal.times.magnitude
+
+    spike_trains = []
+    for i_signal in xrange(signal.shape[1]):
+        vm = vv[:, i_signal]
+        spike_idx = sig_anal.spike_indices(vm, threshold, loc='onset')
+        spike_times = tv[spike_idx]
+
+        spike_trains.append(
+            neo.SpikeTrain(
+                spike_times,
+                t_start = signal.t_start,
+                t_stop  = signal.t_stop,
+                units   = 'ms',
+                **spiketrain_kwargs)
+        )
+
+    return spike_trains
 
 
 def butterworth_filter(
