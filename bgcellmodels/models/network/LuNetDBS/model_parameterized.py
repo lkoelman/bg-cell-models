@@ -108,7 +108,7 @@ logutils.setLogLevel('WARNING', [
     'bluepyopt.ephys.morphologies',
     'AxonBuilder'])
 
-logutils.setLogLevel('DEBUG', ['simulation'])
+logutils.setLogLevel('DEBUG', ['simulation', 'PyNN.simulator'])
 
 h("XTRA_VERBOSITY = 0")
 
@@ -1080,7 +1080,10 @@ def simulate_model(
 
     # Save cell information
     for pop in all_pops.values() + all_asm.values():
-        saved_params.setdefault(pop.label, {})['gids'] = pop.all_cells.astype(int)
+        pop_params = saved_params.setdefault(pop.label, {})
+        pop_cell_gids = list(pop.all_cells.astype(int))
+        pop_subcell_gids = sum((sim.state.get_spkgids(gid) for gid in pop_cell_gids), [])
+        pop_params['gids'] = pop_cell_gids + pop_subcell_gids
 
     # Save connection information
     for pre_pop, post_pops in all_proj.iteritems():
