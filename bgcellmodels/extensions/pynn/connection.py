@@ -48,19 +48,6 @@ import re
 
 from pyNN.neuron.simulator import Connection, state
 
-# Multicompartment cell support: one PyNN cell model can have multiple gids associated
-# with it. Each subcellular region is mapped to the base gid plus an offset.
-region_to_gid_offset = {
-    "soma": 0,
-    "axon_terminal": int(1e6),
-}
-
-def gid_by_region(base_gid, region_name):
-    """
-    Return GID for subcellular region on cell associated with given base gid.
-    """
-    return int(base_gid) + region_to_gid_offset[region_name]
-
 
 class NativeSynToRegion(Connection):
     """
@@ -193,8 +180,8 @@ class ConnectionNrnWrapped(Connection):
         self.synapse_type = projection.synapse_type
         self.presynaptic_index = pre
         self.postsynaptic_index = post
-        self.presynaptic_cell = projection.pre[pre]
-        self.postsynaptic_cell = projection.post[post]
+        self.presynaptic_cell = projection.pre[pre]     # ID instance
+        self.postsynaptic_cell = projection.post[post]  # ID instance
         post_cell = self.postsynaptic_cell._cell # CellType.model instance
 
         # Get the target region on the cell and the receptor type
@@ -222,11 +209,15 @@ class ConnectionNrnWrapped(Connection):
         #     raise Exception("No unused synapses on target cell {}".format(type(post_cell)))
 
         # Get pre-synaptic source
-        if pre_region is not None:
-            # pre_gid = self.presynaptic_cell._cell.region_to_gid[pre_region]
-            pre_gid = gid_by_region(int(self.presynaptic_cell), pre_region)
-        else:
-            pre_gid = int(self.presynaptic_cell)
+        pre_gid = int(self.presynaptic_cell)
+        if (pre_region is not None) and state.cell_has_multiple_sources(pre_gid):
+            # TODO: export gid->gid pairs besides connection matrix
+            pre_gid = state.query_spkgid(pre_gid, pre_region)
+
+        # Save the actual GIDs (different from ID in case of multicompartment cell)
+        self.presynaptic_gid = pre_gid
+        self.postsynaptic_gid = int(self.postsynaptic_cell)
+            
 
         # Create NEURON NetCon
         self.ncs = []

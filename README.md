@@ -1,4 +1,3 @@
-
 # Cell models
 
 ## Overview of BG cell models & network models
@@ -11,7 +10,7 @@ See notes in `notes/BG_modelling_studies.md`
 
 
 - `./GilliewWillshaw/` Gillies & Willshaw (2005) STN cell model
-	
+
 	+ [original model in NEURON, simplified morphology](https://senselab.med.yale.edu/ModelDB/showmodel.cshtml?model=74298)
 
 	+ [same channel mechanisms in morphological reconstruction of STN neuron](https://senselab.med.yale.edu/ModelDB/ShowModel.cshtml?model=151460)
@@ -51,16 +50,16 @@ pip install lazyarray pint elephant
 
 git clone https://github.com/BlueBrain/BluePyOpt.git
 cd BluePyOpt && git checkout 1456941abe425b4a20fb084eab1cb6415ccfe2b8
-cd .. & pip install -e ./BluePyOpt
+pip install -e .
 
-git clone https://github.com/NeuralEnsemble/PyNN.git
-cd PyNN && git checkout 4b80343ba17afd688a92b3a0755ea73179c9daab
+git clone https://github.com/lkoelman/PyNN.git
+cd PyNN && git checkout lkmn-multicomp
 cd pyNN/neuron/nmodl && nrnivmodl
-cd ../../../.. & pip install -e ./PyNN
+cd ../../.. & pip install -e .
 
 git clone https://github.com/lkoelman/python-neo.git
 cd python-neo && git checkout lkmn-dev # development version with MATLAB annotation support
-cd .. & pip install -e ./python-neo
+pip install -e .
 
 git clone https://github.com/lkoelman/LFPsim.git
 cd LFPsim/lfpsim && nrnivmodl

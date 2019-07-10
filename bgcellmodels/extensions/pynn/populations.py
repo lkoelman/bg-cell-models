@@ -4,6 +4,7 @@ Modifications to PyNN Population class.
 
 from pyNN.neuron import Population as NrnPopulation
 from bgcellmodels.extensions.pynn.recording import TraceSpecRecorder
+from pyNN.neuron.simulator import state
 
 # Monkey-patching of pyNN.neuron.Population class
 # pyNN.neuron.Population._recorder_class = TraceSpecRecorder
@@ -53,6 +54,11 @@ class Population(NrnPopulation):
         notified of their 3D position assigned by PyNN.
         """
         super(Population, self)._create_cells()
+
+        # Synchronize GID information between ranks
+        state.synchronize_gid_data()
+
+        # Call _post_build(...) on each cell, so they can query population
         for i, (cell_id, is_local) in enumerate(zip(self.all_cells, self._mask_local)):
             # NOTE: i should be same as Population.id_to_index(id)
             if is_local:

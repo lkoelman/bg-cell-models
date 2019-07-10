@@ -1116,9 +1116,14 @@ def simulate_model(
                         pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
                         minw=minw, maxw=maxw))
 
-            # Make (gid, gid) connectivity pairs
+            # Save all connectivity pairs, using cell indices, and GIDs
             pop_idx_pairs = [tuple(pair) for pair in pre_post_params[:, 0:2].astype(int)]
-            cell_gid_pairs = [(int(proj.pre[a]), int(proj.post[b])) for a, b in pop_idx_pairs]
+            cell_gid_pairs = []
+            for conn in proj.connections:
+                if hasattr(conn, 'presynaptic_gid'):
+                    cell_gid_pairs.append((conn.presynaptic_gid, conn.postsynaptic_gid))
+                else:
+                    cell_gid_pairs.append((int(conn.presynaptic_cell), int(conn.postsynaptic_cell)))
 
             # Append to saved dictionary
             proj_params = saved_params[pre_pop].setdefault(post_pop, {})

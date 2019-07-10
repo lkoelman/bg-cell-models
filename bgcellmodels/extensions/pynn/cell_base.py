@@ -322,8 +322,8 @@ class MorphModelBase(object):
 
         # Support for multi-compartment connections
         self.region_to_gid = {}
-        self.gid_to_source = {}
-        self.gid_to_section = {}
+        self.region_to_source = {}
+        self.region_to_section = {}
 
         # Instantiate cell and synapses in NEURON
         self.axon = None
@@ -345,8 +345,8 @@ class MorphModelBase(object):
 
         # Update sources for connections
         self.region_to_gid['soma'] = self.owning_gid
-        self.gid_to_source[self.owning_gid] = self.source
-        self.gid_to_section[self.owning_gid] = self.source_section
+        self.region_to_source['soma'] = self.source
+        self.region_to_section['soma'] = self.source_section
 
         # See pyNN.neuron.recording.Recorder._record()
         self.spike_times = h.Vector(0)
@@ -761,10 +761,10 @@ class MorphModelBase(object):
         self.source = terminal_source
 
         # Support for multicompartment connections
-        terminal_gid = ext_conn.gid_by_region(self.owning_gid, 'axon_terminal')
-        self.region_to_gid['axon_terminal'] = terminal_gid
-        self.gid_to_source[terminal_gid] = terminal_source
-        self.gid_to_section[terminal_gid] = terminal_sec
+        region = 'axon_terminal'
+        self.region_to_gid[region] = None # mark as unset
+        self.region_to_source[region] = terminal_source
+        self.region_to_section[region] = terminal_sec
 
 
     def _init_emfield(self):
