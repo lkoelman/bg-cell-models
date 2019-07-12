@@ -751,6 +751,12 @@ def simulate_model(
                                label='CTX.axons',
                                initial_values=initial_values)
 
+    # Export 3D coordinates of compartment centers
+    if export_compartment_coordinates:
+        ctx_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_ctx_axons]
+        morph_io.morphology_to_TXT(ctx_allsec, 'CTX_nodes_anat-mm.txt',
+            scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+
     #===========================================================================
     # STR.MSN POPULATION
 

@@ -145,6 +145,15 @@ class AxonalRelay(object):
         self.lfp_tracker = h.ImembTracker(self.lfp_summator, self.icell.all, "xtra")
 
 
+    def get_all_sections(self):
+        """
+        Get all neuron.Section objects that make up this cell.
+
+        @return     neuron.SectionList containing all sections
+        """
+        return self.icell.all
+
+
 class AxonRelayType(NativeCellType):
     """
     PyNN cell type for use with AxonalRelay cell model.
