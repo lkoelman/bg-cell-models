@@ -192,9 +192,8 @@
                     // Axonal spikes:
                     "v_axterm": {"sec":"axonal[-1]", "loc":0.5, "var":"v"},
                     "v_axnode0": {"sec":"axonal:node[0]", "loc":0.5, "var":"v"},
-                    "v_axnodeneg3": {"sec":"axonal:node[-3]", "loc":0.5, "var":"v"},
-                    "v_axnodeneg6": {"sec":"axonal:node[-6]", "loc":0.5, "var":"v"},
-                    "v_axnodeneg9": {"sec":"axonal:node[-9]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg1": {"sec":"axonal:node[-1]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg2": {"sec":"axonal:node[-2]", "loc":0.5, "var":"v"},
                 },
             },
             {
@@ -392,9 +391,8 @@
                     // Axonal spikes:
                     "v_axterm": {"sec":"axonal[-1]", "loc":0.5, "var":"v"},
                     "v_axnode0": {"sec":"axonal:node[0]", "loc":0.5, "var":"v"},
-                    "v_axnodeneg3": {"sec":"axonal:node[-3]", "loc":0.5, "var":"v"},
-                    "v_axnodeneg6": {"sec":"axonal:node[-6]", "loc":0.5, "var":"v"},
-                    "v_axnodeneg9": {"sec":"axonal:node[-9]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg1": {"sec":"axonal:node[-1]", "loc":0.5, "var":"v"},
+                    "v_axnodeneg2": {"sec":"axonal:node[-2]", "loc":0.5, "var":"v"},
                 },
             },
             {
