@@ -877,6 +877,7 @@ def simulate_model(
         all_proj['CTX']['STN'].set(NMDAsynTM_gmax_NMDA=0.0)
 
     # Only allow GABA-B currents on reported fraction of cells
+    # (can also do this using separate Projections with only GABA-B/GABA-A)
     num_without_GABAB = config['STN'].get('num_cell_without_GABAB', 0)
     if num_without_GABAB > 0:
         # Pick subset of cells with GABA-B disabled
@@ -888,8 +889,6 @@ def simulate_model(
                     if conn.postsynaptic_cell in stn_ids:
                         conn.gmax_GABAB = 0.0
                         print('Disabled GABAB on STN cell with id {}'.format(conn.postsynaptic_cell))
-        # TODO: for cells without GABAB, create new Projection with only GABA-A synapses
-        #       - either from surrogate only or whole population (choose)
 
     #---------------------------------------------------------------------------
     # Sanity check: make sure all populations and projections are instantiated

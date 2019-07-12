@@ -152,7 +152,8 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
             morph_3d.transform_sections(self.icell.all, self.transform)
 
         # Create and append axon
-        if len(self.streamline_coordinates_mm) > 0:
+        self.with_axon = (len(self.streamline_coordinates_mm) > 0)
+        if self.with_axon:
             self._init_axon(self.axon_class)
 
         # Fix conductances if axon is present (compensate loading)
@@ -191,16 +192,20 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         soma = self.icell.soma[0]
         axonal_sections = list(self.icell.axonal)
         ais = axonal_sections[0]
-
-        if len(self.streamline_coordinates_mm) > 0:
-            # With axon: compensate for input impedance decrase
-            soma.diam = 25.0
-            ais.diam = 20.0
+        
+        # Change dimensions depending on whether axon is attached
+        if self.with_axon:
+            # With axon: compensate for input impedance decrease
+            myis = axonal_sections[1]
+            soma.diam = 1.0
+            ais.diam = 1.0
+            myis.diam = 1.0
+            # NOTE: section.L not scaled as opposed to normalize_dimensions()
 
             for seg in soma:
-                seg.gmax_NaP = 9.1 * 0.000102 # last factor is default
+                seg.gmax_NaP = 6.0 * 0.000102 # last factor is default
             for seg in ais:
-                seg.gmax_NaP = 9.1 * 0.004000 # last factor is default
+                seg.gmax_NaP = 6.0 * 0.004000 # last factor is default
         else:
             # Without axon: normalize like in article
             normalize_dimensions(self.icell.somatic)

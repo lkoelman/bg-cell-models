@@ -21,13 +21,30 @@ def make_slice(signal, interval):
     return np.s_[irange[0]:irange[1]] # slice object
 
 
-def make_spiketrains(signal, threshold, **spiketrain_kwargs):
+def make_spiketrains(signal, threshold, order_by=None,
+        annotations_simple=None, annotations_indexable=None):
     """
     Make Neo.SpikeTrain objects from Neo.AnalogSignal.
+
+    @param  annotations_simple : list[str]
+            Annotations copied from signal to each spiketrain
+
+    @param  annotations_indexable : dict[str, str]
+            Indexable annotations in signal that should be copied.
+            The new key will be the mapped string.
     """
     assert (signal.shape[0] > signal.shape[1]) or (signal.ndim == 1)
+    if annotations_simple is None:
+        annotations_simple = []
+    if annotations_simple is None:
+        annotations_simple = {}
+
     vv = signal.magnitude
     tv = signal.times.magnitude
+
+    all_train_annotations = {
+        k: signal.annotations[k] for k in annotations_simple
+    }
 
     spike_trains = []
     for i_signal in xrange(signal.shape[1]):
@@ -35,13 +52,18 @@ def make_spiketrains(signal, threshold, **spiketrain_kwargs):
         spike_idx = sig_anal.spike_indices(vm, threshold, loc='onset')
         spike_times = tv[spike_idx]
 
+        train_annotations = {
+            m: signal.annotations[k][i_signal] for k,m in annotations_indexable.items()
+        }
+        train_annotations.update(all_train_annotations)
+
         spike_trains.append(
             neo.SpikeTrain(
                 spike_times,
                 t_start = signal.t_start,
                 t_stop  = signal.t_stop,
                 units   = 'ms',
-                **spiketrain_kwargs)
+                **train_annotations)
         )
 
     return spike_trains

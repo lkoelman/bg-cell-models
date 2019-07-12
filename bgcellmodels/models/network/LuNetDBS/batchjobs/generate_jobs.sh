@@ -4,49 +4,64 @@
 job_script="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/batchjobs/runjob_bgnetmodel.sh"
 
 # Config files you want to repeat with different seeds (one per line)
-outputs_clipboard="test_dbs_silent_dbs-amp-1.json
-test_dbs_silent_dbs-amp-2.json
-test_dbs_silent_dbs-amp-4.json
-test_dbs_silent_dbs-amp-5.json"
+outputs_clipboard="
+configs/sweeps_g-ctx-stn_V2/no-dbs_g-ctx-stn-x-0.7.json
+configs/sweeps_g-ctx-stn_V2/no-dbs_g-ctx-stn-x-1.3.json
+configs/sweeps_g-ctx-stn_V2/no-dbs_g-ctx-stn-x-1.0.json
+"
 readarray -t configs <<< "${outputs_clipboard}"
 
 # Common options for all simulations
 start_seed=888
 
+# Number of cluster nodes and processes per nodes
+# SONIC has 24 cores (threads) per node, so max ppn = 24
 num_nodes=1
-num_ppn=8
+num_ppn=16
 num_proc=$((num_nodes*num_ppn))
 
 # Can do it using associative array (dictionary):
 declare -A model_args
 
 for sim_config in "${configs[@]}"; do
+
+    if [[ ${sim_config} == "" ]]; then
+        continue
+    fi
+
     for seed in {0..0}; do
 
         # Resources requested using -l
-        job_resources="walltime=3:00:00,nodes=${num_nodes}:ppn=${num_ppn}"
+        # walltime ~= 1:20 for 16 ppn, 7000ms, dt=0.025
+        job_resources="walltime=2:00:00,nodes=${num_nodes}:ppn=${num_ppn}"
 
         # Arguments passed to simulation script using -v
-        # category - cluster simulation
+        # NOTE: comment to read option from config, if not it is overridden
+
+        # Cluster configuration
         model_args["numproc"]="${num_proc}"
         
-        # category - model configuration
-        model_args["dur"]="1e3"
-        model_args["scale"]="0.5"
+        # Model configuration
         model_args["seed"]="$((start_seed+seed))"
-        model_args["dbs"]="1"
-        model_args["lfp"]="1"
+        # change block below for calibration
+        # -------------------------
+        model_args["dur"]="7000"
+        model_args["scale"]="1.0"
+        model_args["nodbs"]="1"
+        model_args["nolfp"]="1"
+        model_args["simdt"]="0.025"
+        # -------------------------
         model_args["dd"]="1"
         model_args["morphdir"]="$HOME/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies"
         model_args["configdir"]="$HOME/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs"
         model_args["simconfig"]="${sim_config}"
-        model_args["cellconfig"]="test_cellconfig_5.json"
-        model_args["axonfile"]="axon_coordinates.pkl"
+        model_args["cellconfig"]="dummy-cells_axons-cutoff.json"
+        model_args["axonfile"]="axon_coordinates_cutoff.pkl"
         
-        # category - outputs
+        # Output configuration
         model_args["outdir"]="$HOME/storage"
-        model_args["transientperiod"]="0.0"
-        model_args["writeinterval"]="5e3"
+        model_args["transientperiod"]="2000.0"
+        model_args["writeinterval"]="10e3"
         model_args["reportinterval"]="50.0"
         model_args["progress"]="1"
 
