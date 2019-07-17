@@ -50,9 +50,11 @@ def make_pulse_train(
         raise ValueError('Pulse width must be smaller than period')
     
     # square wave between [+1, -1] (2 peak-to-peak, baseline 0)
-    raw_square = signal.square(omega * time_axis, duty_cycle)
-    dbs_vec = amp0 * raw_square
-    dbs_vec[dbs_vec < 0] = amp1
+    dbs_vec = signal.square(omega * time_axis, duty_cycle)
+    pos_phase = (dbs_vec == 1)
+    neg_phase = (dbs_vec == -1)
+    dbs_vec[pos_phase] = amp0
+    dbs_vec[neg_phase] = amp1
 
     # turn DBS off in silent intervals
     if off_intervals is not None:
