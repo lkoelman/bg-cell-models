@@ -5,9 +5,9 @@ job_script="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/
 
 # Config files you want to repeat with different seeds (one per line)
 outputs_clipboard="
-configs/sweeps_g-ctx-stn_V2/no-dbs_g-ctx-stn-x-0.7.json
-configs/sweeps_g-ctx-stn_V2/no-dbs_g-ctx-stn-x-1.3.json
-configs/sweeps_g-ctx-stn_V2/no-dbs_g-ctx-stn-x-1.0.json
+configs/sweeps_dbs-amp/axons-full-V2_dbs-amp-0.1.json
+configs/sweeps_dbs-amp/axons-full-V2_dbs-amp-1.json
+configs/sweeps_dbs-amp/axons-full-V2_dbs-amp-10.0.json
 "
 readarray -t configs <<< "${outputs_clipboard}"
 
@@ -17,7 +17,7 @@ start_seed=888
 # Number of cluster nodes and processes per nodes
 # SONIC has 24 cores (threads) per node, so max ppn = 24
 num_nodes=1
-num_ppn=16
+num_ppn=24
 num_proc=$((num_nodes*num_ppn))
 
 # Can do it using associative array (dictionary):
@@ -33,7 +33,7 @@ for sim_config in "${configs[@]}"; do
 
         # Resources requested using -l
         # walltime ~= 1:20 for 16 ppn, 7000ms, dt=0.025
-        job_resources="walltime=2:00:00,nodes=${num_nodes}:ppn=${num_ppn}"
+        job_resources="walltime=6:00:00,nodes=${num_nodes}:ppn=${num_ppn}"
 
         # Arguments passed to simulation script using -v
         # NOTE: comment to read option from config, if not it is overridden
@@ -45,11 +45,11 @@ for sim_config in "${configs[@]}"; do
         model_args["seed"]="$((start_seed+seed))"
         # change block below for calibration
         # -------------------------
-        model_args["dur"]="7000"
+        model_args["dur"]="3000"
         model_args["scale"]="1.0"
-        model_args["nodbs"]="1"
-        model_args["nolfp"]="1"
-        model_args["simdt"]="0.025"
+        # model_args["nodbs"]="1"
+        # model_args["nolfp"]="1"
+        # model_args["simdt"]="0.01"
         # -------------------------
         model_args["dd"]="1"
         model_args["morphdir"]="$HOME/workspace/bgcellmodels/bgcellmodels/models/STN/Miocinovic2006/morphologies"

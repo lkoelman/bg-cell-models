@@ -6,7 +6,7 @@
 
 # Set the number of nodes & processors per node
 # 24 cores (threads) available per node, so max ppn=24
-##PBS -l nodes=1:ppn=8
+## PBS -l nodes=1:ppn=8
 
 
 # Set the walltime of the job to 1 hour (format is hh:mm:ss)
@@ -98,7 +98,7 @@ done
 
 
 # ARGUMENTS: options / flags
-flag_names=("lfp" "nolfp" "dbs" "nopdbs" "dd" "dnorm" "progress")
+flag_names=("lfp" "nolfp" "dbs" "nodbs" "dd" "dnorm" "progress")
 for flagname in "${flag_names[@]}"; do
     if [ -n "${!flagname}" ]; then
         mpi_command="${mpi_command} --${flagname}"
