@@ -219,8 +219,13 @@ def burst_metrics_surprise(
     REFERENCES
     ----------
 
-    This method is used and described in Wichmann and Soares 2006, 
-    Sanders et al. 2013, Sharott et al. 2014.
+    Original paper: Legendy and Salcman 1985.
+
+    Example usage of method: Wichmann and Soares 2006, Sanders et al. 2013,
+    Sharott et al. 2014.
+
+    Modified method: Hahn et al. (2008). Pallidal burst activity during 
+    therapeutic deep brain stimulation. Experimental neurology, 211(1), 243-251.
 
     CREDITS
     -------
