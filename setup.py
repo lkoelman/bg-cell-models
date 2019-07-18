@@ -41,13 +41,6 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 BASEDIR = os.path.dirname(os.path.abspath(__file__))
 
-# Build NMODL mechanisms
-nmodl_mechanism_dirs = [
-    'bgcellmodels/mechanisms',
-    'bgcellmodels/models/STN/GilliesWillshaw/mechanisms',
-    'bgcellmodels/models/GPe/Gunay2008/mechanisms'
-]
-
 ARCH = platform.machine()
 
 class Build_NMODL(BuildCommand):
@@ -102,19 +95,18 @@ class Build_NMODL(BuildCommand):
         print("nrnivmodl found at", nrnivmodl)
 
         # Build mechanism files
-        for mech_dir in nmodl_mechanism_dirs:
-            for root, dirs, files in os.walk(mech_dir):
-                if any((f.endswith('.mod') for f in files)) and not (
-                    root.endswith(ARCH)):
-                    # run `nrnivmodl` on our directory
-                    result, stdout = self._run_sys_command(nrnivmodl, root)
+        for root, dirs, files in os.walk(BASEDIR):
+            if any((f.endswith('.mod') for f in files)) and not (
+                root.endswith(ARCH)):
+                # run `nrnivmodl` on our directory
+                result, stdout = self._run_sys_command(nrnivmodl, root)
 
-                    if result != 0:
-                        print("Unable to compile NMODL files in {dir}. Output was:\n"
-                              "\t{output}".format(dir=mech_dir, output=stdout))
-                    else:
-                        print("Successfully compiled NMODL files in {}.".format(mech_dir))
-            
+                if result != 0:
+                    print("Unable to compile NMODL files in {dir}. Output was:\n"
+                          "\t{output}".format(dir=root, output=stdout))
+                else:
+                    print("Successfully compiled NMODL files in {}.".format(root))
+
 
 
     def _find_executable(self, command):

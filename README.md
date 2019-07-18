@@ -57,6 +57,8 @@ cd PyNN && git checkout lkmn-multicomp
 cd pyNN/neuron/nmodl && nrnivmodl
 cd ../../.. & pip install -e .
 
+# Install patched Neo
+pip uninstall neo
 git clone https://github.com/lkoelman/python-neo.git
 cd python-neo && git checkout lkmn-dev # development version with MATLAB annotation support
 pip install -e .
