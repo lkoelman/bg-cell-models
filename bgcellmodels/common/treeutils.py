@@ -10,6 +10,52 @@ import numpy as np
 from nrnutil import seg_index, seg_xmin, seg_xmax, getsecref
 import StringIO
 
+# aliases to avoid repeatedly doing multiple hash-table lookups
+_h_section_ref = h.SectionRef
+_h_allsec = h.allsec
+_h_parent_connection = h.parent_connection
+_h_section_orientation = h.section_orientation
+
+def parent(sec):
+    """
+    Return the parent of sec or None if sec is a root
+
+    Copied from NEURON RxD module
+
+    @author R.A McDougal
+    """
+    sref = _h_section_ref(sec=sec)
+    if sref.has_trueparent():
+        return sref.trueparent().sec
+    elif sref.has_parent():
+        temp = sref.parent().sec
+        # check if temp owns the connection point
+        if _h_section_ref(sec=temp).has_parent() and _h_parent_connection(sec=temp) == _h_section_orientation(sec=temp):
+            # connection point belongs to temp's ancestor
+            return parent(temp)
+        return temp
+    else:
+        return None
+    
+
+def parent_loc(sec, trueparent):
+    """
+    Return the position on the (true) parent where sec is connected
+    
+    Note that _h_section_orientation(sec=sec) is which end of the section is
+    connected.
+
+    Copied from NEURON RxD module
+
+    @author R.A McDougal
+    """
+    # TODO: would I ever have a parent but not a trueparent (or vice versa)
+    sref = _h_section_ref(sec=sec)
+    parent = sref.parent().sec
+    while parent != trueparent:
+        sec, parent = parent, _h_section_ref(sec=sec).parent().sec
+    return _h_parent_connection(sec=sec)
+
 
 def prev_seg(curseg):
     """

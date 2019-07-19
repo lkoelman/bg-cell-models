@@ -90,6 +90,7 @@ from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 from bgcellmodels.common.configutil import eval_params
 from bgcellmodels.common.stdutil import getdictvals
 from bgcellmodels.common import logutils, fileutils
+from bgcellmodels.morphology import morph_io
 
 # Global variables
 h = sim.h
@@ -106,19 +107,12 @@ logutils.setLogLevel('WARNING', [
     'bluepyopt.ephys.parameters',
     'bluepyopt.ephys.mechanisms',
     'bluepyopt.ephys.morphologies',
-    'AxonBuilder'])
+    'AxonBuilder',
+    'PyNN.simulator'])
 
-logutils.setLogLevel('DEBUG', ['simulation', 'PyNN.simulator'])
+logutils.setLogLevel('DEBUG', ['simulation'])
 
 h("XTRA_VERBOSITY = 0")
-
-
-def nprint(*args, **kwargs):
-    """
-    Print only on host with rank 0.
-    """
-    if mpi_rank == 0:
-        print(*args, **kwargs)
 
 
 def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
@@ -176,6 +170,50 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
                        annotations={'script_name': __file__})
 
 
+def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None):
+    """
+    Write compartment coordinates of all cells in population to file.
+    """
+    # Cell GID and all sections
+    gid2seclist = [
+        (int(gid), gid._cell.get_all_sections()) for gid in pop if pop.is_local(gid)
+    ]
+    cell_ids, cell_seclists = zip(*gid2seclist)
+
+    # Vertices and edges for each cell
+    verts, edges = morph_io.morphologies_to_edges(cell_seclists, 
+        flatten_cells=False, scale=scale, translation=translation)
+
+    # Gather this data from all MPI ranks
+    morph_data = {'gids': cell_ids, 'vertices': verts, 'edges': edges}
+    ranks_morph_data = comm.allgather(morph_data)
+
+    # Combine all data into one dictionary for exporting
+    out_dict = {'cell_gids': [], 'vertices': [], 'edges': [], 'population': pop.label}
+    for rank_data in ranks_morph_data:
+        out_dict['cell_gids'].extend(rank_data['gids'])
+        out_dict['vertices'].extend(rank_data['vertices'])
+        out_dict['edges'].extend(rank_data['edges'])
+
+    # Write to file
+    if mpi_rank == 0:
+        scale_units = ('um', 'mme-2', 'mme-1', 'mm',  'cm', 'dm', 'm')
+        scale_index = int(-np.log10(scale))
+        if 0 <= scale_index < len(scale_units):
+            scale_suffix = scale_units[scale_index]
+        else:
+            scale_suffix = str(scale)
+        space_suffix = 'dwi' if translation is None else 'anat'
+        
+        out_filename = '{}_locs_space-{}_scale-{}_mpirank-{}.pkl'.format(
+            pop.label, space_suffix, scale_suffix, mpi_rank)
+        out_filepath = os.path.join(out_dir, out_filename)
+        
+        logger.debug('Population %s: writing compartment coordinates.', pop.label)
+        with open(out_filepath, 'wb') as fout:
+            pickle.dump(out_dict, fout)
+
+
 def simulate_model(
         pop_scale       = 1.0,
         sim_dur         = 500.0,
@@ -197,7 +235,7 @@ def simulate_model(
         report_interval = 50.0,
         restore_state   = None,
         save_state      = None,
-        export_compartment_coordinates = False,
+        export_compartment_coordinates = None,
         **kwargs):
     """
     Run a simple network consisting of an STN and GPe cell population
@@ -212,12 +250,11 @@ def simulate_model(
                 Dictionary with one entry per population label and one
                 key 'simulation' for simulation parameters.
     """
-    if export_compartment_coordinates:
-        from bgcellmodels.morphology import morph_io, morph_3d
-
     ############################################################################
     # READ CONFIGURATIONS
     ############################################################################
+
+    out_dir, out_ext = output.split('*')
 
     sim_params = config['simulation']
     emf_params = config['electromagnetics']
@@ -286,7 +323,8 @@ def simulate_model(
     if DD is None:
         raise ValueError("Dopamine depleted condition not specified "
                          "in config file nor as simulation argument.")
-    nprint("Dopamine state is " + "DEPLETED" if DD else "NORMAL")
+    if mpi_rank == 0:
+        print("Dopamine state is " + "DEPLETED" if DD else "NORMAL")
 
     ############################################################################
     # LOCAL FUNCTIONS
@@ -471,9 +509,12 @@ def simulate_model(
 
     
     # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates:
-        stn_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_stn]
-        morph_io.morphology_to_TXT(stn_allsec, 'STN_nodes_anat-mm.txt',
+    if export_compartment_coordinates and WITH_MPI:
+        write_compartment_coordinates(pop_stn, out_dir,
+            scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+    elif export_compartment_coordinates:
+        pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_stn]
+        morph_io.morphology_to_TXT(pop_allsec, 'STN_nodes_anat-mm.txt',
             scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
 
     # # Check coordinates
@@ -577,9 +618,12 @@ def simulate_model(
                                initial_values=initial_values)
 
     # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates:
-        gpe_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_gpe_proto]
-        morph_io.morphology_to_TXT(gpe_allsec, 'GPE_nodes_anat-mm.txt',
+    if export_compartment_coordinates and WITH_MPI:
+        write_compartment_coordinates(pop_gpe_proto, out_dir,
+            scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+    elif export_compartment_coordinates:
+        pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_gpe_proto]
+        morph_io.morphology_to_TXT(pop_allsec, 'GPE_nodes_anat-mm.txt',
             scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
 
     # # Check coordinates
@@ -752,9 +796,12 @@ def simulate_model(
                                initial_values=initial_values)
 
     # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates:
-        ctx_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_ctx_axons]
-        morph_io.morphology_to_TXT(ctx_allsec, 'CTX_nodes_anat-mm.txt',
+    if export_compartment_coordinates and WITH_MPI:
+        write_compartment_coordinates(pop_ctx_axons, out_dir,
+            scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
+    elif export_compartment_coordinates:
+        pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_ctx_axons]
+        morph_io.morphology_to_TXT(pop_allsec, 'CTX_nodes_anat-mm.txt',
             scale=1e-3, translation=[-20.01319, -10.01633, -10.01622])
 
     #===========================================================================
@@ -973,6 +1020,86 @@ def simulate_model(
 
 
     ############################################################################
+    # WRITE PARAMETERS
+    ############################################################################
+    print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
+
+    # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
+    #       - cannot perform any gather() operations before initializing MPI transfer
+    #       - must do gather() operations on all nodes
+
+    # Save cell information
+    for pop in all_pops.values() + all_asm.values():
+        pop_params = saved_params.setdefault(pop.label, {})
+        pop_cell_gids = list(pop.all_cells.astype(int))
+        pop_subcell_gids = sum((sim.state.get_spkgids(gid) for gid in pop_cell_gids), [])
+        pop_params['gids'] = pop_cell_gids + pop_subcell_gids
+
+    # Save connection information
+    for pre_pop, post_pops in all_proj.iteritems():
+        saved_params.setdefault(pre_pop, {})
+        for post_pop, proj in post_pops.iteritems():
+
+            # Plot connectivity matrix ('O' is connection, ' ' is no connection)
+            utf_matrix, float_matrix = connection_plot(proj)
+            # max_line_length = 500
+            # if mpi_rank == 0 and proj.post.size < max_line_length:
+            #     logger.debug("{}->{} connectivity matrix (dim[0,1] = [src,target]: \n".format(proj.pre.label, proj.post.label) + utf_matrix)
+
+            # This does an mpi gather() on all the parameters
+            conn_params = ["delay", "weight"]
+            gsyn_params = ['gmax_AMPA', 'gmax_NMDA', 'gmax_GABAA', 'gmax_GABAB']
+            conn_params.extend([
+                p for p in gsyn_params if p in proj.synapse_type.default_parameters
+            ])
+            pre_post_params = np.array(proj.get(conn_params, format="list",
+                                       gather='all', multiple_synapses='sum'))
+
+            # Sanity check: minimum and maximum delays and weights
+            mind = min(pre_post_params[:,2])
+            maxd = max(pre_post_params[:,2])
+            minw = min(pre_post_params[:,3])
+            maxw = max(pre_post_params[:,3])
+
+            if mpi_rank == 0:
+                logger.debug(
+                    "Error check for projection {pre}->{post}:\n"
+                    "    - delay  [min, max] = [{mind}, {maxd}]\n"
+                    "    - weight [min, max] = [{minw}, {maxw}]\n".format(
+                        pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
+                        minw=minw, maxw=maxw))
+
+            # Save all connectivity pairs, using cell indices, and GIDs
+            pop_idx_pairs = [tuple(pair) for pair in pre_post_params[:, 0:2].astype(int)]
+            cell_gid_pairs = []
+            for conn in proj.connections:
+                if hasattr(conn, 'presynaptic_gid'):
+                    cell_gid_pairs.append((conn.presynaptic_gid, conn.postsynaptic_gid))
+                else:
+                    cell_gid_pairs.append((int(conn.presynaptic_cell), int(conn.postsynaptic_cell)))
+
+            # Append to saved dictionary
+            proj_params = saved_params[pre_pop].setdefault(post_pop, {})
+            proj_params['conn_matrix'] = float_matrix
+            proj_params['conpair_pop_indices'] = pop_idx_pairs
+            proj_params['conpair_gids'] = cell_gid_pairs
+            proj_params['conpair_pvals'] = pre_post_params
+            proj_params['conpair_pnames'] = conn_params
+
+
+    # Write model parameters
+    print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
+    if mpi_rank==0 and output is not None:
+        
+
+        # Save projection parameters
+        extension = out_ext[:-4] + '.pkl'
+        params_outfile = "{dir}pop-parameters{ext}".format(dir=out_dir, ext=extension)
+        with open(params_outfile, 'wb') as fout:
+            pickle.dump(saved_params, fout)
+
+
+    ############################################################################
     # INITIALIZE & SIMULATE
     ############################################################################
     print("rank {}: starting phase SIMULATE.".format(mpi_rank))
@@ -1073,88 +1200,6 @@ def simulate_model(
     if save_state:
         sim.state.save_state()
 
-
-    ############################################################################
-    # WRITE PARAMETERS
-    ############################################################################
-    print("rank {}: starting phase INTEGRITY CHECK.".format(mpi_rank))
-
-    # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
-    #       - cannot perform any gather() operations before initializing MPI transfer
-    #       - must do gather() operations on all nodes
-
-    # Save cell information
-    for pop in all_pops.values() + all_asm.values():
-        pop_params = saved_params.setdefault(pop.label, {})
-        pop_cell_gids = list(pop.all_cells.astype(int))
-        pop_subcell_gids = sum((sim.state.get_spkgids(gid) for gid in pop_cell_gids), [])
-        pop_params['gids'] = pop_cell_gids + pop_subcell_gids
-
-    # Save connection information
-    for pre_pop, post_pops in all_proj.iteritems():
-        saved_params.setdefault(pre_pop, {})
-        for post_pop, proj in post_pops.iteritems():
-
-            # Plot connectivity matrix ('O' is connection, ' ' is no connection)
-            utf_matrix, float_matrix = connection_plot(proj)
-            max_line_length = 500
-            if mpi_rank == 0 and proj.post.size < max_line_length:
-                logger.debug("{}->{} connectivity matrix (dim[0,1] = [src,target]: \n".format(
-                    proj.pre.label, proj.post.label) + utf_matrix)
-
-            # This does an mpi gather() on all the parameters
-            conn_params = ["delay", "weight"]
-            gsyn_params = ['gmax_AMPA', 'gmax_NMDA', 'gmax_GABAA', 'gmax_GABAB']
-            conn_params.extend(
-                [p for p in gsyn_params if p in proj.synapse_type.default_parameters])
-            pre_post_params = np.array(proj.get(conn_params, format="list",
-                                       gather='all', multiple_synapses='sum'))
-
-            # Sanity check: minimum and maximum delays and weights
-            mind = min(pre_post_params[:,2])
-            maxd = max(pre_post_params[:,2])
-            minw = min(pre_post_params[:,3])
-            maxw = max(pre_post_params[:,3])
-
-            if mpi_rank == 0:
-                logger.debug(
-                    "Error check for projection {pre}->{post}:\n"
-                    "    - delay  [min, max] = [{mind}, {maxd}]\n"
-                    "    - weight [min, max] = [{minw}, {maxw}]\n".format(
-                        pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
-                        minw=minw, maxw=maxw))
-
-            # Save all connectivity pairs, using cell indices, and GIDs
-            pop_idx_pairs = [tuple(pair) for pair in pre_post_params[:, 0:2].astype(int)]
-            cell_gid_pairs = []
-            for conn in proj.connections:
-                if hasattr(conn, 'presynaptic_gid'):
-                    cell_gid_pairs.append((conn.presynaptic_gid, conn.postsynaptic_gid))
-                else:
-                    cell_gid_pairs.append((int(conn.presynaptic_cell), int(conn.postsynaptic_cell)))
-
-            # Append to saved dictionary
-            proj_params = saved_params[pre_pop].setdefault(post_pop, {})
-            proj_params['conn_matrix'] = float_matrix
-            proj_params['conpair_pop_indices'] = pop_idx_pairs
-            proj_params['conpair_gids'] = cell_gid_pairs
-            proj_params['conpair_pvals'] = pre_post_params
-            proj_params['conpair_pnames'] = conn_params
-
-
-    # Write model parameters
-    print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
-
-    if mpi_rank==0 and output is not None:
-        outdir, extension = output.split('*')
-
-        # Save projection parameters
-        import pickle
-        extension = extension[:-4] + '.pkl'
-        params_outfile = "{dir}pop-parameters{ext}".format(dir=outdir, ext=extension)
-        with open(params_outfile, 'wb') as fout:
-            pickle.dump(saved_params, fout)
-
     if export_locals:
         globals().update(locals())
 
@@ -1211,7 +1256,7 @@ if __name__ == '__main__':
     parser.add_argument('--exportcomplocs',
                         dest='export_compartment_coordinates', action='store_true',
                         help='Export compartment coordinates')
-    parser.set_defaults(export_compartment_coordinates=False)
+    parser.set_defaults(export_compartment_coordinates=True)
 
     parser.add_argument('--dd',
                         dest='dopamine_depleted', action='store_true',

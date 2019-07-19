@@ -209,10 +209,10 @@ setup(
         'matplotlib',
         'pint',
         'transforms3d',
-        'BluePyOpt',
+        # 'BluePyOpt',
         'lazyarray',
         'pint',
-        'elephant',
+        # 'elephant',
     ],
 
     # List additional groups of dependencies here (e.g. development

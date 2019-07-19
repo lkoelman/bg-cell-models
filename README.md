@@ -45,30 +45,34 @@ Our custom PyNN classes have only been tested with:
 Install editable version (symlink to this directory):
 
 ```sh
-# Install dependencies
-pip install lazyarray pint elephant
 
+# BluePyOpt for various simulation tools
 git clone https://github.com/BlueBrain/BluePyOpt.git
 cd BluePyOpt && git checkout 1456941abe425b4a20fb084eab1cb6415ccfe2b8
 pip install -e .
+cd ..
 
+# PyNN for network simulation (patched version)
 git clone https://github.com/lkoelman/PyNN.git
 cd PyNN && git checkout lkmn-multicomp
 cd pyNN/neuron/nmodl && nrnivmodl
 cd ../../.. & pip install -e .
+cd ..
 
-# Install patched Neo
+# Neo electrophysiology data formats (patched version)
 pip uninstall neo
 git clone https://github.com/lkoelman/python-neo.git
 cd python-neo && git checkout lkmn-dev # development version with MATLAB annotation support
 pip install -e .
+cd ..
 
+# Tools for LFP simulation
 git clone https://github.com/lkoelman/LFPsim.git
-cd LFPsim/lfpsim && nrnivmodl
+cd LFPsim/lfpsim && nrnivmodl && cd ..
 pip install -e ./LFPsim
 
 
-# Install package
+# Basal Ganglia cell and network models
 git clone https://lkmn_ucd@bitbucket.org/lkmn_ucd/bg-cell-models.git bgcellmodels
 cd bgcellmodels && git checkout --track origin/nothreadsafe
 python setup.py develop # or: pip install -e path_to_repo

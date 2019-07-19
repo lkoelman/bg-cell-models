@@ -16,7 +16,7 @@ Additional libraries for working with NEURON morphologies:
 """
 
 from neuron import h
-from neuron.rxd.morphology import parent, parent_loc
+from bgcellmodels.common.treeutils import parent, parent_loc
 import json, io, re
 import numpy as np
 
@@ -346,6 +346,85 @@ def morphology_to_STEP_1D(secs, filepath):
     status = step_writer.Write(filepath)
     if status != IFSelect_RetDone:
         raise Exception("Failed to write STEP file")
+
+
+def morphologies_to_edges(section_lists, segment_centers=True,
+                         scale=1.0, translation=None, transform=None,
+                         flatten_cells=True):
+    """
+    Convert neuron morphologies to lists of vertices and edges.
+
+    Each segment is represented by a degenerate face, i.e. a triangle
+    with vertices [a b a].
+
+    @pre    requires package plyfile, e.g. `pip install plyfile`
+
+    @see    morphology_to_PLY()
+
+    @return (vertices, edges) : tuple
+            
+            - If flatten_cells is True, vertices is an Nx3 numpy array containing
+            all the compartment coordinates, and edges are pairs of indices
+            into this array.
+            
+            - If flatten_cells is False, vertices is a list of Nx3 arrays, 
+            one for each cell, and edges a list of index matrices into the 
+            vertex array for each cell.
+    """
+
+    # Get 3D samples
+    if segment_centers:
+        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
+                                        samples_as_rows=True)
+    else:
+        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
+                                        include_diam=False)
+
+    # Apply transformation before writing
+    if translation or transform or (scale != 1.0):
+        samples_mat = np.ones((len(samples_xyz), 4))
+        samples_mat[:,:3] = samples_xyz
+        A = np.array(transform) if transform else np.eye(4)
+        if translation:
+            A[:-1, 3] += translation
+        samples_mat = np.dot(samples_mat, A.T)
+        if scale != 1.0:
+            samples_mat *= scale
+        samples_xyz = samples_mat[:, :3]
+
+    # Create vertices
+    if flatten_cells:
+        vertices = samples_xyz  # flat vertex list
+    else:
+        vertices = []           # vertex list per cell
+    
+    # Create edges
+    secs_edges = []
+    sample_offset = 0
+    for i_sec, num_samples in enumerate(secs_num3d):
+
+        # Add edge [a, b]
+        if flatten_cells:
+            edge_offset = sample_offset
+        else:
+            edge_offset = 0
+        edges = [
+            (i, i+1) for i in xrange(edge_offset, edge_offset + num_samples - 1)
+        ]
+        if flatten_cells:
+            secs_edges.extend(edges)
+        else:
+            secs_edges.append(edges)
+            vertices.append(samples_xyz[sample_offset:num_samples, :])
+
+        sample_offset += num_samples
+
+    # Correct return datatypes
+    if flatten_cells:
+        edges = np.array(secs_edges)
+    else:
+        edges = secs_edges
+    return vertices, edges
 
 
 def morphology_to_PLY(section_lists, filepath, segment_centers=True,
