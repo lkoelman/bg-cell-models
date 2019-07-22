@@ -385,7 +385,7 @@ def morphologies_to_edges(section_lists, segment_centers=True,
         samples_mat = np.ones((len(samples_xyz), 4))
         samples_mat[:,:3] = samples_xyz
         A = np.array(transform) if transform else np.eye(4)
-        if translation:
+        if (translation is not None):
             A[:-1, 3] += translation
         samples_mat = np.dot(samples_mat, A.T)
         if scale != 1.0:
@@ -463,7 +463,7 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
         samples_mat = np.ones((len(samples_xyz), 4))
         samples_mat[:,:3] = samples_xyz
         A = np.array(transform) if transform else np.eye(4)
-        if translation:
+        if (translation is not None):
             A[:-1, 3] += translation
         samples_mat = np.dot(samples_mat, A.T)
         if scale != 1.0:
@@ -563,7 +563,7 @@ def morphology_to_TXT(section_lists, filepath, segment_centers=True,
         samples_mat = np.ones((len(samples_xyz), 4))
         samples_mat[:,:3] = samples_xyz
         A = np.array(transform) if transform else np.eye(4)
-        if translation:
+        if (translation is not None):
             A[:-1, 3] += translation
         samples_mat = np.dot(samples_mat, A.T)
         if scale != 1.0:
