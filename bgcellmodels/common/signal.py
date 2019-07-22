@@ -481,6 +481,36 @@ def numpy_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):
     return bin_vals
 
 
+def numpy_psth_triggered(spiketrains, trigger_times, bin_edges, interval=None):
+    num_trigger = len(trigger_times)
+    trains_psths = [] # PSTH for each spike train
+
+    if interval is not None:
+        mask = (trigger_times >= interval[0]) & (trigger_times <= interval[1])
+        trigger_times = trigger_times[mask]
+
+    for spike_times in spiketrains:
+        if interval is None:
+            mask = np.s_[:]
+        else:
+            mask = (spike_times >= interval[0]) & (spike_times <= interval[1])
+        times = np.array(spike_times[mask]) # copy for in-place modification
+
+
+        # Normalize all spike times to preceding trigger
+        for i, t in enumerate(trigger_times):
+            mask = times > t
+            if i < (num_trigger - 1):
+                mask = mask & (times <= trigger_times[i+1])
+            times[mask] = times[mask] - t
+
+        counts, edges = np.histogram(times, bins=bin_edges)
+        trains_psths.append(counts)
+
+    return trains_psths
+
+
+
 def numpy_avg_rate_simple(spiketrains, tstart, tstop, binwidth):
     """
     Simple algorithm for calculating the running firing rate

@@ -23,7 +23,7 @@ JUPYTER EXAMPLE
 import numpy as np
 import numba
 
-@numba.jit("UniTuple(f8[:], 2)(f8[:],f8[:],f8,f8)", nopython=True)
+# @numba.jit("UniTuple(f8[:], 2)(f8[:],f8[:],f8,f8)", nopython=True)
 def find_stimlocked_spikes(pulse_times, spike_times, window_lo, window_hi):
     """
     Find pulse-locked spikes in time window after each pulse.
@@ -50,10 +50,12 @@ def find_stimlocked_spikes(pulse_times, spike_times, window_lo, window_hi):
             locked_indices.append(i_pulse)
             locked_spike_times.append(spikes_following)
     
-    return np.array(locked_indices), np.array(locked_spike_times)
+    indices_array = np.array(locked_indices)
+    times_array = np.array(locked_spike_times)
+    return indices_array, times_array
 
 
-@numba.jit("f8[:](f8[:],f8[:],f8,f8)", nopython=True)
+# @numba.jit("f8[:](f8[:],f8[:],f8,f8)", nopython=True)
 def find_stimlocked_indices(pulse_times, spike_times, window_lo, window_hi):
     """
     Find pulse-locked spikes in time window after each pulse.
