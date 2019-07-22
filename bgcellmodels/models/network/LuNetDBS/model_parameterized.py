@@ -115,8 +115,8 @@ logutils.setLogLevel('DEBUG', ['simulation'])
 h("XTRA_VERBOSITY = 0")
 
 # Translation vectors between Waxholm data DWI and atlas-v1 space
-dwi2anat_vec_mm = [-20.01319, -10.01633, -10.01622] # from manual
-blend2anat_vec_mm = [-15.9514, -8.43968, -7.71387]  # in my Blender file
+dwi2anat_vec_mm = np.array([-20.01319, -10.01633, -10.01622]) # from manual
+blend2anat_vec_um = np.array([-15.9514e3, -8.43968e3, -7.71387e3]) # in Blender file
 
 
 def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
@@ -515,11 +515,11 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates and WITH_MPI:
         write_compartment_coordinates(pop_stn, out_dir,
-            scale=1e-3, translation=blend2anat_vec_mm)
+            scale=1e-3, translation=blend2anat_vec_um)
     elif export_compartment_coordinates:
         pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_stn]
         morph_io.morphology_to_TXT(pop_allsec, 'STN_nodes_anat-mm.txt',
-            scale=1e-3, translation=blend2anat_vec_mm)
+            scale=1e-3, translation=blend2anat_vec_um)
 
     # # Check coordinates
     # stn_gpe_all_nodes = []
@@ -624,11 +624,11 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates and WITH_MPI:
         write_compartment_coordinates(pop_gpe_proto, out_dir,
-            scale=1e-3, translation=blend2anat_vec_mm)
+            scale=1e-3, translation=blend2anat_vec_um)
     elif export_compartment_coordinates:
         pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_gpe_proto]
         morph_io.morphology_to_TXT(pop_allsec, 'GPE_nodes_anat-mm.txt',
-            scale=1e-3, translation=blend2anat_vec_mm)
+            scale=1e-3, translation=blend2anat_vec_um)
 
     # # Check coordinates
     # for cell_id in pop_gpe_proto:
@@ -802,11 +802,11 @@ def simulate_model(
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates and WITH_MPI:
         write_compartment_coordinates(pop_ctx_axons, out_dir,
-            scale=1e-3, translation=blend2anat_vec_mm)
+            scale=1e-3, translation=blend2anat_vec_um)
     elif export_compartment_coordinates:
         pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_ctx_axons]
         morph_io.morphology_to_TXT(pop_allsec, 'CTX_nodes_anat-mm.txt',
-            scale=1e-3, translation=blend2anat_vec_mm)
+            scale=1e-3, translation=blend2anat_vec_um)
 
     #===========================================================================
     # STR.MSN POPULATION
