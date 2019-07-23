@@ -138,7 +138,7 @@ def define_mechanisms(filename, exclude_mechs=None):
         exclude_mechs = []
 
     full_filename = os.path.join(script_dir, filename)
-    mech_definitions = fileutils.load_json_nonstrict(full_filename)
+    mech_definitions = fileutils.parse_json_file(full_filename, nonstrict=True)
 
     mechanisms = []
     for seclist_name, mod_names in mech_definitions.items():
@@ -171,7 +171,7 @@ def define_locations(locations_file):
     """
 
     fullfile = os.path.join(script_dir, locations_file)
-    location_specs = fileutils.load_json_nonstrict(fullfile)
+    location_specs = fileutils.parse_json_file(fullfile, nonstrict=True)
 
     locations = {}
     for spec in location_specs:
@@ -222,12 +222,12 @@ def define_parameters(
         exclude_mechs = []
 
     fullfile = os.path.join(script_dir, genesis_params_file)
-    genesis_params = fileutils.load_json_nonstrict(fullfile)
+    genesis_params = fileutils.parse_json_file(fullfile, nonstrict=True)
     if genesis_params_overrides is not None:
         genesis_params.update(genesis_params_overrides)
     
     fullfile = os.path.join(script_dir, params_mapping_file)
-    param_specs = fileutils.load_json_nonstrict(fullfile)
+    param_specs = fileutils.parse_json_file(fullfile, nonstrict=True)
 
     parameters = []
 

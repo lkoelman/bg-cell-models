@@ -16,9 +16,7 @@ def parse_json_file(filename, nonstrict=True, ordered=False):
 
     @param      nonstrict: bool
 
-                If True, the json file can contain non strictly valid JSON
-                including comments and extraneous commas. For the full list
-                of allowed deviations, see function `validate_minify_json()`
+                Allow comments and trailing commas in json string.
     """
     with open(filename, 'r') as json_file:
         json_string = json_file.read()
@@ -32,12 +30,11 @@ def parse_json_string(string, nonstrict=True, ordered=False):
 
     @param      nonstrict: bool
 
-                If True, the json string can contain non strictly valid JSON
-                including comments and extraneous commas. For the full list
-                of allowed deviations, see function `validate_minify_json()`
+                Allow comments and trailing commas in json string.
     """
     if nonstrict:
-        string = validate_minify_json(string)
+        # string = validate_minify_json(string)
+        string = remove_trailing_commas(remove_comments(string))
     if ordered:
         object_pairs_hook = collections.OrderedDict
     else:
@@ -45,148 +42,61 @@ def parse_json_string(string, nonstrict=True, ordered=False):
     return json.loads(string, object_pairs_hook=object_pairs_hook)
 
 
-def load_json_nonstrict(filename):
+def remove_comments(json_like):
     """
-    (DEPRECATED)
+    Removes C-style comments from *json_like* and returns the result.
 
-    Same as json.load(filename) except the json file can contain
-    non strictly valid JSON.
+    @author     Dan McDougall <daniel.mcdougall@liftoffsoftware.com>
 
-    For the things that are allowed in non-strict JSON, see function
-    `validate_minify_json`.
+    Example
+    -------
+
+    >>> test_json = '''\
+    {
+        "foo": "bar", // This is a single-line comment
+        "baz": "blah" /* Multi-line
+        Comment */
+    }'''
+    >>> remove_comments('{"foo":"bar","baz":"blah",}')
+    '{\n    "foo":"bar",\n    "baz":"blah"\n}'
+
     """
-    return parse_json_file(filename, nonstrict=True)
+    comments_re = re.compile(
+        r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
+        re.DOTALL | re.MULTILINE
+    )
+    def replacer(match):
+        s = match.group(0)
+        if s[0] == '/': return ""
+        return s
+    return comments_re.sub(replacer, json_like)
 
 
-def validate_minify_json(string):
+def remove_trailing_commas(json_like):
     """
-    Processes a JSON-like string into a valid, minified JSON string.
+    Removes trailing commas from *json_like* and returns the result.
+    
+    @author     Dan McDougall <daniel.mcdougall@liftoffsoftware.com>
 
-    Supports the following enhancements to JSON:
-        - Trailing commas in lists/dicts: [1, 2, 3,]
-        - Single-line Python/shell-style comments: # my comment
-        - Single-line C/JavaScript-style comments: // my comment
-        - Multi-line/in-line C/JavaScript-style comments: /* my comment */
 
-    Examples:
-      Input:  [1, 2, 3,]
-      Output: [1,2,3]
-      Input:  [1, 2, /* comment */ 3]
-      Output: [1,2,3]
-      Input:  [1, 2, 3] // comment
-      Output: [1,2,3]
+    Example
+    -------
 
-    @param      str
-                A JSON or JSON-like string to process.
+    >>> remove_trailing_commas('{"foo":"bar","baz":["blah",],}')
+        '{"foo":"bar","baz":["blah"]}'
 
-    @return     str
-                Valid, minified JSON.
-
-    @author     dana geier
-    @email      dana@dana.is
-    @url        https://github.com/okdana/jsonesque/
-    @license    MIT
     """
-    if not string:
-        return ''
+    if isinstance(json_like, str):
+        json_like = json_like.decode('utf-8')
 
-    round_one   = re.compile(r'"|(/\*)|(\*/)|(//)|#|\n|\r')
-    round_two   = re.compile(r'"|,')
-    end_slashes = re.compile(r'(\\)*$')
-
-    # We add a new-line here so that trailing comments get caught at the end of
-    # the string (e.g., '[1, 2, 3] // foo') — it'll be stripped out later
-    string     += "\n"
-    new_string  = ''
-    length      = len(string)
-    index       = 0
-
-    in_string         = False
-    in_comment_multi  = False
-    in_comment_single = False
-
-    # First round — remove comments
-    for match in re.finditer(round_one, string):
-        # Append everything up to the match, stripping white-space along the way
-        if not (in_comment_multi or in_comment_single):
-            tmp = string[index:match.start()]
-
-            if not in_string:
-                tmp = re.sub('[ \t\n\r]+', '', tmp)
-
-            new_string += tmp
-
-        index = match.end()
-        val   = match.group()
-
-        # Handle strings
-        if val == '"' and not (in_comment_multi or in_comment_single):
-            escaped = end_slashes.search(string, 0, match.start())
-
-            # Start of string or un-escaped " character to end string
-            if not in_string or escaped is None or len(escaped.group()) % 2 == 0:
-                in_string = not in_string
-            # Include " character in next iteration
-            index -= 1
-
-        # Handle comment beginnings and trailing commas
-        elif not (in_string or in_comment_multi or in_comment_single):
-            if val == '/*':
-                in_comment_multi = True
-            elif val == '//' or val == '#':
-                in_comment_single = True
-
-        # Handle multi-line comment endings
-        elif val == '*/' and in_comment_multi and not (in_string or in_comment_single):
-            in_comment_multi = False
-            while index < length and string[index] in ' \t\n\r':
-                index += 1
-
-        # Handle single-line comment endings
-        elif val in '\n\r' and in_comment_single and not (in_string or in_comment_multi):
-            in_comment_single = False
-
-        # Anything else — just append
-        elif not (in_comment_multi or in_comment_single):
-            new_string += val
-
-    new_string += string[index:]
-    string      = new_string
-    new_string  = ''
-    length      = len(string)
-    index       = 0
-    in_string   = False
-
-    # Second round — remove trailing commas
-    # @todo There's a more performant way to remove these, just too lazy rn
-    for match in re.finditer(round_two, string):
-        # Append everything up to the match
-        new_string += string[index:match.start()]
-
-        index = match.end()
-        val   = match.group()
-
-        # Handle strings
-        if val == '"':
-            escaped = end_slashes.search(string, 0, match.start())
-
-            # Start of string or un-escaped " character to end string
-            if not in_string or escaped is None or len(escaped.group()) % 2 == 0:
-                in_string = not in_string
-            # Include " character in next iteration
-            index -= 1
-
-        # Handle commas
-        elif val == ',':
-            if string[index] not in ']}':
-                new_string += val
-
-        # Anything else — just append
-        else:
-            new_string += val
-
-    new_string += string[index:]
-    return new_string
+    trailing_object_commas_re = re.compile(
+        r'(,)\s*}(?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)')
+    trailing_array_commas_re = re.compile(
+        r'(,)\s*\](?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)')
+    # Fix objects {} first
+    objects_fixed = trailing_object_commas_re.sub("}", json_like)
+    # Now fix arrays/lists [] and return the result
+    return trailing_array_commas_re.sub("]", objects_fixed)
 
 
 class NoIndent(object):
@@ -215,7 +125,7 @@ class VariableIndentEncoder(json.JSONEncoder):
     >>>     'flat_list': NoIndent([[1,2,3],[2,3,1],[3,2,1]])
     >>> }
     >>>
-    >>> json.dumps(properties, cls=VariableIndentEncoder indent=2, sort_keys=False)
+    >>> json.dumps(properties, cls=VariableIndentEncoder, indent=2, sort_keys=False)
 
     """
     FORMAT_SPEC = '@@{}@@'
