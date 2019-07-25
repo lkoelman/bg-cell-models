@@ -722,8 +722,6 @@ class MorphModelBase(object):
 
         @post   self.axon contains references to axonal sections.
         """
-        axon_builder = axon_class(
-            without_extracellular=not self.with_extracellular)
 
         # Build axon
         axonal_secs = list(self.icell.axonal)
@@ -736,23 +734,27 @@ class MorphModelBase(object):
             # Attach axon directly to soma
             axon_parent_sec = self.icell.soma[0]
 
-        # If cell model already has AIS, remove it from axon model
+        # Parameters for axon building
+        axon_builder = axon_class(
+            self.streamline_coordinates_mm,
+            termination_method='terminal_sequence',
+            interp_method='arclength',
+            parent_cell=self.icell,
+            parent_sec=axon_parent_sec,
+            connection_method='translate_axon_closest',
+            connect_gap_junction=getattr(self, 'axon_using_gap_junction', False),
+            gap_conductances=(getattr(self, 'gap_pre_conductance', None),
+                              getattr(self, 'gap_post_conductance', None)),
+            tolerance_mm=1e-4,
+            without_extracellular=not self.with_extracellular)
+
         if not with_ais_compartment:
+            # If cell model already has AIS, remove it from axon model
             axon_builder.initial_comp_sequence.pop(0) # = ['aismyelin']
-
-        axon = axon_builder.build_along_streamline(
-                    self.streamline_coordinates_mm,
-                    termination_method='terminal_sequence',
-                    interp_method='arclength',
-                    parent_cell=self.icell,
-                    parent_sec=axon_parent_sec,
-                    connection_method='translate_axon_closest',
-                    connect_gap_junction=getattr(self, 'axon_using_gap_junction', False),
-                    gap_conductances=(getattr(self, 'gap_pre_conductance', None),
-                                      getattr(self, 'gap_post_conductance', None)),
-                    tolerance_mm=1e-4)
-
-        self.axon = axon
+        for i, pt in enumerate(self.axon_collateral_branchpoints):
+            # TODO: add collaterals from parameters, specify in simulation script
+            TODO: axon_builder.add_collateral()
+        self.axon = axon_builder.build_axon()
 
         # Change source for NetCons (see pyNN.neuron.simulator code)
         terminal_sec = list(self.icell.axonal)[-1]

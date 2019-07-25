@@ -13,6 +13,8 @@ from bgcellmodels.morphology import morph_3d
 from bgcellmodels.common import logutils
 from bgcellmodels.common.stdutil import dotdict
 
+from transforms3d import axangles
+
 h = neuron.h
 PI = math.pi
 
@@ -60,14 +62,405 @@ class AxonBuilder(object):
             - 'morphology': dict[<parameter name>, <value>]
     """
 
-    def __init__(self, without_extracellular=False):
+    def __init__(
+            self,
+            streamline_coords,
+            interp_method='cartesian',
+            tolerance_mm=1e-6,
+            parent_cell=None,
+            parent_sec=None,
+            without_extracellular=False,
+            termination_method='terminal_sequence',
+            unmyelinated_terminal_length=0.0,
+            connection_method='translate_axon',
+            connect_gap_junction=False,
+            gap_conductances=None,
+            raise_if_existing=True,
+            use_initial_segment=True):
         """
         Define compartments types that constitute the axon model.
 
         @post   attributes 'compartment_defs' and 'repeating_comp_sequence'
                 have been set.
+
+        Arguments
+        ---------
+
+        @param  termination_method : str
+
+                - 'any' to terminate as soon as last compartment extends beyond
+                  endpoint of streamline
+
+                - 'unmyelinated' to end with an unmyelinated segment of length
+                  <unmyelinated_terminal_length>
+
+                - 'terminal_sequence' to use the axon class' <terminal_comp_sequence>
+                  variable for building the final segment
+
+                - 'nodal_extend' to terminate axon with nodal compartment
+                   extended beyond streamline endpoint if necessary
+
+                - 'nodal_cutoff' to terminate axon with nodal compartment
+                   before streamline endpoint is reached
+
+
+        @param  tolerance_mm : float
+
+                Tolerance on length of compartments caused by discrepancy
+                between streamline arclength and length of compartments spanning
+                a streamline node.
+
+        @param  connection_method : str
+                
+                Method for connecting the reconstructed acon to the parent
+                sections. One of the following:
+
+                'orient_coincident': find streamline end that connects to the 
+                parent section and start building from this point. Raise
+                exception if not coincident.
+
+                'translate_axon_<start/end>': translate starting or endpoint
+                of axon to endpoint of parent section.
+
+                'translate_cell_<start/end>': Translate cell so that connection 
+                point is coincident with start or end of streamline
+
+        @param  connect_gap_junction : bool
+
+                If true, connect axon to cell using gap junction instead of
+                electrical connection between compartments. In this case the
+                new axonal compartmetns are not added to SectionLists in 
+                the parent cell object (wrapper for compartments).
         """
         self.without_extracellular = without_extracellular
+
+         # Parse arguments and check preconditions
+        if termination_method == 'unmyelinated' and \
+           unmyelinated_terminal_length <= 0.0:
+            raise ValueError('Must use positive unmyelinated terminal length'
+                             ' for termination method "unmyelinated"')
+        if termination_method == 'terminal_sequence' and \
+           len(self.terminal_comp_sequence) == 0:
+            raise ValueError('No terminal compartment sequence defined '
+                             'in axon class {}'.format(self.__class__))
+        
+        # Save properties for building algorithm
+        self.tolerance_mm = tolerance_mm
+        self.interp_method = interp_method
+        self.termination_method = termination_method
+        self.use_initial_segment = use_initial_segment
+        self.unmyelinated_terminal_length = unmyelinated_terminal_length
+        self.streamline_pts = np.array(streamline_coords)
+        self.parent_cell = parent_cell
+        self.parent_sec = parent_sec
+        self.connect_gap_junction = connect_gap_junction
+        self.gap_conductances = gap_conductances
+
+        # Connect to parent cell
+        if parent_sec is not None:
+            self._join3d_axon2cell(parent_cell, parent_sec, connection_method,
+                               tolerance_mm=1e-3)
+
+        # Save streamline info
+        self.num_streamline_pts = len(self.streamline_pts)
+        self._set_streamline_length()
+
+        # Set interpolation / walking function
+        if self.interp_method == 'arclength':
+            self.walk_func = self._walk_arclength
+        elif self.interp_method == 'cartesian':
+            self.walk_func = self._walk_cartesian_length
+        else:
+            raise ValueError('Unknown interpolation method: ', interp_method)
+
+        # Data structures for collateral definitions
+        self.colt_branch_points = []
+        self.colt_target_points = []
+        self.colt_max_lengths = []
+        self.colt_step_lengths = []
+        self.colt_lvl_numbranch = []
+        self.colt_lvl_numsteps = []
+        self.colt_lvl_angles= []
+
+
+    def add_collateral(
+            self,
+            branch_point_um,
+            target_point_um,
+            max_length_um,
+            step_length_um,
+            levels_num_steps,
+            levels_num_branches,
+            levels_angles_deg):
+        """
+        Add axon collateral at point on axon closest to the branch point.
+        """
+        self.colt_branch_points.append(branch_point_um)
+        self.colt_target_points.append(target_point_um)
+        self.colt_max_lengths.append(max_length_um)
+        self.colt_step_lengths.append(step_length_um)
+        self.colt_lvl_numsteps.append(levels_num_steps)
+        self.colt_lvl_numbranch.append(levels_num_branches)
+        self.colt_lvl_angles.append(levels_angles_deg)
+
+
+    def _build_collaterals(self):
+        node_secs = self.built_sections[self.nodal_compartment_type]
+        node_pt3d, node_n3d = morph_3d.get_segment_centers([node_secs],
+                                samples_as_rows=True)
+        node_pt3d = np.array(node_pt3d)
+        node_pt_idx_upper = np.cumsum(node_n3d)
+        for i_colt, branch_pt_um in enumerate(self.colt_branch_points):
+            # Get data defining the collateral
+            target_point_um = self.colt_target_points[i_colt]
+            max_length_um = self.colt_max_lengths[i_colt]
+            step_length_um = self.colt_step_lengths[i_colt]
+            levels_num_steps = self.colt_lvl_numsteps[i_colt]
+            levels_num_branches = self.colt_lvl_numbranch[i_colt]
+            levels_angles_deg = self.colt_lvl_angles[i_colt]
+
+            # Find nodal section that is closest to branch point
+            node_pt_dists = np.linalg.norm(node_pt3d - branch_pt_um, axis=1)
+            i_pt3d = np.argmin(node_pt_dists)
+            i_sec = next((i for i, hi in enumerate(node_pt_idx_upper) if (i_pt3d < hi)))
+
+            # Build the collateral
+            # - generate next sample point
+            self.colt_subtrees = []
+
+
+    def _build_one_collateral(self, colt_idx, level, parent_pt_um):
+        
+        # Get data defining the collateral
+        target_pt_um = self.colt_target_points[colt_idx]
+        max_length_um = self.colt_max_lengths[colt_idx]
+        step_length_um = self.colt_step_lengths[colt_idx]
+        num_steps = self.colt_lvl_numsteps[colt_idx][level]
+        num_branches = self.colt_lvl_numbranch[colt_idx][level]
+        angle_deg = self.colt_lvl_angles[colt_idx][level]
+
+        for i in range(num_steps):
+
+            # Step in the direction of target
+            v_target = target_pt_um - parent_pt_um
+            u_target = normvec(v_target)
+
+            next_pt_pre_rot = parent_pt_um + step_length_um * u_target
+
+            # Choose random axis perpendicular to sample axis
+            rvec = np.random.random((3,)) - 0.5
+            rvec_parallel = np.dot(rvec, u_target) * u_target
+            rvec_perpendicular = rvec - rvec_parallel
+
+            # Make rotation matrix for all samples in subtree of current sample
+            x = np.random.random(1) - 0.5
+            angle = 2 * x * angle_deg
+            A = axangles.axangle2aff(rvec_perpendicular, angle, point=parent_pt_um)
+
+            next_pt_post_rot = np.dot(A, next_pt_pre_rot)
+            
+            # Make the section
+            # TODO: copy from main routine
+            # - append to colt_subtrees[colt_idx]
+
+            # Add 3d information
+            h.pt3dclear(sec=ax_sec)
+            for coords_mm in (parent_pt_um, next_pt_post_rot):
+                coords_um = coords_mm * 1e3
+                x, y, z = coords_um
+                h.pt3dadd(x, y, z, sec_attrs['morphology']['diam'], sec=ax_sec)
+
+
+            # Update parent point
+            parent_pt_um = next_pt_post_rot
+
+
+    def build_axon(self):
+        """
+        Build NEURON axon along a sequence of coordinates.
+
+        Returns
+        -------
+
+        @return     sections : list[nrn.Section]
+                    List of axonal sections
+        """
+        # State variables for building algorithm
+        self.interp_pts = []        # interpolated points
+        self.num_passed = 1         # index of last passed streamline point
+                                    # (we already 'passed' starting point)
+        
+        self.interp_pts = [self.streamline_pts[0]]        # interpolated points
+        self.last_coord = self.streamline_pts[0]
+        self.last_tangent = normvec(self.streamline_pts[1] - self.streamline_pts[0])
+        self.built_length = 0.0
+        self.i_sequence_offset = 0
+
+        
+        # Keep references to newly constructed Sections
+        self.built_sections = {sec_type: [] for sec_type in self.compartment_defs.keys()}
+        self.built_sections['ordered'] = sec_ordered = []
+
+        # Estimate number of Sections needed to build axon
+        MAX_NUM_COMPARTMENTS = int(1e9)
+        est_num_comp = self.estimate_num_sections()
+        tot_num_seg = 0
+        logger.debug("Estimated number of sections to build axon "
+                     " of length {} mm: {:.1f}".format(self.streamline_length, est_num_comp))
+        if est_num_comp > MAX_NUM_COMPARTMENTS:
+            raise ValueError('Streamline too long (estimated number of '
+                'compartments needed is {}'.format(est_num_comp))
+
+        # Keep track of compartments that exceed geometry tolerance
+        num_tol_exceeded = 0
+        diffs_tol_exceeded = []
+
+        # Build axon progressively by walking along streamline path
+        prev_sec = self.parent_sec
+        for i_compartment in xrange(MAX_NUM_COMPARTMENTS):
+
+            # Find properties of next Section (compartment type)
+            sec_type, sec_attrs = self.get_next_compartment_def(i_compartment)
+            sec_L_mm = sec_attrs['morphology']['L'] * 1e-3 # um to mm
+
+
+            # Create the compartment
+            sec_name = "{:s}[{:d}]".format(sec_type, len(self.built_sections[sec_type]))
+            if (self.parent_cell is not None) and not self.connect_gap_junction:
+                # see module neuron.__init__
+                ax_sec = h.Section(name=sec_name, cell=self.parent_cell)
+            else:
+                ax_sec = h.Section(name=sec_name)
+            
+            # Set its properties and connect it
+            self._set_comp_attributes(ax_sec, sec_attrs)
+            if prev_sec is not None:
+                if i_compartment == 0 and self.connect_gap_junction:
+                    # use mechanism gap.mod, comes with PyNN
+                    seg_pre = prev_sec(0.5)
+                    seg_post = ax_sec(0.5)
+                    gap_pre = h.Gap(seg_pre)
+                    gap_post = h.Gap(seg_post)
+                    gap_pre.g = self.gap_conductances[0]
+                    gap_post.g = self.gap_conductances[1]
+                    h.setpointer(seg_pre._ref_v, 'vgap', gap_post)
+                    h.setpointer(seg_post._ref_v, 'vgap', gap_pre)
+                    # Save reference to gap junctions
+                    self.built_sections['gap_junctions'] = (gap_pre, gap_post)
+                else:
+                    ax_sec.connect(prev_sec(1.0), 0.0)
+            
+            prev_sec = ax_sec
+            self.built_sections[sec_type].append(ax_sec)
+            sec_ordered.append(ax_sec)
+            tot_num_seg += ax_sec.nseg
+            
+            # Find section endpoint by walking along streamline for sec.L
+            num_passed, stop_coord, next_tangent = self.walk_func(sec_L_mm)
+            self.interp_pts.append(stop_coord)
+            
+            # Check compartment length vs tolerance
+            real_length = veclen(stop_coord - self.last_coord)
+            if not np.isclose(real_length, sec_L_mm, atol=self.tolerance_mm):
+                num_tol_exceeded += 1
+                diffs_tol_exceeded.append(abs(real_length - sec_L_mm))
+                # logger.warning('exceed length tolerance ({}) '
+                #                ' in compartment compartment {} : L = {}'.format(
+                #                     tolerance_mm, ax_sec, real_length))
+
+            # Add the 3D start and endpoint
+            sec_endpoints = self.last_coord, stop_coord
+            h.pt3dclear(sec=ax_sec)
+            for coords_mm in sec_endpoints:
+                coords_um = coords_mm * 1e3
+                x, y, z = coords_um
+                h.pt3dadd(x, y, z, sec_attrs['morphology']['diam'], sec=ax_sec)
+
+            # Update state variables
+            self.built_length += real_length
+            self.num_passed += num_passed
+            self.last_coord = stop_coord
+            self.last_tangent = next_tangent
+
+            # If terminating axon with nodal compartment: either cutoff or extrapolate
+            # remaining_length = self._get_remaining_arclength() # FIXME: fix bug
+            remaining_length = self.streamline_length - self.built_length
+
+            if self.termination_method == 'terminal_sequence':
+                if self.current_compartment_sequence == 'terminal_comp_sequence' and \
+                   (self.i_sequence == len(self.terminal_comp_sequence)-1):
+                   break
+            elif self.termination_method == 'unmyelinated':
+                if remaining_length <= self.unmyelinated_terminal_length:
+                    # This check was also done before building previous compartment
+                    # and should have built a compartment of exactly the remaining length
+                    break
+            elif self.termination_method == 'any_extend':
+                if self.num_passed >= len(self.streamline_pts):
+                    break
+            elif self.termination_method == 'any_cutoff':
+                next_type, next_attrs = self.get_next_compartment_def(
+                                            i_compartment + 1, update_state=False)
+                next_length = next_attrs['morphology']['L'] * 1e-3
+                if remaining_length - next_length <= 0:
+                    break
+            elif self.termination_method == 'nodal_cutoff' and sec_type == self.nodal_compartment_type:
+                i_seq = (i_compartment - self.i_sequence_offset) % len(self.repeating_comp_sequence)
+                next_node_dist = self.next_node_distance(i_seq, measure_from=1)
+                if next_node_dist > remaining_length:
+                    break
+            elif self.termination_method == 'nodal_extend' and sec_type == self.nodal_compartment_type:
+                if self.num_passed >= len(self.streamline_pts):
+                    break
+
+            # Sanity check: is axon too long?
+            if i_compartment >= MAX_NUM_COMPARTMENTS-1:
+                raise ValueError("Axon too long.")
+            elif i_compartment >= 1.1 * est_num_comp:
+                logger.warning("Created {}-th section, more than estimate {}".format(
+                                i_compartment, est_num_comp))
+
+        # Connext axon collaterals to main axon
+        self._build_collaterals()
+        
+        # Status report
+        logger.debug("Created %i axonal segments (%i sections)",
+                     tot_num_seg, len(sec_ordered))
+
+        if num_tol_exceeded > 0:
+            logger.debug('exceeded length tolerance in %d compartments '
+                            '(worst = %f mm, tolerance = %f mm)', num_tol_exceeded,
+                            max(diffs_tol_exceeded), self.tolerance_mm)
+
+        # Add to parent cell
+        if (self.parent_cell is not None) and not self.connect_gap_junction:
+            # NOTE: refs to sections are not kept alive by appending them
+            # to one of the the instantiated template's (icell's) SectionList.
+            # There does not seem a way to store newly created sections
+            # on the instantiated template (icell) from within python in a way
+            # that references are kept alive. You cannot assign python
+            # lists to the icell, and appending to its SectionLists
+            # also does not work.
+
+            # Add to axonal SectionList in order of connection
+            append_to = ['all', 'axonal']
+            for seclist_name in append_to:
+                seclist = getattr(self.parent_cell, seclist_name, None)
+                if seclist is not None:
+                    # DOES NOT KEEP ALIVE REFS:
+                    for ax_sec in sec_ordered:
+                        seclist.append(sec=ax_sec)
+                    logger.debug("Updated SectionList '%s' of %s", seclist_name,
+                                 self.parent_cell)
+
+        # Make SectionList objects with names conforming to MorphologyImporter interface
+        all_seclist = h.SectionList()
+        for sec in self.built_sections['ordered']:
+            all_seclist.append(sec=sec)
+        self.built_sections['all'] = all_seclist
+        self.built_sections['axonal'] = all_seclist
+
+        return dotdict(self.built_sections)
 
 
     def estimate_num_sections(self):
@@ -339,13 +732,15 @@ class AxonBuilder(object):
         return walk_passed, stop_pt, tangent
 
 
-    def _connect_axon(self, parent_cell, parent_sec, connection_method,
+    def _join3d_axon2cell(self, parent_cell, parent_sec, connection_method,
                       tolerance_mm=1e-3):
         """
-        Ensure axon is connected to parent cell, both geometrically (in 3D space)
-        and electrically (in NEURON).
+        Ensure axon is connected to parent cell in 3D space.
 
         @see    build_along_streamline.
+
+        @post   self.streamline_translation_mm is the translation vector applied
+                to the original streamline points
         """
         # Get connection point on parent cell (assume last 3D point)
         n3d = int(h.n3d(sec=parent_sec))
@@ -363,6 +758,7 @@ class AxonBuilder(object):
                 raise ValueError("Start or end of streamline must be coincident"
                         "with endpoint of parent section ({})".format(
                             parent_coords))
+            self.streamline_translation_mm = np.zeros(3)
 
         elif connection_method.startswith('translate_axon'):
             # Translate axon start or end to connection point
@@ -381,6 +777,7 @@ class AxonBuilder(object):
 
             translate_vec = parent_coords - streamline_origin
             self.streamline_pts = self.streamline_pts + translate_vec # broadcasts
+            self.streamline_translation_mm = translate_vec
             logger.debug('Axon coordinates were translated by vector {}'.format(translate_vec))
 
         elif connection_method.startswith('translate_cell'):
@@ -397,6 +794,7 @@ class AxonBuilder(object):
             translate_mat = np.eye(4)
             translate_mat[:3,3] = translate_vec
             morph_3d.transform_sections(parent_cell.all, translate_mat)
+            self.streamline_translation_mm = np.zeros(3)
             logger.debug('Cell morphology was transformed using matrix {}'.format(translate_mat))
 
 
@@ -453,304 +851,6 @@ class AxonBuilder(object):
             self.i_sequence = i_sequence
 
         return sec_type, sec_attrs
-
-
-    def build_along_streamline(self,
-                               streamline_coords,
-                               termination_method='terminal_sequence',
-                               tolerance_mm=1e-6,
-                               interp_method='cartesian',
-                               parent_cell=None,
-                               parent_sec=None,
-                               connection_method='translate_axon',
-                               connect_gap_junction=False,
-                               gap_conductances=None,
-                               raise_if_existing=True,
-                               use_initial_segment=True,
-                               unmyelinated_terminal_length=0.0,
-                               collateral_branch_points=[],
-                               collateral_target_points=[]):
-        """
-        Build NEURON axon along a sequence of coordinates.
-
-        Arguments
-        ---------
-
-        @param  terminate : str
-
-                - 'any' to terminate as soon as last compartment extends beyond
-                  endpoint of streamline
-
-                - 'unmyelinated' to end with an unmyelinated segment of length
-                  <unmyelinated_terminal_length>
-
-                - 'terminal_sequence' to use the axon class' <terminal_comp_sequence>
-                  variable for building the final segment
-
-                - 'nodal_extend' to terminate axon with nodal compartment
-                   extended beyond streamline endpoint if necessary
-
-                - 'nodal_cutoff' to terminate axon with nodal compartment
-                   before streamline endpoint is reached
-
-
-        @param  tolerance_mm : float
-
-                Tolerance on length of compartments caused by discrepancy
-                between streamline arclength and length of compartments spanning
-                a streamline node.
-
-        @param  connection_method : str
-                
-                Method for connecting the reconstructed acon to the parent
-                sections. One of the following:
-
-                'orient_coincident': find streamline end that connects to the 
-                parent section and start building from this point. Raise
-                exception if not coincident.
-
-                'translate_axon_<start/end>': translate starting or endpoint
-                of axon to endpoint of parent section.
-
-                'translate_cell_<start/end>': Translate cell so that connection 
-                point is coincident with start or end of streamline
-
-        @param  connect_gap_junction : bool
-
-                If true, connect axon to cell using gap junction instead of
-                electrical connection between compartments. In this case the
-                new axonal compartmetns are not added to SectionLists in 
-                the parent cell object (wrapper for compartments).
-
-        Returns
-        -------
-
-        @return     sections : list[nrn.Section]
-                    List of axonal sections
-        """
-        # Parse arguments and check preconditions
-        if termination_method == 'unmyelinated' and \
-           unmyelinated_terminal_length <= 0.0:
-            raise ValueError('Must use positive unmyelinated terminal length'
-                             ' for termination method "unmyelinated"')
-        if termination_method == 'terminal_sequence' and \
-           len(self.terminal_comp_sequence) == 0:
-            raise ValueError('No terminal compartment sequence defined '
-                             'in axon class {}'.format(self.__class__))
-        self.termination_method = termination_method
-        self.use_initial_segment = use_initial_segment
-        self.unmyelinated_terminal_length = unmyelinated_terminal_length
-        self.streamline_pts = np.array(streamline_coords)
-
-        # Connect to parent cell
-        if parent_sec is not None:
-            self._connect_axon(parent_cell, parent_sec, connection_method,
-                               tolerance_mm=1e-3)
-
-        # Save streamline info
-        self.num_streamline_pts = len(self.streamline_pts)
-        self._set_streamline_length()
-        
-        # State variables for building algorithm
-        self.interp_pts = []        # interpolated points
-        self.num_passed = 1         # index of last passed streamline point
-                                    # (we already 'passed' starting point)
-        
-        self.interp_pts = [self.streamline_pts[0]]        # interpolated points
-        self.last_coord = self.streamline_pts[0]
-        self.last_tangent = normvec(self.streamline_pts[1] - streamline_coords[0])
-        self.built_length = 0.0
-        self.i_sequence_offset = 0
-
-        # Walk to its endpoint
-        if interp_method == 'arclength':
-            walk_func = self._walk_arclength
-        elif interp_method == 'cartesian':
-            walk_func = self._walk_cartesian_length
-        else:
-            raise ValueError('Unknown interpolation method: ', interp_method)
-        
-        # Keep references to newly constructed Sections
-        self.built_sections = {sec_type: [] for sec_type in self.compartment_defs.keys()}
-        self.built_sections['ordered'] = sec_ordered = []
-
-        # Estimate number of Sections needed to build axon
-        MAX_NUM_COMPARTMENTS = int(1e9)
-        est_num_comp = self.estimate_num_sections()
-        tot_num_seg = 0
-        logger.debug("Estimated number of sections to build axon "
-                     " of length {} mm: {:.1f}".format(self.streamline_length, est_num_comp))
-        if est_num_comp > MAX_NUM_COMPARTMENTS:
-            raise ValueError('Streamline too long (estimated number of '
-                'compartments needed is {}'.format(est_num_comp))
-
-        # Keep track of compartments that exceed geometry tolerance
-        num_tol_exceeded = 0
-        diffs_tol_exceeded = []
-
-        # Build axon progressively by walking along streamline path
-        for i_compartment in xrange(MAX_NUM_COMPARTMENTS):
-
-            # Find properties of next Section (compartment type)
-            sec_type, sec_attrs = self.get_next_compartment_def(i_compartment)
-            sec_L_mm = sec_attrs['morphology']['L'] * 1e-3 # um to mm
-
-
-            # Create the compartment
-            sec_name = "{:s}[{:d}]".format(sec_type, len(self.built_sections[sec_type]))
-            if (parent_cell is not None) and not connect_gap_junction:
-                # see module neuron.__init__
-                ax_sec = h.Section(name=sec_name, cell=parent_cell)
-            else:
-                ax_sec = h.Section(name=sec_name)
-            
-            # Set its properties and connect it
-            self._set_comp_attributes(ax_sec, sec_attrs)
-            if parent_sec is not None:
-                if i_compartment == 0 and connect_gap_junction:
-                    # use mechanism gap.mod, comes with PyNN
-                    seg_pre = parent_sec(0.5)
-                    seg_post = ax_sec(0.5)
-                    gap_pre = h.Gap(seg_pre)
-                    gap_post = h.Gap(seg_post)
-                    gap_pre.g = gap_conductances[0]
-                    gap_post.g = gap_conductances[1]
-                    h.setpointer(seg_pre._ref_v, 'vgap', gap_post)
-                    h.setpointer(seg_post._ref_v, 'vgap', gap_pre)
-                    # Save reference to gap junctions
-                    self.built_sections['gap_junctions'] = (gap_pre, gap_post)
-                else:
-                    ax_sec.connect(parent_sec(1.0), 0.0)
-            
-            parent_sec = ax_sec
-            self.built_sections[sec_type].append(ax_sec)
-            sec_ordered.append(ax_sec)
-            tot_num_seg += ax_sec.nseg
-            
-            # Find section endpoint by walking along streamline for sec.L
-            num_passed, stop_coord, next_tangent = walk_func(sec_L_mm)
-            self.interp_pts.append(stop_coord)
-            
-            # Check compartment length vs tolerance
-            real_length = veclen(stop_coord - self.last_coord)
-            if not np.isclose(real_length, sec_L_mm, atol=tolerance_mm):
-                num_tol_exceeded += 1
-                diffs_tol_exceeded.append(abs(real_length - sec_L_mm))
-                # logger.warning('exceed length tolerance ({}) '
-                #                ' in compartment compartment {} : L = {}'.format(
-                #                     tolerance_mm, ax_sec, real_length))
-
-            # Add the 3D start and endpoint
-            sec_endpoints = self.last_coord, stop_coord
-            h.pt3dclear(sec=ax_sec)
-            for coords_mm in sec_endpoints:
-                coords_um = coords_mm * 1e3
-                x, y, z = coords_um
-                h.pt3dadd(x, y, z, sec_attrs['morphology']['diam'], sec=ax_sec)
-
-            # Update state variables
-            self.built_length += real_length
-            self.num_passed += num_passed
-            self.last_coord = stop_coord
-            self.last_tangent = next_tangent
-
-            # If terminating axon with nodal compartment: either cutoff or extrapolate
-            # remaining_length = self._get_remaining_arclength() # FIXME: fix bug
-            remaining_length = self.streamline_length - self.built_length
-
-            if self.termination_method == 'terminal_sequence':
-                if self.current_compartment_sequence == 'terminal_comp_sequence' and \
-                   (self.i_sequence == len(self.terminal_comp_sequence)-1):
-                   break
-            elif self.termination_method == 'unmyelinated':
-                if remaining_length <= self.unmyelinated_terminal_length:
-                    # This check was also done before building previous compartment
-                    # and should have built a compartment of exactly the remaining length
-                    break
-            elif self.termination_method == 'any_extend':
-                if self.num_passed >= len(self.streamline_pts):
-                    break
-            elif self.termination_method == 'any_cutoff':
-                next_type, next_attrs = self.get_next_compartment_def(
-                                            i_compartment + 1, update_state=False)
-                next_length = next_attrs['morphology']['L'] * 1e-3
-                if remaining_length - next_length <= 0:
-                    break
-            elif self.termination_method == 'nodal_cutoff' and sec_type == self.nodal_compartment_type:
-                i_seq = (i_compartment - self.i_sequence_offset) % len(self.repeating_comp_sequence)
-                next_node_dist = self.next_node_distance(i_seq, measure_from=1)
-                if next_node_dist > remaining_length:
-                    break
-            elif self.termination_method == 'nodal_extend' and sec_type == self.nodal_compartment_type:
-                if self.num_passed >= len(self.streamline_pts):
-                    break
-
-            # Sanity check: is axon too long?
-            if i_compartment >= MAX_NUM_COMPARTMENTS-1:
-                raise ValueError("Axon too long.")
-            elif i_compartment >= 1.1 * est_num_comp:
-                logger.warning("Created {}-th section, more than estimate {}".format(
-                                i_compartment, est_num_comp))
-
-        # TODO: add axon collaterals
-        for i, branch_coord in enumerate(collateral_branch_points):
-            target_coord = collateral_target_points[i]
-
-            # Find a node (first item in sequence) to branch off from
-
-            # build vector in direction of target, and loop up length
-
-            # Add section
-        
-        logger.debug("Created %i axonal segments (%i sections)",
-                     tot_num_seg, len(sec_ordered))
-
-        if num_tol_exceeded > 0:
-            logger.debug('exceeded length tolerance in %d compartments '
-                            '(worst = %f mm, tolerance = %f mm)', num_tol_exceeded,
-                            max(diffs_tol_exceeded), tolerance_mm)
-
-        # Add to parent cell
-        if (parent_cell is not None) and not connect_gap_junction:
-            # NOTE: refs to sections are not kept alive by appending them
-            # to one of the the instantiated template's (icell's) SectionList.
-            # There does not seem a way to store newly created sections
-            # on the instantiated template (icell) from within python in a way
-            # that references are kept alive. You cannot assign python
-            # lists to the icell, and appending to its SectionLists
-            # also does not work.
-
-            # for sec_type, seclist in built_sections.items():
-            #     existing = getattr(parent_cell, sec_type, None)
-            #     if existing is None:
-            #         setattr(parent_cell, sec_type, seclist)
-            #     elif raise_if_existing:
-            #         raise Exception(
-            #             "Parent cell {} has existing section list '{}': {}".format(
-            #              parent_cell, sec_type, existing))
-            #     else:
-            #         old_secs = list(existing)
-            #         old_secs.extend(seclist)
-            #         setattr(parent_cell, sec_type, seclist)
-
-            # Add to axonal SectionList in order of connection
-            append_to = ['all', 'axonal']
-            for seclist_name in append_to:
-                seclist = getattr(parent_cell, seclist_name, None)
-                if seclist is not None:
-                    # DOES NOT KEEP ALIVE REFS:
-                    for ax_sec in sec_ordered:
-                        seclist.append(sec=ax_sec)
-                    logger.debug("Updated SectionList '%s' of %s", seclist_name, parent_cell)
-
-        # Make SectionList objects with names conforming to MorphologyImporter interface
-        all_seclist = h.SectionList()
-        for sec in self.built_sections['ordered']:
-            all_seclist.append(sec=sec)
-        self.built_sections['all'] = all_seclist
-        self.built_sections['axonal'] = all_seclist
-
-        return dotdict(self.built_sections)
 
 
 # Make logging functions

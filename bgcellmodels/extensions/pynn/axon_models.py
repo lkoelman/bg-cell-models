@@ -49,14 +49,14 @@ class AxonalRelay(object):
 
         # Build axon
         axon_builder = self.axon_class(
+            self.streamline_coordinates_mm,
+            termination_method=self.termination_method,
+            interp_method='arclength',
+            tolerance_mm=1e-4,
             without_extracellular=not self.with_extracellular)
 
-
-        self.icell = axon_builder.build_along_streamline(
-                        self.streamline_coordinates_mm,
-                        termination_method=self.termination_method,
-                        interp_method='arclength',
-                        tolerance_mm=1e-4)
+        self.icell = axon_builder.build_axon()
+                        
 
         initial_sec = self.icell.ordered[0]
         terminal_sec = self.icell.ordered[-1]
