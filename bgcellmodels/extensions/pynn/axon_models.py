@@ -139,8 +139,6 @@ class AxonalRelay(object):
             self.icell.all, self.rho_extracellular_ohm_cm, x_elec, y_elec, z_elec)
 
         # Set up LFP calculation
-        if logger.level <= logging.WARNING:
-            h.XTRA_VERBOSITY = 1
         self.lfp_summator = h.xtra_sum(self.icell.ordered[0](0.5))
         self.lfp_tracker = h.ImembTracker(self.lfp_summator, self.icell.all, "xtra")
 

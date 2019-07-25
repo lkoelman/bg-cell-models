@@ -117,6 +117,9 @@ class VariableIndentEncoder(json.JSONEncoder):
 
     Credit to StackOverflow user martineau, https://stackoverflow.com/a/13252112
 
+    @note   must write to string, not directly to file. I.e. use json.dumps
+            instead of json.dump
+
     EXAMPLE
     -------
 

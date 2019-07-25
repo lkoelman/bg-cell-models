@@ -103,6 +103,7 @@ class AxonFoust2011(AxonBuilder):
         self.initial_comp_sequence = ['aisnode', 'aismyelin']
         self.terminal_comp_sequence = ['node', 'collateral']
         self.repeating_comp_sequence = ['node', 'myelin']
+        self.collateral_comp_sequence = ['node', 'collateral']
 
         # Name of compartment type representing node of Ranvier
         self.nodal_compartment_type = 'node'

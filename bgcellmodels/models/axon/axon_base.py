@@ -467,7 +467,9 @@ class AxonBuilder(object):
                                gap_conductances=None,
                                raise_if_existing=True,
                                use_initial_segment=True,
-                               unmyelinated_terminal_length=0.0):
+                               unmyelinated_terminal_length=0.0,
+                               collateral_branch_points=[],
+                               collateral_target_points=[]):
         """
         Build NEURON axon along a sequence of coordinates.
 
@@ -689,6 +691,16 @@ class AxonBuilder(object):
             elif i_compartment >= 1.1 * est_num_comp:
                 logger.warning("Created {}-th section, more than estimate {}".format(
                                 i_compartment, est_num_comp))
+
+        # TODO: add axon collaterals
+        for i, branch_coord in enumerate(collateral_branch_points):
+            target_coord = collateral_target_points[i]
+
+            # Find a node (first item in sequence) to branch off from
+
+            # build vector in direction of target, and loop up length
+
+            # Add section
         
         logger.debug("Created %i axonal segments (%i sections)",
                      tot_num_seg, len(sec_ordered))
