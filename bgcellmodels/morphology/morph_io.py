@@ -379,6 +379,7 @@ def morphologies_to_edges(section_lists, segment_centers=True,
     else:
         samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
                                         include_diam=False)
+    samples_xyz = np.array(samples_xyz)
 
     # Apply transformation before writing
     if (translation is not None) or (transform is not None) or (scale != 1.0):
@@ -415,7 +416,7 @@ def morphologies_to_edges(section_lists, segment_centers=True,
             secs_edges.extend(edges)
         else:
             secs_edges.append(edges)
-            vertices.append(samples_xyz[sample_offset:num_samples, :])
+            vertices.append(samples_xyz[sample_offset:(sample_offset+num_samples), :])
 
         sample_offset += num_samples
 
@@ -425,6 +426,63 @@ def morphologies_to_edges(section_lists, segment_centers=True,
     else:
         edges = secs_edges
     return vertices, edges
+
+
+def edges_to_PLY(vertices, edges, filepath, rgb=(0.0, 0.0, 0.0), text=False,
+                 multiple=False):
+    """
+    Write edges defined as pairs of vertices to PLY file.
+
+    @param  vertices : iterable[iterable[float]]
+            Collection of 3D vertices.
+
+    @param  edges : iterable[iterable[int]]
+            Collection of edges index pairs into vertex collection
+
+    @param  multiple : bool
+            If True, treat arguments 'vertices' and 'edges' as multiple
+            collections of vertices and edges. These will be concatenated into
+            one PLY file  
+    """
+    from plyfile import PlyData, PlyElement
+
+    # multiple = not isinstance(vertices[0][0], float)
+    if multiple:
+        sets_num_verts = [len(verts_set) for verts_set in vertices]
+        sets_num_preceding = pre = [0] + list(np.cumsum(sets_num_verts))
+        vertices = [tuple(v) for verts_set in vertices for v in verts_set]
+
+    if not isinstance(vertices[0], tuple):
+        vertices = [tuple(v) for v in vertices]
+
+    # Create vertices as PLY elements
+    vertex_dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
+    vertices = np.array(vertices, dtype=vertex_dtype) # argument must be list of tuple
+    verts_element = PlyElement.describe(vertices, 'vertex')
+    
+    # Create edges in PLY format
+    if multiple:
+        secs_edges = [
+            (e[0] + pre[i_set], e[1] + pre[i_set], rgb[0], rgb[1], rgb[2]) 
+                for i_set, edge_set in enumerate(edges) for e in edge_set
+        ]
+    else:
+        secs_edges = [(e[0], e[1], rgb[0], rgb[1], rgb[2]) for e in edges]
+
+    # Concatenate all edges
+    edge_dtype = [ # edge format: http://paulbourke.net/dataformats/ply/
+        ('vertex1', 'i4'),
+        ('vertex2', 'i4'), 
+        ('red',   'u1'),
+        ('green', 'u1'),
+        ('blue',  'u1')
+    ]
+    edges = np.array(secs_edges, dtype=edge_dtype)
+    edges_element = PlyElement.describe(edges, 'edge')
+
+    # Write vertices and faces to PLY file
+    elements = [verts_element, edges_element]
+    PlyData(elements, text=text).write(filepath)
 
 
 def morphology_to_PLY(section_lists, filepath, segment_centers=True,
@@ -578,6 +636,20 @@ def morphology_to_TXT(section_lists, filepath, segment_centers=True,
 
     # Save to text file
     np.savetxt(filepath, samples_xyz, fmt=fmt)
+
+
+def coordinates_um_to_txt(coords, filepath, precision_mm=1e-6, scale=1.0):
+    """
+    @param  scale : float
+            Scale factor applied to coordinates after transform and translation
+            is applied. Translation and transform not affected by scale.
+    """
+    # Set precision to 0.001 um
+    num_significant = int(-np.log10(precision_mm) - 3 - np.log10(scale))
+    fmt = '%.{:d}e'.format(num_significant)
+
+    # Save to text file
+    np.savetxt(filepath, coords * scale, fmt=fmt)
 
 
 if __name__ == '__main__':

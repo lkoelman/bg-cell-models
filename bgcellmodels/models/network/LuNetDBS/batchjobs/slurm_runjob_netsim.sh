@@ -66,7 +66,8 @@ done
 # ARGUMENTS: long arguments
 opt_names_long=("dur" "simdt" "scale" "seed" \
     "writeinterval" "transientperiod" "reportinterval" \
-    "outdir" "configdir" "simconfig" "cellconfig" "axonfile" "morphdir")
+    "outdir" "configdir" "simconfig" "cellconfig" "axonfile" "morphdir" \
+    "femconfig")
 for optname in "${opt_names_long[@]}"; do
     if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} --${optname} ${!optname}"

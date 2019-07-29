@@ -58,8 +58,8 @@ class AxonalRelay(object):
         self.icell = axon_builder.build_axon()
                         
 
-        initial_sec = self.icell.ordered[0]
-        terminal_sec = self.icell.ordered[-1]
+        initial_sec = self.icell.main_branch[0]
+        terminal_sec = self.icell.main_branch[-1]
 
 
         # Change source for NetCons (see pyNN.neuron.simulator code)
@@ -139,7 +139,7 @@ class AxonalRelay(object):
             self.icell.all, self.rho_extracellular_ohm_cm, x_elec, y_elec, z_elec)
 
         # Set up LFP calculation
-        self.lfp_summator = h.xtra_sum(self.icell.ordered[0](0.5))
+        self.lfp_summator = h.xtra_sum(self.icell.main_branch[0](0.5))
         self.lfp_tracker = h.ImembTracker(self.lfp_summator, self.icell.all, "xtra")
 
 

@@ -106,6 +106,20 @@ def seg_at_index(sec, iseg):
     return sec(xmid)
 
 
+def seg_at_node(sec, inode):
+    """
+    Get the segment at given node index.
+
+    A section's nodes are the centers of its segments and the 0 and 1 ends.
+    """
+    if inode == 0:
+        return sec(0.0)
+    elif inode == sec.nseg + 1:
+        return sec(1.0)
+    else:
+        return sec(2.*(inode)-1.)/(2.*sec.nseg)
+
+
 def seg_xmid(seg):
     """
     x-value at segment midpoint
@@ -114,6 +128,19 @@ def seg_xmid(seg):
     iseg = seg_index(seg)
     xmid = (2.*(iseg+1)-1.)/(2.*nseg) # See NEURON book p. 8
     return xmid
+
+
+def allseg_xmid(sec):
+    """
+    Normalized locations of segments/nodes (0-1)
+    """
+    nseg = sec.nseg
+    node_locs = h.Vector(nseg + 2)
+    node_locs.indgen(1.0 / nseg)
+    node_locs.sub(1.0 / (2 * nseg))
+    node_locs.x[0] = 0.0
+    node_locs.x[nseg+1] = 1.0
+    return list(node_locs)
 
 
 def seg_xmin(seg, side=None):

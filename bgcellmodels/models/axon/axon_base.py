@@ -10,7 +10,7 @@ import numpy as np
 import neuron
 
 from bgcellmodels.morphology import morph_3d
-from bgcellmodels.common import logutils
+from bgcellmodels.common import logutils, nrnutil
 from bgcellmodels.common.stdutil import dotdict
 
 from transforms3d import axangles
@@ -176,75 +176,127 @@ class AxonBuilder(object):
         # Data structures for collateral definitions
         self.colt_branch_points = []
         self.colt_target_points = []
-        self.colt_max_lengths = []
         self.colt_step_lengths = []
         self.colt_lvl_numbranch = []
-        self.colt_lvl_numsteps = []
-        self.colt_lvl_angles= []
+        self.colt_lvl_angles = []
+        self.colt_lvl_lengths = []
+        self.colt_subtrees_seclists = []
 
 
-    def add_collateral(
+    def add_collateral_definition(
             self,
             branch_point_um,
             target_point_um,
-            max_length_um,
+            levels_lengths_um,
             step_length_um,
-            levels_num_steps,
             levels_num_branches,
             levels_angles_deg):
         """
-        Add axon collateral at point on axon closest to the branch point.
+        Add axon collateral definition at branch point coordinates, 
+        branching out to the given target point.
+
+        Arguments
+        ---------
+
+        @param  branch_point_um : np.array[float] of shape (3,)
+
+        @param  target_pt_um : np.array[float] of shape (3,)
+
+        @param  max_length_um : float
+
+        @param  step_length_um : float
+
+        @param  levels_num_steps : tuple[float]
+
+        @param  levels_num_branches : tuple[int]
+
+        @oaran  levels_angles_deg : float
+                Maximum angular deviation for step in direction of target point
         """
         self.colt_branch_points.append(branch_point_um)
         self.colt_target_points.append(target_point_um)
-        self.colt_max_lengths.append(max_length_um)
         self.colt_step_lengths.append(step_length_um)
-        self.colt_lvl_numsteps.append(levels_num_steps)
+        self.colt_lvl_lengths.append(levels_lengths_um)
         self.colt_lvl_numbranch.append(levels_num_branches)
         self.colt_lvl_angles.append(levels_angles_deg)
 
 
-    def _build_collaterals(self):
-        node_secs = self.built_sections[self.nodal_compartment_type]
+    def _build_all_collaterals(self):
+        """
+        Build all axon collaterals according to their definitions
+        added with add_collateral_definition().
+        """
+        # Get 3D coordinates of all nodal sections
+        node_type = self.collateral_comp_sequence[0]
+        node_secs = self.built_sections[node_type]
         node_pt3d, node_n3d = morph_3d.get_segment_centers([node_secs],
                                 samples_as_rows=True)
         node_pt3d = np.array(node_pt3d)
+
+        # Initialize data structures
+        self.colt_subtrees_seclists = [[] for i in range(len(self.colt_branch_points))]
+        
+        # Branch out from node closest to each branch point
         node_pt_idx_upper = np.cumsum(node_n3d)
         for i_colt, branch_pt_um in enumerate(self.colt_branch_points):
-            # Get data defining the collateral
-            target_point_um = self.colt_target_points[i_colt]
-            max_length_um = self.colt_max_lengths[i_colt]
-            step_length_um = self.colt_step_lengths[i_colt]
-            levels_num_steps = self.colt_lvl_numsteps[i_colt]
-            levels_num_branches = self.colt_lvl_numbranch[i_colt]
-            levels_angles_deg = self.colt_lvl_angles[i_colt]
 
             # Find nodal section that is closest to branch point
             node_pt_dists = np.linalg.norm(node_pt3d - branch_pt_um, axis=1)
             i_pt3d = np.argmin(node_pt_dists)
             i_sec = next((i for i, hi in enumerate(node_pt_idx_upper) if (i_pt3d < hi)))
+            parent_sec = node_secs[i_sec]
+            parent_pt0_idx = node_pt_idx_upper[i_sec-1] if i_sec > 0 else 0
+            parent_node_idx = i_pt3d - parent_pt0_idx
+            parent_seg = nrnutil.seg_at_node(parent_sec, parent_node_idx)
+            parent_pt_um = node_pt3d[i_pt3d]
+
+            # Initialize distance measurement
+            h.distance(0, parent_seg.x, sec=parent_sec)
 
             # Build the collateral
-            # - generate next sample point
-            self.colt_subtrees = []
+            for i in range(self.colt_lvl_numbranch[i_colt][0]):
+                self._build_collateral_subtree(i_colt, 0, parent_pt_um, parent_seg)
 
 
-    def _build_one_collateral(self, colt_idx, level, parent_pt_um):
+    def _build_collateral_subtree(self, colt_idx, level, parent_pt_um, parent_seg):
+        """
+        Build one unbranched section between two collateral branch points
+        at subsequent levels of collateral subtree and recurse.
+        """
         
         # Get data defining the collateral
         target_pt_um = self.colt_target_points[colt_idx]
-        max_length_um = self.colt_max_lengths[colt_idx]
         step_length_um = self.colt_step_lengths[colt_idx]
-        num_steps = self.colt_lvl_numsteps[colt_idx][level]
-        num_branches = self.colt_lvl_numbranch[colt_idx][level]
         angle_deg = self.colt_lvl_angles[colt_idx][level]
 
-        for i in range(num_steps):
+        level_length_um = self.colt_lvl_lengths[colt_idx][level]
+        max_length_um = sum(self.colt_lvl_lengths[colt_idx])
+        num_steps = int(np.ceil(level_length_um / step_length_um))
+        max_level = len(self.colt_lvl_lengths[colt_idx])-1
+
+        # Build the Section that will hold all the 3D points
+        sec_type = self.collateral_comp_sequence[-1]
+        ax_sec = self._make_sec(sec_type)
+        sec_attrs = self.compartment_defs[sec_type]
+        diam = sec_attrs['morphology']['diam']
+        self._set_comp_attributes(ax_sec, sec_attrs)
+        ax_sec.connect(parent_seg, 0.0)
+
+        # Save the compartment
+        self.built_sections[sec_type].append(ax_sec)
+        self.colt_subtrees_seclists[colt_idx].append(ax_sec)
+
+        # Add 3D point to Section by stepping towards target point
+        h.pt3dclear(sec=ax_sec)
+        x, y, z = parent_pt_um
+        h.pt3dadd(x, y, z, diam, sec=ax_sec)
+        i_step = 0
+        while True:
+            i_step += 1
 
             # Step in the direction of target
             v_target = target_pt_um - parent_pt_um
             u_target = normvec(v_target)
-
             next_pt_pre_rot = parent_pt_um + step_length_um * u_target
 
             # Choose random axis perpendicular to sample axis
@@ -254,25 +306,33 @@ class AxonBuilder(object):
 
             # Make rotation matrix for all samples in subtree of current sample
             x = np.random.random(1) - 0.5
-            angle = 2 * x * angle_deg
+            angle = np.deg2rad(2 * x * angle_deg)
             A = axangles.axangle2aff(rvec_perpendicular, angle, point=parent_pt_um)
-
-            next_pt_post_rot = np.dot(A, next_pt_pre_rot)
-            
-            # Make the section
-            # TODO: copy from main routine
-            # - append to colt_subtrees[colt_idx]
+            next_pt_post_rot = np.dot(A, np.append(next_pt_pre_rot, 1.0))[:3]
 
             # Add 3d information
-            h.pt3dclear(sec=ax_sec)
-            for coords_mm in (parent_pt_um, next_pt_post_rot):
-                coords_um = coords_mm * 1e3
-                x, y, z = coords_um
-                h.pt3dadd(x, y, z, sec_attrs['morphology']['diam'], sec=ax_sec)
-
+            x, y, z = next_pt_post_rot
+            h.pt3dadd(x, y, z, diam, sec=ax_sec)
 
             # Update parent point
             parent_pt_um = next_pt_post_rot
+
+            # Measure distance to collateral endpoint
+            collateral_length_um = h.distance(1.0, sec=ax_sec)
+            if level == max_level:
+                if collateral_length_um >= max_length_um:
+                    return
+                else:
+                    continue
+            elif i_step == num_steps:
+                break
+
+
+        # Reached end of unbranched section without meeting length criterion
+        for i in range(self.colt_lvl_numbranch[colt_idx][level+1]):
+            self._build_collateral_subtree(colt_idx, level+1, parent_pt_um, ax_sec(1.0))
+
+            
 
 
     def build_axon(self):
@@ -299,7 +359,7 @@ class AxonBuilder(object):
         
         # Keep references to newly constructed Sections
         self.built_sections = {sec_type: [] for sec_type in self.compartment_defs.keys()}
-        self.built_sections['ordered'] = sec_ordered = []
+        self.built_sections['main_branch'] = sec_ordered = []
 
         # Estimate number of Sections needed to build axon
         MAX_NUM_COMPARTMENTS = int(1e9)
@@ -325,15 +385,10 @@ class AxonBuilder(object):
 
 
             # Create the compartment
-            sec_name = "{:s}[{:d}]".format(sec_type, len(self.built_sections[sec_type]))
-            if (self.parent_cell is not None) and not self.connect_gap_junction:
-                # see module neuron.__init__
-                ax_sec = h.Section(name=sec_name, cell=self.parent_cell)
-            else:
-                ax_sec = h.Section(name=sec_name)
-            
-            # Set its properties and connect it
+            ax_sec = self._make_sec(sec_type)
             self._set_comp_attributes(ax_sec, sec_attrs)
+            
+            # Connect the compartment
             if prev_sec is not None:
                 if i_compartment == 0 and self.connect_gap_junction:
                     # use mechanism gap.mod, comes with PyNN
@@ -421,7 +476,7 @@ class AxonBuilder(object):
                                 i_compartment, est_num_comp))
 
         # Connext axon collaterals to main axon
-        self._build_collaterals()
+        self._build_all_collaterals()
         
         # Status report
         logger.debug("Created %i axonal segments (%i sections)",
@@ -434,33 +489,40 @@ class AxonBuilder(object):
 
         # Add to parent cell
         if (self.parent_cell is not None) and not self.connect_gap_junction:
-            # NOTE: refs to sections are not kept alive by appending them
-            # to one of the the instantiated template's (icell's) SectionList.
-            # There does not seem a way to store newly created sections
-            # on the instantiated template (icell) from within python in a way
-            # that references are kept alive. You cannot assign python
-            # lists to the icell, and appending to its SectionLists
-            # also does not work.
-
+            # NOTE: References to Python-created sections must be maintained 
+            # in Python. References are not kept alive by appending them
+            # to one of the Hoc template's SectionList.
+            
             # Add to axonal SectionList in order of connection
             append_to = ['all', 'axonal']
             for seclist_name in append_to:
                 seclist = getattr(self.parent_cell, seclist_name, None)
                 if seclist is not None:
-                    # DOES NOT KEEP ALIVE REFS:
-                    for ax_sec in sec_ordered:
-                        seclist.append(sec=ax_sec)
+                    for sec in self.built_sections[self.collateral_comp_sequence[-1]]:
+                        seclist.append(sec=sec)
+                    for sec in sec_ordered:
+                        seclist.append(sec=sec)
                     logger.debug("Updated SectionList '%s' of %s", seclist_name,
                                  self.parent_cell)
 
         # Make SectionList objects with names conforming to MorphologyImporter interface
         all_seclist = h.SectionList()
-        for sec in self.built_sections['ordered']:
+        for sec in self.built_sections['main_branch']:
+            all_seclist.append(sec=sec)
+        for sec in self.built_sections[self.collateral_comp_sequence[-1]]:
             all_seclist.append(sec=sec)
         self.built_sections['all'] = all_seclist
         self.built_sections['axonal'] = all_seclist
 
         return dotdict(self.built_sections)
+
+
+    def _make_sec(self, sec_type):
+        sec_name = "{:s}[{:d}]".format(sec_type, len(self.built_sections[sec_type]))
+        if (self.parent_cell is not None) and not self.connect_gap_junction:
+            return h.Section(name=sec_name, cell=self.parent_cell) # see module neuron.__init__
+        else:
+            return h.Section(name=sec_name)
 
 
     def estimate_num_sections(self):
@@ -844,7 +906,7 @@ class AxonBuilder(object):
                 sec_type = self.terminal_comp_sequence[i_sequence]
                 sec_attrs = self.compartment_defs[sec_type]
             else:
-                self.i_terminal_offset = len(self.built_sections['ordered'])
+                self.i_terminal_offset = len(self.built_sections['main_branch'])
 
         if update_state:
             self.current_compartment_sequence = current_compartment_sequence

@@ -24,12 +24,12 @@ class AxonFoust2011(AxonBuilder):
     Axon parameters 
     """
 
-    def __init__(self, **kwargs):
-        # Only pass keyword arguments
-        super(AxonFoust2011, self).__init__(**kwargs)
-
+    def __init__(self, *args, **kwargs):
+        # Set required properties before super call
         self._set_axon_params()
         self._set_compartment_types()
+        
+        super(AxonFoust2011, self).__init__(*args, **kwargs)
 
 
     def _set_axon_params(self):

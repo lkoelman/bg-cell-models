@@ -117,6 +117,7 @@ h("XTRA_VERBOSITY = 0")
 # Translation vectors between Waxholm data DWI and atlas-v1 space
 dwi2anat_vec_mm = np.array([-20.01319, -10.01633, -10.01622]) # from manual
 blend2anat_vec_um = np.array([-15.9514e3, -8.43968e3, -7.71387e3]) # in Blender file
+gpi_center_um = np.array([[18533.4921875, 5821.53759765625, 7248.1533203125]])
 
 
 def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
@@ -190,7 +191,10 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None):
 
     # Gather this data from all MPI ranks
     morph_data = {'gids': cell_ids, 'vertices': verts, 'edges': edges}
-    ranks_morph_data = comm.allgather(morph_data)
+    if WITH_MPI:
+        ranks_morph_data = comm.allgather(morph_data)
+    else:
+        ranks_morph_data =[morph_data]
 
     # Combine all data into one dictionary for exporting
     out_dict = {'cell_gids': [], 'vertices': [], 'edges': [], 'population': pop.label}
@@ -209,13 +213,25 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None):
             scale_suffix = str(scale)
         space_suffix = 'dwi' if translation is None else 'anat'
         
-        out_filename = '{}_locs_space-{}_scale-{}_mpirank-{}.pkl'.format(
-            pop.label, space_suffix, scale_suffix, mpi_rank)
+        out_filename = 'comp-locs_{}_space-{}_scale-{}.pkl'.format(
+            pop.label, space_suffix, scale_suffix)
         out_filepath = os.path.join(out_dir, out_filename)
         
+        # Write as pickle with vertices grouped by cell
         logger.debug('Population %s: writing compartment coordinates.', pop.label)
         with open(out_filepath, 'wb') as fout:
             pickle.dump(out_dict, fout)
+
+        # Write as PLY into flat datastructure
+        out_filepath = out_filepath[:-4] + '.ply' 
+        morph_io.edges_to_PLY(out_dict['vertices'], out_dict['edges'], 
+            out_filepath, multiple=True)
+
+        # Write as TXT in units of mm
+        out_filepath = out_filepath[:-4] + '.txt'
+        all_vertices = np.array([v for cell_verts in out_dict['vertices'] for v in cell_verts])
+        all_vertices += blend2anat_vec_um
+        morph_io.coordinates_um_to_txt(all_vertices, out_filepath, scale=1e-3)
 
 
 def simulate_model(
@@ -285,12 +301,7 @@ def simulate_model(
     if mpi_rank == 0:
         init_logging(logfile=None, debug=True)
 
-    print("""\nRunning net on MPI rank {} with following settings:
-    - sim_dur = {}
-    - sim_dt = {}
-    - output = {}""".format(mpi_rank, sim_dt, sim_dur, output))
-
-    print("\nThis is node {} ({} of {})\n".format(
+    print("\nThis is rank {} (node {} of {})".format(
           sim.rank(), sim.rank() + 1, sim.num_processes()))
 
     sim.state.duration = sim_dur # not used by PyNN, only by our custom funcs
@@ -457,7 +468,6 @@ def simulate_model(
     
     # Get 3D morphology properties of each cell
     cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
-    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
 
     # Choose a random morphology for each cell
     candidate_morphologies = np.array(cell_config['default_morphologies']['STN'])
@@ -467,6 +477,18 @@ def simulate_model(
         get_morphology_path(m) for m in candidate_morphologies[morph_indices]
     ]
 
+    # Axons and collaterals
+    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
+    stn_collateralization_fraction = 7.0/8.0 # Koshimizu (2013): 7/8 Gpe-projecting neurons
+    stn_collat_nbranch = np.zeros((stn_ncell_biophys, 2), dtype=int)
+    stn_collat_nbranch[:, 0] = 1 # one branch at first branch point
+    stn_collat_nbranch[:, 1] = 2 # two branches at second branch point
+    no_collat_idx = shared_rng.choice(stn_ncell_biophys,
+                        int((1.0-stn_collateralization_fraction)*stn_ncell_biophys),
+                        replace=False)
+    stn_collat_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
+    stn_collat_nbranch = [v.reshape((-1, 2)) for v in stn_collat_nbranch]
+
     # Load default parameters from sim config
     stn_cell_params = get_cell_parameters('STN')
 
@@ -474,7 +496,13 @@ def simulate_model(
     stn_cell_params['with_extracellular'] = with_lfp or with_dbs
     stn_cell_params['morphology_path'] = cells_morph_paths
     stn_cell_params['transform'] = cells_transforms
+    ## Axon parameters
     stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
+    stn_cell_params['collateral_branch_points_um'] = ArrayParameter(gpi_center_um)
+    stn_cell_params['collateral_target_points_um'] = ArrayParameter(gpi_center_um)
+    stn_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[50.0, 50.0]]))
+    stn_cell_params['collateral_lvl_num_branches'] = stn_collat_nbranch
+    ## DBS parameters
     stn_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
     stn_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
     stn_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
@@ -513,13 +541,8 @@ def simulate_model(
 
     
     # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates and WITH_MPI:
-        write_compartment_coordinates(pop_stn, out_dir,
-            scale=1e-3, translation=blend2anat_vec_um)
-    elif export_compartment_coordinates:
-        pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_stn]
-        morph_io.morphology_to_TXT(pop_allsec, 'STN_nodes_anat-mm.txt',
-            scale=1e-3, translation=blend2anat_vec_um)
+    if export_compartment_coordinates:
+        write_compartment_coordinates(pop_stn, out_dir)
 
     # # Check coordinates
     # stn_gpe_all_nodes = []
@@ -583,7 +606,19 @@ def simulate_model(
     
     # Get 3D morphology properties of each cell
     cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
+
+    # GPe axons and collaterals
     cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
+    gpe_collateralization_fraction = 0.5 # Kita & Kitai (1994): two out of four
+    gpe_collat_nbranch = np.zeros((gpe_ncell_biophys, 2), dtype=int)
+    gpe_collat_nbranch[:, 0] = 1 # one branch at first branch point
+    gpe_collat_nbranch[:, 1] = 2 # two branches at second branch point
+    no_collat_idx = shared_rng.choice(gpe_ncell_biophys,
+                        int((1.0-gpe_collateralization_fraction)*gpe_ncell_biophys),
+                        replace=False)
+    gpe_collat_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
+    gpe_collat_nbranch = [v.reshape((-1, 2)) for v in gpe_collat_nbranch]
+
 
     # Load default parameters from sim config
     gpe_cell_params = get_cell_parameters('GPE.all')
@@ -591,7 +626,13 @@ def simulate_model(
     # Add parameters from other sources
     gpe_cell_params['with_extracellular'] = with_lfp or with_dbs
     gpe_cell_params['transform'] = cells_transforms
+    ## Axon parameters
     gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
+    gpe_cell_params['collateral_branch_points_um'] = ArrayParameter(gpi_center_um)
+    gpe_cell_params['collateral_target_points_um'] = ArrayParameter(gpi_center_um)
+    gpe_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[50.0, 50.0]])) # collaterals with length 100 um as in Johson & McIntyre (2008) 
+    gpe_cell_params['collateral_lvl_num_branches'] = gpe_collat_nbranch
+    ## FEM parameters
     gpe_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
     gpe_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
     gpe_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
@@ -622,13 +663,8 @@ def simulate_model(
                                initial_values=initial_values)
 
     # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates and WITH_MPI:
-        write_compartment_coordinates(pop_gpe_proto, out_dir,
-            scale=1e-3, translation=blend2anat_vec_um)
-    elif export_compartment_coordinates:
-        pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_gpe_proto]
-        morph_io.morphology_to_TXT(pop_allsec, 'GPE_nodes_anat-mm.txt',
-            scale=1e-3, translation=blend2anat_vec_um)
+    if export_compartment_coordinates:
+        write_compartment_coordinates(pop_gpe_proto, out_dir)
 
     # # Check coordinates
     # for cell_id in pop_gpe_proto:
@@ -762,10 +798,12 @@ def simulate_model(
         c for c in cell_config['connections'] if (c['projection'] == 'CTX-STN')
     ]
 
+    num_axon_reused = 0
     while len(ctx_conn_defs) < num_ctx_axons:
         num_additional = num_ctx_axons - len(ctx_conn_defs)
         ctx_conn_defs += ctx_conn_defs[:num_additional]
-        logger.warning('CTX: Re-using %d axon definitions', num_additional)
+        num_axon_reused += num_additional
+    logger.warning('CTX: Re-using %d axon definitions', num_axon_reused)
 
     # Trace back cell indices to axon definitions used:
     if mpi_rank == 0:
@@ -800,13 +838,8 @@ def simulate_model(
                                initial_values=initial_values)
 
     # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates and WITH_MPI:
-        write_compartment_coordinates(pop_ctx_axons, out_dir,
-            scale=1e-3, translation=blend2anat_vec_um)
-    elif export_compartment_coordinates:
-        pop_allsec = [cell_id._cell.get_all_sections() for cell_id in pop_ctx_axons]
-        morph_io.morphology_to_TXT(pop_allsec, 'CTX_nodes_anat-mm.txt',
-            scale=1e-3, translation=blend2anat_vec_um)
+    if export_compartment_coordinates:
+        write_compartment_coordinates(pop_ctx_axons, out_dir)
 
     #===========================================================================
     # STR.MSN POPULATION
@@ -1416,6 +1449,11 @@ if __name__ == '__main__':
                 os.path.join(out_fulldir, 'simconfig'))
         shutil.copy2(parsed_dict['sim_config'],
                 os.path.join(out_fulldir, 'simconfig', 'sim_config.json'))
+
+        print("\nFinal parsed arguments:")
+        print("\n".join(
+            "{:<16}: {}".format(k, v) for k,v in parsed_dict.items() 
+                if 'config' not in k and k not in ('axon_coordinates',)))
 
     # Run the simulation
     simulate_model(**parsed_dict)

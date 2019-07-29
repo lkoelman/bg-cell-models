@@ -14,7 +14,16 @@ import numpy as np
 import bgcellmodels.morphology.morph_ni as morph_ni
 from bgcellmodels.models.axon.mcintyre2002 import AxonMcintyre2002
 
-if __name__ == '__main__':
+def test_gpe_axon():
+    """
+    Test case: add axon to GPe neuron.
+    """
+    raise NotImplementedError("See file 'calibrate_morphologies_GPe.ipnb'")
+
+def test_without_collaterals():
+    """
+    Test case without axon collaterals.
+    """
 
     streamline_path = '/home/luye/Documents/mri_data/Waxholm_rat_brain_atlas/WHS_DTI_v1_ALS/S56280_track_filter-ROI-STN.tck'
 
@@ -40,3 +49,10 @@ if __name__ == '__main__':
     with open(out_fpath, 'wb') as file:
         pickle.dump(build_results, file)
     print("Wrote streamlines to file: " + out_fpath)
+
+    # Export variables
+    globals().update(locals())
+
+
+if __name__ == '__main__':
+    test_without_collaterals()

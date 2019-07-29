@@ -177,6 +177,10 @@ class StnMorphType(cell_base.MorphCellType):
         'morphology_path': np.array('placeholder/path'), # workaround for strings
         'transform': ArrayParameter([]),
         'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
+        'collateral_branch_points_um': ArrayParameter([]),
+        'collateral_target_points_um': ArrayParameter([]),
+        'collateral_lvl_lengths_um': ArrayParameter([]),
+        'collateral_lvl_num_branches': ArrayParameter([]),
         # Extraceullular stim
         'with_extracellular': False,
         'electrode_coordinates_um' : ArrayParameter([]),

@@ -751,9 +751,21 @@ class MorphModelBase(object):
         if not with_ais_compartment:
             # If cell model already has AIS, remove it from axon model
             axon_builder.initial_comp_sequence.pop(0) # = ['aismyelin']
-        for i, pt in enumerate(self.axon_collateral_branchpoints):
-            # TODO: add collaterals from parameters, specify in simulation script
-            TODO: axon_builder.add_collateral()
+
+        # Axon collaterals are specified as Nx3 matrix of branch points
+        self.with_collaterals = hasattr(self, 'collateral_branch_points_um')
+        if self.with_collaterals:
+            assert self.collateral_branch_points_um.ndim == 2
+            assert self.collateral_branch_points_um.shape[1] == 3
+            for i, branch_point_um in enumerate(self.collateral_branch_points_um):
+                target_point_um = self.collateral_target_points_um[i]
+                level_lengths_um = self.collateral_lvl_lengths_um[i]
+                levels_num_branches = self.collateral_lvl_num_branches[i]
+                step_length_um = 10.0
+                step_angles_deg = np.zeros_like(level_lengths_um) + 30.0
+                axon_builder.add_collateral_definition(
+                                branch_point_um, target_point_um, level_lengths_um,
+                                step_length_um, levels_num_branches, step_angles_deg)
         self.axon = axon_builder.build_axon()
 
         # Change source for NetCons (see pyNN.neuron.simulator code)
