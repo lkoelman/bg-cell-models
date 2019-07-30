@@ -450,6 +450,12 @@ def simulate_model(
     config_pop_labels = [k for k in config.keys() if not k in 
                             ('simulation', 'electromagnetics')]
 
+    # 3D info for cell positioning
+    gpi_cell_positions = [
+        np.array(cell['transform'])[0:3, 3].reshape(-1,3) for cell in cell_config['cells'] if 
+            (cell['population'] == 'GPI')
+    ]
+
     #===========================================================================
     # STN POPULATION
 
@@ -498,8 +504,8 @@ def simulate_model(
     stn_cell_params['transform'] = cells_transforms
     ## Axon parameters
     stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
-    stn_cell_params['collateral_branch_points_um'] = ArrayParameter(gpi_center_um)
-    stn_cell_params['collateral_target_points_um'] = ArrayParameter(gpi_center_um)
+    stn_cell_params['collateral_branch_points_um'] = gpi_cell_positions[:stn_ncell_biophys]
+    stn_cell_params['collateral_target_points_um'] = gpi_cell_positions[:stn_ncell_biophys]
     stn_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[50.0, 50.0]]))
     stn_cell_params['collateral_lvl_num_branches'] = stn_collat_nbranch
     ## DBS parameters
@@ -628,8 +634,8 @@ def simulate_model(
     gpe_cell_params['transform'] = cells_transforms
     ## Axon parameters
     gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
-    gpe_cell_params['collateral_branch_points_um'] = ArrayParameter(gpi_center_um)
-    gpe_cell_params['collateral_target_points_um'] = ArrayParameter(gpi_center_um)
+    gpe_cell_params['collateral_branch_points_um'] = gpi_cell_positions[:gpe_ncell_biophys]
+    gpe_cell_params['collateral_target_points_um'] = gpi_cell_positions[:gpe_ncell_biophys]
     gpe_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[50.0, 50.0]])) # collaterals with length 100 um as in Johson & McIntyre (2008) 
     gpe_cell_params['collateral_lvl_num_branches'] = gpe_collat_nbranch
     ## FEM parameters

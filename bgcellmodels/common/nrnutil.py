@@ -117,7 +117,7 @@ def seg_at_node(sec, inode):
     elif inode == sec.nseg + 1:
         return sec(1.0)
     else:
-        return sec(2.*(inode)-1.)/(2.*sec.nseg)
+        return sec((2.*(inode)-1.)/(2.*sec.nseg))
 
 
 def seg_xmid(seg):
