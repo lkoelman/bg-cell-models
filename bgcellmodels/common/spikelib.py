@@ -137,12 +137,12 @@ def make_variable_bursts(
     T_intra, T_inter = 1e3/f_intra, 1e3/f_inter
     
     # Pre-sample with safety margin of 5 (times faster than mean)
-    max_num_burst = int(5*max_dur/T_burst)
+    max_num_burst = int(10*max_dur/T_burst)
     burst_IBIs = rng.exponential(T_burst, size=max(10, max_num_burst))
     # burst_durs = rng.exponential(dur_burst, size=max(10, max_num_burst))
     burst_durs = rng.uniform(max(5.0, dur_burst-10), dur_burst+10, size=max(10, max_num_burst))
-    max_num_intra = int(5 * np.sum(burst_durs) / T_intra)
-    max_num_inter = int(5 * np.sum(burst_IBIs) / T_inter)
+    max_num_intra = int(10 * np.sum(burst_durs) / T_intra)
+    max_num_inter = int(10 * np.sum(burst_IBIs) / T_inter)
     intra_ISIs = rng.exponential(T_intra, size=max(10, max_num_intra))
     inter_ISIs = rng.exponential(T_inter, size=max(10, max_num_inter))
     

@@ -98,7 +98,7 @@ def burst_metrics(
     # peak_idx = feat_vals['peak_indices']
 
     # Using threshold crossing indices
-    peak_idx = spike_indices(v_rec, thresh=threshold, loc='onset')
+    peak_idx = spike_indices(v_rec, v_th=threshold, loc='onset')
     peak_times = t_rec[peak_idx]
     isi_vals = np.diff(peak_times)
 
