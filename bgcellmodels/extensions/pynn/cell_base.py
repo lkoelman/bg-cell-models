@@ -325,6 +325,10 @@ class MorphModelBase(object):
         self.region_to_source = {}
         self.region_to_section = {}
 
+        # Random number generation for cell
+        self.rng_seed = self.owning_gid
+        self.rng_numpy = np.random.RandomState(self.rng_seed)
+
         # Instantiate cell and synapses in NEURON
         self.axon = None
         self.instantiate(sim=ephys_sim_from_pynn())
@@ -746,7 +750,8 @@ class MorphModelBase(object):
             gap_conductances=(getattr(self, 'gap_pre_conductance', None),
                               getattr(self, 'gap_post_conductance', None)),
             tolerance_mm=1e-4,
-            without_extracellular=not self.with_extracellular)
+            without_extracellular=not self.with_extracellular,
+            rng=self.rng_numpy)
 
         if not with_ais_compartment:
             # If cell model already has AIS, remove it from axon model

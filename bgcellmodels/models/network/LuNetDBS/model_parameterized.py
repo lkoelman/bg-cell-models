@@ -1236,7 +1236,7 @@ def simulate_model(
     if mpi_rank == 0:
         # only rank 0 receives broadcast result
         total_num_segments = sum(each_num_segments)
-        print("Simulated {} segments for {} ms in {} ms CPU time".format(
+        print("Simulated {} segments for {} ms in {} s CPU time".format(
                 total_num_segments, sim.state.tstop, cputime))
 
     # Save simulator state

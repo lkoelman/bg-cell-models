@@ -209,9 +209,12 @@ setup(
         'matplotlib',
         'pint',
         'transforms3d',
-        # 'BluePyOpt',
+        'plyfile',
         'lazyarray',
         'pint',
+        # Manual install specific versions:
+        # 'PyNN',
+        # 'BluePyOpt',
         # 'elephant',
     ],
 
@@ -223,7 +226,6 @@ setup(
     #
     extras_require={  # Optional
         'optimisation': ['cython', 'numba', 'PySpike'],
-        'network': ['PyNN', 'nixio'],
         'devtools': ['nb_conda', 'nbstripout', 'jupyter_contrib_nbextensions'],
     },
 

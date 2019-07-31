@@ -76,7 +76,8 @@ class AxonBuilder(object):
             connect_gap_junction=False,
             gap_conductances=None,
             raise_if_existing=True,
-            use_initial_segment=True):
+            use_initial_segment=True,
+            rng=None):
         """
         Define compartments types that constitute the axon model.
 
@@ -155,6 +156,11 @@ class AxonBuilder(object):
         self.parent_sec = parent_sec
         self.connect_gap_junction = connect_gap_junction
         self.gap_conductances = gap_conductances
+
+        if rng is None:
+            self.rng = np.random
+        else:
+            self.rng = rng
 
         # Connect to parent cell
         if parent_sec is not None:
@@ -300,12 +306,12 @@ class AxonBuilder(object):
             next_pt_pre_rot = parent_pt_um + step_length_um * u_target
 
             # Choose random axis perpendicular to sample axis
-            rvec = np.random.random((3,)) - 0.5
+            rvec = self.rng.rand(3) - 0.5
             rvec_parallel = np.dot(rvec, u_target) * u_target
             rvec_perpendicular = rvec - rvec_parallel
 
             # Make rotation matrix for all samples in subtree of current sample
-            x = np.random.random(1) - 0.5
+            x = self.rng.rand(1) - 0.5
             angle = np.deg2rad(2 * x * angle_deg)
             A = axangles.axangle2aff(rvec_perpendicular, angle, point=parent_pt_um)
             next_pt_post_rot = np.dot(A, np.append(next_pt_pre_rot, 1.0))[:3]
