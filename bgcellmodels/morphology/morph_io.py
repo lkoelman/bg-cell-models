@@ -587,6 +587,56 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
     PlyData(elements, text=text).write(filepath)
 
 
+def swc_or_asc_to_PLY(morphology_path, ply_path=None, icell=None, quiet=False, 
+                      **ply_kwargs):
+    """
+    Export SWC or ASC morphology to PLY file (easy to import in Blender
+    as vertices + edges).
+
+    Morphology is first instantiated in NEURON and then written to PLY file.
+
+    @return     icell : object
+                dummy cell object containing SectionLists of section types
+                defined in the morphology file.
+    """
+    h.load_file('stdlib.hoc')
+    h.load_file('import3d.hoc')
+
+    extension = morphology_path.split('.')[-1]
+    if extension.lower() == 'swc':
+        imorphology = h.Import3d_SWC_read()
+    elif extension.lower() == 'asc':
+        imorphology = h.Import3d_Neurolucida3()
+    else:
+        raise ValueError("Unknown filetype: %s" % extension)
+
+    if quiet:
+        imorphology.quiet = 1
+        h.hoc_stdout('/dev/null') # use NULL for Windows
+
+    # Read morphology
+    imorphology.input(str(morphology_path))
+
+    # Instantiate in NEURON
+    if icell is None:
+        class ICell(object):
+            pass
+        icell = ICell
+    importer = h.Import3d_GUI(imorphology, 0)
+    importer.instantiate(icell)
+
+    if quiet:
+        h.hoc_stdout()
+
+    # Convert to PLY
+    if ply_path is None:
+        ply_path = morphology_path[:-3] + 'ply'
+    morphology_to_PLY([icell.all], ply_path, **ply_kwargs)
+    print("Wrote morphology to %s" % ply_path)
+
+    return icell
+
+
 def morphology_to_TXT(section_lists, filepath, segment_centers=True,
                       scale=1.0, rgb=(0.0, 0.0, 0.0),
                       translation=None, transform=None, precision_mm=1e-6):

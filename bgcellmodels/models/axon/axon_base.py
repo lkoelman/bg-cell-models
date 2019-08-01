@@ -4,6 +4,7 @@ Base class for axon builders.
 
 from __future__ import division # float division for int literals, like Hoc
 import math
+import re
 import logging
 
 import numpy as np
@@ -227,6 +228,44 @@ class AxonBuilder(object):
         self.colt_lvl_angles.append(levels_angles_deg)
 
 
+    def get_terminal_section(self, terminal_spec):
+        """
+        Get a terminal section based on string specification
+
+        'main_branch:-1' -> last section of main branch
+        'branch_point:2:collateral' -> section of type 'collateral' closest to second branch point
+        'coordinate:[3.14,4.56,8.234]:collateral' -> section of type 'collateral' closest to coordinate
+        """
+        terminal_spec = terminal_spec.split(':')
+        structure = terminal_spec[0]
+        if structure == 'main_branch':
+            # Index into the axon's main branch
+            index = int(terminal_spec[1])
+            return self.built_sections[structure][index]
+        
+        elif structure in ('branch_point', 'target_point'):
+            # Section close to one of the branch points
+            index = int(terminal_spec[1])
+            sec_type = terminal_spec[2]
+            measure_point = getattr(self, 'colt_%ss' % structure)[index]
+
+        elif structure == 'coordinate':
+            coord_spec = terminal_spec[1]
+            sec_type = terminal_spec[2]
+            float_pattern = r'([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)'
+            grp_occurrences = re.findall(float_pattern, coord_spec)
+            measure_point = np.array([float(grp[0]) for grp in grp_occurrences])
+        
+        else:
+            raise ValueError(terminal_spec)
+
+        # find section closest to the branch point
+        candidate_secs = self.built_sections[sec_type]
+        i_sec, i_node = morph_3d.find_closest_section(measure_point,
+                            candidate_secs, measure_from='segment_centers')
+        return candidate_secs[i_sec]
+
+
     def _build_all_collaterals(self):
         """
         Build all axon collaterals according to their definitions
@@ -297,12 +336,19 @@ class AxonBuilder(object):
         x, y, z = parent_pt_um
         h.pt3dadd(x, y, z, diam, sec=ax_sec)
         i_step = 0
+        u_step = normvec(target_pt_um - parent_pt_um)
+        reached_target = False
         while True:
             i_step += 1
 
             # Step in the direction of target
             v_target = target_pt_um - parent_pt_um
-            u_target = normvec(v_target)
+            if np.linalg.norm(v_target) > step_length_um and not reached_target:
+                u_target = normvec(v_target)
+            else:
+                # If we are about to bump into target point, walk in direction of previous step
+                reached_target = True
+                u_target = u_step
             next_pt_pre_rot = parent_pt_um + step_length_um * u_target
 
             # Choose random axis perpendicular to sample axis
@@ -321,7 +367,9 @@ class AxonBuilder(object):
             h.pt3dadd(x, y, z, diam, sec=ax_sec)
 
             # Update parent point
+            u_step = normvec(next_pt_post_rot - parent_pt_um)
             parent_pt_um = next_pt_post_rot
+
 
             # Measure distance to collateral endpoint
             collateral_length_um = h.distance(1.0, sec=ax_sec)
@@ -337,8 +385,6 @@ class AxonBuilder(object):
         # Reached end of unbranched section without meeting length criterion
         for i in range(self.colt_lvl_numbranch[colt_idx][level+1]):
             self._build_collateral_subtree(colt_idx, level+1, parent_pt_um, ax_sec(1.0))
-
-            
 
 
     def build_axon(self):

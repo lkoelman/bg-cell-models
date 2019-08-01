@@ -116,6 +116,36 @@ def get_segment_centers(section_lists, samples_as_rows=False):
         return (x_allsec, y_allsec, z_allsec), sections_numsample
 
 
+def find_closest_section(point3d, sections, measure_from='segment_centers'):
+    """
+    Find section closest to target point
+
+    @param  measure_from : str
+            Either 'segment_centers' or 'pt3d'
+
+    @return i_sec, i_pt3d : tuple[int, int]
+            Index of closest section in section list 'sections' and index of the
+            node or 3d sample point in the section that is closest to the given
+            point (depending on argument 'measure_from')
+    """
+    if measure_from == 'segment_centers':
+        node_pt3d, node_n3d = get_segment_centers([sections], samples_as_rows=True)
+    elif measure_from == 'pt3d':
+        node_pt3d, node_n3d = get_section_samples([sections], include_diam=False)
+    else:
+        raise ValueError(measure_from)
+    node_pt3d = np.array(node_pt3d)
+    node_pt_idx_upper = np.cumsum(node_n3d)
+    node_pt_dists = np.linalg.norm(node_pt3d - point3d, axis=1)
+    i_pt3d = np.argmin(node_pt_dists)
+    i_sec = next((i for i, hi in enumerate(node_pt_idx_upper) if (i_pt3d < hi)))
+
+    # Index of the segment (including 0/1) or 3d sample point in the section
+    parent_pt0_idx = node_pt_idx_upper[i_sec-1] if i_sec > 0 else 0
+    i_pt3d_in_sec = i_pt3d - parent_pt0_idx
+    return i_sec, i_pt3d_in_sec
+
+
 def transform_sections(secs, A):
     """
     Apply transformation to sections

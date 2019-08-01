@@ -157,6 +157,52 @@ def irec_resolve_section(self, spec, multiple=False):
         return secs
 
 
+def init_extracellular_stim_rec(self, seclist, tracker_seg):
+    """
+    Set up extracellular stimulation and recording
+
+    @param  seclist : neuron.SectionList
+
+            Sections that will be the target/source for extracellular
+            stimulation/recording IF they have the mechanism 'extracellular'
+            inserted.
+    """
+    all_sections = seclist
+
+    # Insert mechanism that mediates between extracellular variables and
+    # recording & stimulation routines.
+    for sec in all_sections:
+        if h.ismembrane('extracellular', sec=sec):
+            sec.insert('xtra')
+
+    # Calculate coordinates of each compartment's (segment) center
+    h.xtra_segment_coords_from3d(all_sections)
+    h.xtra_setpointers(all_sections)
+
+    # Alternative using lookup function
+    if self.transfer_impedance_matrix_um is None or len(self.transfer_impedance_matrix_um) == 0:
+        # Set transfer impedance analytically
+        x_elec, y_elec, z_elec = self.electrode_coordinates_um
+        h.xtra_set_impedances_pointsource(all_sections,
+            self.rho_extracellular_ohm_cm,
+            x_elec, y_elec, z_elec)
+    else:
+        # Set using look-up table / nearest-neigbhors
+        Z_coords = self.transfer_impedance_matrix_um[:, :3]
+        Z_values = self.transfer_impedance_matrix_um[:, -1]
+        xtra_utils.set_transfer_impedances_nearest(
+            all_sections, Z_coords, Z_values, max_dist=5.0, warn_dist=0.1,
+            min_electrode_dist=10.0, electrode_coords=self.electrode_coordinates_um,
+            Z_intersect=1e12)
+
+    # Set up LFP calculation
+    # NOTE: Recorder class records lfp_tracker.summator._ref_summed
+    # if logger.level <= logging.WARNING:
+    #     h.XTRA_VERBOSITY = 1
+    self.lfp_summator = h.xtra_sum(tracker_seg)
+    self.lfp_tracker = h.ImembTracker(self.lfp_summator, all_sections, "xtra")
+
+
 ################################################################################
 # BASE CLASSES
 ################################################################################
@@ -182,6 +228,25 @@ class MorphCellType(NativeCellType):
 
     # Population.find_units() queries this for units
     units = UnitFetcherPlaceHolder()
+
+    # Parameter sets to be used by subclasses
+    _axon_parameters = {
+        'streamline_coordinates_mm': ArrayParameter([]),
+        'termination_method': np.array('terminal_sequence'),
+        'netcon_source_spec': np.array('main_branch:-1'),
+        'collateral_branch_points_um': ArrayParameter([]),
+        'collateral_target_points_um': ArrayParameter([]),
+        'collateral_lvl_lengths_um': ArrayParameter([]),
+        'collateral_lvl_num_branches': ArrayParameter([]),
+    }
+
+    _emf_parameters = {
+        'with_extracellular': False,
+        'electrode_coordinates_um' : ArrayParameter([]),
+        'rho_extracellular_ohm_cm' : 0.03,
+        'transfer_impedance_matrix_um': ArrayParameter([]),
+    }
+
 
     def __init__(self, **kwargs):
         """
@@ -741,7 +806,7 @@ class MorphModelBase(object):
         # Parameters for axon building
         axon_builder = axon_class(
             self.streamline_coordinates_mm,
-            termination_method='terminal_sequence',
+            termination_method=self.termination_method,
             interp_method='arclength',
             parent_cell=self.icell,
             parent_sec=axon_parent_sec,
@@ -758,7 +823,9 @@ class MorphModelBase(object):
             axon_builder.initial_comp_sequence.pop(0) # = ['aismyelin']
 
         # Axon collaterals are specified as Nx3 matrix of branch points
-        self.with_collaterals = hasattr(self, 'collateral_branch_points_um')
+        self.with_collaterals = (hasattr(self, 'collateral_branch_points_um') and
+            not all([n[0] == 0 for n in self.collateral_lvl_num_branches]) and
+            not all(np.isnan(self.collateral_branch_points_um).flatten())) # NaN when None is specified
         if self.with_collaterals:
             assert self.collateral_branch_points_um.ndim == 2
             assert self.collateral_branch_points_um.shape[1] == 3
@@ -774,7 +841,7 @@ class MorphModelBase(object):
         self.axon = axon_builder.build_axon()
 
         # Change source for NetCons (see pyNN.neuron.simulator code)
-        terminal_sec = list(self.icell.axonal)[-1]
+        terminal_sec = axon_builder.get_terminal_section(self.netcon_source_spec)
         terminal_source = terminal_sec(0.5)._ref_v # source for connections
         self.source_section = terminal_sec
         self.source = terminal_source
@@ -784,6 +851,9 @@ class MorphModelBase(object):
         self.region_to_gid[region] = None # mark as unset
         self.region_to_source[region] = terminal_source
         self.region_to_section[region] = terminal_sec
+
+
+    _init_extracellular_stim_rec = init_extracellular_stim_rec
 
 
     def _init_emfield(self):
@@ -826,38 +896,7 @@ class MorphModelBase(object):
                     sec.xg[i] = 1e9
                     sec.xc[i] = 0.0
 
-        # Insert mechanism that mediates between extracellular variables and
-        # recording & stimulation routines.
-        for sec in all_sections:
-            if h.ismembrane('extracellular', sec=sec):
-                sec.insert('xtra')
-
-        # Calculate coordinates of each compartment's (segment) center
-        h.xtra_segment_coords_from3d(all_sections)
-        h.xtra_setpointers(all_sections)
-
-        # Alternative using lookup function
-        if self.transfer_impedance_matrix_um is None or len(self.transfer_impedance_matrix_um) == 0:
-            # Set transfer impedance analytically
-            x_elec, y_elec, z_elec = self.electrode_coordinates_um
-            h.xtra_set_impedances_pointsource(all_sections,
-                self.rho_extracellular_ohm_cm,
-                x_elec, y_elec, z_elec)
-        else:
-            # Set using look-up table / nearest-neigbhors
-            Z_coords = self.transfer_impedance_matrix_um[:, :3]
-            Z_values = self.transfer_impedance_matrix_um[:, -1]
-            xtra_utils.set_transfer_impedances_nearest(
-                all_sections, Z_coords, Z_values, max_dist=5.0, warn_dist=0.1,
-                min_electrode_dist=10.0, electrode_coords=self.electrode_coordinates_um,
-                Z_intersect=1e12)
-
-        # Set up LFP calculation
-        # NOTE: Recorder class records lfp_tracker.summator._ref_summed
-        # if logger.level <= logging.WARNING:
-        #     h.XTRA_VERBOSITY = 1
-        self.lfp_summator = h.xtra_sum(self.icell.soma[0](0.5))
-        self.lfp_tracker = h.ImembTracker(self.lfp_summator, all_sections, "xtra")
+        self._init_extracellular_stim_rec(all_sections, self.icell.soma[0](0.5))
 
 
     def _init_memb_noise(self, population, pop_index):

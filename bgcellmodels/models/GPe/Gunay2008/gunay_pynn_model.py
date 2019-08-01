@@ -249,24 +249,17 @@ class GPeCellType(cell_base.MorphCellType):
 
     # Defaults for our custom PyNN parameters
     default_parameters = {
+        # Morphology & 3D specification
+        'transform': ArrayParameter([]),
+        # Inputs
         'default_GABA_mechanism': np.array('GABAsyn'),
         'default_GLU_mechanism': np.array('GLUsyn'),
         'membrane_noise_std': 0.0,
         # Biophysical properties
         'tau_m_scale': 1.0,
-        # Extracellular stim & rec
-        'with_extracellular': False,
-        'electrode_coordinates_um' : ArrayParameter([]),
-        'rho_extracellular_ohm_cm' : 0.03, 
-        'transfer_impedance_matrix_um': ArrayParameter([]),
-        # Morphology & 3D specification
-        'transform': ArrayParameter([]),
-        'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
-        'collateral_branch_points_um': ArrayParameter([]),
-        'collateral_target_points_um': ArrayParameter([]),
-        'collateral_lvl_lengths_um': ArrayParameter([]),
-        'collateral_lvl_num_branches': ArrayParameter([]),
     }
+    default_parameters.update(cell_base.MorphCellType._axon_parameters)
+    default_parameters.update(cell_base.MorphCellType._emf_parameters)
 
     # Defaults for Ephys parameters
     default_parameters.update({

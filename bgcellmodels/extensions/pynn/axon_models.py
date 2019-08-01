@@ -18,6 +18,7 @@ from pyNN.parameters import ArrayParameter
 # Our custom modules
 from bgcellmodels.extensions.pynn import cell_base
 from bgcellmodels import emfield # Hoc code
+from bgcellmodels.morphology import morph_3d
 from bgcellmodels.extensions.pynn import cell_base
 from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 
@@ -55,11 +56,32 @@ class AxonalRelay(object):
             tolerance_mm=1e-4,
             without_extracellular=not self.with_extracellular)
 
+
+        # Axon collaterals are specified as Nx3 matrix of branch points
+        self.with_collaterals = (hasattr(self, 'collateral_branch_points_um') and
+            not all([n[0] == 0 for n in self.collateral_lvl_num_branches]) and
+            not all(np.isnan(self.collateral_branch_points_um).flatten())) # NaN when None is specified
+
+        if self.with_collaterals:
+            assert self.collateral_branch_points_um.ndim == 2
+            assert self.collateral_branch_points_um.shape[1] == 3
+            for i, branch_point_um in enumerate(self.collateral_branch_points_um):
+                target_point_um = self.collateral_target_points_um[i]
+                level_lengths_um = self.collateral_lvl_lengths_um[i]
+                levels_num_branches = self.collateral_lvl_num_branches[i]
+                step_length_um = 10.0
+                step_angles_deg = np.zeros_like(level_lengths_um) + 30.0
+                axon_builder.add_collateral_definition(
+                                branch_point_um, target_point_um, level_lengths_um,
+                                step_length_um, levels_num_branches, step_angles_deg)
+        
         self.icell = axon_builder.build_axon()
                         
-
+        # Initial section for receiving NetCon events (spikes)
         initial_sec = self.icell.main_branch[0]
-        terminal_sec = self.icell.main_branch[-1]
+
+        # Set terminal section for spike detection
+        terminal_sec = axon_builder.get_terminal_section(self.netcon_source_spec)
 
 
         # Change source for NetCons (see pyNN.neuron.simulator code)
@@ -113,6 +135,7 @@ class AxonalRelay(object):
 
     # Bind interface method
     resolve_section = cell_base.irec_resolve_section
+    _init_extracellular_stim_rec = cell_base.init_extracellular_stim_rec
 
 
     def _init_emfield(self):
@@ -123,24 +146,8 @@ class AxonalRelay(object):
                 in all compartments that should contribute to the LFP and are
                 targets for stimulation
         """
-        # Insert mechanism that mediates between extracellular variables and
-        # recording & stimulation routines.
-        for sec in self.icell.all:
-            if h.ismembrane('extracellular', sec=sec):
-                sec.insert('xtra')
-
-        # Calculate coordinates of each compartment's (segment) center
-        h.xtra_segment_coords_from3d(self.icell.all)
-        h.xtra_setpointers(self.icell.all)
-
-        # Set transfer impedance between electrode and compartment centers
-        x_elec, y_elec, z_elec = self.electrode_coordinates_um
-        h.xtra_set_impedances_pointsource(
-            self.icell.all, self.rho_extracellular_ohm_cm, x_elec, y_elec, z_elec)
-
-        # Set up LFP calculation
-        self.lfp_summator = h.xtra_sum(self.icell.main_branch[0](0.5))
-        self.lfp_tracker = h.ImembTracker(self.lfp_summator, self.icell.all, "xtra")
+        # NOTE: 'extracellular' is alread inserted by AxonBuilder
+        self._init_extracellular_stim_rec(self.icell.all, self.icell.main_branch[0](0.5))
 
 
     def get_all_sections(self):
@@ -165,16 +172,10 @@ class AxonRelayType(NativeCellType):
     receptor_types = ['excitatory']
 
     default_parameters = {
-        # 3D specification
         'transform': ArrayParameter([]),
-        'streamline_coordinates_mm': ArrayParameter([]),
-        'termination_method': np.array('terminal_sequence'),
-        # Extracellular stim & rec
-        'with_extracellular': False,
-        'electrode_coordinates_um' : ArrayParameter([]),
-        'rho_extracellular_ohm_cm' : 0.03, 
-        
     }
+    default_parameters.update(cell_base.MorphCellType._axon_parameters)
+    default_parameters.update(cell_base.MorphCellType._emf_parameters)
 
     # NOTE: extra_parameters supports non-numpy types. 
     extra_parameters = {

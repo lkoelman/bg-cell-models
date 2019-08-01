@@ -282,6 +282,8 @@ def simulate_model(
     with_dbs = bool(with_dbs) or emf_params['with_dbs']
     with_lfp = bool(with_lfp) or emf_params['with_lfp']
 
+    # Badstubner (2017), Fig. 8: 750 Ohm*cm
+    # Baumanm (2010): 370 Ohm*cm
     rho_ohm_cm = 1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
     electrode_coordinates_um = emf_params['dbs_electrode_coordinates_um']
     transfer_impedance_matrix = [] if fem_config is None else fem_config
@@ -474,6 +476,7 @@ def simulate_model(
     
     # Get 3D morphology properties of each cell
     cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
+    stn_cell_positions = np.array([A[0:3, 3] for A in cells_transforms]) # Nx3
 
     # Choose a random morphology for each cell
     candidate_morphologies = np.array(cell_config['default_morphologies']['STN'])
@@ -487,13 +490,13 @@ def simulate_model(
     cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
     stn_collateralization_fraction = 7.0/8.0 # Koshimizu (2013): 7/8 Gpe-projecting neurons
     stn_collat_nbranch = np.zeros((stn_ncell_biophys, 2), dtype=int)
-    stn_collat_nbranch[:, 0] = 1 # one branch at first branch point
+    stn_collat_nbranch[:, 0] = 1 # 1 # one branch at first branch point
     stn_collat_nbranch[:, 1] = 2 # two branches at second branch point
     no_collat_idx = shared_rng.choice(stn_ncell_biophys,
                         int((1.0-stn_collateralization_fraction)*stn_ncell_biophys),
                         replace=False)
     stn_collat_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
-    stn_collat_nbranch = [v.reshape((-1, 2)) for v in stn_collat_nbranch]
+    stn_collat_nbranch = [nbr.reshape((-1, 2)) for nbr in stn_collat_nbranch]
 
     # Load default parameters from sim config
     stn_cell_params = get_cell_parameters('STN')
@@ -506,7 +509,7 @@ def simulate_model(
     stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
     stn_cell_params['collateral_branch_points_um'] = gpi_cell_positions[:stn_ncell_biophys]
     stn_cell_params['collateral_target_points_um'] = gpi_cell_positions[:stn_ncell_biophys]
-    stn_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[50.0, 50.0]]))
+    stn_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[100.0, 100.0]]))
     stn_cell_params['collateral_lvl_num_branches'] = stn_collat_nbranch
     ## DBS parameters
     stn_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
@@ -615,15 +618,31 @@ def simulate_model(
 
     # GPe axons and collaterals
     cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
-    gpe_collateralization_fraction = 0.5 # Kita & Kitai (1994): two out of four
-    gpe_collat_nbranch = np.zeros((gpe_ncell_biophys, 2), dtype=int)
-    gpe_collat_nbranch[:, 0] = 1 # one branch at first branch point
-    gpe_collat_nbranch[:, 1] = 2 # two branches at second branch point
-    no_collat_idx = shared_rng.choice(gpe_ncell_biophys,
-                        int((1.0-gpe_collateralization_fraction)*gpe_ncell_biophys),
-                        replace=False)
-    gpe_collat_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
-    gpe_collat_nbranch = [v.reshape((-1, 2)) for v in gpe_collat_nbranch]
+    gpe2gpi_collateralization = 0.5 # Kita & Kitai (1994): two out of four
+    
+    ## Number of branches at each level of the collateral, for each branch point
+    gpe2gpi_nbranch = np.zeros((gpe_ncell_biophys, 2), dtype=int)
+    gpe2gpi_nbranch[:, 0] = 1 # one branch at first branch point
+    gpe2gpi_nbranch[:, 1] = 2 # two branches at second branch point
+    no_collat_num = int((1.0-gpe2gpi_collateralization) * gpe_ncell_biophys)
+    no_collat_idx = shared_rng.choice(gpe_ncell_biophys, no_collat_num, replace=False)
+    gpe2gpi_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
+    gpe2stn_nbranch = [1, 2]
+    gpe_collat_nbranch = [
+        np.concatenate((gpe2gpi.reshape((-1, 2)), [gpe2stn_nbranch]), axis=0) 
+            for gpe2gpi in gpe2gpi_nbranch
+    ]
+    gpe2gpi_collat_lengths = [100.0, 100.0] # 100 um in Johson & McIntyre (2008) 
+    gpe2stn_collat_lengths = [250.0, 250.0]
+    gpe_collat_lvl_lengths = np.array([gpe2gpi_collat_lengths, gpe2stn_collat_lengths])
+
+    ## Branch points and target points for each collateral
+    gpi_targets = gpi_cell_positions[:gpe_ncell_biophys]
+    stn_targets = stn_cell_positions[shared_rng.choice(stn_ncell_biophys, gpe_ncell_biophys)]
+    gpe_collat_branch_pts = [
+        np.concatenate((gpi_pos, stn_pos.reshape((-1,3))), axis=0) for (gpi_pos, stn_pos) in zip(
+            gpi_targets, stn_targets)
+    ]
 
 
     # Load default parameters from sim config
@@ -633,10 +652,12 @@ def simulate_model(
     gpe_cell_params['with_extracellular'] = with_lfp or with_dbs
     gpe_cell_params['transform'] = cells_transforms
     ## Axon parameters
+    gpe_cell_params['termination_method'] = np.array('nodal_cutoff')
+    gpe_cell_params['netcon_source_spec'] = np.array('branch_point:1:collateral')
     gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
-    gpe_cell_params['collateral_branch_points_um'] = gpi_cell_positions[:gpe_ncell_biophys]
-    gpe_cell_params['collateral_target_points_um'] = gpi_cell_positions[:gpe_ncell_biophys]
-    gpe_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[50.0, 50.0]])) # collaterals with length 100 um as in Johson & McIntyre (2008) 
+    gpe_cell_params['collateral_branch_points_um'] = gpe_collat_branch_pts
+    gpe_cell_params['collateral_target_points_um'] = gpe_collat_branch_pts
+    gpe_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(gpe_collat_lvl_lengths)
     gpe_cell_params['collateral_lvl_num_branches'] = gpe_collat_nbranch
     ## FEM parameters
     gpe_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
@@ -779,7 +800,8 @@ def simulate_model(
     #===========================================================================
     # CTX POPULATION
 
-    # CTX spike sources
+    #---------------------------------------------------------------------------
+    # CTX SPIKE GENERATORS
     ctx_pop_size, = get_pop_parameters('CTX', 'base_population_size')
     ctx_burst_params = get_param_group('CTX', 'spiking_pattern')
     spikegen_name = ctx_burst_params.pop('algorithm')
@@ -796,7 +818,7 @@ def simulate_model(
         label='CTX')
 
     #---------------------------------------------------------------------------
-    # CTX axon population
+    # CTX AXONS
 
     num_ctx_axons = ctx_ncell
 
@@ -824,11 +846,22 @@ def simulate_model(
     ctx_axon_params = {
         'axon_class':                   AxonFoust2011,
         'streamline_coordinates_mm':    ctx_axon_coords,
-        'termination_method':           np.array('terminal_sequence'),
+        'termination_method':           np.array('any_cutoff'),
         'with_extracellular':           with_lfp or with_dbs,
         'electrode_coordinates_um' :    electrode_coordinates_um,
         'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
     }
+
+    # Axon collateral parameters
+    cst_stn_branch_points = [
+        stn_cell_positions[i].reshape((-1,3)) for i in shared_rng.choice(
+            stn_ncell_biophys, num_ctx_axons)
+    ]
+    ctx_axon_params['collateral_branch_points_um'] = cst_stn_branch_points
+    ctx_axon_params['collateral_target_points_um'] = cst_stn_branch_points
+    ctx_axon_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[250.0, 250.0]]))
+    ctx_axon_params['collateral_lvl_num_branches'] = [np.array([[1,2]]) for i in range(num_ctx_axons)]
+    ctx_axon_params['netcon_source_spec'] = np.array('branch_point:0:collateral')
 
     ctx_axon_type = AxonRelayType(**ctx_axon_params)
 
@@ -1418,24 +1451,19 @@ if __name__ == '__main__':
     if out_basedir is None or out_basedir == '': # shell can pass empty string
         out_basedir = '~/storage'
     job_id = parsed_dict.pop('job_id')[0]
-    time_now = time.time()
-    timestamp = datetime.fromtimestamp(time_now).strftime('%Y.%m.%d_%H.%M.%S')
+    timestamp = datetime.now().strftime('%Y.%m.%d_%H.%M.%S')
 
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames
     config_name, ext = os.path.splitext(os.path.basename(parsed_dict['sim_config']))
-    out_subdir = 'LuNetStnGpe_{stamp}_job-{job_id}_{config_name}'.format(
-                                            stamp=timestamp,
-                                            job_id=job_id,
-                                            config_name=config_name)
+    out_subdir = 'LuNetDBS_{stamp}_job-{job_id}_{config_name}'.format(
+        stamp=timestamp, job_id=job_id, config_name=config_name)
 
     # File names for data files
     # Default output format is hdf5 / NIX io
     filespec = '*_{stamp}_scale-{scale}_dur-{dur}_job-{job_id}.mat'.format(
-                                            scale=parsed_dict['pop_scale'],
-                                            dur=parsed_dict['sim_dur'],
-                                            stamp=timestamp,
-                                            job_id=job_id)
+        scale=parsed_dict['pop_scale'], dur=parsed_dict['sim_dur'],
+        stamp=timestamp, job_id=job_id)
 
     # Make output directory if non-existing, but only on one host
     out_basedir = os.path.expanduser(out_basedir)

@@ -453,7 +453,7 @@ begintemplate STN_morph_arcdist
             soma_dL = hillock_area / (PI * start_diam)
             if (soma_dL <= 0.75 * L) {
                 L = L - soma_dL
-                print "Soma length decreased by ", soma_dL, " to ", L
+                // print "Soma length decreased by ", soma_dL, " to ", L
             } else {
                 print "Soma will be too small"
             }

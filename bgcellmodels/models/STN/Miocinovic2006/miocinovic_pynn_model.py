@@ -176,22 +176,14 @@ class StnMorphType(cell_base.MorphCellType):
         # Morphology & 3D specification
         'morphology_path': np.array('placeholder/path'), # workaround for strings
         'transform': ArrayParameter([]),
-        'streamline_coordinates_mm': ArrayParameter([]), # Sequence([])
-        'collateral_branch_points_um': ArrayParameter([]),
-        'collateral_target_points_um': ArrayParameter([]),
-        'collateral_lvl_lengths_um': ArrayParameter([]),
-        'collateral_lvl_num_branches': ArrayParameter([]),
-        # Extraceullular stim
-        'with_extracellular': False,
-        'electrode_coordinates_um' : ArrayParameter([]),
-        'rho_extracellular_ohm_cm' : 0.03,
-        'transfer_impedance_matrix_um': ArrayParameter([]),
         # Inputs
         'max_num_gpe_syn': 19,
         'max_num_ctx_syn': 30,
         'max_num_stn_syn': 10,
         
     }
+    default_parameters.update(cell_base.MorphCellType._axon_parameters)
+    default_parameters.update(cell_base.MorphCellType._emf_parameters)
 
     # NOTE: extra_parameters supports non-numpy types. 
     #       - They are are passed to model.__init__()
