@@ -30,8 +30,17 @@ import matplotlib.pyplot as plt
 from bgcellmodels.common import analysis
 from bgcellmodels.extensions.neo import signal as neoutil
 
-global sim_dur, ROI_INTERVAL, pops_segments
-global page_width, ax_height, save_fig_path
+# variables assigned by notebook
+ROI_INTERVAL = None
+pops_segments = None
+sweep_var_value = None
+exported_data = None
+page_width, ax_height = None, None
+export_figs, save_fig_path = None, None
+sigmean_bpss, analsig_norm, locking_intervals, spike_phase_vectors = None, None, None, None
+phase_zero_times = None
+network_params, spiketrains_by_gid = None, None
+all_I_exc_inh, all_I_afferents = None, None
 
 ################################################################################
 # Plotting tools
@@ -44,8 +53,6 @@ def save_figure(fname, fig=None, **kwargs):
     
     kwargs: see https://matplotlib.org/api/_as_gen/matplotlib.pyplot.savefig.html
     """
-    global sweep_var_value
-
     kwargs.setdefault('bbox_inches', 'tight') # prevents cropping
     kwargs.setdefault('transparent', True) # transparent background, see also 'frameon'
     try:
@@ -147,6 +154,28 @@ def find_stimlocked_indices(pulse_times, spike_times, window_lo, window_hi):
     return np.array(locked_indices)
 
 
+def calc_train_stimlock_fractions(spike_trains, onset_times, interval=None):
+    """
+    Calculate the percentage of pulses that have stimulus-locked spikes
+    for each spike train in the population
+    
+    @param    spike_trains : list[Neo.SpikeTrain]
+              Population spke trains
+    """
+    if interval is None:
+        interval = ROI_INTERVAL
+    inter_pulse_interval = onset_times[1] - onset_times[0]
+    mask = (onset_times >= interval[0]) & (onset_times <= interval[1])
+    onset_times = onset_times[mask]
+    trains_locked_fractions = []
+    for st in spike_trains:
+        pulse_indices = find_stimlocked_indices(onset_times, st.as_array(),
+                            0.0, inter_pulse_interval)
+        locked_fraction = float(len(pulse_indices)) / len(onset_times)
+        trains_locked_fractions.append(locked_fraction)
+    return trains_locked_fractions
+
+
 ################################################################################
 # Phase analysis
 ################################################################################
@@ -172,8 +201,6 @@ def calc_mean_phase_vectors(spiketrains, pop_label):
     @return    pop_phase_vec : complex
                Mean phase vector over all cells in population.
     """
-    global sigmean_bpss, analsig_norm, locking_intervals, spike_phase_vectors
-
     # Gather spiketimes that fall within intervals of cortical beta bursts
     spikes_during = [] # list of numpy array
     for i, st in enumerate(spiketrains):
@@ -374,7 +401,7 @@ def plot_signal_interval(ax, signal, interval, channels, **kwargs):
 def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=True,
                        channel_gates=None, channel_currents=None, beta_phase=True,
                        trace_names=None, extra_sigs=None, extra_plot_with=None,
-                       extra_max_plot=5):
+                       extra_max_plot=5, vm_plot_with=None):
     """
     Plot Synaptic dynamics for specific cells and their recorded synapses.
     
@@ -388,9 +415,11 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
             into channel-related signals are the same as those into
             the synapse-related signals.
     """
-    global phase_zero_times
+    if vm_plot_with is None:
+        vm_plot_with = lambda tracename: tracename.startswith('i')
 
     segment = pops_segments[pop_label]
+
     # NOTE: signals are akwardly ordered: one signal is the i-th synapse for all recorded cells
     default_tracenames = 'gAMPA', 'gNMDA', 'iGLU', 'gGABAA', 'gGABAB', 'iGABA'
     if trace_names is None:
@@ -482,8 +511,9 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                                          color=color, linestyle=style)
                 ax_r.legend(loc='upper right')
                 ax_r.set_ylabel('open')
+
+            # Plot extra traces specified by caller
             elif extra_sigs and extra_plot_with(tracename):
-                # Plot extra variables
                 ax_r = ax.twinx()
                 rax_sigs = [sig for sig in segment.analogsignals if sig.name in extra_sigs]
                 for k, csig in enumerate(rax_sigs):
@@ -493,8 +523,9 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                     plot_signal_interval(ax_r, csig, interval, i_cell, label=csig.name,
                                          color=color, linestyle=style)
                 ax_r.legend(loc='upper right')
+            
+            # Plot channel currents if we are plotting synaptic currents
             elif channel_currents and tracename.startswith('i'):
-                # Plot channel currents if we are plotting synaptic currents
                 ax_r = ax.twinx()
                 curr_sigs = [sig for sig in segment.analogsignals if sig.name in channel_currents]
                 for k, csig in enumerate(curr_sigs):
@@ -503,8 +534,9 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                                          color=color, linestyle=style)
                 ax_r.legend(loc='upper right')
                 ax_r.set_ylabel('current ($mA/cm^2$)')
-            elif tracename.startswith('i') and 'source_indices' in ax_l_sigs[-1].annotations:
-                # Plot membrane voltages recorded from given cell
+            
+            # Plot membrane voltages recorded from given cell
+            elif vm_plot_with(tracename) and 'source_indices' in ax_l_sigs[-1].annotations:
                 src_idxs = ax_l_sigs[-1].annotations['source_indices']
                 cell_pop_idx = src_idxs if isinstance(src_idxs, int) else src_idxs[i_cell]
                 ax_r = ax.twinx()
@@ -606,7 +638,6 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
               Name of any recorded signal in the same recorded trace group as
               plotted variabed. Used for finding cell indices.
     """
-    global exported_data, export_figs, ROI_INTERVAL
     if interval is None:
         interval = ROI_INTERVAL
 
@@ -625,12 +656,12 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
     print("Ranked recorded cells: {}".format(recorded_cell_idx_ranked))
     
     # Get signal time data
-    rec_dt = signal.sampling_period.magnitude
-    tstart = signal.t_start.magnitude
-    tstop = signal.t_stop.magnitude
+    rec_dt = test_signal.sampling_period.magnitude
+    tstart = test_signal.t_start.magnitude
+    tstop = test_signal.t_stop.magnitude
     t0, t1 = interval
     irange = [int((t-tstart)/rec_dt) for t in interval]
-    times = signal.times[irange[0]:irange[1]]
+    times = test_signal.times[irange[0]:irange[1]]
     
     # Phase signal
     phase_ref = sigmean_bpss
@@ -673,7 +704,7 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
         for EI_label, pops_currents in currents_by_action.items():
             base_color = 'green' if EI_label.startswith('E') else 'red'  
             y_mid = 0.15 if EI_label.startswith('E') else 0.05
-            plot_presynaptic_spikes(axb, post_gid, pops_currents.keys(), interval, base_color, y_mid)
+            rastergram_presynaptic_pops_pooled(axb, post_gid, pop, pops_currents.keys(), interval, base_color, y_mid)
 
     # For each selected cell, plot currents and presynaptic rates
     for i_cell, cell_idx in enumerate(plotted_cell_idx):
@@ -787,17 +818,27 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
             fpath = save_figure(fname, fig=fig)
             print('Saved figure as ' + fpath)
 
+
+def get_presynaptic_gids(post_gid, pre_pop, post_pop):
+    """
+    Get presynaptic cell GIDs for given post-synaptic GID.
+    """
+    return [
+        i for i,j in network_params[pre_pop][post_pop]['conpair_gids']
+            if j==post_gid
+    ]
+
             
-def plot_presynaptic_spikes(ax, post_gid, pop_labels, interval, color, y_mid):
+def rastergram_presynaptic_pops_pooled(
+        ax, post_gid, post_pop, pre_pops, interval, color, y_mid
+    ):
     """
-    Add rastergram of presynaptic spikes (pooled : one population per line).
+    Add rastergram of POOLED presynaptic spikes (one population per line).
     """
-    global network_params, spiketrains_by_gid, pop
-    
     # Presynaptic spike trains from gid
     pre_spikes = []
-    for pre_pop in pop_labels:
-        pre_gids = [i for i,j in network_params[pre_pop][pop]['conpair_gids'] if j==post_gid]
+    for pre_pop in pre_pops:
+        pre_gids = get_presynaptic_gids(post_gid, pre_pop, post_pop)
         pre_spikes.extend(spiketrains_by_gid(pre_gids, pre_pop.split('.')[0]))
     
     # Combined rastergram for presynaptic cells
@@ -849,7 +890,6 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
     @param    rec_ids : list(int)
               which cell to use out of all recorded cells
     """
-    global all_I_exc_inh, all_I_afferents
     segment = pops_segments[pop_label]
     
     def afferents_total_current(afferents_currents, cell_idx):
