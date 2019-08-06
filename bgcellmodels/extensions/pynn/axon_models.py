@@ -54,7 +54,7 @@ class AxonalRelay(object):
             termination_method=self.termination_method,
             interp_method='arclength',
             tolerance_mm=1e-4,
-            without_extracellular=not self.with_extracellular)
+            without_extracellular=not (self.with_extracellular_rec or self.with_extracellular_stim))
 
 
         # Axon collaterals are specified as Nx3 matrix of branch points
@@ -106,8 +106,7 @@ class AxonalRelay(object):
         self.excitatory.e = 0.0
 
         # Initialize extracellular stim & rec
-        if self.with_extracellular:
-            self._init_emfield()
+        self._init_emfield()
 
 
     def memb_init(self):
@@ -147,7 +146,10 @@ class AxonalRelay(object):
                 targets for stimulation
         """
         # NOTE: 'extracellular' is alread inserted by AxonBuilder
-        self._init_extracellular_stim_rec(self.icell.all, self.icell.main_branch[0](0.5))
+        self._init_extracellular_stim_rec(self.icell.all,
+            self.icell.main_branch[0](0.5),
+            with_stim=self.with_extracellular_stim,
+            with_rec=self.with_extracellular_rec)
 
 
     def get_all_sections(self):
@@ -223,7 +225,8 @@ def test_simulate_population(export_locals=False):
         'transform': ArrayParameter(np.eye(4)), # [np.eye(4)] * num_cell,
         'streamline_coordinates_mm': ArrayParameter(axon_coords), # [axon_coords] * num_cell,
         'axon_class': AxonFoust2011,
-        'with_extracellular': True,
+        'with_extracellular_stim': True,
+        'with_extracellular_rec': True,
         'electrode_coordinates_um': ArrayParameter(elec_coords), # [elec_coords] * num_cell,
     }
     cell_type = AxonRelayType(**axon_params)

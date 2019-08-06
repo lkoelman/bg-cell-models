@@ -84,6 +84,7 @@ NEURON {
 	SUFFIX xtra
 	RANGE rx, er
 	RANGE x, y, z
+    RANGE scale_stim, scale_rec
 	GLOBAL is
 	POINTER im, ex
 }
@@ -94,6 +95,9 @@ PARAMETER {
 	x = 0 (1) : spatial coords
 	y = 0 (1)
 	z = 0 (1)
+    : unit factors for conversion to millivolts
+    scale_stim = 1e6
+    scale_rec = 10
 }
 
 ASSIGNED {
@@ -106,8 +110,8 @@ ASSIGNED {
 }
 
 INITIAL {
-	ex = is*rx*(1e6)
-	er = (10)*rx*im*area
+	ex = is*rx*scale_stim
+	er = scale_rec*rx*im*area
 : this demonstrates that area is known
 : UNITSOFF
 : printf("area = %f\n", area)
@@ -122,17 +126,17 @@ INITIAL {
 : PROCEDURE f() {
 :	: 1 mA * 1 megohm is 1000 volts
 :	: but ex is in mV
-:	ex = is*rx*(1e6)
-:	er = (10)*rx*im*area
+:	ex = is*rx*scale_stim
+:	er = scale_rec*rx*im*area
 : }
 
 : With NEURON 5.5 and later, abandon the BREAKPOINT block and PROCEDURE f(),
 : and instead use BEFORE BREAKPOINT and AFTER SOLVE
 
 BEFORE BREAKPOINT { : before each cy' = f(y,t) setup
-  ex = is*rx*(1e6)
+  ex = is*rx*scale_stim
 }
 AFTER SOLVE { : after each solution step
-  er = (10)*rx*im*area
+  er = scale_rec*rx*im*area
 }
 

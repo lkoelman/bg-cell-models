@@ -2,7 +2,7 @@
 import json, collections
 from bgcellmodels.common.fileutils import VariableIndentEncoder, NoIndent
 
-with open('dummy-cells_axons-full_angles-rand.json', 'r') as f:
+with open('dummy-cells_axons-full_CST1.json', 'r') as f:
     config = json.load(f, object_pairs_hook=collections.OrderedDict)
 
 # Modifications
@@ -24,27 +24,39 @@ with open('dummy-cells_axons-full_angles-rand.json', 'r') as f:
 ## Mod.B : change axon definitions
 to_remove = []
 for axon_config in config["connections"]:
-    if axon_config["projection"] == "CTX-STN":
-        ax_index = int(axon_config["axon"].split(".")[-1])
-        if ax_index <= 118:
-            axon_config["axon"] = "axon.CST.from-GPe." + str(ax_index)
-        else:
-            to_remove.append(axon_config)
 
+    # mark axons for removal
+    if axon_config["projection"] == "CTX-STN":
+        to_remove.append(axon_config)
+        # ax_blender_index = int(axon_config["axon"].split(".")[-1])
+    
+    # delete unused entries
+    unused_keys = "pre_gid", "post_gids"
+    for k in unused_keys:
+        if k in axon_config:
+            del axon_config[k]
+            
 for axon_config in to_remove:
     config["connections"].remove(axon_config)
+
+## Mod.C : append new axon defnitions
+for i in range(48):
+    config["connections"].append({
+        "axon": "axon.CST.drawn-MouseLight.{:03d}".format(i),
+        "projection": "CTX-STN"
+    })
 
 # Fix indentation in JSON
 for cell_config in config["cells"]:
     cell_config["transform"] = [NoIndent(row) for row in cell_config["transform"]]
-
 for axon_config in config["connections"]:
-    axon_config["post_gids"] = NoIndent(axon_config["post_gids"])
+    if "post_gids" in axon_config:
+        axon_config["post_gids"] = NoIndent(axon_config["post_gids"])
 
 
 # Write updated config
 string = json.dumps(config, f, cls=VariableIndentEncoder, indent=2, sort_keys=False)
-out_file = 'dummy-cells_axons-full_CST1.json'
+out_file = 'dummy-cells_axons-full_CST2.json'
 
 with open(out_file, 'w') as f:
     # json.dump(config, f, indent=2, sort_keys=False)

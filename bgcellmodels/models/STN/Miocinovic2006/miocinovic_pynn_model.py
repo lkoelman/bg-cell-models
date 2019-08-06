@@ -91,7 +91,8 @@ class GilliesSwcModel(cell_base.MorphModelBase):
         
         # Instantiate template
         self.icell = icell = template_constructor()
-        icell.with_extracellular = self.with_extracellular
+        icell.with_extracellular = (
+            self.with_extracellular_rec or self.with_extracellular_stim)
 
         # Load morphology into template
         morphology = ephys.morphologies.NrnFileMorphology(
@@ -118,8 +119,7 @@ class GilliesSwcModel(cell_base.MorphModelBase):
             self._init_axon(self.axon_class, with_ais_compartment=False)
 
         # Init extracellular stimulation & recording
-        if self.with_extracellular:
-            self._init_emfield()
+        self._init_emfield()
 
 
     def _init_gbar(self):

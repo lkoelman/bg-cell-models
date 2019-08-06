@@ -502,7 +502,8 @@ def simulate_model(
     stn_cell_params = get_cell_parameters('STN')
 
     # Add parameters from other sources
-    stn_cell_params['with_extracellular'] = with_lfp or with_dbs
+    stn_cell_params['with_extracellular_stim'] = with_dbs
+    stn_cell_params['with_extracellular_rec'] = with_lfp
     stn_cell_params['morphology_path'] = cells_morph_paths
     stn_cell_params['transform'] = cells_transforms
     ## Axon parameters
@@ -649,7 +650,8 @@ def simulate_model(
     gpe_cell_params = get_cell_parameters('GPE.all')
 
     # Add parameters from other sources
-    gpe_cell_params['with_extracellular'] = with_lfp or with_dbs
+    gpe_cell_params['with_extracellular_stim'] = with_dbs
+    gpe_cell_params['with_extracellular_rec'] = with_lfp
     gpe_cell_params['transform'] = cells_transforms
     ## Axon parameters
     gpe_cell_params['termination_method'] = np.array('nodal_cutoff')
@@ -847,7 +849,8 @@ def simulate_model(
         'axon_class':                   AxonFoust2011,
         'streamline_coordinates_mm':    ctx_axon_coords,
         'termination_method':           np.array('any_cutoff'),
-        'with_extracellular':           with_lfp or with_dbs,
+        'with_extracellular_stim':      with_dbs,
+        'with_extracellular_rec':       with_lfp,
         'electrode_coordinates_um' :    electrode_coordinates_um,
         'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
     }
@@ -1058,12 +1061,12 @@ def simulate_model(
 
     if with_lfp:
         for pop in Population.all_populations:
-            if pop.celltype.has_parameter('with_extracellular'):
+            if pop.celltype.has_parameter('with_extracellular_rec'):
                 # Check if there is at least one cell with extracellular mechanisms
-                has_extracellular = reduce(
+                record_pop_lfp = reduce(
                     lambda x,y: x or y,
-                    pop.celltype.parameter_space['with_extracellular'])
-                if has_extracellular:
+                    pop.celltype.parameter_space['with_extracellular_rec'])
+                if record_pop_lfp:
                     pop.record(['lfp'], sampling_interval=.05)
 
     # Traces defined in config file

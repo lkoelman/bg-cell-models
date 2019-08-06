@@ -157,7 +157,8 @@ def irec_resolve_section(self, spec, multiple=False):
         return secs
 
 
-def init_extracellular_stim_rec(self, seclist, tracker_seg):
+def init_extracellular_stim_rec(
+        self, seclist, tracker_seg, with_stim=True, with_rec=True):
     """
     Set up extracellular stimulation and recording
 
@@ -179,7 +180,7 @@ def init_extracellular_stim_rec(self, seclist, tracker_seg):
     h.xtra_segment_coords_from3d(all_sections)
     h.xtra_setpointers(all_sections)
 
-    # Alternative using lookup function
+    # Set transfer impedances between electrode and each compartment's center
     if self.transfer_impedance_matrix_um is None or len(self.transfer_impedance_matrix_um) == 0:
         # Set transfer impedance analytically
         x_elec, y_elec, z_elec = self.electrode_coordinates_um
@@ -194,6 +195,16 @@ def init_extracellular_stim_rec(self, seclist, tracker_seg):
             all_sections, Z_coords, Z_values, max_dist=5.0, warn_dist=0.1,
             min_electrode_dist=10.0, electrode_coords=self.electrode_coordinates_um,
             Z_intersect=1e12)
+
+    # Disable stimulation or recording if desired
+    if not (with_stim and with_rec):
+        for sec in seclist:
+            for seg in sec:
+                if not with_stim:
+                    seg.scale_stim_xtra = 0.0
+                if not with_rec:
+                    seg.scale_rec_xtra = 0.0
+
 
     # Set up LFP calculation
     # NOTE: Recorder class records lfp_tracker.summator._ref_summed
@@ -241,7 +252,8 @@ class MorphCellType(NativeCellType):
     }
 
     _emf_parameters = {
-        'with_extracellular': False,
+        'with_extracellular_stim': False,
+        'with_extracellular_rec': False,
         'electrode_coordinates_um' : ArrayParameter([]),
         'rho_extracellular_ohm_cm' : 0.03,
         'transfer_impedance_matrix_um': ArrayParameter([]),
@@ -815,7 +827,7 @@ class MorphModelBase(object):
             gap_conductances=(getattr(self, 'gap_pre_conductance', None),
                               getattr(self, 'gap_post_conductance', None)),
             tolerance_mm=1e-4,
-            without_extracellular=not self.with_extracellular,
+            without_extracellular=not (self.with_extracellular_rec or self.with_extracellular_stim),
             rng=self.rng_numpy)
 
         if not with_ais_compartment:
@@ -864,6 +876,10 @@ class MorphModelBase(object):
                 in all compartments that should contribute to the LFP and are
                 targets for stimulation
         """
+        # Check if we need extracellular layers for recording/stimulation
+        if not (self.with_extracellular_rec or self.with_extracellular_stim):
+            return
+
         # If axon is not connected to compartment tree of main cell
         if getattr(self, 'axon_using_gap_junction', False):
             all_sections = h.SectionList()
@@ -896,7 +912,9 @@ class MorphModelBase(object):
                     sec.xg[i] = 1e9
                     sec.xc[i] = 0.0
 
-        self._init_extracellular_stim_rec(all_sections, self.icell.soma[0](0.5))
+        self._init_extracellular_stim_rec(all_sections, self.icell.soma[0](0.5),
+                                          with_stim=self.with_extracellular_stim,
+                                          with_rec=self.with_extracellular_rec)
 
 
     def _init_memb_noise(self, population, pop_index):

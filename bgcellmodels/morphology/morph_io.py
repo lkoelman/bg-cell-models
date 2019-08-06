@@ -17,8 +17,9 @@ Additional libraries for working with NEURON morphologies:
 
 from neuron import h
 from bgcellmodels.common.treeutils import parent, parent_loc
-import json, io, re
+import json, io, re, os
 import numpy as np
+from numpy.lib import recfunctions as rfn
 
 from . import morph_3d
 
@@ -78,80 +79,7 @@ def morphology_to_SWC(sections, filename):
     neuron2swc(filename)
 
 
-def uniform_morphology_to_SWC(sections, filename, encoding='ascii'):
-    """
-    Convert sections with uniform diameter to SWC file.
-
-    Written for illustrative purposes.
-
-    @pre    assumes 3d location info is stored from 0 to 1-end of Section
-
-    @note   see SWC file specification at 
-            http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
-    """
-    morph_dicts = morphology_to_dict(sections)
-
-    with io.open(filename, 'w', encoding=encoding) as outfile:
-        for sec_id, sd in enumerate(morph_dicts):
-
-            sec = sections[sec_id]
-            parent_sec = parent(sec)
-            parent_x = -1 if parent_sec is None else parent_loc(sec, parent_sec)
-            orientation = sd['section_orientation']
-
-            # Check if section has uniform diameter
-            diams = sd['diam']
-            if not all((d==diams[0] for d in diams)):
-                ValueError("Encountered Section with non-uniform diameter: {}".format(sec))
-
-            # Determine parent sample from connection point
-            if parent_x == 1:
-                parent_id = 2*sd['parent'] + 2
-            elif parent_x == 0:
-                parent_id = 2*sd['parent'] + 1
-            elif parent_x == -1:
-                parent_id = -1
-            else:
-                ValueError("Encountered non-terminal connection at Section {}.".format(sec))
-
-            # Sample at start of Section
-            sample_1 = {
-                'segment_id': 2*sec_id + 1,
-                'region_id': 0,
-                'radius': sd['diam'][0] / 2.0,
-                'x': sd['x'][0],
-                'y': sd['y'][0],
-                'z': sd['z'][0],
-            }
-
-            # Sample at end of Section
-            sample_2 = {
-                'segment_id': 2*sec_id + 2,
-                'region_id': 0,
-                'radius': sd['diam'][-1] / 2.0,
-                'x': sd['x'][-1],
-                'y': sd['y'][-1],
-                'z': sd['z'][-1],
-            }
-
-            # Determine wich sample connects to parent
-            if orientation == 0:
-                sample_1['parent_id'] = parent_id
-                sample_2['parent_id'] = sample_1['segment_id']
-            elif orientation == 1:
-                sample_2['parent_id'] = parent_id
-                sample_1['parent_id'] = sample_2['segment_id']
-            else:
-                raise ValueError("Illegal orientation value {}".format(orientation))
-
-            
-            # Write samples to file         
-            outfile.write(u"{segment_id:d} {region_id:d} {x:f} {y:f} {z:f} {radius:f} {parent_id:d}\n".format(**sample_1))
-
-            outfile.write(u"{segment_id:d} {region_id:d} {x:f} {y:f} {z:f} {radius:f} {parent_id:d}\n".format(**sample_2))
-
-
-def read_SWC_samples(file_path):
+def read_SWC_samples(file_path, structured=True):
     """
     Read samples in SWC file.
 
@@ -162,23 +90,31 @@ def read_SWC_samples(file_path):
                 radius (float), parent_sample_number (int)]
 
     """
-    sample_data_types = [int, int, float, float, float, float, int]
-    samples = []
+    # sample_data_types = [int, int, float, float, float, float, int]
+    # samples = []
+    # with open(file_path, 'r') as swc_file:
+    #     for line in swc_file:
+    #         if line.startswith('#'):
+    #             continue
 
-    with open(file_path, 'r') as swc_file:
-        for line in swc_file:
-            if line.startswith('#'):
-                continue
+    #         sample_data = line.split() # default using whitespace
+    #         sample_parsed = [
+    #             value_type(sample_data[i]) for i, value_type in enumerate(
+    #                 sample_data_types)
+    #         ]
+    #         samples.append(sample_parsed)
+    #         # sample_idx, sample_type, x, y, z, radius, parent_idx = sample_parsed
 
-            sample_data = line.split() # default using whitespace
-            sample_parsed = [
-                value_type(sample_data[i]) for i, value_type in enumerate(
-                    sample_data_types)
-            ]
-            samples.append(sample_parsed)
-            # sample_idx, sample_type, x, y, z, radius, parent_idx = sample_parsed
+    swc_dtype = [('sample_id', 'i4'), ('structure_id', 'i4'),
+                 ('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('radius', 'f4'),
+                 ('parent_id', 'i4')]
 
-    return samples
+    if structured:
+        target_dtype = swc_dtype
+    else:
+        target_dtype = float
+
+    return np.loadtxt(file_path, dtype=target_dtype)
 
 
 def write_SWC_samples(samples, file_path, comment=None):
@@ -587,7 +523,7 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
     PlyData(elements, text=text).write(filepath)
 
 
-def swc_or_asc_to_PLY(morphology_path, ply_path=None, icell=None, quiet=False, 
+def SWC_nrn_to_PLY(morphology_path, ply_path=None, icell=None, quiet=False, 
                       **ply_kwargs):
     """
     Export SWC or ASC morphology to PLY file (easy to import in Blender
@@ -635,6 +571,48 @@ def swc_or_asc_to_PLY(morphology_path, ply_path=None, icell=None, quiet=False,
     print("Wrote morphology to %s" % ply_path)
 
     return icell
+
+
+def SWC_raw_to_PLY(morphology_path, ply_path=None, single_ply_file=False,
+                   scale=1.0, **ply_kwargs):
+    """
+    Export SWC or ASC morphology to PLY file (easy to import in Blender
+    as vertices + edges).
+    """
+    # TODO: use structure ID to set edge color in PLY file
+    if isinstance(morphology_path, (list, tuple)):
+        morph_paths = morphology_path
+    elif not morphology_path.endswith('.swc'):
+        morph_paths = [os.path.join(morphology_path, f) for f in os.listdir(morphology_path) if f.endswith('.swc')]
+    else:
+        morph_paths = [morphology_path]
+
+    all_cell_vertices = []
+    all_cell_edges = []
+    for morph_path in morph_paths:
+        samples_list = read_SWC_samples(morph_path)
+        vertices =  rfn.structured_to_unstructured(samples_list, dtype=float)[:, 2:5]
+        if scale != 1.0:
+            vertices *= scale
+        edges = []
+        for sample in samples_list:
+            sample_id, structure_id, x, y, z, radius, parent_id = sample
+            # sample_id and parent_id are 1-based indices
+            if parent_id >= 0:
+                edges.append([parent_id-1, sample_id-1])
+
+        if not single_ply_file:
+            out_filepath = os.path.join(ply_path,
+                os.path.split(morph_path)[1][:-3] + 'ply')
+            edges_to_PLY(vertices, edges, out_filepath, **ply_kwargs)
+        else:
+            all_cell_vertices.append(vertices)
+            all_cell_edges.append(edges)
+
+    if single_ply_file:
+        edges_to_PLY(all_cell_vertices, all_cell_edges, ply_path, multiple=True,
+                     **ply_kwargs)
+            
 
 
 def morphology_to_TXT(section_lists, filepath, segment_centers=True,

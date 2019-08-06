@@ -276,7 +276,7 @@ class GabaSynTmHill(pyNN.neuron.BaseSynapse, synapses.StaticSynapse):
     """
 
     connection_type = custom_conn.ConnectionNrnWrapped
-    model = 'GABAsyn2' # defined in GABAsyn.mod
+    model = 'GABAsyn2' # defined in GABAsynTmGprot2.mod
 
     # PyNN internal name to NEURON name
     translations = build_translations(
