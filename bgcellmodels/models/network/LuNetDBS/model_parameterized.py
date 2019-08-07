@@ -912,6 +912,7 @@ def simulate_model(
         # Create DBS waveform
         pulse_train, pulse_time = stimulation.make_pulse_train(
                                     frequency=emf_params['dbs_frequency_hz'],
+                                    phase_deg=emf_params.get('dbs_phase_deg', 0.0),
                                     pulse_width_ms=emf_params['dbs_pulse_width_ms'],
                                     amp0=emf_params['dbs_pulse0_amplitude_mA'],
                                     amp1=emf_params['dbs_pulse1_amplitude_mA'],
@@ -931,7 +932,7 @@ def simulate_model(
                 break
 
         if not dbs_started:
-            raise Exception('Coud not find mechanism "xtra" in any section.')
+            raise Exception('Could not find mechanism "xtra" in any section.')
 
     ############################################################################
     # CONNECTIONS

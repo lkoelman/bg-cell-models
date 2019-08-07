@@ -18,6 +18,7 @@ def make_pulse_train(
         amp1=0.0, 
         duration=10e3,
         dt=0.01,
+        phase_deg=0.0,
         coincident_discontinuities=False,
         off_intervals=None):
     """
@@ -45,12 +46,13 @@ def make_pulse_train(
     duty_cycle = pulse_width_ms * freq_ms # duty cycle = PW / period
     time_axis = np.arange(0, duration + dt, dt)
     omega = 2 * np.pi * freq_ms
+    phase_rad = phase_deg * np.pi / 180.0
 
     if pulse_width_ms  >= 1 / freq_ms:
         raise ValueError('Pulse width must be smaller than period')
     
     # square wave between [+1, -1] (2 peak-to-peak, baseline 0)
-    dbs_vec = signal.square(omega * time_axis, duty_cycle)
+    dbs_vec = signal.square(omega * time_axis + phase_rad, duty_cycle)
     pos_phase = (dbs_vec == 1)
     neg_phase = (dbs_vec == -1)
     dbs_vec[pos_phase] = amp0
