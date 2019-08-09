@@ -25,22 +25,30 @@ import numpy as np
 import scipy.signal
 import matplotlib
 import matplotlib.pyplot as plt
+import elephant
 # import numba
 
 from bgcellmodels.common import analysis
 from bgcellmodels.extensions.neo import signal as neoutil
+from bgcellmodels.common.config_global import analysis_data as _data
 
-# variables assigned by notebook
-ROI_INTERVAL = None
-pops_segments = None
-sweep_var_value = None
-exported_data = None
-page_width, ax_height = None, None
-export_figs, save_fig_path = None, None
-sigmean_bpss, analsig_norm, locking_intervals, spike_phase_vectors = None, None, None, None
-phase_zero_times = None
-network_params, spiketrains_by_gid = None, None
-all_I_exc_inh, all_I_afferents = None, None
+# # variables assigned by notebook
+# shared_vars = [
+#     'ROI_INTERVAL',
+#     'pops_segments',
+#     'sweep_var_value',
+#     'exported_data',
+#     'page_width', 'ax_height',
+#     'export_figs', 'save_fig_path',
+#     'spike_phase_vectors',
+#     'phase_zero_times',
+#     'network_params', 'spiketrains_by_gid',
+#     'all_I_exc_inh', 'all_I_afferents' ,
+# ]
+# for var in shared_vars:
+#     # exec('{} = {}'.format(var, _globals.get(var, None)))
+#     locals()[var] = _globals.get(var, None)
+
 
 ################################################################################
 # Plotting tools
@@ -60,7 +68,7 @@ def save_figure(fname, fig=None, **kwargs):
     except NameError:
         pass
     fname += '.' + kwargs.setdefault('format', 'pdf')
-    fig_filepath = os.path.join(save_fig_path, fname)
+    fig_filepath = os.path.join(_data.save_fig_path, fname)
     if fig is None:
         plt.savefig(fig_filepath, **kwargs) # save current figure
     else:
@@ -163,7 +171,7 @@ def calc_train_stimlock_fractions(spike_trains, onset_times, interval=None):
               Population spke trains
     """
     if interval is None:
-        interval = ROI_INTERVAL
+        interval = _data.ROI_INTERVAL
     inter_pulse_interval = onset_times[1] - onset_times[0]
     mask = (onset_times >= interval[0]) & (onset_times <= interval[1])
     onset_times = onset_times[mask]
@@ -177,10 +185,120 @@ def calc_train_stimlock_fractions(spike_trains, onset_times, interval=None):
 
 
 ################################################################################
+# Frequency analysis
+################################################################################
+
+
+def calc_psd(pop_label, interval=None, vm_sig=None, save=True):
+    """
+    Calculate PSD from membrane voltages of population.
+    
+    It computes the PSD for the individual Vm traces and then
+    averages the resulting PSDs.
+    """
+    if vm_sig is None:
+        segment = _data.pops_segments[pop_label]
+        vm_sig = next((sig for sig in segment.analogsignals if sig.name == 'Vm'))
+
+    # Ts = vm_sig.sampling_period.magnitude # ms
+    fs = vm_sig.sampling_rate.rescale('Hz').magnitude
+    
+    islice = neoutil.make_slice(vm_sig, interval)
+    vm_segment = vm_sig[islice, :]
+    
+    dF = max(0.5, fs / vm_segment.shape[0]) # dF for max window size is finest possible
+    if dF != 0.5:
+        print("Adjusted frequency resolution to data size: dF = {}".format(dF))
+    
+    # Compute PSD of all 100 Vm signals at the same time
+    freqs, psd = elephant.spectral.welch_psd(vm_segment, freq_res=dF)
+    
+    # Average individual trace PSDs
+    psd_avg = psd.sum(axis=0) / psd.shape[0]
+    # psd_rel = psd_avg[0:int(250/dF)] # relevant region of psd
+
+    # Save PSD
+    if save:
+        sig_label = pop_label + '_' + vm_sig.name
+        _data.exported_data['PSD'][sig_label] = (freqs, psd_avg)
+    
+    # Save units for other plotting functions
+    _data.psd_units = psd.units
+    
+    return freqs, psd_avg
+
+
+def calc_spectrogram(pop_label, signal=None, max_avg=50, freq_res=1.0,
+                     t_res=20.0, interval=None, save=True):
+    """
+    Calculate mean spectrogram (STFT) of membrane voltage traces.
+    
+    The resulting time axis is missing 'nperseg' values on each side since
+    each PSD sample is calculated on the interval [-nperseg/2, +nperseg/2]
+    around it.
+    
+    @param     max_avg : int
+               Number of spectrograms to compute for averaging.
+               WARNING: can lead to very high memory consumption.
+    
+    @return    freqs, t, Sxx
+               Sxx has t-dimension along axis 0 and f-dimension along axis 1.
+    """
+    if signal is None:
+        segment = _data.pops_segments[pop_label]
+        signal = next((sig for sig in segment.analogsignals if sig.name == 'Vm'))
+
+    if interval is None:
+        interval = _data.ROI_INTERVAL
+
+    sig_label = pop_label + '_' + signal.name
+
+    # Plot spectrogram using STFT
+    dt = signal.sampling_period.magnitude
+    fs = 1/dt*1e3
+    nperseg = int(fs/freq_res) # determines frequency resolution
+    t_res = 20.0 # ms
+    noverlap = nperseg - int(t_res/dt)
+    islice = neoutil.make_slice(signal, interval)
+    
+    if signal.ndim == 2:
+        # Spectrogram of all signals along axis 0
+        vm_sig = signal[islice, :]
+        if vm_sig.shape[1] > max_avg:
+            sig_data = vm_sig.as_array()[:, 0:max_avg]
+        else:
+            sig_data = vm_sig.as_array()
+        freqs, t, Sxx = scipy.signal.spectrogram(sig_data, 1/dt, axis=0, window='hanning',
+                                                 nperseg=nperseg, noverlap=noverlap, scaling='density')
+
+        # Average over cell dimension -> Sxx dims are now (freqs, t)
+        assert sig_data.shape[1] == Sxx.shape[1]
+        Sxx = Sxx.mean(axis=1)
+    else:
+        assert signal.ndim == 1
+        sig_data = signal.ravel()[islice]
+        freqs, t, Sxx = scipy.signal.spectrogram(sig_data, 1/dt, window='hanning',
+                                                 nperseg=nperseg, noverlap=noverlap, scaling='density')
+    
+    freqs = freqs * 1000
+    t = t + signal.t_start.rescale('ms').magnitude
+
+    # Save spectrogram
+    if save:
+        df = freqs[1]-freqs[0]
+        _data.exported_data['spectrogram'][sig_label] = (
+            freqs[0:int(50/df)], t, Sxx[:,0:int(50/df)])
+    
+    return freqs, t, Sxx
+
+
+################################################################################
 # Phase analysis
 ################################################################################
 
-def calc_mean_phase_vectors(spiketrains, pop_label):
+def calc_mean_phase_vectors(spiketrains, pop_label, intervals=None,
+                            analytic_signal=None,
+                            reference_signal=None):
     """
     Calculate mean phase vector of spikes with reference to given analytic signal
     (e.g. BP filtered + Hilbert transformed).
@@ -206,29 +324,29 @@ def calc_mean_phase_vectors(spiketrains, pop_label):
     for i, st in enumerate(spiketrains):
         spiketimes = st.magnitude
         mask = np.zeros_like(spiketimes, dtype=bool)
-        for ival in locking_intervals:
+        for ival in intervals:
             mask = mask | ((spiketimes > ival[0]) & (spiketimes <= ival[1]))
         spikes_during.append(spiketimes[mask])
 
 
-    Ts = sigmean_bpss.sampling_period.magnitude
-    t_start = sigmean_bpss.t_start.magnitude
+    Ts = reference_signal.sampling_period.magnitude
+    t_start = reference_signal.t_start.magnitude
     mean_phase_vecs = []
     spike_phase_vecs = []
     for i, spiketimes in enumerate(spikes_during):
         analsig_indices = np.round((spiketimes-t_start)/ Ts).astype(int) # indices into analytic signal
-        analsig_indices = analsig_indices[analsig_indices < analsig_norm.size]
+        analsig_indices = analsig_indices[analsig_indices < analytic_signal.size]
         if analsig_indices.size > 0:
-            cell_spike_phase_vecs = analsig_norm[analsig_indices]
+            cell_spike_phase_vecs = analytic_signal[analsig_indices]
             mean_phase_vecs.append(np.mean(cell_spike_phase_vecs)) # mean of normalized phase vectors
             spike_phase_vecs.append(cell_spike_phase_vecs)
         else:
             mean_phase_vecs.append(np.array([0 + 0j]))
     
     # Save phase vectors for export
-    exported_data['cell_phase_vecs'][pop_label] = mean_phase_vecs = np.array(mean_phase_vecs)
-    exported_data['pop_phase_vecs'][pop_label] = pop_phase_vec = np.mean(mean_phase_vecs)
-    spike_phase_vectors[pop_label] = spike_phase_vecs
+    _data.exported_data['cell_phase_vecs'][pop_label] = mean_phase_vecs = np.array(mean_phase_vecs)
+    _data.exported_data['pop_phase_vecs'][pop_label] = pop_phase_vec = np.mean(mean_phase_vecs)
+    _data.spike_phase_vectors[pop_label] = spike_phase_vecs
     
     return mean_phase_vecs, pop_phase_vec
 
@@ -305,7 +423,7 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
     # for angle, radius in zip(phases, magnitudes):
     #     ax.annotate("", xy=(angle, radius), xytext=(0, 0), arrowprops=kw)
     
-    if export_figs and export:
+    if _data.export_figs and export:
         fname = 'phase-vectors_{}'.format(pop_label)
         save_figure(fname, fig=fig)
 
@@ -325,7 +443,7 @@ def plot_phase_histogram(pop_label, ref_vec=None, num_bins=20,
         ref_ang = np.angle(ref_vec)
     
     # Complex vectors to polar coordinates
-    all_spike_vecs = np.concatenate(spike_phase_vectors[pop_label], axis=0)
+    all_spike_vecs = np.concatenate(_data.spike_phase_vectors[pop_label], axis=0)
     assert (all_spike_vecs.ndim == 1) or (min(all_spike_vecs.shape) == 1)
     vec_angs = np.angle(all_spike_vecs) - ref_ang
     
@@ -364,7 +482,7 @@ def plot_phase_histogram(pop_label, ref_vec=None, num_bins=20,
     elif isinstance(rlabel_angle, (float, int)):
         ax.set_rlabel_position(rlabel_angle)
     
-    if export_figs and export:
+    if _data.export_figs and export:
         fname = 'phase-histogram_{}'.format(pop_label)
         save_figure(fname, fig=fig)
 
@@ -392,7 +510,6 @@ def plot_signal_interval(ax, signal, interval, channels, **kwargs):
     """
     rec_dt = signal.sampling_period.magnitude
     tstart = signal.t_start.magnitude
-    sim_dur = signal.t_stop.magnitude
     irange = [int((t-tstart)/rec_dt) for t in interval]
     times = signal.times[irange[0]:irange[1]]
     ax.plot(times, signal[irange[0]:irange[1], channels], **kwargs)
@@ -418,7 +535,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
     if vm_plot_with is None:
         vm_plot_with = lambda tracename: tracename.startswith('i')
 
-    segment = pops_segments[pop_label]
+    segment = _data.pops_segments[pop_label]
 
     # NOTE: signals are akwardly ordered: one signal is the i-th synapse for all recorded cells
     default_tracenames = 'gAMPA', 'gNMDA', 'iGLU', 'gGABAA', 'gGABAB', 'iGABA'
@@ -460,7 +577,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
     # Make the figure
     num_axes = num_cell * num_ax_per_cell
     fig, axes = plt.subplots(num_axes, 1, 
-                             figsize=(0.75*page_width, num_axes*ax_height),
+                             figsize=(0.75*_data.page_width, num_axes*_data.ax_height),
                              sharex=True)
     # fig.suptitle("{} synapse dynamics".format(pop_label))
 
@@ -493,7 +610,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
             
             # Plot Beta trigger signal (zero phase)
             if beta_phase:
-                ax.vlines(phase_zero_times, ymin, ymax, label='$\phi$ = 0',
+                ax.vlines(_data.phase_zero_times, ymin, ymax, label='$\phi$ = 0',
                           colors='black', linestyle='dashed', linewidths=0.5)
             
             # NOTE: cell index -> see recorder._get_current_segment() -> should save source_ids/channel_ids
@@ -582,7 +699,7 @@ def combine_current_signals(post_pop, afferents_currents, cell_gid=None, cell_po
               - dict[str, np.array]: sum total current per population
     """
     pops_itot = {}
-    segment = pops_segments[post_pop]
+    segment = _data.pops_segments[post_pop]
 
     for afferent_pop in afferents_currents.keys():
         # Current signals for afferent population, by current type (e.g. GABA-A/GABA-B)
@@ -639,15 +756,18 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
               plotted variabed. Used for finding cell indices.
     """
     if interval is None:
-        interval = ROI_INTERVAL
+        interval = _data.ROI_INTERVAL
 
     currents_by_action = {'EXC': exc_currents, 'INH': inh_currents}
-    segment = pops_segments[pop]
+    segment = _data.pops_segments[pop]
     
     # Get cells with recorded synapses and rank by phase locking strength
-    cell_pop_idx_ranked = list(exported_data['phaselock_ranking_source_indices'][pop])
+    cell_pop_idx_ranked = list(_data.exported_data['phaselock_ranking_source_indices'][pop])
     test_signal = next((sig for sig in segment.analogsignals if 
-                        sig.name.startswith(trace_group_member)))
+                        sig.name.startswith(trace_group_member)), None)
+    if test_signal is None:
+        print("No synaptic traces for population {}".format(pop))
+        return
     recorded_cell_idx = list(test_signal.annotations['source_indices'])
     print("Recorded cell indices: {}".format(recorded_cell_idx))
     print("Phase-locking ranked indices: {}".format(cell_pop_idx_ranked))
@@ -664,16 +784,17 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
     times = test_signal.times[irange[0]:irange[1]]
     
     # Phase signal
-    phase_ref = sigmean_bpss
-    phase_slice = neoutil.make_slice(sigmean_bpss, interval)
-    phase_zcross = phase_zero_times[(phase_zero_times > interval[0]) & (phase_zero_times < interval[1])]
+    phase_ref = _data.sigmean_bpss
+    phase_slice = neoutil.make_slice(_data.sigmean_bpss, interval)
+    t_zcross = _data.phase_zero_times
+    phase_zcross = t_zcross[(t_zcross > interval[0]) & (t_zcross < interval[1])]
     
     # Voltage signal
-    vm_sig = next((sig for sig in pops_segments[pop].analogsignals if sig.name == 'Vm'))
+    vm_sig = next((sig for sig in _data.pops_segments[pop].analogsignals if sig.name == 'Vm'))
     vm_slice = neoutil.make_slice(vm_sig, interval)
     
     # Current signal
-    isig_ref = sorted_signals(pops_segments[pop], exc_currents.values()[0][0])[0]
+    isig_ref = sorted_signals(_data.pops_segments[pop], exc_currents.values()[0][0])[0]
     isig_slice = neoutil.make_slice(isig_ref, interval)
     isig_times = isig_ref.times[isig_slice]
     
@@ -710,7 +831,7 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
     for i_cell, cell_idx in enumerate(plotted_cell_idx):
         
         fig, axes = plt.subplots(num_ax_per_cell, 1, 
-                             figsize=(0.75*page_width, num_ax_per_cell*ax_height),
+                             figsize=(0.75*_data.page_width, num_ax_per_cell*_data.ax_height),
                              sharex=False)
         ax_i_offset = 0 # i_cell * num_ax_per_cell
         
@@ -813,7 +934,7 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
         for ax in fig.axes:
             ax.set_xlim(interval)
         
-        if export_figs and export_indices and cell_idx in export_indices:
+        if _data.export_figs and export_indices and cell_idx in export_indices:
             fname = 'phaselocking_cell-idx{}-gid{}-rank{}'.format(cell_idx, post_gid, cell_ranking)
             fpath = save_figure(fname, fig=fig)
             print('Saved figure as ' + fpath)
@@ -824,7 +945,7 @@ def get_presynaptic_gids(post_gid, pre_pop, post_pop):
     Get presynaptic cell GIDs for given post-synaptic GID.
     """
     return [
-        i for i,j in network_params[pre_pop][post_pop]['conpair_gids']
+        i for i,j in _data.network_params[pre_pop][post_pop]['conpair_gids']
             if j==post_gid
     ]
 
@@ -839,7 +960,7 @@ def rastergram_presynaptic_pops_pooled(
     pre_spikes = []
     for pre_pop in pre_pops:
         pre_gids = get_presynaptic_gids(post_gid, pre_pop, post_pop)
-        pre_spikes.extend(spiketrains_by_gid(pre_gids, pre_pop.split('.')[0]))
+        pre_spikes.extend(_data.spiketrains_by_gid(pre_gids, pre_pop.split('.')[0]))
     
     # Combined rastergram for presynaptic cells
     t0, t1 = interval
@@ -890,7 +1011,7 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
     @param    rec_ids : list(int)
               which cell to use out of all recorded cells
     """
-    segment = pops_segments[pop_label]
+    segment = _data.pops_segments[pop_label]
     
     def afferents_total_current(afferents_currents, cell_idx):
         """
@@ -911,7 +1032,8 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
             pops_currents_itot[afferent_pop] = itot_bytrace
             
             # Sum number of afferents (matrix column), should be same for each cell
-            num_syn_aff = sum(network_params[afferent_pop][pop_label]['conn_matrix'][:, 0] > 0)
+            num_syn_aff = sum(
+                _data.network_params[afferent_pop][pop_label]['conn_matrix'][:, 0] > 0)
             print("\t- {} afferents ({}): {}/{} synapses recorded".format(
                       afferent_pop, ",".join(isyn_names), num_rec_aff, num_syn_aff))
 
@@ -940,8 +1062,8 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
         cells_i_info.append(iaff_info)
         
     # Population average ratio EXC/INH
-    all_I_exc_inh[pop_label] = ratio = sum(cells_i_ratio) / len(cells_i_ratio)
-    all_I_afferents[pop_label] = cells_i_info
+    _data.all_I_exc_inh[pop_label] = ratio = sum(cells_i_ratio) / len(cells_i_ratio)
+    _data.all_I_afferents[pop_label] = cells_i_info
     
     print("\n{}: EXC currents estimate".format(pop_label))
     print("\t=> Itot EXC estimate Itot = {}".format([i['EXC'] for i in cells_i_info]))

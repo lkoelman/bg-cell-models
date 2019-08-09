@@ -169,11 +169,12 @@ def burst_metrics(
 
 def burst_metrics_surprise(
         ISI,
-        fac=1.5,
-        sampling_rate=1000,
-        min_length_of_burst=2,
+        sampling_rate=1000.0,
+        min_rate_factor=2.0,
+        grow_rate_factor=0.5,
+        min_burst_length=3,
         local_length=0,
-        surprise_cutoff=10):
+        surprise_cutoff=3.0):
     """
     Identify bursts using Poisson 'surprise' method (Legendy and Salcman 1985)
     and calculate various burst metrics.
@@ -185,47 +186,108 @@ def burst_metrics_surprise(
                 definition must be preceded by 'from __future__ import division'
 
     @param      sampling_rate : float
-                Signal sampling rate (Hz), used to scale ISI values.
-                E.g. if ISI values are in (ms), specify 1000 (Hz)
+                Unit conversion factor for ISI times : <time units>/seconds.
+                E.g. 1000.0 if ISI values are in units of ms.
+
+    @param      min_rate_factor : float
+                As the initial criterion for burst detection, spikes have to occur at a 
+                frequency which is higher than the baseline frequency by a factor 
+                'min_rate_factor'.
+
+    @param      min_burst_length : int
+                Minimum number of spikes that may be considered as a burst
+
+    @param      surprise_cutoff : float
+                Minimum value of the Poisson surprise index S = - log(P)
+                for a burst.
+
+    @param      local_length : float
+                parameter for calculating the baseline firing rate for comparison
+                with burst firing rate. A value of 0 indicates that the entire spike train should be used to yield the firing rate (can be used in case of
+                homogeneous firing of units). A value > 0 idicates the length of
+                the time interval prior to the burst.
 
     @return     dict[str, float / list[float]]
-                Dictionary containing following burst metrics.
-                - burst rate
-                - inter-burst intervals
-                - intra-burst firing rates
-                - inter-burst (background) firing rate 
-                - spikes per burst
-                - proportion of time spent bursting
-                - proportion of spikes in a burst
-                - coefficient of variation (CV)
-    
+                Dictionary containing burst metrics:
+
+        Per-burst metrics:
+        
+        'begin'         -> list[int]            : start index for each burst
+        'num_spikes'    -> list[int]            : number of spikes in each burst
+        'surprise'      -> list[float]          : surprise value for each burst
+        'rate'          -> list[float]          : mean firing rate in each burst
+        'max_rate'      -> list[float]          : max firing rate in each burst
+        'baseline_rate' -> list[float]          : baseline rate used to threshold
+                                                  burst firing rate
+        'inter_burst_intervals' -> list[float]  : times between bursts
+        
+        Summary metrics:
+        
+        'num_bursts' -> int                     : ~
+        'mean_spikes_per_burst' -> float        : ~
+        'median_spikes_per_burst' -> float      : ~
+        'total_spikes_in_bursts' -> int         : ~
+        'mean_intra_burst_frequency' -> float   : ~
+        'median_intra_burst_frequency' -> float : ~
+        'proportion_time_in_bursts' -> float    : ~
+        'mean_intra_burst_frequency' -> float   : ~
+        'proportion_spikes_in_bursts' -> float  : ~
+        'burst_rate' -> float                   : bursts per second (Hz)
+
+
     ALGORITHM
     ---------
 
-    As the initial criterion for burst detection, spikes have to occur at a 
-    frequency which is higher than the baseline frequency by a factor 'fac'.
-    
-    The user can modify the minimal length of a prospective burst 
-    ('min_length_of_burst'), and the surprise cutoff value ('surprise_cutoff'). 
-    In the original paper, this value was set to 10 to detect significant spikes.
+    (Description from Legend & Salcman 1985)
 
-    The burst discharge  is compared to a segment of data immediately preceding
-    the burst. A 'local_length' value of 0 indicates that the entire data stream
-    should be used to yield the firing rate (can be used in case of homogeneous
-    firing of units). Other values indicate a local time interval that should be
-    used (for instance, a value of 1 would mean that each spike/burst is
-    compared to 1 second of data prior to the index spike).
+    The measure used here is an evaluation of how improbable it is that the burst is
+    a chance occurrence and is computed, for any given burst that contains n spikes
+    in a time interval T, as S = -log P where P is the probability that, in a random
+    (Poisson) spike train having the same average spike rate r as the spike train
+    studied, a given time interval of length T contains n or more spikes. P is given
+    by Poisson's formula, as P = exp(-rT) * sum_{i=n}^{i=inf}((rT)^i / i!). S will
+    be reffered to as the Poisson surprise of the burst.
+
+    Burst analysis of a spike train began with a quick pass through the [spike
+    train], to evaluate the buffer-wide average spike rate [...].  Then, in a second
+    pass, the program advanced down the spike train, spike by spike, until it found
+    several closely spaced spikes; when it did, it called them a burst. (The
+    required number of such spikes had been chosen to be 3, and their largest
+    allowed average spacing was chosen to be half the buffer- wide average.) Next,
+    the program tested whether including an additional spike at the end of the burst
+    increased the Poisson surprise of the burst, and if so, included the additional
+    spike. It then repeated the process until either a relatively long interval was
+    encountered or inclusion of one or more (up to 10) additional spikes failed to
+    increase the Poisson surprise. (The length of such a relatively long interval
+    had been chosen to be twice the buffer-wide average.) Next, the program tested
+    whether the Poisson surprise could be further increased by removing one or more
+    spikes from the beginning of the burst; if this was possible, the program
+    removed whatever number of spikes would maximize the Poisson surprise. This con-
+    cluded the burst-defining process after
 
     REFERENCES
     ----------
 
-    Original paper: Legendy and Salcman 1985.
+    - Legendy & Salcman 1985
+        - min length of burst = 3
+        - surprise value threshold = 10
+        - min firing rate for burst detection = 2 x baseline rate
+        - min firing rate for burst growing = 0.5 x baselinerate
 
-    Example usage of method: Wichmann and Soares 2006, Sanders et al. 2013,
-    Sharott et al. 2014.
+    Example usage of method, with different algorithm parameters:
+    
+    - Wichmann and Soares 2006
+        - surprise value threshold = 3
+        - min firing rate for burst growing = 2 x baseline rate ? (in MATLAB code)
 
-    Modified method: Hahn et al. (2008). Pallidal burst activity during 
-    therapeutic deep brain stimulation. Experimental neurology, 211(1), 243-251.
+    - Hahn et al. (2008) - Experimental neurology, 211(1), 243-251.
+        - surprise value threshold = 3
+        - min firing rate for burst detectio = < 1 x baseline rate
+        - burst growing in both directions, instead of shrinking from front
+    
+    - Sanders et al. 2013, Sharott et al. 2014
+        - surprise value threshold = 3
+
 
     CREDITS
     -------
@@ -256,7 +318,6 @@ def burst_metrics_surprise(
     if local_length == 0:
         # entire data stream should be used to yield the firing rate for comparison
         mean_FR = len(ISI) / (np.sum(ISI) / sampling_rate)
-        fr_thr = sampling_rate / (fac * mean_FR)
         beg_idx = -1
     else:
         # finds last index within the 'local length' - incremented by one, this will result in the first index that can be evaluate.
@@ -264,7 +325,7 @@ def burst_metrics_surprise(
 
     n = beg_idx
 
-    while n < (len(ISI) - min_length_of_burst):
+    while n < (len(ISI) - min_burst_length):
 
         # n is a running parameter that points to ISIs
         n += 1
@@ -276,10 +337,13 @@ def burst_metrics_surprise(
 
             # calculation of frequency threshold
             mean_FR = len(I) / (np.sum(I) / sampling_rate)
-            fr_thr = sampling_rate / (fac * mean_FR)
+        
+        # Firing rate thresholds in units of time (e.g. ms or s)
+        fr_thr = sampling_rate / (min_rate_factor * mean_FR) # units of time (e.g. ms or s)
+        grow_fr_thr = sampling_rate / (grow_rate_factor * mean_FR)
 
-
-        # 1. selection step - find runs of short ISIs
+        # 1. DETECTION PHASE ===================================================
+        # find runs of short ISIs
         if ISI[n] < fr_thr:
             # find areas of the spike train which fulfill the length_of_burst criterion
 
@@ -294,32 +358,34 @@ def burst_metrics_surprise(
             # at this point, the provisional burst starts at n and ends at n+q;
             # it has q + 1 spikes in it
 
-            # 2. selection step - adjust length of burst to maximize surprise value
-            if q + 1 >= min_length_of_burst:
-                m = min_length_of_burst
+            # 2. REFINEMENT PHASE ==============================================
+            # adjust length of burst to maximize surprise value
+            if q + 1 >= min_burst_length:
+                m = min_burst_length
 
-                while ((n + m <= len(ISI)) and 
+                while ((n + m < len(ISI)) and 
                        (ISI[n + m] < fr_thr) and
                        (surprise(mean_FR, ISI[n:n+m+1], sampling_rate) >= 
                         surprise(mean_FR, ISI[n:n+m], sampling_rate))):
 
                     m += 1
 
-                if m > min_length_of_burst:
+                if m > min_burst_length:
                     m -= 1
 
                 # at this point, the beginning of the burst is provisionally settled to be n, the end n+m
                 # the burst has m+1 spikes in it.
 
-                # 3. selection step - test whether adding up to 10 more ISIs will enhance surprise value
-                if n + m + 10 <= len(ISI):
+                # 3. BURST GROWING PHASE ==========================================
+                # test whether adding up to 10 more ISIs will enhance surprise value
+                if n + m + 10 < len(ISI):
                     # mmax is set to 10 unless one couldn't add 10 to n before reaching the end of FR
                     mmax = 10
                 else:
                     mmax = len(ISI) - (n + m)
 
                 # looking for 'slow spikes' within the next 10 spikes after the current burst end
-                ind_long_ISI = np.where(ISI[n+m+1:n+m+mmax+1] > fr_thr)[0]
+                ind_long_ISI = np.where(ISI[n+m+1:n+m+mmax+1] > grow_fr_thr)[0]
 
                 # pmax is set to be the index of the slow spike
                 if len(ind_long_ISI) > 0:
@@ -353,11 +419,13 @@ def burst_metrics_surprise(
                 # at this point, the end of the index of the end of the burst
                 # is settled to be n+m
 
-                # 4. selection step - test whether adjusting the front end of the burst enhances the surprise value
+
+                # 4. BURST SHRINKING PHASE =====================================
+                # test whether adjusting the front end of the burst enhances the surprise value
                 if n > 1:
                     o = 1
 
-                    while ((m - o > min_length_of_burst) and
+                    while ((m - o > min_burst_length) and
                            (surprise(mean_FR, ISI[n+o:n+m+1], sampling_rate) >=
                             surprise(mean_FR, ISI[n+o-1:n+m+1], sampling_rate))):
                         o += 1
@@ -369,7 +437,7 @@ def burst_metrics_surprise(
 
                 # at this point, the beginning of the burst is settled to be n, and the length is m+1
 
-                if ((m + 1 >= min_length_of_burst) and
+                if ((m + 1 >= min_burst_length) and
                     (surprise(mean_FR, ISI[n:n+m+1], sampling_rate) > surprise_cutoff)):
 
                     burst_ISIs = ISI[n:n+m+1]
@@ -381,16 +449,18 @@ def burst_metrics_surprise(
                     burst_metrics['rate'].append(
                         len(burst_ISIs) / (np.sum(burst_ISIs) / sampling_rate))
                     burst_metrics['max_rate'].append(sampling_rate / min(burst_ISIs))
-                    burst_metrics['baseline_rate'] = mean_FR
+                    burst_metrics['baseline_rate'].append(mean_FR)
 
                 # adjust ISI pointer to the ISI following the burst
                 n += (m + 1)
 
         # end if ISI[n] < fr_thr:
-    # end while n < (len(ISI) - min_length_of_burst)
+    # end while n < (len(ISI) - min_burst_length)
 
     # Calculate aggregate metrics for all bursts
     burst_metrics['num_bursts'] = len(burst_metrics['begin'])
+    burst_metrics['inter_burst_intervals']= []
+    burst_metrics['burst_rate'] = 0.0
 
     if burst_metrics['num_bursts'] > 0:
         all_num_spikes = burst_metrics['num_spikes']
@@ -403,6 +473,18 @@ def burst_metrics_surprise(
         burst_metrics['median_intra_burst_frequency'] = np.median(all_rates)
         burst_metrics['proportion_time_in_bursts'] = burst_metrics['total_spikes_in_bursts'] / burst_metrics['mean_intra_burst_frequency'] / (np.sum(ISI[beg_idx+1:len(ISI)]) / sampling_rate)
         burst_metrics['proportion_spikes_in_bursts'] = burst_metrics['total_spikes_in_bursts'] / (len(ISI) - beg_idx)
+        
+        # burst rate is sampling_rate / mean(inter_burst_intervals)
+        if burst_metrics['num_bursts'] >= 2:
+            for i_burst, i_begin in enumerate(burst_metrics['begin']):
+                if i_burst == burst_metrics['num_bursts']-1:
+                    break
+                len_burst = burst_metrics['num_spikes'][i_burst]
+                i_next = burst_metrics['begin'][i_burst+1]
+                sum_inter_ISIs = sum(ISI[i_burst+len_burst:i_next])
+                burst_metrics['inter_burst_intervals'].append(sum_inter_ISIs)
+
+            burst_metrics['burst_rate'] = sampling_rate / np.mean(sum_inter_ISIs)
     else:
         burst_metrics['mean_spikes_per_burst'] = 0.
         burst_metrics['median_spikes_per_burst'] = 0.
@@ -411,7 +493,6 @@ def burst_metrics_surprise(
         burst_metrics['median_intra_burst_frequency'] = 0.
         burst_metrics['proportion_time_in_bursts'] = 0.
         burst_metrics['proportion_spikes_in_bursts'] = 0.
-
 
     return burst_metrics
 
