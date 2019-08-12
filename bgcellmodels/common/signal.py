@@ -460,7 +460,6 @@ def burst_metrics_surprise(
     # Calculate aggregate metrics for all bursts
     burst_metrics['num_bursts'] = len(burst_metrics['begin'])
     burst_metrics['inter_burst_intervals']= []
-    burst_metrics['burst_rate'] = 0.0
 
     if burst_metrics['num_bursts'] > 0:
         all_num_spikes = burst_metrics['num_spikes']
@@ -484,7 +483,8 @@ def burst_metrics_surprise(
                 sum_inter_ISIs = sum(ISI[i_burst+len_burst:i_next])
                 burst_metrics['inter_burst_intervals'].append(sum_inter_ISIs)
 
-            burst_metrics['burst_rate'] = sampling_rate / np.mean(sum_inter_ISIs)
+            # burst rate is num_bursts / (interval[1] - interval[0])
+            # burst_metrics['burst_rate'] = sampling_rate / np.mean(sum_inter_ISIs)
     else:
         burst_metrics['mean_spikes_per_burst'] = 0.
         burst_metrics['median_spikes_per_burst'] = 0.

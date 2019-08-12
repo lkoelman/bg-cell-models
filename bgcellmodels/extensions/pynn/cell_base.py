@@ -168,6 +168,9 @@ def init_extracellular_stim_rec(
             stimulation/recording IF they have the mechanism 'extracellular'
             inserted.
     """
+    if not (with_stim or with_rec):
+        return
+
     all_sections = seclist
 
     # Insert mechanism that mediates between extracellular variables and

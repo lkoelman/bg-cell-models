@@ -99,6 +99,24 @@ def hide_axis(ax):
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
 
+
+def set_axes_size(w, h, ax=None):
+    """
+    Set the size of the axes (plotting area) instead of the whole figure
+    which is the default.
+    
+    w, h: width, height in inches
+    """
+    if not ax: ax=plt.gca()
+    l = ax.figure.subplotpars.left
+    r = ax.figure.subplotpars.right
+    t = ax.figure.subplotpars.top
+    b = ax.figure.subplotpars.bottom
+    figw = float(w)/(r-l)
+    figh = float(h)/(t-b)
+    ax.figure.set_size_inches(figw, figh)
+
+
 ################################################################################
 # PSTH analysis
 ################################################################################
@@ -290,6 +308,16 @@ def calc_spectrogram(pop_label, signal=None, max_avg=50, freq_res=1.0,
             freqs[0:int(50/df)], t, Sxx[:,0:int(50/df)])
     
     return freqs, t, Sxx
+
+
+def integrate_subband(freqs, vals, fband, normalize=True):
+    """
+    Integrate spectral power in frequency band [f0, f1].
+    """
+    mask1 = (freqs >= fband[0]) & (freqs <= fband[1])
+    mask2 = np.isclose(freqs, fband[0], atol=0.1) | np.isclose(freqs, fband[1], atol=0.1)
+    fband_idx, = np.where(mask1 | mask2)
+    return np.sum(vals[fband_idx]) / len(fband_idx)
 
 
 ################################################################################
@@ -1073,3 +1101,153 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
           "\n\t=> cell ratios = {}"
           "\n\t=> pop average ratio = {}".format(pop_label, cells_i_ratio, ratio))
     return ratio
+
+################################################################################
+# Sweep analysis
+################################################################################
+
+# Compare computed metrics over multiple simulations
+
+def gather_metrics(all_cell_metrics, metric):
+    """
+    Gather burst metric from all cells into a list
+    """
+    if isinstance(all_cell_metrics[0][metric], float):
+        map_func = lambda x,y: x + [y]
+    else:
+        map_func = lambda x,y: x + y
+    all_cell_vals = reduce(map_func, (cell_metrics[metric] for cell_metrics in all_cell_metrics), [])
+    return all_cell_vals
+
+
+def boxplots_burst_metrics(pop_label, metric_names=None, export_metrics=None):
+    """
+    Compare burst metrics for same population across sweep values
+    """
+    sweep_vals = np.array(sorted(_data.analysis_results.keys()))
+    if metric_names == None:
+        metric_names = _data.analysis_results[sweep_vals[0]]['burst_metrics'][pop_label][0].keys()
+    
+    sweep_metrics = {}
+    for metric_name in metric_names:
+        for i, sweep_value in enumerate(sweep_vals):
+            cell_metrics = _data.analysis_results[sweep_value]['burst_metrics'][pop_label]
+            all_cell_vals = gather_metrics(cell_metrics, metric_name)
+            sweep_metrics.setdefault(metric_name, []).append(all_cell_vals)
+    
+        # Plot boxplots
+        fig, ax = plt.subplots(figsize=(_data.ax_width, _data.ax_height))
+        ax.set_title('{} {}'.format(pop_label, metric_name))
+        bp = ax.boxplot(sweep_metrics[metric_name], 0, 'g+')
+        ax.set_xticklabels(sweep_vals)
+        ax.set_ylim((0, ax.get_ylim()[1]))
+        ax.set_ylabel(metric_name)
+        ax.set_xlabel(_data.sweep_var_legend)
+        ax.grid(True, which='major', axis='y')
+        fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
+        
+        # Save figure
+        if (_data.export_figs and (export_metrics is not None) 
+                              and (metric_name in export_metrics)):
+            fname = '{}_{}'.format(metric_name, pop_label)
+            save_figure(fname, fig=fig)
+
+
+def regression_burst_metrics(pop_label, metric_names=None, detailed=True, export_metrics=None):
+    """
+    Linear regression of burst metrics vs sweep variable.
+    """
+    from statsmodels.formula.api import ols
+    import pandas
+
+    sweep_vals = np.array(sorted(_data.analysis_results.keys()))
+    if metric_names == None:
+        metric_names = _data.analysis_results[sweep_vals[0]]['burst_metrics'][pop_label][0].keys()
+    
+    sweep_metrics = {}
+    for metric_name in metric_names:
+        for i, sweep_value in enumerate(sweep_vals):
+            cell_metrics = _data.analysis_results[sweep_value]['burst_metrics'][pop_label]
+            all_cell_vals = gather_metrics(cell_metrics, metric_name)
+            sweep_metrics.setdefault(metric_name, []).append(all_cell_vals)
+        
+        # Linear regression
+        x = sweep_vals
+        y = [np.median(mvals) for mvals in sweep_metrics[metric_name]]
+        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+        
+        # Detailed linear regression
+        if detailed:
+            data = pandas.DataFrame({'x': x, metric_name: y})
+            model = ols("{} ~ {}".format(metric_name, 'x'), data).fit()
+            print(model.summary()) # summary2()
+        
+        fig, ax = plt.subplots(figsize=(_data.ax_width, _data.ax_height))
+        ax.set_title('{} {}'.format(pop_label, metric_name))
+        ax.set_xticks(sweep_vals)
+        ax.plot(x, y, 'o', color='g', label='original data')
+        ax.plot(x, intercept + slope*x, 'k--', label='linear fit')
+        ax.set_ylabel(metric_name)
+        ax.set_xlabel(_data.sweep_var_legend)
+        ax.grid(True)
+        ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
+                transform=ax.transAxes, ha='right')
+        fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
+        
+        # Save figure
+        if (_data.export_figs and (export_metrics is not None) 
+                              and (metric_name in export_metrics)):
+            fname = '{}_{}'.format(metric_name, pop_label)
+            save_figure(fname, fig=fig)
+
+
+def summarize_burst_metrics(pop_label, metric_names, axsize=None, export=False):
+    """
+    Plot multiple burst metrics (median across cells) in single figure with different y-axes.
+    """
+    sweep_vals = _data.sweep_vals
+    if axsize is None:
+        axsize = (_data.ax_width, _data.ax_height)
+
+    
+    fig, ax1 = plt.subplots()
+    axes = [ax1] + [ax1.twinx() for m in metric_names[1:]]
+    color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    
+    sweep_metrics = {}
+    for i_metric, metric_name in enumerate(metric_names):
+        for i, sweep_value in enumerate(sweep_vals):
+            cell_metrics = _data.analysis_results[sweep_value]['burst_metrics'][pop_label]
+            all_cell_vals = gather_metrics(cell_metrics, metric_name)
+            sweep_metrics.setdefault(metric_name, []).append(all_cell_vals)
+        
+        # Linear regression
+        x = sweep_vals
+        y = [np.median(mvals) for mvals in sweep_metrics[metric_name]]
+        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+        
+        # Plot metric
+        ax = axes[i_metric]
+        act, = ax.plot(x, y, '--', marker='.', linewidth=1, markersize=6,
+                       color=color_cycle[i_metric], label='original data')
+        # ax.plot(x, intercept + slope*x, 'k--', label='linear fit')
+        
+        ax.set_ylabel(metric_name, color=act.get_color())
+        ax.tick_params(axis='y', colors=act.get_color(), size=4, width=1.5)
+        # ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
+        #         transform=ax.transAxes, ha='right')
+        
+        if i_metric == 0:
+            ax.set_xticks(sweep_vals)
+            ax.set_xlabel(_data.sweep_var_legend)
+            ax.grid(True)
+        elif i_metric == 2:
+            offset_show_twin_yax(ax, offset=1.12)
+            
+    fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
+    set_axes_size(axsize[0], axsize[1], ax1)
+
+    # Save figure
+    if _data.export_figs and export:
+        fname = 'burst-metrics_{}_{}'.format(_data.sweep_var_name, pop_label)
+        save_figure(fname, fig=fig)

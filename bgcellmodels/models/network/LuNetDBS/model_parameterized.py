@@ -279,8 +279,8 @@ def simulate_model(
     sim_params = config['simulation']
     emf_params = config['electromagnetics']
 
-    with_dbs = bool(with_dbs) or emf_params['with_dbs']
-    with_lfp = bool(with_lfp) or emf_params['with_lfp']
+    with_dbs = bool(with_dbs) and emf_params['with_dbs']
+    with_lfp = bool(with_lfp) and emf_params['with_lfp']
 
     # Badstubner (2017), Fig. 8: 750 Ohm*cm
     # Baumanm (2010): 370 Ohm*cm
