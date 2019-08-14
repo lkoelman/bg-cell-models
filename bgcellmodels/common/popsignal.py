@@ -1112,10 +1112,12 @@ def gather_metrics(all_cell_metrics, metric):
     """
     Gather burst metric from all cells into a list
     """
-    if isinstance(all_cell_metrics[0][metric], float):
+    if isinstance(all_cell_metrics[0][metric], (float, int)):
         map_func = lambda x,y: x + [y]
-    else:
+    elif isinstance(all_cell_metrics[0][metric], list):
         map_func = lambda x,y: x + y
+    else:
+        map_func = lambda x,y: x + list(y)
     all_cell_vals = reduce(map_func, (cell_metrics[metric] for cell_metrics in all_cell_metrics), [])
     return all_cell_vals
 

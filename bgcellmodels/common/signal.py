@@ -488,7 +488,7 @@ def burst_metrics_surprise(
     else:
         burst_metrics['mean_spikes_per_burst'] = 0.
         burst_metrics['median_spikes_per_burst'] = 0.
-        burst_metrics['total_spikes_per_burst'] = 0.
+        burst_metrics['total_spikes_in_bursts'] = 0.
         burst_metrics['mean_intra_burst_frequency'] = 0.
         burst_metrics['median_intra_burst_frequency'] = 0.
         burst_metrics['proportion_time_in_bursts'] = 0.
@@ -562,21 +562,32 @@ def numpy_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):
     return bin_vals
 
 
-def numpy_psth_triggered(spiketrains, trigger_times, bin_edges, interval=None):
+def numpy_psth_triggered(spiketrains, trigger_times, bins, interval=None):
+    """
+    Peri-stimulus time histogram with stimulus times
+
+    @param  spike_trains : iterable[np.array[float]]
+            List of spike trains
+
+    @param  trigger_times : np.array[float]
+            Stimulus times (= trigger times)
+
+    @param  binds : np.array[float] or int
+            Bin edges or number of bins (see numpy.histogram arg 'bins')
+    """
     num_trigger = len(trigger_times)
-    trains_psths = [] # PSTH for each spike train
 
     if interval is not None:
         mask = (trigger_times >= interval[0]) & (trigger_times <= interval[1])
         trigger_times = trigger_times[mask]
 
-    for spike_times in spiketrains:
-        if interval is None:
-            mask = np.s_[:]
-        else:
-            mask = (spike_times >= interval[0]) & (spike_times <= interval[1])
-        times = np.array(spike_times[mask]) # copy for in-place modification
+    individual_counts = [] # PSTH (counts) for each spike train
 
+    for spike_times in spiketrains:
+        mask = (spike_times > trigger_times[0])
+        if interval is not None:
+            mask = mask & (spike_times >= interval[0]) & (spike_times <= interval[1])
+        times = np.array(spike_times[mask]) # copy for in-place modification
 
         # Normalize all spike times to preceding trigger
         for i, t in enumerate(trigger_times):
@@ -585,10 +596,12 @@ def numpy_psth_triggered(spiketrains, trigger_times, bin_edges, interval=None):
                 mask = mask & (times <= trigger_times[i+1])
             times[mask] = times[mask] - t
 
-        counts, edges = np.histogram(times, bins=bin_edges)
-        trains_psths.append(counts)
+        counts, edges = np.histogram(times, bins=bins)
+        individual_counts.append(counts)
 
-    return trains_psths
+    summed_counts = sum(individual_counts) # sum of numpy arrays
+
+    return summed_counts, individual_counts, edges
 
 
 

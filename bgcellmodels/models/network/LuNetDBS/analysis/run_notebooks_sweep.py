@@ -24,14 +24,10 @@ from multiprocessing import Pool
 
 # SETPARAM: List simulation output directories to analyze
 output_dirs = """
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/LuNetDBS_2019.08.07_18.54.22_job-13298_axons-full-V2_dbs-phase-135
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/LuNetDBS_2019.08.07_18.54.26_job-13296_axons-full-V2_dbs-phase-045
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/LuNetDBS_2019.08.07_18.54.26_job-13299_axons-full-V2_dbs-phase-180
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/LuNetDBS_2019.08.07_18.54.26_job-13301_axons-full-V2_dbs-phase-270
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/LuNetDBS_2019.08.07_18.54.28_job-13297_axons-full-V2_dbs-phase-090
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/LuNetDBS_2019.08.07_18.54.37_job-13302_axons-full-V2_dbs-phase-315
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/LuNetDBS_2019.08.07_18.54.41_job-13300_axons-full-V2_dbs-phase-225
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/LuNetDBS_2019.08.07_18.54.55_job-13295_axons-full-V2_dbs-phase-000
+/home/luye/Documents/simdata/c6_sweep-DBS-amp_gsyn-std-recalibrate/LuNetDBS_2019.08.13_20.24.08_job-21178_axons-full-V6_GABA-AB-recalibrate_gCS-3e-3_gGS-2e-3_gSG-5e-4
+/home/luye/Documents/simdata/c6_sweep-DBS-amp_gsyn-std-recalibrate/LuNetDBS_2019.08.13_19.17.11_job-21174_axons-full-V6_GABA-AB-recalibrate_gCS-8e-3_gGS-2e-3_gSG-5e-4
+/home/luye/Documents/simdata/c6_sweep-DBS-amp_gsyn-std-recalibrate/LuNetDBS_2019.08.13_18.10.41_job-21177_axons-full-V6_GABA-AB-recalibrate_gCS-5e-3_gGS-2e-3_gSG-5e-4
+/home/luye/Documents/simdata/c6_sweep-DBS-amp_gsyn-std-recalibrate/LuNetDBS_2019.08.13_18.02.27_job-21175_axons-full-V6_GABA-AB-recalibrate_gCS-12e-3_gGS-2e-3_gSG-4e-4
 """.strip().split()
 
 nb_dir = "/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/analysis"
@@ -39,14 +35,14 @@ nb_infile = "lunet_dbs_analysis.ipynb"
 nb_path = os.path.join(nb_dir, nb_infile)
 
 # SETPARAM: name of sweep variable
-sweep_name = "dbs-phase"
+sweep_name = "gsyn-ctx-stn"
 
 def process_sim_outputs(args):
 
     sim_outdir, sweep_index = args
 
     # SETPARAM: pattern for extraction of sweep variable from filename
-    sweep_val_pattern = r"phase-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
+    sweep_val_pattern = r"gCS-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
     match = re.search(sweep_val_pattern, sim_outdir)
     sweep_val = match.groups()[0]
 
