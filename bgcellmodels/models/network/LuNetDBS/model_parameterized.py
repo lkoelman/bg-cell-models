@@ -241,17 +241,17 @@ def simulate_model(
         export_locals   = True,
         output          = None,
         report_progress = None,
-        config          = None,
-        cell_config     = None,
-        fem_config      = None,
-        axon_coordinates = None,
+        net_conf        = None,
+        cell_conf       = None,
+        fem_conf        = None,
+        axon_coordinates    = None,
         morph_dir       = None,
         seed            = None,
         with_lfp        = None,
         with_dbs        = None,
-        dopamine_depleted = None,
-        transient_period = None,
-        max_write_interval = None,
+        dopamine_depleted   = None,
+        transient_period    = None,
+        max_write_interval  = None,
         report_interval = 50.0,
         restore_state   = None,
         save_state      = None,
@@ -276,8 +276,8 @@ def simulate_model(
 
     out_dir, out_ext = output.split('*')
 
-    sim_params = config['simulation']
-    emf_params = config['electromagnetics']
+    sim_params = net_conf['simulation']
+    emf_params = net_conf['electromagnetics']
 
     with_dbs = emf_params['with_dbs'] if with_dbs is None else with_dbs
     with_lfp = emf_params['with_lfp'] if with_lfp is None else with_lfp
@@ -286,7 +286,7 @@ def simulate_model(
     # Baumanm (2010): 370 Ohm*cm
     rho_ohm_cm = 1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
     electrode_coordinates_um = emf_params['dbs_electrode_coordinates_um']
-    transfer_impedance_matrix = [] if fem_config is None else fem_config
+    transfer_impedance_matrix = [] if fem_conf is None else fem_conf
 
     ############################################################################
     # SIMULATOR SETUP
@@ -359,8 +359,8 @@ def simulate_model(
         """
         Get population parameters from config and evaluate them.
         """
-        config_locals = config[pop].get('local_context', {})
-        param_specs = getdictvals(config[pop], *param_names, as_dict=True)
+        config_locals = net_conf[pop].get('local_context', {})
+        param_specs = getdictvals(net_conf[pop], *param_names, as_dict=True)
         pvals = eval_params(param_specs, params_global_context,
                             [params_local_context, config_locals])
         return getdictvals(pvals, *param_names)
@@ -369,11 +369,11 @@ def simulate_model(
         """
         Get a group of parameters for a population as dictionary.
         """
-        config_locals = config[pop].get('local_context', {})
+        config_locals = net_conf[pop].get('local_context', {})
         if group_name is None:
-            param_specs = config[pop]
+            param_specs = net_conf[pop]
         else:
-            param_specs = config[pop][group_name]
+            param_specs = net_conf[pop][group_name]
         if mapping is not None:
             param_specs = {v: param_specs[k] for k,v in mapping.iteritems()}
         return eval_params(param_specs, params_global_context,
@@ -383,8 +383,8 @@ def simulate_model(
         """
         Get PyNN cell parameters as dictionary of numerical values.
         """
-        config_locals = config[pop].get('local_context', {})
-        param_specs = config[pop].get('PyNN_cell_parameters', {})
+        config_locals = net_conf[pop].get('local_context', {})
+        param_specs = net_conf[pop].get('PyNN_cell_parameters', {})
         return eval_params(param_specs, params_global_context,
                            [params_local_context, config_locals])
 
@@ -392,8 +392,8 @@ def simulate_model(
         """
         Make Synapse object from config dict
         """
-        config_locals = config[post].get('local_context', {})
-        syn_type, syn_params = getdictvals(config[post][pre]['synapse'],
+        config_locals = net_conf[post].get('local_context', {})
+        syn_type, syn_params = getdictvals(net_conf[post][pre]['synapse'],
                                            'name', 'parameters')
         if hasattr(custom_synapses, syn_type):
             syn_class = getattr(custom_synapses, syn_type)
@@ -401,7 +401,7 @@ def simulate_model(
             syn_class = getattr(sim, syn_type)
         syn_pvals = eval_params(syn_params, params_global_context,
                                 [params_local_context, config_locals])
-        num_contacts = config[post][pre].get('num_contacts', 1)
+        num_contacts = net_conf[post][pre].get('num_contacts', 1)
         syntype_obj = syn_class(**syn_pvals)
         syntype_obj.num_contacts = num_contacts
         return syntype_obj
@@ -410,8 +410,8 @@ def simulate_model(
         """
         Make Connector object from config dict
         """
-        config_locals = config[post].get('local_context', {})
-        con_type, con_params = getdictvals(config[post][pre]['connector'],
+        config_locals = net_conf[post].get('local_context', {})
+        con_type, con_params = getdictvals(net_conf[post][pre]['connector'],
                                            'name', 'parameters')
         connector_class = getattr(sim, con_type)
         con_pvals = eval_params(con_params, params_global_context,
@@ -422,7 +422,7 @@ def simulate_model(
         return connector
 
     axon_scales = { 'mm' : 1.0, 'um': 1e-3, 'm': 1e3 }
-    axon_scale = axon_scales[cell_config['units']['axons']]
+    axon_scale = axon_scales[cell_conf['units']['axons']]
     
     def get_axon_coordinates(axon_id):
         return np.asarray(axon_coordinates[axon_id]) * axon_scale
@@ -454,12 +454,12 @@ def simulate_model(
     # - to query cell model attributes, use population[i]._cell
     print("rank {}: starting phase POPULATIONS.".format(mpi_rank))
 
-    config_pop_labels = [k for k in config.keys() if not k in 
+    config_pop_labels = [k for k in net_conf.keys() if not k in 
                             ('simulation', 'electromagnetics')]
 
     # 3D info for cell positioning
     gpi_cell_positions = [
-        np.array(cell['transform'])[0:3, 3].reshape(-1,3) for cell in cell_config['cells'] if 
+        np.array(cell['transform'])[0:3, 3].reshape(-1,3) for cell in cell_conf['cells'] if 
             (cell['population'] == 'GPI')
     ]
 
@@ -474,7 +474,7 @@ def simulate_model(
 
     # Select cells to simulate
     pop_cell_defs = [
-        cell for cell in cell_config['cells'] if 
+        cell for cell in cell_conf['cells'] if 
             (cell['population'] == 'STN') and (cell['axon'] is not None)
     ]
     cell_defs = pop_cell_defs[:stn_ncell_biophys]
@@ -484,8 +484,8 @@ def simulate_model(
     stn_cell_positions = np.array([A[0:3, 3] for A in cells_transforms]) # Nx3
 
     # Choose a random morphology for each cell
-    candidate_morphologies = np.array(cell_config['default_morphologies']['STN'])
-    morph_indices = np.array(config['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies)
+    candidate_morphologies = np.array(cell_conf['default_morphologies']['STN'])
+    morph_indices = np.array(net_conf['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies)
     
     cells_morph_paths = [
         get_morphology_path(m) for m in candidate_morphologies[morph_indices]
@@ -507,8 +507,8 @@ def simulate_model(
     stn_cell_params = get_cell_parameters('STN')
 
     # Add parameters from other sources
-    stn_cell_params['with_extracellular_stim'] = with_dbs
-    stn_cell_params['with_extracellular_rec'] = with_lfp
+    stn_cell_params['with_extracellular_stim'] = with_dbs and net_conf['STN'].get('with_dbs', True)
+    stn_cell_params['with_extracellular_rec'] = with_lfp and net_conf['STN'].get('with_lfp', True)
     stn_cell_params['morphology_path'] = cells_morph_paths
     stn_cell_params['transform'] = cells_transforms
     ## Axon parameters
@@ -614,7 +614,7 @@ def simulate_model(
 
     # Select cells to simulate
     pop_cell_defs = [
-        cell for cell in cell_config['cells'] if 
+        cell for cell in cell_conf['cells'] if 
             (cell['population'] == 'GPE') and (cell['axon'] is not None)
     ]
     cell_defs = pop_cell_defs[:gpe_ncell_biophys]
@@ -655,8 +655,8 @@ def simulate_model(
     gpe_cell_params = get_cell_parameters('GPE.all')
 
     # Add parameters from other sources
-    gpe_cell_params['with_extracellular_stim'] = with_dbs
-    gpe_cell_params['with_extracellular_rec'] = with_lfp
+    gpe_cell_params['with_extracellular_stim'] = with_dbs and net_conf['GPE.all'].get('with_dbs', True)
+    gpe_cell_params['with_extracellular_rec'] = with_lfp and net_conf['GPE.all'].get('with_lfp', True)
     gpe_cell_params['transform'] = cells_transforms
     ## Axon parameters
     gpe_cell_params['termination_method'] = np.array('nodal_cutoff')
@@ -748,7 +748,7 @@ def simulate_model(
 
     # # NOTE: can use any axon per cell, since they are not electrically connected
     # gpe_conn_defs = [
-    #     c for c in cell_config['connections'] if (c['projection'] == 'GPE-STN')
+    #     c for c in cell_conf['connections'] if (c['projection'] == 'GPE-STN')
     # ]
 
     # gpe_axon_coords = [
@@ -830,7 +830,7 @@ def simulate_model(
     num_ctx_axons = ctx_ncell
 
     ctx_conn_defs = [
-        c for c in cell_config['connections'] if (c['projection'] == 'CTX-STN')
+        c for c in cell_conf['connections'] if (c['projection'] == 'CTX-STN')
     ]
 
     num_axon_reused = 0
@@ -854,8 +854,8 @@ def simulate_model(
         'axon_class':                   AxonFoust2011,
         'streamline_coordinates_mm':    ctx_axon_coords,
         'termination_method':           np.array('any_cutoff'),
-        'with_extracellular_stim':      with_dbs,
-        'with_extracellular_rec':       with_lfp,
+        'with_extracellular_stim':      with_dbs and net_conf['CTX.axons'].get('with_dbs', True),
+        'with_extracellular_rec':       with_lfp and net_conf['CTX.axons'].get('with_lfp', True),
         'electrode_coordinates_um' :    electrode_coordinates_um,
         'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
     }
@@ -966,7 +966,7 @@ def simulate_model(
     params_local_context.update(locals())
 
     # Make all Projections directly from (pre, post) pairs in config
-    for post_label, pop_config in config.iteritems():
+    for post_label, pop_config in net_conf.iteritems():
         
         # Get PRE Population from label
         if post_label in all_pops.keys():
@@ -999,7 +999,7 @@ def simulate_model(
     # Post-constructional modifications
 
     # Reduce dendritic branching and number of GLU synapses in DD
-    num_prune = config['STN'].get('prune_dendritic_GLUR', 0)
+    num_prune = net_conf['STN'].get('prune_dendritic_GLUR', 0)
     if DD and num_prune > 0:
         # PD: dendritic AMPA & NMDA-NR2B/D afferents pruned
         num_disabled = np.zeros(pop_stn.size)
@@ -1010,13 +1010,13 @@ def simulate_model(
                 num_disabled[conn.postsynaptic_index] += 1
 
     # Disable somatic/proximal fast NMDA subunits
-    if config['STN'].get('disable_somatic_NR2A', False):
+    if net_conf['STN'].get('disable_somatic_NR2A', False):
         # NOTE: config uses a separate NMDAsyn point process for somatic NMDAR
         all_proj['CTX']['STN'].set(NMDAsynTM_gmax_NMDA=0.0)
 
     # Only allow GABA-B currents on reported fraction of cells
     # (can also do this using separate Projections with only GABA-B/GABA-A)
-    num_without_GABAB = config['STN'].get('num_cell_without_GABAB', 0)
+    num_without_GABAB = net_conf['STN'].get('num_cell_without_GABAB', 0)
     if num_without_GABAB > 0:
         # Pick subset of cells with GABA-B disabled
         pop_sample = pop_stn.sample(num_without_GABAB, rng=shared_rng_pynn)
@@ -1033,7 +1033,7 @@ def simulate_model(
 
     undefined_pops = [cpop for cpop in config_pop_labels if (
                         cpop not in all_pops and cpop not in all_asm)]
-    undefined_proj = [(pre, post) for (post, pre) in config.items() if (
+    undefined_proj = [(pre, post) for (post, pre) in net_conf.items() if (
                         (pre in config_pop_labels and post in config_pop_labels)
                         and (pre not in all_proj or post not in all_proj[pre]))]
 
@@ -1076,7 +1076,7 @@ def simulate_model(
                     pop.record(['lfp'], sampling_interval=.05)
 
     # Traces defined in config file
-    for pop_label, pop_config in config.iteritems():
+    for pop_label, pop_config in net_conf.iteritems():
         if 'traces' not in pop_config:
             continue
         if pop_label in all_pops:
@@ -1388,20 +1388,20 @@ if __name__ == '__main__':
                              ' of a filename.')
 
     parser.add_argument('-cs', '--simconfig', nargs=1, type=str,
-                        metavar='sim_config.json',
-                        dest='sim_config',
+                        metavar='net_config.json',
+                        dest='net_conf_path',
                         help='Simulation configuration (JSON file).'
                              ' Either provide full path or filename located'
                              ' in configdir/circuits/.')
 
     parser.add_argument('-cc', '--cellconfig', nargs=1, type=str,
-                        metavar='cell_config.json',
-                        dest='cell_config',
+                        metavar='cell_conf.json',
+                        dest='cell_conf',
                         help='Cell configuration file (pickle file).')
 
     parser.add_argument('-cf', '--femconfig', nargs=1, type=str,
-                        metavar='fem_config.npy',
-                        dest='fem_config', default=None,
+                        metavar='fem_conf.npy',
+                        dest='fem_conf', default=None,
                         help='FEM configuration file (numpy file).')
 
     parser.add_argument('-ca', '--axonfile', nargs=1, type=str,
@@ -1426,9 +1426,9 @@ if __name__ == '__main__':
 
     # Default parent directory of each configuration file
     default_dirs = {
-        'sim_config': os.path.join(config_root, 'circuits'),
-        'cell_config': os.path.join(config_root, 'cells'),
-        'fem_config': os.path.join(config_root, 'fem'),
+        'net_conf_path': os.path.join(config_root, 'circuits'),
+        'cell_conf': os.path.join(config_root, 'cells'),
+        'fem_conf': os.path.join(config_root, 'fem'),
         'morph_dir': config_root,
         'axon_coord_file': os.path.join(config_root, 'axons'),
     }
@@ -1445,12 +1445,12 @@ if __name__ == '__main__':
             parsed_dict[conf_name] = os.path.join(os.path.expanduser(conf_dir), conf_filename)
 
     # Read configuration files
-    parsed_dict['config'] = fileutils.parse_json_file(
-                            parsed_dict['sim_config'], nonstrict=True)
-    parsed_dict['cell_config'] = fileutils.parse_json_file(
-                            parsed_dict['cell_config'], nonstrict=True)
-    if parsed_dict['fem_config'] is not None:
-        parsed_dict['fem_config'] = np.load(parsed_dict['fem_config'])
+    parsed_dict['net_conf'] = fileutils.parse_json_file(
+                            parsed_dict['net_conf_path'], nonstrict=True)
+    parsed_dict['cell_conf'] = fileutils.parse_json_file(
+                            parsed_dict['cell_conf'], nonstrict=True)
+    if parsed_dict['fem_conf'] is not None:
+        parsed_dict['fem_conf'] = np.load(parsed_dict['fem_conf'])
     with open(parsed_dict['axon_coord_file'], 'rb') as axon_file:
         parsed_dict['axon_coordinates'] = pickle.load(axon_file)
 
@@ -1464,7 +1464,7 @@ if __name__ == '__main__':
 
     # Default output directory
     # NOTE: don't use timestamp -> mpi ranks will make different filenames
-    config_name, ext = os.path.splitext(os.path.basename(parsed_dict['sim_config']))
+    config_name, ext = os.path.splitext(os.path.basename(parsed_dict['net_conf_path']))
     out_subdir = 'LuNetDBS_{stamp}_job-{job_id}_{config_name}'.format(
         stamp=timestamp, job_id=job_id, config_name=config_name)
 
@@ -1490,7 +1490,7 @@ if __name__ == '__main__':
         import shutil
         shutil.copytree(config_root,
                 os.path.join(out_fulldir, 'simconfig'))
-        shutil.copy2(parsed_dict['sim_config'],
+        shutil.copy2(parsed_dict['net_conf_path'],
                 os.path.join(out_fulldir, 'simconfig', 'sim_config.json'))
 
         print("\nFinal parsed arguments:")
