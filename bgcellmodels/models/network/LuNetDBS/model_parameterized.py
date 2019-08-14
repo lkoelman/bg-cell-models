@@ -279,8 +279,8 @@ def simulate_model(
     sim_params = config['simulation']
     emf_params = config['electromagnetics']
 
-    with_dbs = bool(with_dbs) and emf_params['with_dbs']
-    with_lfp = bool(with_lfp) and emf_params['with_lfp']
+    with_dbs = emf_params['with_dbs'] if with_dbs is None else with_dbs
+    with_lfp = emf_params['with_lfp'] if with_lfp is None else with_lfp
 
     # Badstubner (2017), Fig. 8: 750 Ohm*cm
     # Baumanm (2010): 370 Ohm*cm
@@ -341,7 +341,12 @@ def simulate_model(
         raise ValueError("Dopamine depleted condition not specified "
                          "in config file nor as simulation argument.")
     if mpi_rank == 0:
-        print("Dopamine state is " + "DEPLETED" if DD else "NORMAL")
+        print("Simulation settings are:\n"
+              "    - DD = {}\n"
+              "    - sim_dt = {}\n"
+              "    - with_dbs = {}\n"
+              "    - with_lfp = {}".format(DD, sim_dt, with_dbs, with_lfp))
+
 
     ############################################################################
     # LOCAL FUNCTIONS
@@ -1323,7 +1328,7 @@ if __name__ == '__main__':
     parser.add_argument('--nolfp',
                         dest='with_lfp', action='store_false',
                         help='Calculate Local Field Potential.')
-    parser.set_defaults(with_lfp=False)
+    parser.set_defaults(with_lfp=None)
 
     parser.add_argument('--dbs',
                         dest='with_dbs', action='store_true',
@@ -1331,7 +1336,7 @@ if __name__ == '__main__':
     parser.add_argument('--nodbs',
                         dest='with_dbs', action='store_false',
                         help='Apply deep brain stimulation.')
-    parser.set_defaults(with_dbs=False)
+    parser.set_defaults(with_dbs=None)
 
     parser.add_argument('--exportcomplocs',
                         dest='export_compartment_coordinates', action='store_true',
