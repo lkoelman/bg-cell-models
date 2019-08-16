@@ -109,9 +109,6 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         'distal':   (1.0, 1e12),  # (um)
     }
 
-    # Regions for extracellular stim (DBS) & rec (LFP)
-    seclists_with_extracellular = ['all']
-
     # Spike threshold (mV)
     spike_threshold = {
         'soma': -10.0,

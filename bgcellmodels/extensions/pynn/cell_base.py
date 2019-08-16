@@ -158,7 +158,7 @@ def irec_resolve_section(self, spec, multiple=False):
 
 
 def init_extracellular_stim_rec(
-        self, seclist, tracker_seg, with_stim=True, with_rec=True):
+        self, all_seclist, stim_seclist, rec_seclist, tracker_seg):
     """
     Set up extracellular stimulation and recording
 
@@ -168,10 +168,11 @@ def init_extracellular_stim_rec(
             stimulation/recording IF they have the mechanism 'extracellular'
             inserted.
     """
-    if not (with_stim or with_rec):
-        return
-
-    all_sections = seclist
+    # if stim_seclist is rec_seclist:
+    #     all_sections = stim_seclist
+    # else:
+    #     all_sections = nrnutil.join_seclists(stim_seclist, rec_seclist)
+    all_sections = all_seclist
 
     # Insert mechanism that mediates between extracellular variables and
     # recording & stimulation routines.
@@ -179,12 +180,13 @@ def init_extracellular_stim_rec(
         if h.ismembrane('extracellular', sec=sec):
             sec.insert('xtra')
 
-    # Calculate coordinates of each compartment's (segment) center
+    # Store coordinates of each compartment's center in 'xtra'
     h.xtra_segment_coords_from3d(all_sections)
     h.xtra_setpointers(all_sections)
 
     # Set transfer impedances between electrode and each compartment's center
-    if self.transfer_impedance_matrix_um is None or len(self.transfer_impedance_matrix_um) == 0:
+    if (self.transfer_impedance_matrix_um is None 
+            or len(self.transfer_impedance_matrix_um) == 0):
         # Set transfer impedance analytically
         x_elec, y_elec, z_elec = self.electrode_coordinates_um
         h.xtra_set_impedances_pointsource(all_sections,
@@ -200,13 +202,16 @@ def init_extracellular_stim_rec(
             Z_intersect=1e12)
 
     # Disable stimulation or recording if desired
-    if not (with_stim and with_rec):
-        for sec in seclist:
-            for seg in sec:
-                if not with_stim:
-                    seg.scale_stim_xtra = 0.0
-                if not with_rec:
-                    seg.scale_rec_xtra = 0.0
+    if not (all_seclist is stim_seclist and all_seclist is rec_seclist):
+        # Use python list instead of Hoc SectionList list
+        # -> does not build Section stack, no stack overflow for large cells
+        stim_pylist = list(stim_seclist)
+        rec_pylist = list(rec_seclist)
+        for sec in list(all_sections):
+            if sec not in stim_pylist:
+                for seg in sec: seg.scale_stim_xtra = 0.0
+            if sec not in rec_pylist:
+                for seg in sec: seg.scale_rec_xtra = 0.0
 
 
     # Set up LFP calculation
@@ -214,7 +219,7 @@ def init_extracellular_stim_rec(
     # if logger.level <= logging.WARNING:
     #     h.XTRA_VERBOSITY = 1
     self.lfp_summator = h.xtra_sum(tracker_seg)
-    self.lfp_tracker = h.ImembTracker(self.lfp_summator, all_sections, "xtra")
+    self.lfp_tracker = h.ImembTracker(self.lfp_summator, rec_seclist, "xtra")
 
 
 ################################################################################
@@ -257,9 +262,12 @@ class MorphCellType(NativeCellType):
     _emf_parameters = {
         'with_extracellular_stim': False,
         'with_extracellular_rec': False,
+        'seclists_with_dbs': np.array('all'), # separated by ';', e.g.:
+        'seclists_with_lfp': np.array('all'), # somatic;basal;axonal
         'electrode_coordinates_um' : ArrayParameter([]),
         'rho_extracellular_ohm_cm' : 0.03,
         'transfer_impedance_matrix_um': ArrayParameter([]),
+
     }
 
 
@@ -787,17 +795,7 @@ class MorphModelBase(object):
 
         @return     neuron.SectionList containing all sections
         """
-        if getattr(self, 'axon_using_gap_junction', False):
-            # axon is not connected to compartment tree of main cell
-            all_sections = h.SectionList()
-            for sec in self.icell.all:
-                all_sections.append(sec=sec)
-            for sec in self.axon['all']:
-                all_sections.append(sec=sec)
-        else:
-            all_sections = self.icell.all
-
-        return all_sections
+        return self.icell.all
 
 
     def _init_axon(self, axon_class, with_ais_compartment=True):
@@ -826,9 +824,6 @@ class MorphModelBase(object):
             parent_cell=self.icell,
             parent_sec=axon_parent_sec,
             connection_method='translate_axon_closest',
-            connect_gap_junction=getattr(self, 'axon_using_gap_junction', False),
-            gap_conductances=(getattr(self, 'gap_pre_conductance', None),
-                              getattr(self, 'gap_post_conductance', None)),
             tolerance_mm=1e-4,
             without_extracellular=not (self.with_extracellular_rec or self.with_extracellular_stim),
             rng=self.rng_numpy)
@@ -883,41 +878,50 @@ class MorphModelBase(object):
         if not (self.with_extracellular_rec or self.with_extracellular_stim):
             return
 
-        # If axon is not connected to compartment tree of main cell
-        if getattr(self, 'axon_using_gap_junction', False):
-            all_sections = h.SectionList()
-            axonal_sections = self.axon['all'] # is a SectionList
-            for sec in self.icell.all:
-                all_sections.append(sec=sec)
-            for sec in axonal_sections:
-                all_sections.append(sec=sec)
-        else:
-            all_sections = self.icell.all
-            axonal_sections = self.icell.axonal
+        # Get section lists with recorded / stimulated sections
+        seclists_with_dbs = set(getattr(self, 'seclists_with_dbs', '').split(';'))
+        seclists_with_dbs.difference_update({''})
+        if self.with_extracellular_stim and len(seclists_with_dbs) == 0:
+            seclists_with_dbs = {'all'}
 
-        # Insert extracellular mechanism
-        extracellular_layers = range(2)
-        for seclist_name in getattr(self, 'seclists_with_extracellular', ['all']):
-            if seclist_name == 'all':
-                seclist = all_sections
-            elif seclist_name == 'axonal':
-                seclist = axonal_sections
-            else:
-                seclist = getattr(self.icell, seclist_name)
+        seclists_with_lfp = set(getattr(self, 'seclists_with_lfp', '').split(';'))
+        seclists_with_lfp.difference_update({''})
+        if self.with_extracellular_rec and len('seclists_with_lfp') == 0:
+            seclists_with_lfp = {'all'}
+
+        seclists_with_xtra = seclists_with_dbs.union(seclists_with_lfp)
+
+        # Make Hoc.SectionList with stimulated / recorded sections
+        if 'all' in seclists_with_dbs:
+            stim_seclist = self.icell.all
+        else:
+            stim_seclist = nrnutil.join_seclists(
+                *(getattr(self.icell, sl) for sl in seclists_with_dbs))
+
+        if 'all' in seclists_with_lfp:
+            rec_seclist = self.icell.all
+        elif seclists_with_dbs == seclists_with_lfp:
+            rec_seclist = stim_seclist
+        else:
+            rec_seclist = nrnutil.join_seclists(
+                *(getattr(self.icell, sl) for sl in seclists_with_lfp))
+
+        # Insert mechanism 'extracellular' providing extracellular layers
+        extra_layer_indices = range(2)
+        for seclist_name in seclists_with_xtra:
+            seclist = getattr(self.icell, seclist_name)
             for sec in seclist:
                 if h.ismembrane('extracellular', sec=sec):
-                    # assume already configured
-                    continue
+                    continue # assume already configured
 
                 sec.insert('extracellular')
-                for i in extracellular_layers:
+                for i in extra_layer_indices:
                     sec.xraxial[i] = 1e9
                     sec.xg[i] = 1e9
                     sec.xc[i] = 0.0
 
-        self._init_extracellular_stim_rec(all_sections, self.icell.soma[0](0.5),
-                                          with_stim=self.with_extracellular_stim,
-                                          with_rec=self.with_extracellular_rec)
+        self._init_extracellular_stim_rec(self.icell.all, stim_seclist, rec_seclist,
+                                          self.icell.soma[0](0.5))
 
 
     def _init_memb_noise(self, population, pop_index):

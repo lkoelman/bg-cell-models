@@ -59,6 +59,17 @@ def create_hoc_section(secname):
     return eqsec, eqref
 
 
+def join_seclists(*args):
+    """
+    Join together all Hoc SectionList into a single SectionList.
+    """
+    all_sections = h.SectionList()
+    for seclist in args:
+        for sec in seclist:
+            all_sections.append(sec=sec)
+    return all_sections
+
+
 def getsecref(sec, refs):
     """
     Look for SectionRef pointing to Section sec in enumerable of SectionRef

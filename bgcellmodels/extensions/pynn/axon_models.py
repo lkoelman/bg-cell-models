@@ -145,11 +145,22 @@ class AxonalRelay(object):
                 in all compartments that should contribute to the LFP and are
                 targets for stimulation
         """
+        # Check if we need extracellular layers for recording/stimulation
+        if not (self.with_extracellular_rec or self.with_extracellular_stim):
+            return
+        elif self.with_extracellular_stim and self.with_extracellular_rec:
+            stim_reclist = self.icell.all
+            rec_seclist = self.icell.all
+        elif self.with_extracellular_stim:
+            stim_reclist = self.icell.all
+            rec_seclist = h.SectionList()
+        elif self.with_extracellular_rec:
+            stim_reclist = h.SectionList()
+            rec_seclist = self.icell.all
+
         # NOTE: 'extracellular' is alread inserted by AxonBuilder
-        self._init_extracellular_stim_rec(self.icell.all,
-            self.icell.main_branch[0](0.5),
-            with_stim=self.with_extracellular_stim,
-            with_rec=self.with_extracellular_rec)
+        self._init_extracellular_stim_rec(self.icell.all, stim_reclist, rec_seclist,
+                                          self.icell.main_branch[0](0.5))
 
 
     def get_all_sections(self):

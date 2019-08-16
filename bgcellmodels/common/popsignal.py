@@ -32,23 +32,6 @@ from bgcellmodels.common import analysis
 from bgcellmodels.extensions.neo import signal as neoutil
 from bgcellmodels.common.config_global import analysis_data as _data
 
-# # variables assigned by notebook
-# shared_vars = [
-#     'ROI_INTERVAL',
-#     'pops_segments',
-#     'sweep_var_value',
-#     'exported_data',
-#     'page_width', 'ax_height',
-#     'export_figs', 'save_fig_path',
-#     'spike_phase_vectors',
-#     'phase_zero_times',
-#     'network_params', 'spiketrains_by_gid',
-#     'all_I_exc_inh', 'all_I_afferents' ,
-# ]
-# for var in shared_vars:
-#     # exec('{} = {}'.format(var, _globals.get(var, None)))
-#     locals()[var] = _globals.get(var, None)
-
 
 ################################################################################
 # Plotting tools
@@ -117,8 +100,33 @@ def set_axes_size(w, h, ax=None):
     ax.figure.set_size_inches(figw, figh)
 
 
+def get_pop_color(pop_label):
+    if pop_label.startswith('CTX'):
+        return 'c'
+    elif pop_label.startswith('STR'):
+        return 'm'
+    elif pop_label.startswith('GPE'):
+        return 'r'
+    elif pop_label.startswith('STN'):
+        return 'g'
+    else:
+        return 'b'
+
+def get_pop_order(pop_label):
+    if pop_label.startswith('CTX'):
+        return 0
+    elif pop_label.startswith('STR'):
+        return 1
+    elif pop_label.startswith('GPE'):
+        return 2
+    elif pop_label.startswith('STN'):
+        return 3
+    else:
+        return 100
+
+
 ################################################################################
-# PSTH analysis
+# Spike and PSTH analysis
 ################################################################################
 
 # @numba.jit("UniTuple(f8[:], 2)(f8[:],f8[:],f8,f8)", nopython=True)
@@ -201,6 +209,66 @@ def calc_train_stimlock_fractions(spike_trains, onset_times, interval=None):
         trains_locked_fractions.append(locked_fraction)
     return trains_locked_fractions
 
+
+def plot_spiketrain(spike_trains, cell_ids, t_range, pop_label=None,
+                    sharex=None, sharey=None, figsize=None, plot_compact=False,
+                    export=False, order_by='cell_pop_idx', ticks_dx=1e3,
+                    grid=True):
+    """
+    Plot spiketrains for one population.
+    
+    @param    cell_ids : list(int)
+              Cell indices in population that will be visible (y-axis constrainment).
+    """
+    if figsize is None:
+        figsize = (_data.page_width, _data.ax_height)
+    
+    sim_dur = spike_trains[0].t_stop.magnitude
+    
+    # Don't plot all rastergrams in same figure
+    fig_spikes = plt.figure(figsize=figsize)
+    ax = plt.subplot(1,1,1, sharex=sharex, sharey=sharey)
+    # fig_spikes, ax = plt.subplot(1, 1, figsize=(page_width,ax_height), sharex=sharex)
+    if not plot_compact:
+        fig_spikes.suptitle('{} spiketrains'.format(pop_label))
+    
+    # Plot all spiketrains but constrain y-axis later (so you can pan & zoom)
+    # for i_train in range(pop_size):
+    #     y = spiketrain.annotations.get('source_id', i_train)
+    # Only plot selected spike trains
+    y_vals = np.empty(len(cell_ids))
+    for j, i_train in enumerate(cell_ids):
+        spiketrain = spike_trains[i_train]
+        if order_by == 'cell_pop_idx':
+            y_vals[j] = i_train
+        elif order_by == 'caller':
+            y_vals[j] = j
+        y_vec = np.ones_like(spiketrain) * y_vals[j]
+        ax.plot(spiketrain, y_vec,
+                marker='|', linestyle='', 
+                snap=True, color=get_pop_color(pop_label))
+    
+    
+    # ax.set_xticks(np.arange(0, sim_dur+5000, 5000), minor=False) # uncomment for long time range
+    if plot_compact:
+        ax.set_yticks([]) # (np.arange(min(y_vals), max(y_vals)+1, 1), minor=False)
+        ax.set_xticks(np.arange(0, sim_dur+1000, ticks_dx), minor=False)
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+    else:
+        ax.set_yticks(np.arange(min(y_vals), max(y_vals)+5, 5), minor=False)
+        ax.set_xticks(np.arange(0, sim_dur+1000, ticks_dx), minor=False)
+        ax.set_ylabel('{} cell #'.format(pop_label))
+        
+    ax.set_xlim(t_range)
+    ax.set_ylim((min(y_vals)-0.5, max(y_vals)+0.5))
+    ax.grid(grid, axis='x', which='major')
+    
+    if _data.export_figs and export:
+        fname = 'rastergram_{}_cell-{}-{}'.format(pop_label, cell_ids[0], cell_ids[-1])
+        save_figure(fname, fig=fig_spikes, bbox_inches='tight')
+
+    return fig_spikes, ax
 
 ################################################################################
 # Frequency analysis
@@ -369,7 +437,7 @@ def calc_mean_phase_vectors(spiketrains, pop_label, intervals=None,
             mean_phase_vecs.append(np.mean(cell_spike_phase_vecs)) # mean of normalized phase vectors
             spike_phase_vecs.append(cell_spike_phase_vecs)
         else:
-            mean_phase_vecs.append(np.array([0 + 0j]))
+            mean_phase_vecs.append(0.0 + 0.0j)
     
     # Save phase vectors for export
     _data.exported_data['cell_phase_vecs'][pop_label] = mean_phase_vecs = np.array(mean_phase_vecs)
@@ -459,7 +527,7 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
 def plot_phase_histogram(pop_label, ref_vec=None, num_bins=20,
                          face_alpha=0.1, bar_color='blue', export=False,
                          rlabel_angle='default', rmax=None, rticks=None,
-                         rlabel_start=0.0):
+                         rlabel_start=0.0, rmax_strict=False):
     """
     Plot mean phase vectors for individual neurons and whole population
     in Polar coordinates.
@@ -495,15 +563,18 @@ def plot_phase_histogram(pop_label, ref_vec=None, num_bins=20,
     # Format axes
     if rticks is not None:
         ax.set_rticks(rticks)
-    if rmax is not None:
+    data_rmax = max(bin_fractions)
+    if (rmax is not None) and (data_rmax <= rmax or rmax_strict):
         ax.set_rmax(rmax)
     grid_color = 'gray'
     ax.grid(True, color=grid_color)
     # Appearance of radial tick labels
-    if rlabel_start:
-        ax.set_yticklabels([str(r) if r >= rlabel_start else '' for r in ax.get_yticks()])
     ax.tick_params(axis='x', labelsize=14)
-    ax.tick_params(axis='y', labelsize=14)  # labelcolor=grid_color
+    ax.tick_params(axis='y', labelsize=14, labelcolor=grid_color)  # labelcolor=grid_color
+    if rlabel_start:
+        ax.set_yticklabels(['{:.2f}'.format(y) if y >= rlabel_start else '' for y in ax.get_yticks()])
+    else:
+        ax.set_yticklabels(['{:.2f}'.format(y) for y in ax.get_yticks()])
     if rlabel_angle == 'minimum':
         label_pos = np.degrees(bin_centers[bin_counts.argmin()]) + 9
         ax.set_rlabel_position(label_pos)

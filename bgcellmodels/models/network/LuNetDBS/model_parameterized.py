@@ -509,6 +509,7 @@ def simulate_model(
     # Add parameters from other sources
     stn_cell_params['with_extracellular_stim'] = with_dbs and net_conf['STN'].get('with_dbs', True)
     stn_cell_params['with_extracellular_rec'] = with_lfp and net_conf['STN'].get('with_lfp', True)
+    # stn_cell_params['seclists_with_dbs'] = np.array('axonal')
     stn_cell_params['morphology_path'] = cells_morph_paths
     stn_cell_params['transform'] = cells_transforms
     ## Axon parameters
@@ -1496,7 +1497,7 @@ if __name__ == '__main__':
         print("\nFinal parsed arguments:")
         print("\n".join(
             "{:<16}: {}".format(k, v) for k,v in parsed_dict.items() 
-                if 'config' not in k and k not in ('axon_coordinates',)))
+                if 'conf' not in k and k not in ('axon_coordinates',)))
 
     # Run the simulation
     simulate_model(**parsed_dict)
