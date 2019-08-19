@@ -24,10 +24,8 @@ from multiprocessing import Pool
 
 # SETPARAM: List simulation output directories to analyze
 output_dirs = """
-/home/luye/Documents/simdata/c6_sweep-DBS-amp_gsyn-std-recalibrate/LuNetDBS_2019.08.13_20.24.08_job-21178_axons-full-V6_GABA-AB-recalibrate_gCS-3e-3_gGS-2e-3_gSG-5e-4
-/home/luye/Documents/simdata/c6_sweep-DBS-amp_gsyn-std-recalibrate/LuNetDBS_2019.08.13_19.17.11_job-21174_axons-full-V6_GABA-AB-recalibrate_gCS-8e-3_gGS-2e-3_gSG-5e-4
-/home/luye/Documents/simdata/c6_sweep-DBS-amp_gsyn-std-recalibrate/LuNetDBS_2019.08.13_18.10.41_job-21177_axons-full-V6_GABA-AB-recalibrate_gCS-5e-3_gGS-2e-3_gSG-5e-4
-/home/luye/Documents/simdata/c6_sweep-DBS-amp_gsyn-std-recalibrate/LuNetDBS_2019.08.13_18.02.27_job-21175_axons-full-V6_GABA-AB-recalibrate_gCS-12e-3_gGS-2e-3_gSG-4e-4
+/home/luye/Documents/simdata/q8_sweep-dbs-phase/stim-ctx_conf-V6/LuNetDBS_2019.08.15_13.51.42_job-21551_netconf-V6_dbs-ctx-only-phase-225
+/home/luye/Documents/simdata/q8_sweep-dbs-phase/stim-ctx_conf-V6/LuNetDBS_2019.08.15_13.51.45_job-21548_netconf-V6_dbs-ctx-only-phase-090
 """.strip().split()
 
 nb_dir = "/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/analysis"
@@ -35,23 +33,23 @@ nb_infile = "lunet_dbs_analysis.ipynb"
 nb_path = os.path.join(nb_dir, nb_infile)
 
 # SETPARAM: name of sweep variable
-sweep_name = "gsyn-ctx-stn"
+sweep_name = "dbs-phase"
 
 def process_sim_outputs(args):
 
     sim_outdir, sweep_index = args
 
     # SETPARAM: pattern for extraction of sweep variable from filename
-    sweep_val_pattern = r"gCS-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
+    sweep_val_pattern = r"phase-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
     match = re.search(sweep_val_pattern, sim_outdir)
     sweep_val = match.groups()[0]
 
     # Settings variables passed to executed notebook
     nb_pyvars = {}
     # SETPARAM: interval for signal analysis
-    ROI_INTERVAL = (1e3, 3e3)
+    ROI_INTERVAL = (1e3, 4e3)
     # SETPARAM: filename containing recorded signals
-    nb_pyvars['matfile_common_pattern'] = '-3000ms'
+    nb_pyvars['matfile_common_pattern'] = '-4000ms'
     ival_sec = [t/1e3 for t in ROI_INTERVAL]
     # SETPARAM: suffix for pickle file and jupyter notebook files
     out_suffix = '{:.1f}s-{:.1f}s'.format(*ival_sec)
@@ -127,20 +125,25 @@ def process_sim_outputs(args):
     # rename_status = subprocess.call(sed_command, shell=True)
 
     if not (exe_status == sav_status == 0):
-        raise Exception('Notebook execution or saving failed for output {}'.format(
+        print('Notebook execution or saving failed for output {}'.format(
                          sim_outdir))
 
-    return 0
+    return exe_status + sav_status
 
 
 # for sweep_index, sim_outdir in enumerate(output_dirs):
 #     run_notebook(sim_outdir, sweep_index)
 
 # Parallel version
-pool = Pool(4)
+pool = Pool(6)
 args1 = output_dirs
 args2 = range(len(output_dirs))
 args_zip = zip(args1, args2)
 results = pool.map(process_sim_outputs, args_zip)
+
+if not all((res == 0 for res in results)):
+    err_idx = [i for i, res in enumerate(results) if res != 0]
+    print("Errors occurred in following files:" + 
+          "\n".join((output_dirs[i] for i in err_idx)))
 
 print("Finished executing notebooks.")

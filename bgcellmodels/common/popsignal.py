@@ -472,9 +472,12 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
     pop_ang = np.angle(pop_phase_vec) - ref_ang
     pop_mag = np.abs(pop_phase_vec)
     if rmax is None:
-        rmax = (vec_lens.max() // 0.1 + 1) * 0.1
-    if rticks is None:
-        rticks = np.arange(0.1, 1.1, 0.1)
+        vmax = pop_mag
+        if extra_pop_vecs:
+            vmax = max(vmax, *(np.abs(v) for v in extra_pop_vecs))
+        rmax = (vmax // 0.1 + 1) * 0.1
+    # if rticks is None:
+    #     rticks = np.arange(0.1, 1.1, 0.1)
     
     fig = plt.figure()
     ax = plt.subplot(111, projection='polar')
@@ -504,7 +507,8 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
     
     # Format axes
     ax.grid(True)
-    ax.set_rticks(rticks) # less radial ticks
+    if rticks is not None:
+        ax.set_rticks(rticks) # less radial ticks
     ax.set_rmax(rmax)
     if rticks_pos is not None:
         ax.set_rlabel_position(rticks_pos)  # Move radial labels away from plotted line
@@ -1193,6 +1197,82 @@ def gather_metrics(all_cell_metrics, metric):
     return all_cell_vals
 
 
+def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None, detailed=True, independent='sweep', **kwargs):
+    """
+    Linear regression of metric
+    
+    @param    independent : str
+              Independent variable for plot x-axis and linear regression
+
+    @param    kwargs
+              title, color, x_label, y_label, x_ticks, y_lim, ...
+    """
+    from statsmodels.formula.api import ols
+    import pandas
+
+    fig, ax = plt.subplots(figsize=(_data.fig_width, _data.fig_height))
+    
+    # Function for converting saved metric to y-value
+    if metric_func is None:
+        metric_func = lambda x: x
+    
+    # Set independent variable for regression
+    sweep_vals = np.array(sorted(_data.analysis_results.keys()))
+    if independent == 'sweep':
+        x = sweep_vals
+        x_label = _data.sweep_var_legend
+        x_ticks = sweep_vals
+    elif independent == 'custom':
+        x = kwargs['x']
+        x_label = kwargs['x_label']
+        x_ticks = kwargs.get('x_ticks', None)
+    else:
+        raise ValueError("Argument <independent> must be either 'sweep', 'exc_inh_ratio', or 'custom'.")
+    
+    if isinstance(pop_labels, str):
+        pop_labels = [pop_labels]
+    ax.set_title('{} for {}'.format(kwargs.get('title', metric_name), pop_labels[0]))
+    
+    # Plot for each population
+    for i_pop, pop_label in enumerate(pop_labels):
+        sig_label = pop_label
+
+        y_vals = []
+        for i, sweep_value in enumerate(sweep_vals):
+            metric_vals = _data.analysis_results[sweep_value][metric_name][sig_label]
+            y_vals.append(metric_func(metric_vals))
+
+        # Linear regression
+        y = np.array(y_vals)
+        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+
+        # Detailed linear regression
+        if detailed:
+            data = pandas.DataFrame({'x': x, metric_name: y})
+            model = ols("{} ~ {}".format(metric_name, 'x'), data).fit()
+            print(model.summary()) # summary2()
+        
+        # Scatter plot + linear fit
+        color = kwargs.get('color', get_pop_color(pop_label))
+        ax.plot(x, y, '--', marker='o', color=color, linewidth=1, markersize=6, label=pop_label)
+        ax.plot(x, intercept + slope*x, '-', color=color, lw=1, label='linear fit')
+        
+        # Print regression statistics
+        ax.text(.98, .05 + i_pop * .20, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
+                color=color, transform=ax.transAxes, ha='right')
+    
+    if x_ticks is not None:
+        ax.set_xticks(x_ticks)
+    if 'y_lim' in kwargs:
+        ax.set_ylim(kwargs['y_lim'])
+    ax.set_ylabel(kwargs.get('y_label', metric_name))
+    ax.set_xlabel(x_label)
+    ax.grid(True)
+    ax.legend()
+    
+    fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
+
+
 def boxplots_burst_metrics(pop_label, metric_names=None, export_metrics=None):
     """
     Compare burst metrics for same population across sweep values
@@ -1324,3 +1404,75 @@ def summarize_burst_metrics(pop_label, metric_names, axsize=None, export=False):
     if _data.export_figs and export:
         fname = 'burst-metrics_{}_{}'.format(_data.sweep_var_name, pop_label)
         save_figure(fname, fig=fig)
+
+
+def compare_covariance_complexity(sig_label, f_band=None, detailed=False, ymax=None):
+    """
+    Compare distribution of Morgera-index values for time segments 
+    in simulation.
+    """
+    from statsmodels.formula.api import ols
+    import pandas
+
+    sweep_vals = np.array(sorted(_data.analysis_results.keys()))
+    M_datasets = []
+    M_intervals = []
+    for i, sweep_value in enumerate(sweep_vals):
+        fbands_M = _data.analysis_results[sweep_value]['Morgera_index'][sig_label]
+        if isinstance(fbands_M, dict):
+            # Morgera index was computed for several frequency bands
+            if f_band:
+                t, M = fbands_M[f_band]
+            else:
+                t, M = fbands_M[(5, 200)]
+        else:
+            # Morgera index was only computed in default band (5, 200) Hz
+            if f_band:
+                raise ValueError('Morgera index was only computed in f = (5, 200)')
+            t, M = fbands_M
+        M_datasets.append(M)
+        M_intervals.append(t)
+
+    M_array = np.array(M_datasets)
+    mean_M = np.mean(M_array, axis=1)
+    std_M = np.std(M_array, axis=1)
+    med_M = np.median(M_array, axis=1)
+    ival_width = M_intervals[0][0][1] - M_intervals[0][0][0]
+    
+    # Plot boxplots
+    fig, ax = plt.subplots(figsize=(_data.ax_width, _data.ax_height))
+    ax.set_title('Covariance complexity over {} ms intervals'.format(ival_width))
+    bp = ax.boxplot(M_datasets, 0, 'g+')
+    ax.set_xticklabels(sweep_vals)
+    # ax.set_ylim((0, 1))
+    ax.set_ylabel('M (0-1)')
+    ax.set_xlabel(_data.sweep_var_legend)
+    ax.grid(True, which='major', axis='y')
+    fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
+    
+    # Linear regression
+    metric_name = 'M'
+    x = sweep_vals
+    y = med_M
+    slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+
+    # Detailed linear regression
+    if detailed:
+        data = pandas.DataFrame({'x': x, metric_name: y})
+        model = ols("{} ~ {}".format(metric_name, 'x'), data).fit()
+        print(model.summary()) # summary2()
+
+    # Plot linear regression
+    fig, ax = plt.subplots(figsize=(_data.ax_width, _data.ax_height))
+    ax.set_title('Median covariance complexity over {} ms intervals'.format(ival_width))
+    ax.plot(x, y, 'o', color='g', label='original data')
+    ax.plot(x, intercept + slope*x, 'k--', label='linear fit')
+    if ymax:
+        ax.set_ylim((0, ymax))
+    ax.set_xticks(sweep_vals)
+    ax.set_ylabel('M (0-1)')
+    ax.set_xlabel(_data.sweep_var_legend)
+    ax.grid(True)
+    ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
+            transform=ax.transAxes, ha='right')
+    fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel

@@ -1493,6 +1493,8 @@ if __name__ == '__main__':
                 os.path.join(out_fulldir, 'simconfig'))
         shutil.copy2(parsed_dict['net_conf_path'],
                 os.path.join(out_fulldir, 'simconfig', 'sim_config.json'))
+        shutil.copy2(__file__,
+                os.path.join(out_fulldir, 'simconfig', 'model_script_{}.py'.format(job_id)))
 
         print("\nFinal parsed arguments:")
         print("\n".join(
