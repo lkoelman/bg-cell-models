@@ -101,14 +101,28 @@ def set_axes_size(w, h, ax=None):
 
 
 def get_pop_color(pop_label):
+    """ Colors from https://xkcd.com/color/rgb/ """ 
     if pop_label.startswith('CTX'):
-        return 'c'
+        if 'axon' in pop_label.lower():
+            return 'xkcd:lightblue'
+        else:
+            return 'c'
+    
     elif pop_label.startswith('STR'):
         return 'm'
+    
     elif pop_label.startswith('GPE'):
-        return 'r'
+        if 'axon' in pop_label.lower():
+            return 'xkcd:rose pink'
+        else:
+            return 'r'
+    
     elif pop_label.startswith('STN'):
-        return 'g'
+        if 'axon' in pop_label.lower():
+            return 'xkcd:sage'
+        else:
+            return 'g'
+    
     else:
         return 'b'
 
@@ -1052,7 +1066,17 @@ def get_presynaptic_gids(post_gid, pre_pop, post_pop):
             if j==post_gid
     ]
 
-            
+def get_presynaptic_pop_indices(post_index, pre_pop, post_pop):
+    """
+    Get presynaptic cell index in its population based on post-synaptic cell
+    index in its own population.
+    """
+    return [
+        i for i,j in _data.network_params[pre_pop][post_pop]['conpair_pop_indices']
+            if j==post_index
+    ]
+
+     
 def rastergram_presynaptic_pops_pooled(
         ax, post_gid, post_pop, pre_pops, interval, color, y_mid
     ):
@@ -1197,7 +1221,9 @@ def gather_metrics(all_cell_metrics, metric):
     return all_cell_vals
 
 
-def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None, detailed=True, independent='sweep', **kwargs):
+def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
+        independent='sweep', pop_colors=None, regress='linear',
+        regression_report=False, metric_kwargs={}, plot_kwargs={}, **kwargs):
     """
     Linear regression of metric
     
@@ -1207,14 +1233,26 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None, detailed=T
     @param    kwargs
               title, color, x_label, y_label, x_ticks, y_lim, ...
     """
-    from statsmodels.formula.api import ols
-    import pandas
+    if regression_report:
+        from statsmodels.formula.api import ols
+        import pandas
 
     fig, ax = plt.subplots(figsize=(_data.fig_width, _data.fig_height))
     
     # Function for converting saved metric to y-value
     if metric_func is None:
         metric_func = lambda x: x
+
+    if isinstance(pop_labels, str):
+        pop_labels = [pop_labels]
+
+    if pop_colors is None:
+        pop_cmap = get_pop_color
+    elif isinstance(pop_colors, (list, tuple)):
+        pop_cmap = lambda pop: pop_colors[pop_labels.index(pop)]
+    else:
+        # assume function
+        pop_cmap = pop_colors
     
     # Set independent variable for regression
     sweep_vals = np.array(sorted(_data.analysis_results.keys()))
@@ -1229,37 +1267,49 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None, detailed=T
     else:
         raise ValueError("Argument <independent> must be either 'sweep', 'exc_inh_ratio', or 'custom'.")
     
-    if isinstance(pop_labels, str):
-        pop_labels = [pop_labels]
-    ax.set_title('{} for {}'.format(kwargs.get('title', metric_name), pop_labels[0]))
+    
+    ax.set_title(kwargs.get('title', metric_name))
     
     # Plot for each population
     for i_pop, pop_label in enumerate(pop_labels):
         sig_label = pop_label
 
+        # Function for calculating metric
         y_vals = []
         for i, sweep_value in enumerate(sweep_vals):
             metric_vals = _data.analysis_results[sweep_value][metric_name][sig_label]
-            y_vals.append(metric_func(metric_vals))
+            pop_metric_kwargs = {
+                k: metric_kwargs[k][i_pop] for k in metric_kwargs.keys()
+            }
+            y_vals.append(metric_func(metric_vals, **pop_metric_kwargs))
 
         # Linear regression
         y = np.array(y_vals)
         slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
 
-        # Detailed linear regression
-        if detailed:
-            data = pandas.DataFrame({'x': x, metric_name: y})
-            model = ols("{} ~ {}".format(metric_name, 'x'), data).fit()
-            print(model.summary()) # summary2()
         
         # Scatter plot + linear fit
-        color = kwargs.get('color', get_pop_color(pop_label))
-        ax.plot(x, y, '--', marker='o', color=color, linewidth=1, markersize=6, label=pop_label)
-        ax.plot(x, intercept + slope*x, '-', color=color, lw=1, label='linear fit')
-        
-        # Print regression statistics
-        ax.text(.98, .05 + i_pop * .20, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
-                color=color, transform=ax.transAxes, ha='right')
+        color = pop_cmap(pop_label)
+        plt_kwargs = {
+            'color': color,
+            'linestyle': '--', 'linewidth': 1,
+            'marker': 'o', 'markersize': 6
+        }
+        plt_kwargs.update(plot_kwargs)
+        ax.plot(x, y, label=pop_label, **plt_kwargs)
+
+        if regress == 'linear':
+            ax.plot(x, intercept + slope*x, '-', color=color, lw=1, label='linear fit')
+            
+            # Print regression statistics
+            ax.text(.98, .05 + i_pop * .20,
+                    '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
+                    color=color, transform=ax.transAxes, ha='right')
+
+            if regression_report:
+                data = pandas.DataFrame({'x': x, metric_name: y})
+                model = ols("{} ~ {}".format(metric_name, 'x'), data).fit()
+                print(model.summary()) # summary2()
     
     if x_ticks is not None:
         ax.set_xticks(x_ticks)

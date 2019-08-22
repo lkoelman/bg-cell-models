@@ -12,3 +12,7 @@ pulldata=$(drive ls simdata_newsonic | awk 'BEGIN { ORS=" " } /2019.08.01/ { pri
 # Pull matching data
 drive pull $pulldata
 
+
+# Alternative: put data in new subfolder and pull only that
+drive pull -no-clobber simdata_newsonic/subfolder
+

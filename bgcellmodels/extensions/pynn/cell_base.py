@@ -222,6 +222,39 @@ def init_extracellular_stim_rec(
     self.lfp_tracker = h.ImembTracker(self.lfp_summator, rec_seclist, "xtra")
 
 
+def get_rattay_activating_function(icell, seclist_names):
+    """
+    Get activation function values for each compartment, grouped by sectionlist.
+
+    Using voltage at compartment as response to 1 mA stimulation
+    - based on eq. 5 you should be able to get value for other mA, since eqn
+      is linear in V
+    """
+
+    # def activating_function(E_node, E_next_sum):
+    #     pass # TODO: based on eq. 4
+
+    # stim_amp_mA = 1.0
+    # act_values = {}
+    # for sl_name in seclist_names:
+    #     seclist = getattr(icell, sl_name)
+    #     act_values[sl_name] = act = []
+    #     # Begin at tree root and do DFS
+    #     # - see treeutils
+    #     for sec in seclist:
+    #         for seg in sec:
+    #             # Get parent and child nodes
+    #             # - all the neighboring compartment voltages just become positive
+    #             #   term in Rattay2015-enc-comp-neur, eq. 5
+    #             v_node_mV = stim_amp_mA * seg.rx_xtra * seg.scale_stim_xtra
+
+    #             # TODO: can save arguments to activating_function() in a large
+    #             #       dict addressable by seg.node_index(), including pt3d.
+    #             #       Save this in first pass.
+    #             aval = activating_function(v_node_mV, v_next_sum)
+    #             act.append(aval)
+    pass
+
 ################################################################################
 # BASE CLASSES
 ################################################################################
