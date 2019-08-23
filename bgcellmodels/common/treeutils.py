@@ -36,12 +36,12 @@ def parent(sec):
         return temp
     else:
         return None
-    
+
 
 def parent_loc(sec, trueparent):
     """
     Return the position on the (true) parent where sec is connected
-    
+
     Note that _h_section_orientation(sec=sec) is which end of the section is
     connected.
 
@@ -63,7 +63,7 @@ def prev_seg(curseg):
     """
     # NOTE: cannot use seg.next() since this changed content of seg
     allseg = reversed([seg for seg in curseg.sec if seg_index(seg) < seg_index(curseg)])
-    return next(allseg, curseg.sec.parentseg())
+    return next(allseg, curseg.sec.parentseg()) # returns None if root
 
 
 def next_segs(curseg, x_loc='mid'):
@@ -71,7 +71,7 @@ def next_segs(curseg, x_loc='mid'):
     Get child segments of given segment
 
     @param  x_loc: str
-            
+
             Which x-value to associate with each returned segment:
             - 'mid': center of the segment
             - 'min': minimum x-value inside the segment
@@ -96,7 +96,7 @@ def next_segs(curseg, x_loc='mid'):
         child_segs = [seg.sec(seg_xmax(seg, side='inside')) for seg in child_segs]
     elif x_loc != 'mid':
         raise ValueError("Invalid value {} for argument 'x-loc'".format(x_loc))
-    
+
     return child_segs
 
 
@@ -161,14 +161,14 @@ def subtreeroot(secref):
     for root in orig.children():
         # Get subtree of the current root
         roottree = h.SectionList()
-        
+
         # Fill SectionList with subtree of CAS
         roottree.subtree(sec=root)
 
         # Check if given section in in subtree
         if secref.sec in roottree:
             return root
-    
+
     return orig
 
 
@@ -247,12 +247,12 @@ def leaf_sections(root_sec=None, subtree=False):
         all_sec.subtree(sec=root_sec) # includes rootsec itself
     else:
         all_sec = wholetree_secs(root_sec)
-    
+
     for sec in all_sec:
         ref = h.SectionRef(sec=sec)
         if ref.nchild() < 0.9:
             leaves.append(sec)
-    
+
     return leaves
 
 
@@ -324,7 +324,7 @@ def path_segments(target, source=None):
     for i_sec, sec in enumerate(path_secs):
 
         # if in different section than target -> can add any segment with dist < start, and add them in order of decreasing distance
-        
+
         # TODO: if in same section as target -> find end (0/1) that is closest to last segment (of previous section), then add all segments with x between that end_segment and target_segment
 
         # Distance must always become smaller
@@ -336,7 +336,7 @@ def path_segments(target, source=None):
                 current_segments.append(seg)
                 current_distances.append(distance)
                 last_dist = distance
-        
+
         # Segments must be added in order of decreasing distance to target
         if current_distances[0] > current_distances[-1]:
             path_segments.extend(current_segments)
@@ -428,16 +428,16 @@ def ascend_with_fixed_spacing(start_segment, dL):
     at a fixed spacing from each other.
 
     @param      start_segment : nrn.Segment
-                Segment to start the descent. 
+                Segment to start the descent.
 
-    @effect     If start_segment is in the root Section of the tree, 
-                all subtrees will be ascended no matter whether they 
+    @effect     If start_segment is in the root Section of the tree,
+                all subtrees will be ascended no matter whether they
                 are attached to the 0-end or 1-end. If start_segment
                 is not in the root_section, ascent will proceed
                 in the 1-direction only.
     """
     assert dL > 0, "dL must be strictly positive"
-    
+
     stack = [start_segment]
     root_sec = root_section(start_segment.sec)
     start_seg_x = start_segment.x
@@ -459,7 +459,7 @@ def ascend_with_fixed_spacing(start_segment, dL):
             else:
                 Lrem = Lb - curseg.sec.L
                 stack.extend([sec(Lrem/sec.L) for sec in curseg.sec.children() if sec.parentseg().x!=0])
-        
+
         if stepping_backward or both_directions:
             # Case where we are walking in reverse direction (1-end to 0-end)
             Lb = La - dL
@@ -470,7 +470,7 @@ def ascend_with_fixed_spacing(start_segment, dL):
                 stack.extend([sec(Lrem/sec.L) for sec in curseg.sec.children() if sec.parentseg().x==0])
 
 
-def sample_tree_uniformly(root_sec, num_seg, spacing, 
+def sample_tree_uniformly(root_sec, num_seg, spacing,
                           filter_func=None, rng=None, replace=False):
     """
     Sample dendritic tree with uniform spacing (in micron).
@@ -496,7 +496,7 @@ def sample_tree_uniformly(root_sec, num_seg, spacing,
     # Get random number generator
     if rng is None:
         rng = np.random
-        
+
     # Generate sample segments with uniform spacing
     segment_sampler = ascend_with_fixed_spacing(root_sec(0.5), spacing)
     if filter_func is not None:
@@ -534,7 +534,7 @@ def subtree_topology(sub_root, max_depth=1e9):
             return # end of recursion
         else:
             buff.write("-" * sec.nseg)
-        
+
         # Print termination symbol and section description
         buff.write("|       %s%s\n" % (sec.name(), direc))
 
@@ -544,7 +544,7 @@ def subtree_topology(sub_root, max_depth=1e9):
             # buff.write(" ")
             dashes(child_sec, con_seg_idx+offset+3, "`", dist+1)
 
-    
+
     dashes(sub_root, 0, ".|")
 
     buff_string = buff.getvalue()
@@ -556,19 +556,19 @@ def check_tree_constraints(sections):
     """
     Check unbranched cable assumption and orientation constrained.
 
-    @return     a tuple (unbranched, oriented, branched, misoriented) of type 
-                tuple(bool, bool, list(Section), list(Section)) 
+    @return     a tuple (unbranched, oriented, branched, misoriented) of type
+                tuple(bool, bool, list(Section), list(Section))
                 with following entries:
 
                     bool: all Sections are unbranched
-                    
+
                     bool: all sections are correctly oriented, i.e. the 0-end is
                           connected to the 1-end of the parent, except if the parent
                           is the root section in which case a connection to the 0-end
                           is permitted.
-                    
+
                     list: all branched sections
-                    
+
                     list: all misoriented sections
     """
     # check both connect(child(x), parent(y))
@@ -603,7 +603,7 @@ def check_tree_constraints(sections):
             misoriented.update(parent_sec)
         if not orient_self_ok:
             misoriented.update(sec)
-        
+
         if not branch_parent_ok:
             branched.update(parent_sec)
         if not branch_self_ok:
@@ -628,13 +628,13 @@ def check_tree_constraints(sections):
 #       all_cell_secs = wholetree_secs(cell_sec)
 #   else:
 #       all_cell_secs = [sec for sec in h.allsec()]
-    
+
 #   for sec in all_cell_secs:
 #       for seg in sec:
 #           for pp in seg.point_processes():
 
 #               print '\nInfo for point process {} @ {}'.format(pp, seg)
-                
+
 #               mech_name = get_mod_name(pp)
 #               if mechs_params and mech_name in mechs_params:
 #                   param_names = mechs_params[mech_name]

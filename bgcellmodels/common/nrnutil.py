@@ -26,7 +26,7 @@ def hoc_load_from(working_dir, script):
     """
     Load Hoc code with given working directory.
 
-    NOTE: alternative is to append dirrectoires to the Hoc library path 
+    NOTE: alternative is to append dirrectoires to the Hoc library path
           accessible via environment variable os.environ['HOC_LIBRARY_PATH']
     """
     prev_cwd = os.getcwd()
@@ -49,11 +49,11 @@ def create_hoc_section(secname):
 
     if secname in [sec.name() for sec in h.allsec()]:
         raise Exception('Section named {} already exists'.format(secname))
-    
+
     created = h("create %s" % secname)
     if created != 1:
         raise Exception("Could not create section with name '{}'".format(secname))
-    
+
     eqsec = getattr(h, secname)
     eqref = ExtSecRef(sec=eqsec)
     return eqsec, eqref
@@ -74,7 +74,7 @@ def getsecref(sec, refs):
     """
     Look for SectionRef pointing to Section sec in enumerable of SectionRef
 
-    @return     <SectionRef/NoneType> 
+    @return     <SectionRef/NoneType>
                 first SectionRef in refs with same section name as sec
     """
     if sec is None: return None
@@ -94,7 +94,7 @@ def seg_index(tar_seg):
     Get index of given segment on Section
     """
     seg_dx = 1.0/tar_seg.sec.nseg
-    seg_id = int(tar_seg.x/seg_dx) # same as tar_seg.x // seg_dx
+    seg_id = int(tar_seg.x // seg_dx)
     return min(seg_id, tar_seg.sec.nseg-1)
 
     # NOTE: == operator compares actual segments
@@ -104,7 +104,7 @@ def seg_index(tar_seg):
     #     return tar_seg.sec.nseg-1
     # else: # internal node
     #     return next(i for i,seg in enumerate(tar_seg.sec) if seg==tar_seg)
-    
+
 
 def seg_at_index(sec, iseg):
     """
@@ -162,7 +162,7 @@ def seg_xmin(seg, side=None):
             Relative location of return x-value to the exact segment boundary
                 - 'inside' : inside given segment
                 - 'outside': in previous segment or 0-end node
-                - 'boundary' or None: exactly on segment boundary, no guarantee 
+                - 'boundary' or None: exactly on segment boundary, no guarantee
                    whether this is inside or outside given segment
     """
     nseg = seg.sec.nseg
@@ -191,7 +191,7 @@ def seg_xmax(seg, side=None):
             Relative location of return x-value to the exact segment boundary
                 - 'inside' : inside given segment
                 - 'outside': in previous segment or 0-end node
-                - 'boundary' or None: exactly on segment boundary, no guarantee 
+                - 'boundary' or None: exactly on segment boundary, no guarantee
                    whether this is inside or outside given segment
     """
     nseg = seg.sec.nseg
@@ -259,7 +259,7 @@ def copy_ion_styles(src_sec, tar_sec, ions=None):
     # Get ion style for each ion species
     src_sec.push()
     styles = dict(((ion, h.ion_style(ion+'_ion')) for ion in ions))
-    
+
     # Copy to target Section
     set_ion_styles(tar_sec, **styles)
 
@@ -384,7 +384,7 @@ def test_segment_boundaries():
 
 
 def independent_random_stream(stream_len, used_indices,
-                              force_low_index=None, 
+                              force_low_index=None,
                               start_low_index=0):
     """
     Return a Hoc Random object that will generate a stream of N
@@ -413,7 +413,7 @@ def independent_random_stream(stream_len, used_indices,
 
     @param      used_indices : dict[int, int]
                 The first integers are equal to the low_index values
-                already in use. The second integers are the highest high_index 
+                already in use. The second integers are the highest high_index
                 value in use for that low_index.
 
     Returns
@@ -426,7 +426,7 @@ def independent_random_stream(stream_len, used_indices,
     @post       The used_indices dict is modified to reflect the new indices
                 in use.
 
-    
+
     """
     # Look for a low_index that still has stream_len increments left in
     # its high_index

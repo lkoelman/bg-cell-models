@@ -79,7 +79,7 @@ from bgcellmodels.extensions.pynn.axon_models import AxonRelayType
 from bgcellmodels.extensions.pynn import spiketrains as spikegen
 
 # NEURON models and mechanisms
-from bgcellmodels.emfield import stimulation
+from bgcellmodels.emfield import stimulation, xtra_utils
 from bgcellmodels.mechanisms import synapses, noise # loads MOD files
 from bgcellmodels.cellpopdata import connectivity # for use in config files
 
@@ -175,7 +175,8 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
                        annotations={'script_name': __file__})
 
 
-def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None):
+def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None,
+                                  activating_function=False):
     """
     Write compartment coordinates of all cells in population to file.
     """
@@ -186,22 +187,34 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None):
     cell_ids, cell_seclists = zip(*gid2seclist)
 
     # Vertices and edges for each cell
-    verts, edges = morph_io.morphologies_to_edges(cell_seclists, 
+    verts, edges = morph_io.morphologies_to_edges(cell_seclists,
         flatten_cells=False, scale=scale, translation=translation)
 
+    # Activating function values for each cell
+    cells = [gid._cell for gid in pop if pop.is_local(gid)]
+    cells_activations_dists = [
+        xtra_utils.get_rattay_activating_function(cell.icell,
+            'basal', 'somatic', 'axonal') for cell in cells
+    ]
+    cell_acts, cell_dists = zip(*cells_activations_dists)
+
     # Gather this data from all MPI ranks
-    morph_data = {'gids': cell_ids, 'vertices': verts, 'edges': edges}
+    this_rank_data = {
+        'gids': cell_ids,
+        'comp_locs': verts, 'comp_edges': edges,
+        'comp_act': cell_acts, 'comp_dists': cell_dists,
+    }
     if WITH_MPI:
-        ranks_morph_data = comm.allgather(morph_data)
+        all_rank_data = comm.allgather(this_rank_data)
     else:
-        ranks_morph_data =[morph_data]
+        all_rank_data = [this_rank_data]
 
     # Combine all data into one dictionary for exporting
-    out_dict = {'cell_gids': [], 'vertices': [], 'edges': [], 'population': pop.label}
-    for rank_data in ranks_morph_data:
-        out_dict['cell_gids'].extend(rank_data['gids'])
-        out_dict['vertices'].extend(rank_data['vertices'])
-        out_dict['edges'].extend(rank_data['edges'])
+    out_dict = {k: [] for k in this_rank_data.keys()}
+    out_dict['population'] = pop.label
+    for rank_data in all_rank_data:
+        for k in rank_data.keys():
+            out_dict[k].extend(rank_data[k])
 
     # Write to file
     if mpi_rank == 0:
@@ -212,19 +225,19 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None):
         else:
             scale_suffix = str(scale)
         space_suffix = 'dwi' if translation is None else 'anat'
-        
+
         out_filename = 'comp-locs_{}_space-{}_scale-{}.pkl'.format(
             pop.label, space_suffix, scale_suffix)
         out_filepath = os.path.join(out_dir, out_filename)
-        
+
         # Write as pickle with vertices grouped by cell
         logger.debug('Population %s: writing compartment coordinates.', pop.label)
         with open(out_filepath, 'wb') as fout:
             pickle.dump(out_dict, fout)
 
         # Write as PLY into flat datastructure
-        out_filepath = out_filepath[:-4] + '.ply' 
-        morph_io.edges_to_PLY(out_dict['vertices'], out_dict['edges'], 
+        out_filepath = out_filepath[:-4] + '.ply'
+        morph_io.edges_to_PLY(out_dict['vertices'], out_dict['edges'],
             out_filepath, multiple=True)
 
         # Write as TXT in units of mm
@@ -291,15 +304,15 @@ def simulate_model(
     ############################################################################
     # SIMULATOR SETUP
     ############################################################################
-    
+
     if sim_dt is None:
         sim_dt = sim_params['timestep']
     else:
         logger.warning("Simulation timestep overridden from command line: dt = %f", sim_dt)
 
-    sim.setup(timestep=sim_dt, 
+    sim.setup(timestep=sim_dt,
               min_delay=0.1, max_delay=10.0, use_cvode=False)
-    
+
     if mpi_rank == 0:
         init_logging(logfile=None, debug=True)
 
@@ -319,16 +332,16 @@ def simulate_model(
     # - The default RNG for Connectors is NumpyRNG(seed=151985012)
     if seed is None:
         seed = sim_params['shared_rng_seed']
-    
+
     # Make RNG seeds accessible
     sim.state.shared_rng_seed = shared_seed = seed # original: 151985012
     sim.state.rank_rng_seed = rank_seed = sim.state.native_rng_baseseed + sim.state.mpi_rank
-    
+
     # RNGs that can be passed to PyNN objects like Connector subclasses
     # Store them on simulator.state so we can access from other custom classes
     sim.state.shared_rng = shared_rng_pynn = sim.NumpyRNG(seed=shared_seed)
     sim.state.rank_rng = rank_rng_pynn = sim.NumpyRNG(seed=rank_seed)
-    
+
     # Raw Numpy RNGs (numpy.random.RandomState) to be used in our own functions
     shared_rng = shared_rng_pynn.rng
     rank_rng = rank_rng_pynn.rng
@@ -423,7 +436,7 @@ def simulate_model(
 
     axon_scales = { 'mm' : 1.0, 'um': 1e-3, 'm': 1e3 }
     axon_scale = axon_scales[cell_conf['units']['axons']]
-    
+
     def get_axon_coordinates(axon_id):
         return np.asarray(axon_coordinates[axon_id]) * axon_scale
 
@@ -454,12 +467,12 @@ def simulate_model(
     # - to query cell model attributes, use population[i]._cell
     print("rank {}: starting phase POPULATIONS.".format(mpi_rank))
 
-    config_pop_labels = [k for k in net_conf.keys() if not k in 
+    config_pop_labels = [k for k in net_conf.keys() if not k in
                             ('simulation', 'electromagnetics')]
 
     # 3D info for cell positioning
     gpi_cell_positions = [
-        np.array(cell['transform'])[0:3, 3].reshape(-1,3) for cell in cell_conf['cells'] if 
+        np.array(cell['transform'])[0:3, 3].reshape(-1,3) for cell in cell_conf['cells'] if
             (cell['population'] == 'GPI')
     ]
 
@@ -474,11 +487,11 @@ def simulate_model(
 
     # Select cells to simulate
     pop_cell_defs = [
-        cell for cell in cell_conf['cells'] if 
+        cell for cell in cell_conf['cells'] if
             (cell['population'] == 'STN') and (cell['axon'] is not None)
     ]
     cell_defs = pop_cell_defs[:stn_ncell_biophys]
-    
+
     # Get 3D morphology properties of each cell
     cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
     stn_cell_positions = np.array([A[0:3, 3] for A in cells_transforms]) # Nx3
@@ -486,7 +499,7 @@ def simulate_model(
     # Choose a random morphology for each cell
     candidate_morphologies = np.array(cell_conf['default_morphologies']['STN'])
     morph_indices = np.array(net_conf['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies)
-    
+
     cells_morph_paths = [
         get_morphology_path(m) for m in candidate_morphologies[morph_indices]
     ]
@@ -523,7 +536,7 @@ def simulate_model(
     stn_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
     stn_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
 
-    
+
     stn_type = miocinovic.StnMorphType(**stn_cell_params)
 
     # Trace back cell indices to morphology definitions:
@@ -531,9 +544,9 @@ def simulate_model(
         for param_name in 'morphology_path', 'transform':
             saved_params.setdefault('STN', {})[param_name] = stn_cell_params[param_name]
         saved_params.setdefault('STN', {})['cell_defs'] = cell_defs
-        # logger.debug("Mapping of STN cell indices to morphologies is:\n" + 
+        # logger.debug("Mapping of STN cell indices to morphologies is:\n" +
         #     "\n".join(("{}: {}\n".format(i, c) for i,c in enumerate(cells_morph_paths))))
-        # logger.debug("Mapping of STN cell indices to transforms is:\n" + 
+        # logger.debug("Mapping of STN cell indices to transforms is:\n" +
         #     "\n".join(("{}: {}\n".format(i, c) for i,c in enumerate(cells_transforms))))
 
     #---------------------------------------------------------------------------
@@ -555,7 +568,7 @@ def simulate_model(
                          structure=stn_grid,
                          initial_values=initial_values)
 
-    
+
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
         write_compartment_coordinates(pop_stn, out_dir)
@@ -600,13 +613,13 @@ def simulate_model(
                                label='STN.all')
     else:
         asm_stn = sim.Assembly(pop_stn, label='STN.all')
-        
+
     stn_pop_size = asm_stn.size
 
     #===========================================================================
     # GPE POPULATION (prototypic)
 
-    gpe_ncell_base, frac_proto = get_pop_parameters('GPE.all', 
+    gpe_ncell_base, frac_proto = get_pop_parameters('GPE.all',
                         'base_population_size', 'prototypic_fraction')
     gpe_ncell_biophys = int(gpe_ncell_base *frac_proto * pop_scale)
 
@@ -615,18 +628,18 @@ def simulate_model(
 
     # Select cells to simulate
     pop_cell_defs = [
-        cell for cell in cell_conf['cells'] if 
+        cell for cell in cell_conf['cells'] if
             (cell['population'] == 'GPE') and (cell['axon'] is not None)
     ]
     cell_defs = pop_cell_defs[:gpe_ncell_biophys]
-    
+
     # Get 3D morphology properties of each cell
     cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
 
     # GPe axons and collaterals
     cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
     gpe2gpi_collateralization = 0.5 # Kita & Kitai (1994): two out of four
-    
+
     ## Number of branches at each level of the collateral, for each branch point
     gpe2gpi_nbranch = np.zeros((gpe_ncell_biophys, 2), dtype=int)
     gpe2gpi_nbranch[:, 0] = 1 # one branch at first branch point
@@ -636,10 +649,10 @@ def simulate_model(
     gpe2gpi_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
     gpe2stn_nbranch = [1, 2]
     gpe_collat_nbranch = [
-        np.concatenate((gpe2gpi.reshape((-1, 2)), [gpe2stn_nbranch]), axis=0) 
+        np.concatenate((gpe2gpi.reshape((-1, 2)), [gpe2stn_nbranch]), axis=0)
             for gpe2gpi in gpe2gpi_nbranch
     ]
-    gpe2gpi_collat_lengths = [100.0, 100.0] # 100 um in Johson & McIntyre (2008) 
+    gpe2gpi_collat_lengths = [100.0, 100.0] # 100 um in Johson & McIntyre (2008)
     gpe2stn_collat_lengths = [250.0, 250.0]
     gpe_collat_lvl_lengths = np.array([gpe2gpi_collat_lengths, gpe2stn_collat_lengths])
 
@@ -721,7 +734,7 @@ def simulate_model(
 
     #     # 0.01 converts rho's cm to um and ohm to megohm
     #     return (rho_ohm_cm / 4 / np.pi) * (1 / dist) * 0.01
-    
+
     # stn_gpe_Zmat = np.array(
     #     [(xyz[0], xyz[1], xyz[2], impedance_func(xyz))
     #         for xyz in stn_gpe_all_nodes])
@@ -762,7 +775,7 @@ def simulate_model(
 
     # # Get axon associated with cell (not necessary if no electrical connection)
     # # gpe_axon_coords = [
-    # #     get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if 
+    # #     get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if
     # #         (cell['axon'] is not None)
     # # ][:num_gpe_axons]
 
@@ -779,7 +792,7 @@ def simulate_model(
     #     'termination_method':           np.array('terminal_sequence'),
     #     'with_extracellular':           with_lfp or with_dbs,
     #     'electrode_coordinates_um' :    electrode_coordinates_um,
-    #     'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
+    #     'rho_extracellular_ohm_cm' :    rho_ohm_cm,
     # }
 
     # gpe_axon_type = AxonRelayType(**gpe_axon_params)
@@ -789,7 +802,7 @@ def simulate_model(
     # initial_values={
     #     'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
     # }
-    
+
     # pop_gpe_axons = Population(num_gpe_axons,
     #                            cellclass=gpe_axon_type,
     #                            label='GPE.axons',
@@ -858,7 +871,7 @@ def simulate_model(
         'with_extracellular_stim':      with_dbs and net_conf['CTX.axons'].get('with_dbs', True),
         'with_extracellular_rec':       with_lfp and net_conf['CTX.axons'].get('with_lfp', True),
         'electrode_coordinates_um' :    electrode_coordinates_um,
-        'rho_extracellular_ohm_cm' :    rho_ohm_cm,         
+        'rho_extracellular_ohm_cm' :    rho_ohm_cm,
     }
 
     # Axon collateral parameters
@@ -879,7 +892,7 @@ def simulate_model(
     initial_values={
         'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
     }
-    
+
     pop_ctx_axons = Population(num_ctx_axons,
                                cellclass=ctx_axon_type,
                                label='CTX.axons',
@@ -947,7 +960,7 @@ def simulate_model(
     # All populations by label
     all_pops = {pop.label : pop for pop in Population.all_populations}
     all_asm = {asm.label: asm for asm in (asm_gpe,)}
-    
+
     # All projections by population label
     all_proj = {pop.label : {} for pop in Population.all_populations}
     all_proj[asm_gpe.label] = {} # add Assembly projections manually
@@ -955,7 +968,7 @@ def simulate_model(
     # Make distinction between 'real' and surrogate subpopulations
     # (note: NativeCellType is common base class for all NEURON cells)
     biophysical_pops = [
-        pop for pop in Population.all_populations if 
+        pop for pop in Population.all_populations if
             isinstance(pop.celltype, sim.cells.NativeCellType)
             and not isinstance(pop.celltype, AxonRelayType)
     ]
@@ -968,7 +981,7 @@ def simulate_model(
 
     # Make all Projections directly from (pre, post) pairs in config
     for post_label, pop_config in net_conf.iteritems():
-        
+
         # Get PRE Population from label
         if post_label in all_pops.keys():
             post_pop = all_pops[post_label]
@@ -1176,7 +1189,7 @@ def simulate_model(
     # Write model parameters
     print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
     if mpi_rank==0 and output is not None:
-        
+
 
         # Save projection parameters
         extension = out_ext[:-4] + '.pkl'
@@ -1219,7 +1232,7 @@ def simulate_model(
     outdir, filespec = os.path.split(output)
     progress_file = os.path.join(outdir, '{}_sim_progress.log'.format(
         datetime.fromtimestamp(tstart).strftime('%Y.%m.%d-%H.%M.%S')))
-    
+
 
     # Times for writing out data to file
     if transient_period is None:
@@ -1416,9 +1429,9 @@ if __name__ == '__main__':
                         dest='morph_dir',
                         help='Morphologies directory.')
 
-    
 
-    
+
+
     args = parser.parse_args() # Namespace object
     parsed_dict = vars(args) # Namespace to dict
 
@@ -1498,7 +1511,7 @@ if __name__ == '__main__':
 
         print("\nFinal parsed arguments:")
         print("\n".join(
-            "{:<16}: {}".format(k, v) for k,v in parsed_dict.items() 
+            "{:<16}: {}".format(k, v) for k,v in parsed_dict.items()
                 if 'conf' not in k and k not in ('axon_coordinates',)))
 
     # Run the simulation

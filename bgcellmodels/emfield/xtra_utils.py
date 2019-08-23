@@ -43,7 +43,7 @@ def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
     matching coordinates (set max_dist=eps).
 
     Uses KD-tree from scipy.spatial for fast lookups.
-    
+
     @param  Z_coords : array_like of shape (N x 3)
             Coordinates of transfer impedances in Z_values (micron)
 
@@ -112,7 +112,7 @@ def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
             else:
                 # No issues, nearest neighbor and electrode distance OK
                 Z_node = Z_values[nn_idx[i]]
-            
+
             # Assign transfer impedance
             sec(c).rx_xtra = Z_node
 
@@ -134,3 +134,91 @@ def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):
 
     # 0.01 converts rho's cm to um and ohm to megohm
     return (rho / 4 / PI) * (1 / dist) * 0.01
+
+
+def get_rattay_activating_function(icell, *seclist_names):
+    """
+    Get activation function values for each compartment (segment),
+    grouped by default morphological section lists.
+
+    """
+    from bgcellmodels.common.treeutils import prev_seg, next_segs
+
+    # Preconditions for algorithm
+    stim_amp_mA = 1.0
+    h.finitialize()             # assigns seg.node_index()
+    root_sec = list(icell.somatic)[0]
+    h.distance(0, 0.0, sec=root_sec)
+
+
+    # First collect required data for each compartment
+    nodes_V_ext = {}            # mV
+    nodes_R_mid = {}            # Ohm
+    nodes_C_mid = {}            # mF
+    for sec in icell.all:
+        if not h.ismembrane('xtra', sec=sec):
+            continue
+        for seg in sec:
+            seg_id = seg.node_index()
+            # Extracellular voltage due to electrode
+            nodes_V_ext[seg_id] = stim_amp_mA * seg.rx_xtra * seg.scale_stim_xtra # to mV
+            # Resistance to parent segment
+            nodes_R_mid[seg_id] = seg.ri() * 1e6 # MOhm to Ohm
+            # Memrabe capacitance
+            nodes_C_mid[seg_id] = seg.cm * seg.area() * 1e-11 # uF/cm2 * um2 * cm2/um2 * mF/uF
+
+    def activating_function(seg_mid, parent_seg, child_segs):
+        """
+        Value of the activating function at segment (compartent), based on
+        stimulus-induced current flow from neighboring compartments
+
+        Units for activation function are:
+        mV / Ohm / (mA * s / V) = V/s = mV / ms
+        """
+        # Activation function according to eq. 4
+        seg_id = seg_mid.node_index()
+        V_mid = nodes_V_ext[seg_id]
+        R_mid = nodes_R_mid[seg_id]
+        fn = 0.0
+        if parent_seg is not None:
+            # use seg_mid.ri() between itself and parent
+            V_prev = nodes_V_ext[parent_seg.node_index()]
+            fn += (V_prev - V_mid) / R_mid
+        for seg in child_segs:
+            # use child_seg.ri() between child and parent
+            next_id = seg.node_index()
+            V_next = nodes_V_ext[next_id]
+            R_next = nodes_R_mid[next_id]
+            fn += (V_next - V_mid) / R_next
+        fn /= nodes_C_mid[seg_id]
+        return fn
+
+    act_values = {}             # seclist_name -> list[float]
+    dist_values = {}            # seclist_name -> list[float]
+
+    for sl_name in seclist_names:
+
+        seclist = getattr(icell, sl_name)
+        act_values[sl_name] = []
+        dist_values[sl_name] = []
+
+        for sec in seclist:
+            for seg in sec:
+                # FIXME: mid or parent or child can have no mechanism 'xtra'
+
+                # Find all compartments physically connected to this one
+                parent_seg = prev_seg(seg)
+                child_segs = next_segs(seg)
+
+                # At least two connected segments must exist for curvature
+                # (second derivative) to be defined
+                if ((parent_seg is not None and len(child_segs) > 0)
+                        or len(child_segs) > 1):
+
+                    act = activating_function(seg, parent_seg, child_segs)
+                    dist = h.distance(seg.x, sec=sec)
+
+                    act_values[sl_name].append(act)
+                    dist_values[sl_name].append(dist)
+
+    return act_values, dist_values
