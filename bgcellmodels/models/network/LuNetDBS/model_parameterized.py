@@ -117,6 +117,7 @@ h("XTRA_VERBOSITY = 0")
 # Translation vectors between Waxholm data DWI and atlas-v1 space
 dwi2anat_vec_mm = np.array([-20.01319, -10.01633, -10.01622]) # from manual
 blend2anat_vec_um = np.array([-15.9514e3, -8.43968e3, -7.71387e3]) # in Blender file
+fem2blend_vec_um = np.array([19935.4375, 9846.599609375, 12519.98046875]) # Karthik -> Blend
 gpi_center_um = np.array([[18533.4921875, 5821.53759765625, 7248.1533203125]])
 
 
@@ -298,8 +299,38 @@ def simulate_model(
     # Badstubner (2017), Fig. 8: 750 Ohm*cm
     # Baumanm (2010): 370 Ohm*cm
     rho_ohm_cm = 1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
-    electrode_coordinates_um = emf_params['dbs_electrode_coordinates_um']
+    electrode_tip_point_um = emf_params.get('dbs_electrode_tip_point_um',
+                                emf_params.get('dbs_electrode_coordinates_um', None))
     transfer_impedance_matrix = [] if fem_conf is None else fem_conf
+
+    def intersects_encapsulation_layer(point):
+        """ Check whether points is inside encapsulation layer """
+        r_encap = emf_params['dbs_encapsulation_radius_um']
+        p1 = np.array(electrode_tip_point_um)
+        p2 = np.array(emf_params['dbs_electrode_axis_point_um'])
+        p3 = np.array(point)
+
+        v12 = p2 - p1
+        v13 = p3 - p1
+
+        # Simplest test: within tip radius
+        if np.sqrt(np.dot(v13, v13)) <= r_encap:
+            return True
+
+        # Find point on electrode axis closest to test point
+        u = np.dot(v12, v13) / np.dot(v12, v12)
+        p_isect = p1 + u * v12
+        v_i3 = p3 - p_isect
+        ax_dist = np.sqrt(np.dot(v_i3, v_i3))
+
+        if u >= 0:
+            # Axis point is in cylindrical region
+            return ax_dist <= r_encap
+
+        # Axis point is below cylindrical region and we are not within tip radius
+        return False
+
+
 
     ############################################################################
     # SIMULATOR SETUP
@@ -437,8 +468,33 @@ def simulate_model(
     axon_scales = { 'mm' : 1.0, 'um': 1e-3, 'm': 1e3 }
     axon_scale = axon_scales[cell_conf['units']['axons']]
 
-    def get_axon_coordinates(axon_id):
-        return np.asarray(axon_coordinates[axon_id]) * axon_scale
+    def get_axon_coordinates(cell_def):
+        """
+        Get axon coordinates for cell definition
+        """
+        axon_spec = cell_def['axon'].split('*')
+
+        # No glob pattern : axon is axon identifier
+        if len(axon_spec) == 1:
+            return np.asarray(axon_coordinates[cell_def['axon']]) * axon_scale
+
+        # With glob pattern: axon spec matches group
+        candidate_axons = [
+            np.asarray(coords) * axon_scale for ax_id, coords in axon_coordinates.iteritems() if ax_id.startswith(axon_spec[0])
+        ]
+
+        # Find axon with closest end to cell center
+        cell_coords = cell_def['transform'][0:3, 3]
+        min_dist = 1e12
+        closest_axon = None
+        for ax_coords in candidate_axons:
+            for i in 0, -1:
+                dist_end = np.linalg.norm(cell_coords - ax_coords[i])
+                if dist_end < min_dist:
+                    min_dist = dist_end
+                    closest_axon = ax_coords
+
+        return closest_axon
 
     def get_morphology_path(morphology_id, default_morphology=None):
         """
@@ -485,35 +541,42 @@ def simulate_model(
     #---------------------------------------------------------------------------
     # STN cell model
 
-    # Select cells to simulate
-    pop_cell_defs = [
-        cell for cell in cell_conf['cells'] if
-            (cell['population'] == 'STN') and (cell['axon'] is not None)
+    # List all candidate cell definitions
+    all_cell_defs = [
+        cell for cell in cell_conf['cells'] if (cell['population'] == 'STN')
     ]
-    cell_defs = pop_cell_defs[:stn_ncell_biophys]
+    for cell in all_cell_defs:
+        cell['transform'] = np.asarray(cell['transform'])
 
-    # Get 3D morphology properties of each cell
-    cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
-    stn_cell_positions = np.array([A[0:3, 3] for A in cells_transforms]) # Nx3
+    # Select cells that are eligible given electrode position
+    cell_defs = [
+        cell for cell in all_cell_defs if 
+            not intersects_encapsulation_layer(cell['transform'][0:3, 3])
+    ]
+    assert len(cell_defs) >= stn_ncell_biophys
+    cell_defs = cell_defs[:stn_ncell_biophys]
+
+    # Save positions for later
+    stn_cell_positions = np.array([cell['transform'][0:3, 3] for cell in cell_defs]) # Nx3
 
     # Choose a random morphology for each cell
     candidate_morphologies = np.array(cell_conf['default_morphologies']['STN'])
     morph_indices = np.array(net_conf['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies)
-
     cells_morph_paths = [
         get_morphology_path(m) for m in candidate_morphologies[morph_indices]
     ]
 
     # Axons and collaterals
-    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
+    cells_axon_coords = [get_axon_coordinates(cell) for cell in cell_defs]
     stn_collateralization_fraction = 7.0/8.0 # Koshimizu (2013): 7/8 Gpe-projecting neurons
     stn_collat_nbranch = np.zeros((stn_ncell_biophys, 2), dtype=int)
-    stn_collat_nbranch[:, 0] = 1 # 1 # one branch at first branch point
+    stn_collat_nbranch[:, 0] = 1 # one branch at first branch point
     stn_collat_nbranch[:, 1] = 2 # two branches at second branch point
+    # Select cells without collaterals
     no_collat_idx = shared_rng.choice(stn_ncell_biophys,
                         int((1.0-stn_collateralization_fraction)*stn_ncell_biophys),
                         replace=False)
-    stn_collat_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
+    stn_collat_nbranch[no_collat_idx, 0] = 0
     stn_collat_nbranch = [nbr.reshape((-1, 2)) for nbr in stn_collat_nbranch]
 
     # Load default parameters from sim config
@@ -524,7 +587,7 @@ def simulate_model(
     stn_cell_params['with_extracellular_rec'] = with_lfp and net_conf['STN'].get('with_lfp', True)
     # stn_cell_params['seclists_with_dbs'] = np.array('axonal')
     stn_cell_params['morphology_path'] = cells_morph_paths
-    stn_cell_params['transform'] = cells_transforms
+    stn_cell_params['transform'] = [cell['transform'] for cell in cell_defs]
     ## Axon parameters
     stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
     stn_cell_params['collateral_branch_points_um'] = gpi_cell_positions[:stn_ncell_biophys]
@@ -533,7 +596,7 @@ def simulate_model(
     stn_cell_params['collateral_lvl_num_branches'] = stn_collat_nbranch
     ## DBS parameters
     stn_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
-    stn_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
+    stn_cell_params['electrode_coordinates_um'] = electrode_tip_point_um
     stn_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
 
 
@@ -682,7 +745,7 @@ def simulate_model(
     gpe_cell_params['collateral_lvl_num_branches'] = gpe_collat_nbranch
     ## FEM parameters
     gpe_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
-    gpe_cell_params['electrode_coordinates_um'] = electrode_coordinates_um
+    gpe_cell_params['electrode_coordinates_um'] = electrode_tip_point_um
     gpe_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
 
     proto_type = gunay.GpeProtoCellType(**gpe_cell_params)
@@ -726,7 +789,7 @@ def simulate_model(
     # # Write out analytical Ztransfer
     # def impedance_func(xyz):
     #     x1, y1, z1 = xyz
-    #     x2, y2, z2 = electrode_coordinates_um
+    #     x2, y2, z2 = electrode_tip_point_um
     #     dist = np.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
 
     #     if dist == 0:
@@ -791,7 +854,7 @@ def simulate_model(
     #     'streamline_coordinates_mm':    gpe_axon_coords,
     #     'termination_method':           np.array('terminal_sequence'),
     #     'with_extracellular':           with_lfp or with_dbs,
-    #     'electrode_coordinates_um' :    electrode_coordinates_um,
+    #     'electrode_coordinates_um' :    electrode_tip_point_um,
     #     'rho_extracellular_ohm_cm' :    rho_ohm_cm,
     # }
 
@@ -870,7 +933,7 @@ def simulate_model(
         'termination_method':           np.array('any_cutoff'),
         'with_extracellular_stim':      with_dbs and net_conf['CTX.axons'].get('with_dbs', True),
         'with_extracellular_rec':       with_lfp and net_conf['CTX.axons'].get('with_lfp', True),
-        'electrode_coordinates_um' :    electrode_coordinates_um,
+        'electrode_coordinates_um' :    electrode_tip_point_um,
         'rho_extracellular_ohm_cm' :    rho_ohm_cm,
     }
 

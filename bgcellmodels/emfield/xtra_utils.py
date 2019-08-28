@@ -117,6 +117,89 @@ def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
             sec(c).rx_xtra = Z_node
 
 
+def set_transfer_impedances_interp(seclist, Z_coords, Z_values,
+                                   min_electrode_dist, electrode_coords,
+                                   method='linear', Z_intersect=1e12):
+    """
+    Set transfer impedances using linear or cubic interpolation.
+
+    Similar to function scipy.interpolate.griddata, except the interpolator
+    object is saved between queries.
+
+    @param  method : str
+            Interpolation method: 'linear' or 'cubic'
+
+    @param  Z_coords : array_like of shape (N x 3)
+            Coordinates of transfer impedances in Z_values (micron)
+
+    @param  Z_values : arrayLike of length N
+            Transfer impedances at coordinates in Z_coords
+    """
+    if method == 'linear':
+        from scipy.interpolate import LinearNDInterpolator
+        interp = LinearNDInterpolator(Z_coords, Z_values)
+    elif method == 'cubic':
+        from scipy.interpolate import CloughTocher2DInterpolator
+        interp = CloughTocher2DInterpolator(Z_coords, Z_values)
+    else:
+        raise ValueError(method)
+
+
+    for sec in seclist:
+        if not h.ismembrane('xtra', sec=sec):
+            logger.debug("Skipping section '%s', no mechanism 'xtra' found.", sec.name())
+            continue
+
+        # Get coordinates of compartment centers
+        num_samples = int(h.n3d(sec=sec))
+        nseg = sec.nseg
+
+        # Get 3D sample points for section
+        xx = h.Vector([h.x3d(i, sec=sec) for i in xrange(num_samples)])
+        yy = h.Vector([h.y3d(i, sec=sec) for i in xrange(num_samples)])
+        zz = h.Vector([h.z3d(i, sec=sec) for i in xrange(num_samples)])
+
+        # Length in micron from start of section to sample i
+        pt_locs = h.Vector([h.arc3d(i, sec=sec) for i in xrange(num_samples)])
+        L = pt_locs.x[num_samples-1]
+
+        # Normalized location of 3D sample points (0-1)
+        pt_locs.div(L)
+
+        # Normalized locations of nodes (0-1)
+        node_locs = h.Vector(nseg + 2)
+        node_locs.indgen(1.0 / nseg)
+        node_locs.sub(1.0 / (2 * nseg))
+        node_locs.x[0] = 0.0
+        node_locs.x[nseg+1] = 1.0
+
+        # Now calculate 3D locations of nodes (segment centers + 0 + 1)
+        # by interpolating 3D locations of samples
+        node_xlocs = h.Vector(nseg+2)
+        node_ylocs = h.Vector(nseg+2)
+        node_zlocs = h.Vector(nseg+2)
+        node_xlocs.interpolate(node_locs, pt_locs, xx)
+        node_ylocs.interpolate(node_locs, pt_locs, yy)
+        node_zlocs.interpolate(node_locs, pt_locs, zz)
+        node_coords = np.array(zip(node_xlocs, node_ylocs, node_zlocs))
+
+        # Interpolate node coordinates
+        z_vals_nodes = interp(node_coords)
+
+        # Check electrode distance
+        for i, c in enumerate(node_locs):
+            node_xyz = node_coords[i]
+            if np.linalg.norm(node_xyz - electrode_coords) <= min_electrode_dist:
+                # Node is too close to electrode
+                Z_node = Z_intersect
+            else:
+                # No issues, nearest neighbor and electrode distance OK
+                Z_node = z_vals_nodes[i]
+
+            # Assign transfer impedance
+            sec(c).rx_xtra = Z_node
+
+
 def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):
     """
     Analytical transfer resistance between electrical point source
