@@ -113,25 +113,25 @@ class AxonBuilder(object):
                 a streamline node.
 
         @param  connection_method : str
-                
+
                 Method for connecting the reconstructed acon to the parent
                 sections. One of the following:
 
-                'orient_coincident': find streamline end that connects to the 
+                'orient_coincident': find streamline end that connects to the
                 parent section and start building from this point. Raise
                 exception if not coincident.
 
                 'translate_axon_<start/end>': translate starting or endpoint
                 of axon to endpoint of parent section.
 
-                'translate_cell_<start/end>': Translate cell so that connection 
+                'translate_cell_<start/end>': Translate cell so that connection
                 point is coincident with start or end of streamline
 
         @param  connect_gap_junction : bool
 
                 If true, connect axon to cell using gap junction instead of
                 electrical connection between compartments. In this case the
-                new axonal compartmetns are not added to SectionLists in 
+                new axonal compartmetns are not added to SectionLists in
                 the parent cell object (wrapper for compartments).
         """
         self.without_extracellular = without_extracellular
@@ -145,7 +145,7 @@ class AxonBuilder(object):
            len(self.terminal_comp_sequence) == 0:
             raise ValueError('No terminal compartment sequence defined '
                              'in axon class {}'.format(self.__class__))
-        
+
         # Save properties for building algorithm
         self.tolerance_mm = tolerance_mm
         self.interp_method = interp_method
@@ -199,7 +199,7 @@ class AxonBuilder(object):
             levels_num_branches,
             levels_angles_deg):
         """
-        Add axon collateral definition at branch point coordinates, 
+        Add axon collateral definition at branch point coordinates,
         branching out to the given target point.
 
         Arguments
@@ -242,7 +242,7 @@ class AxonBuilder(object):
             # Index into the axon's main branch
             index = int(terminal_spec[1])
             return self.built_sections[structure][index]
-        
+
         elif structure in ('branch_point', 'target_point'):
             # Section close to one of the branch points
             index = int(terminal_spec[1])
@@ -255,7 +255,7 @@ class AxonBuilder(object):
             float_pattern = r'([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)'
             grp_occurrences = re.findall(float_pattern, coord_spec)
             measure_point = np.array([float(grp[0]) for grp in grp_occurrences])
-        
+
         else:
             raise ValueError(terminal_spec)
 
@@ -280,7 +280,7 @@ class AxonBuilder(object):
 
         # Initialize data structures
         self.colt_subtrees_seclists = [[] for i in range(len(self.colt_branch_points))]
-        
+
         # Branch out from node closest to each branch point
         node_pt_idx_upper = np.cumsum(node_n3d)
         for i_colt, branch_pt_um in enumerate(self.colt_branch_points):
@@ -308,7 +308,7 @@ class AxonBuilder(object):
         Build one unbranched section between two collateral branch points
         at subsequent levels of collateral subtree and recurse.
         """
-        
+
         # Get data defining the collateral
         target_pt_um = self.colt_target_points[colt_idx]
         step_length_um = self.colt_step_lengths[colt_idx]
@@ -401,14 +401,14 @@ class AxonBuilder(object):
         self.interp_pts = []        # interpolated points
         self.num_passed = 1         # index of last passed streamline point
                                     # (we already 'passed' starting point)
-        
+
         self.interp_pts = [self.streamline_pts[0]]        # interpolated points
         self.last_coord = self.streamline_pts[0]
         self.last_tangent = normvec(self.streamline_pts[1] - self.streamline_pts[0])
         self.built_length = 0.0
         self.i_sequence_offset = 0
 
-        
+
         # Keep references to newly constructed Sections
         self.built_sections = {sec_type: [] for sec_type in self.compartment_defs.keys()}
         self.built_sections['main_branch'] = sec_ordered = []
@@ -439,7 +439,7 @@ class AxonBuilder(object):
             # Create the compartment
             ax_sec = self._make_sec(sec_type)
             self._set_comp_attributes(ax_sec, sec_attrs)
-            
+
             # Connect the compartment
             if prev_sec is not None:
                 if i_compartment == 0 and self.connect_gap_junction:
@@ -456,16 +456,16 @@ class AxonBuilder(object):
                     self.built_sections['gap_junctions'] = (gap_pre, gap_post)
                 else:
                     ax_sec.connect(prev_sec(1.0), 0.0)
-            
+
             prev_sec = ax_sec
             self.built_sections[sec_type].append(ax_sec)
             sec_ordered.append(ax_sec)
             tot_num_seg += ax_sec.nseg
-            
+
             # Find section endpoint by walking along streamline for sec.L
             num_passed, stop_coord, next_tangent = self.walk_func(sec_L_mm)
             self.interp_pts.append(stop_coord)
-            
+
             # Check compartment length vs tolerance
             real_length = veclen(stop_coord - self.last_coord)
             if not np.isclose(real_length, sec_L_mm, atol=self.tolerance_mm):
@@ -529,7 +529,7 @@ class AxonBuilder(object):
 
         # Connext axon collaterals to main axon
         self._build_all_collaterals()
-        
+
         # Status report
         logger.debug("Created %i axonal segments (%i sections)",
                      tot_num_seg, len(sec_ordered))
@@ -541,10 +541,10 @@ class AxonBuilder(object):
 
         # Add to parent cell
         if (self.parent_cell is not None) and not self.connect_gap_junction:
-            # NOTE: References to Python-created sections must be maintained 
+            # NOTE: References to Python-created sections must be maintained
             # in Python. References are not kept alive by appending them
             # to one of the Hoc template's SectionList.
-            
+
             # Add to axonal SectionList in order of connection
             append_to = ['all', 'axonal']
             for seclist_name in append_to:
@@ -565,6 +565,7 @@ class AxonBuilder(object):
             all_seclist.append(sec=sec)
         self.built_sections['all'] = all_seclist
         self.built_sections['axonal'] = all_seclist
+        self.built_sections['somatic'] = h.SectionList()
 
         return dotdict(self.built_sections)
 
@@ -582,7 +583,7 @@ class AxonBuilder(object):
         Estimate number of of Sections needed to build axon along streamline.
         """
         tck_length_mm = np.sum(np.linalg.norm(np.diff(self.streamline_pts, axis=0), axis=1))
-        rep_length_um = sum((self.compartment_defs[sec]['morphology']['L'] 
+        rep_length_um = sum((self.compartment_defs[sec]['morphology']['L']
                                     for sec in self.repeating_comp_sequence))
         return 1e3 * tck_length_mm / rep_length_um * len(self.repeating_comp_sequence)
 
@@ -613,7 +614,7 @@ class AxonBuilder(object):
                         getattr(sec, pname)[i] = pval
                 else:
                     setattr(sec, '{}_{}'.format(pname, mech_name), pval)
-        
+
         # Set passive parameters
         for pname, pval in sec_attrs['passive'].items():
                 setattr(sec, pname, pval)
@@ -720,7 +721,7 @@ class AxonBuilder(object):
                 print('Extending axon beyond streamline endpoint for {} mm'.format(
                        dist-dist_walked))
                 waypoint_coord = last_walk_coord + 1000.0 * self.last_tangent
-            
+
             # Walk up to next stopping point
             path_vec = waypoint_coord - last_walk_coord
             dist_waypoint = veclen(path_vec) # distance to next streamline point
@@ -760,7 +761,7 @@ class AxonBuilder(object):
             remaining_pts = []
         else:
             remaining_pts = self.streamline_pts[self.num_passed:]
-        
+
         start_walk_coord = self.last_coord
         walk_passed = 0 # streamline points passed during this walk
 
@@ -927,13 +928,13 @@ class AxonBuilder(object):
             i_sequence = i_compartment
             sec_type = self.initial_comp_sequence[i_sequence]
             self.i_initial_offset = len(self.initial_comp_sequence)
-        
+
         else:
             # We are in the repeating part of the axon
             current_compartment_sequence = 'repeating_comp_sequence'
             i_sequence = (i_compartment - self.i_initial_offset) % len(self.repeating_comp_sequence)
             sec_type = self.repeating_comp_sequence[i_sequence]
-        
+
         sec_attrs = self.compartment_defs[sec_type]
 
         remaining_length = self.streamline_length - self.built_length

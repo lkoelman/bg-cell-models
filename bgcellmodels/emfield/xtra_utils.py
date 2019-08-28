@@ -143,19 +143,23 @@ def get_rattay_activating_function(icell, *seclist_names):
 
     """
     from bgcellmodels.common.treeutils import prev_seg, next_segs
+    from bgcellmodels.common.nrnutil import all_xnode
 
     # Preconditions for algorithm
     stim_amp_mA = 1.0
     h.finitialize()             # assigns seg.node_index()
-    root_sec = list(icell.somatic)[0]
-    h.distance(0, 0.0, sec=root_sec)
+    test_sec = list(icell.all)[0]
+    root_sec = h.SectionRef(sec=test_sec).root
+    h.distance(0, 0.5, sec=root_sec)
 
 
     # First collect required data for each compartment
     nodes_V_ext = {}            # mV
     nodes_R_mid = {}            # Ohm
     nodes_C_mid = {}            # mF
-    for sec in icell.all:
+    all_sec = h.SectionList()
+    all_sec.wholetree(sec=root_sec)
+    for sec in all_sec:
         if not h.ismembrane('xtra', sec=sec):
             continue
         for seg in sec:
@@ -164,8 +168,9 @@ def get_rattay_activating_function(icell, *seclist_names):
             nodes_V_ext[seg_id] = stim_amp_mA * seg.rx_xtra * seg.scale_stim_xtra # to mV
             # Resistance to parent segment
             nodes_R_mid[seg_id] = seg.ri() * 1e6 # MOhm to Ohm
-            # Memrabe capacitance
+            # Membrane capacitance
             nodes_C_mid[seg_id] = seg.cm * seg.area() * 1e-11 # uF/cm2 * um2 * cm2/um2 * mF/uF
+
 
     def activating_function(seg_mid, parent_seg, child_segs):
         """
@@ -174,6 +179,10 @@ def get_rattay_activating_function(icell, *seclist_names):
 
         Units for activation function are:
         mV / Ohm / (mA * s / V) = V/s = mV / ms
+
+        Components of the activating function:
+        - Ri (axial resistance, Ohm, seg.ri())
+            - Ri = 4*Ra*L/(pi*d^2)
         """
         # Activation function according to eq. 4
         seg_id = seg_mid.node_index()
@@ -196,9 +205,17 @@ def get_rattay_activating_function(icell, *seclist_names):
     act_values = {}             # seclist_name -> list[float]
     dist_values = {}            # seclist_name -> list[float]
 
+    act_warn_thresh = {
+        'somatic': 1e6,
+        'basal': .5e6,
+        'axonal': 4e6,
+    }
     for sl_name in seclist_names:
 
-        seclist = getattr(icell, sl_name)
+        seclist = getattr(icell, sl_name, None)
+        if seclist is None:
+            continue
+
         act_values[sl_name] = []
         dist_values[sl_name] = []
 
@@ -207,8 +224,9 @@ def get_rattay_activating_function(icell, *seclist_names):
                 # FIXME: mid or parent or child can have no mechanism 'xtra'
 
                 # Find all compartments physically connected to this one
-                parent_seg = prev_seg(seg)
-                child_segs = next_segs(seg)
+                # NOTE: do not select the zero-area 0-end and 1-end segments
+                parent_seg = prev_seg(seg, x_loc='mid')
+                child_segs = next_segs(seg, x_loc='mid')
 
                 # At least two connected segments must exist for curvature
                 # (second derivative) to be defined
@@ -220,5 +238,11 @@ def get_rattay_activating_function(icell, *seclist_names):
 
                     act_values[sl_name].append(act)
                     dist_values[sl_name].append(dist)
+
+                    if act > act_warn_thresh[sl_name]:
+                        print("ACT_FUN_HIGH: {}".format(seg))
+                        raise Exception('breakpoint')
+
+        assert len(act_values[sl_name]) == len(dist_values[sl_name])
 
     return act_values, dist_values

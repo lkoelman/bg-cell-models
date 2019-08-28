@@ -7,7 +7,7 @@ Utilities for dealing with NEURON cell models
 from neuron import h
 import numpy as np
 
-from nrnutil import seg_index, seg_xmin, seg_xmax, getsecref
+from .nrnutil import seg_index, seg_xmin, seg_xmax, seg_xmid, seg_at_index, getsecref
 import StringIO
 
 # aliases to avoid repeatedly doing multiple hash-table lookups
@@ -57,14 +57,33 @@ def parent_loc(sec, trueparent):
     return _h_parent_connection(sec=sec)
 
 
-def prev_seg(curseg):
+def prev_seg(curseg, x_loc='mid'):
     """
     Get segment preceding seg: this can be on same or parent Section
     """
-    # NOTE: cannot use seg.next() since this changed content of seg
-    allseg = reversed([seg for seg in curseg.sec if seg_index(seg) < seg_index(curseg)])
-    return next(allseg, curseg.sec.parentseg()) # returns None if root
+    # prevseg = [seg for seg in curseg.sec if seg_index(seg) < seg_index(curseg)][-1]
+    i_seg = seg_index(curseg)
+    if i_seg > 0:
+        prevseg = seg_at_index(curseg.sec, i_seg-1)
+    else:
+        parseg = curseg.sec.parentseg()
+        if parseg is None:
+            return None
+        parsec = parseg.sec
+        # Do not return the 0-area nodes at 0-end and 1-end
+        prevseg = parsec(seg_xmid(parseg))
 
+    # Adjust x-loc if required
+    if x_loc == 'mid':
+        return prevseg
+    elif x_loc == 'min':
+        prevseg = prevseg.sec(seg_xmin(prevseg, side='inside'))
+    elif x_loc == 'max':
+        prevseg = prevseg.sec(seg_xmax(prevseg, side='inside'))
+    else:
+        raise ValueError("Invalid value {} for argument 'x-loc'".format(x_loc))
+
+    return prevseg
 
 def next_segs(curseg, x_loc='mid'):
     """

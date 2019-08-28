@@ -237,12 +237,12 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None,
 
         # Write as PLY into flat datastructure
         out_filepath = out_filepath[:-4] + '.ply'
-        morph_io.edges_to_PLY(out_dict['vertices'], out_dict['edges'],
+        morph_io.edges_to_PLY(out_dict['comp_locs'], out_dict['comp_edges'],
             out_filepath, multiple=True)
 
         # Write as TXT in units of mm
         out_filepath = out_filepath[:-4] + '.txt'
-        all_vertices = np.array([v for cell_verts in out_dict['vertices'] for v in cell_verts])
+        all_vertices = np.array([v for cell_verts in out_dict['comp_locs'] for v in cell_verts])
         all_vertices += blend2anat_vec_um
         morph_io.coordinates_um_to_txt(all_vertices, out_filepath, scale=1e-3)
 
@@ -571,7 +571,7 @@ def simulate_model(
 
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
-        write_compartment_coordinates(pop_stn, out_dir)
+        write_compartment_coordinates(pop_stn, out_dir, activating_function=with_dbs)
 
     # # Check coordinates
     # stn_gpe_all_nodes = []
@@ -712,7 +712,7 @@ def simulate_model(
 
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
-        write_compartment_coordinates(pop_gpe_proto, out_dir)
+        write_compartment_coordinates(pop_gpe_proto, out_dir, activating_function=with_dbs)
 
     # # Check coordinates
     # for cell_id in pop_gpe_proto:
@@ -900,7 +900,7 @@ def simulate_model(
 
     # Export 3D coordinates of compartment centers
     if export_compartment_coordinates:
-        write_compartment_coordinates(pop_ctx_axons, out_dir)
+        write_compartment_coordinates(pop_ctx_axons, out_dir, activating_function=with_dbs)
 
     #===========================================================================
     # STR.MSN POPULATION
