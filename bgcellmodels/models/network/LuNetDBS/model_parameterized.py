@@ -89,7 +89,7 @@ from bgcellmodels.models.axon.foust2011 import AxonFoust2011
 
 from bgcellmodels.common.configutil import eval_params
 from bgcellmodels.common.stdutil import getdictvals
-from bgcellmodels.common import logutils, fileutils
+from bgcellmodels.common import logutils, fileutils, units
 from bgcellmodels.morphology import morph_io
 
 # Global variables
@@ -147,6 +147,28 @@ def make_stn_lateral_connlist(pop_size, num_adjacent, fraction, rng):
     return make_divergent_pattern(source_ids, targets_relative, pop_size)
 
 
+def read_binary_data(file_path, **kwargs):
+    """
+    Read binary data using appropriate reader:
+
+        '.npy' -> numpy.load
+        '.pkl' -> pickle.load
+        '.txt' -> numpu.loadtxt
+    """
+    if file_path is None:
+        return None
+    path, ext = os.path.splitext(file_path)
+    if ext == '.npy':
+        data = np.load(file_path)
+    elif ext == '.pkl':
+        with open(file_path, 'rb') as f:
+            data = pickle.load(f)
+    elif ext == '.txt':
+        data = np.loadtxt('STN_potential.txt', **kwargs)
+    else:
+        raise ValueError('Unknown binary file type "{}"'.format(ext))
+    return data
+
 
 def write_population_data(pop, output, suffix, gather=True, clear=True):
     """
@@ -195,7 +217,7 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None,
     cells = [gid._cell for gid in pop if pop.is_local(gid)]
     cells_activations_dists = [
         xtra_utils.get_rattay_activating_function(cell.icell,
-            'basal', 'somatic', 'axonal') for cell in cells
+            ('basal', 'somatic', 'axonal')) for cell in cells
     ]
     cell_acts, cell_dists = zip(*cells_activations_dists)
 
@@ -248,239 +270,375 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None,
         morph_io.coordinates_um_to_txt(all_vertices, out_filepath, scale=1e-3)
 
 
-def simulate_model(
-        pop_scale       = 1.0,
-        sim_dur         = 500.0,
-        sim_dt          = None,
-        export_locals   = True,
-        output          = None,
-        report_progress = None,
-        net_conf        = None,
-        cell_conf       = None,
-        fem_conf        = None,
-        axon_coordinates    = None,
-        morph_dir       = None,
-        seed            = None,
-        with_lfp        = None,
-        with_dbs        = None,
-        dopamine_depleted   = None,
-        transient_period    = None,
-        max_write_interval  = None,
-        report_interval = 50.0,
-        restore_state   = None,
-        save_state      = None,
-        export_compartment_coordinates = None,
-        **kwargs):
-    """
-    Run a simple network consisting of an STN and GPe cell population
-    that are reciprocally connected.
+class Simulation(object):
 
-    @param      output : str (optional)
-                File path to save recordings at in following format:
-                '~/storage/*.mat'
+    def __init__(self, **kwargs):
+        """
+        Run a simple network consisting of an STN and GPe cell population
+        that are reciprocally connected.
+
+        @param      output : str (optional)
+                    File path to save recordings at in following format:
+                    '~/storage/*.mat'
+
+        @param      config : dict
+                    Dictionary with one entry per population label and one
+                    key 'simulation' for simulation parameters.
+
+        @param      select_cells_dynamic : bool
+                    Select/reject cells and axons based on whether they intersect
+                    the electrode and encapsulation tissue
+        """
+        ############################################################################
+        # READ CONFIGURATIONS
+        ############################################################################
+        kwargs_defaults = {
+            'pop_scale'       : 1.0,
+            'sim_dur'         : 500.0,
+            'sim_dt'          : None,
+            'export_locals'   : True,
+            'output'          : None,
+            'report_progress' : None,
+            'net_conf'        : None,
+            'cell_conf'       : None,
+            'fem_conf'        : None,
+            'axon_coordinates': None,
+            'morph_dir'       : None,
+            'seed'            : None,
+            'with_lfp'        : None,
+            'with_dbs'        : None,
+            'dopamine_depleted'   : None,
+            'transient_period'    : None,
+            'max_write_interval'  : None,
+            'report_interval' : 50.0,
+            'restore_state'   : None,
+            'save_state'      : None,
+            'export_compartment_coordinates' : None,
+            'select_cells_dynamic' : False,
+        }
+
+        # Parse keyword argument and assign as properties
+        kwargs_final = dict(kwargs_defaults)
+        kwargs_final.update(kwargs)
+        for arg_name, arg_val in kwargs_final.iteritems():
+            setattr(self, arg_name, arg_val)
+
+        out_dir, out_ext = self.output.split('*')
+        self.out_dir = out_dir
+        self.out_ext = out_ext
+
+        # Read info from network configuration file
+        self.sim_params = self.net_conf['simulation']
+
+        self._init_3d_params()
+        self._init_emf_params()
 
 
-    @param      config : dict
-                Dictionary with one entry per population label and one
-                key 'simulation' for simulation parameters.
-    """
+    def _init_emf_params(self):
+        """
+        Initialize parameters for electromagnetic field
+        """
+        self.emf_params = emf_params = self.net_conf['electromagnetics']
+        if 'electrode' in self.cell_conf:
+            self.emf_params.update(self.cell_conf['electrode'])
+
+        self.with_dbs = emf_params['with_dbs'] if self.with_dbs is None else self.with_dbs
+        self.with_lfp = emf_params['with_lfp'] if self.with_lfp is None else self.with_lfp
+
+        # Badstubner (2017), Fig. 8: 750 Ohm*cm
+        # Baumanm (2010): 370 Ohm*cm
+        emf_params['rho_extracellular_ohm_cm'] = \
+            1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
+        
+        self.transfer_impedance_matrix = [] if self.fem_conf is None else self.fem_conf
+        self.with_fem_voltages = len(self.transfer_impedance_matrix) > 0
+
+        # Adjust coordinates of transfer impedance matrix.
+        if self.with_fem_voltages:
+            if emf_params['fem_node_coordinate_units'] != 'um':
+                assert emf_params['fem_node_coordinate_units'] == 'mm'
+                self.transfer_impedance_matrix[:, :3] *= 1e3
+
+            # Translation between FEM and model space
+            self.transfer_impedance_matrix[:, :3] += fem2blend_vec_um
+
+            # Transfer impedances must be in MOhm (rx in xtra.mod)
+            i_src = units.Quantity(emf_params['fem_source_current_amplitude'],
+                                   emf_params['fem_source_current_units'])
+            v_test = units.Quantity(1.0, emf_params['fem_node_voltage_units'])
+            z_test = v_test / i_src
+            z_scale_mega_ohms = 1.0 * z_test.to('Ohm').magnitude * 1e-6
+            self.transfer_impedance_matrix[:, 3] *= z_scale_mega_ohms
+
+
+    def _init_3d_params(self):
+        """
+        Initialize parameters for 3D positioning of cells
+        """
+        scale_factors = { 'mm' : 1.0, 'um': 1e-3, 'm': 1e3 }
+        self.axon_scale = scale_factors[self.cell_conf['units']['axons']]
+
+        self.gpi_cell_positions = [
+            np.array(cell['transform'])[0:3, 3].reshape(-1,3) for cell in self.cell_conf['cells'] if (cell['population'] == 'GPI')
+        ]
+
+
     ############################################################################
-    # READ CONFIGURATIONS
+    # SIMULATION SETUP
     ############################################################################
 
-    out_dir, out_ext = output.split('*')
 
-    sim_params = net_conf['simulation']
-    emf_params = net_conf['electromagnetics']
+    def run(self):
+        """
+        Run the network simulation.
 
-    with_dbs = emf_params['with_dbs'] if with_dbs is None else with_dbs
-    with_lfp = emf_params['with_lfp'] if with_lfp is None else with_lfp
+        This is the 'main' function that sets up the entire model and runs it.
+        """
+        self.setup_pynn_simulator()
+        self.build_populations()
+        self.init_extracellular_field()
+        self.build_connections()
+        self.check_network_integrity()
+        self.setup_recording()
+        self.save_parameters()
+        self.simulate()
 
-    # Badstubner (2017), Fig. 8: 750 Ohm*cm
-    # Baumanm (2010): 370 Ohm*cm
-    rho_ohm_cm = 1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
-    electrode_tip_point_um = emf_params.get('dbs_electrode_tip_point_um',
-                                emf_params.get('dbs_electrode_coordinates_um', None))
-    transfer_impedance_matrix = [] if fem_conf is None else fem_conf
 
-    def intersects_encapsulation_layer(point):
-        """ Check whether points is inside encapsulation layer """
-        r_encap = emf_params['dbs_encapsulation_radius_um']
-        p1 = np.array(electrode_tip_point_um)
-        p2 = np.array(emf_params['dbs_electrode_axis_point_um'])
-        p3 = np.array(point)
+    def build_populations(self):
+        """
+        Build all PyNN populations.
+        """
+        self.build_pop_stn()
+        self.build_pop_gpe()
+        self.build_pop_ctx()
+        self.build_pop_msn()
+
+        # All populations by label
+        self.all_pops = {pop.label : pop for pop in Population.all_populations}
+        self.all_asm = {asm.label: asm for asm in (self.asm_gpe,)}
+
+        # All projections by population label
+        self.all_proj = {pop.label : {} for pop in Population.all_populations}
+        self.all_proj[self.asm_gpe.label] = {} # add Assembly projections manually
+
+        # Make distinction between 'real' and surrogate subpopulations
+        # (note: NativeCellType is common base class for all NEURON cells)
+        self.biophysical_pops = [
+            pop for pop in Population.all_populations if
+                isinstance(pop.celltype, sim.cells.NativeCellType)
+                and not isinstance(pop.celltype, AxonRelayType)
+        ]
+
+        self.artificial_pops = [pop for pop in Population.all_populations if not isinstance(
+                            pop.celltype, sim.cells.NativeCellType)]
+
+        # Update local context for eval() statements
+        self.params_local_context.update({
+            k : v for k,v in self.__dict__.items() if (
+                k.startswith('pop_') or k.startswith('asm_'))
+        })
+
+
+    def setup_pynn_simulator(self):
+        """
+        Configure the PyNN simulator object (pyNN.neuron module)
+        """
+
+        if self.sim_dt is None:
+            self.sim_dt = self.sim_params['timestep']
+        else:
+            logger.warning(
+                "Simulation timestep overridden from command line: dt = %f",
+                self.sim_dt)
+
+        sim.setup(timestep=self.sim_dt,
+                  min_delay=0.1, max_delay=10.0, use_cvode=False)
+
+        if mpi_rank == 0:
+            init_logging(logfile=None, debug=True)
+
+        print("\nThis is rank {} (node {} of {})".format(
+              sim.rank(), sim.rank() + 1, sim.num_processes()))
+
+        sim.state.duration = self.sim_dur # not used by PyNN, only by our custom funcs
+        sim.state.rec_dt = self.sim_params['recording_timestep']
+        sim.state.mcellran4_rng_indices = {} # Keep track of MCellRan4 indices for independent random streams.
+        finit_handlers = []
+
+        # Make one random generator that is shared and should yield same results
+        # for each MPI rank, and one with unique results.
+        # - The shared (parallel-safe) RNGs should be used in functions that are
+        #   executed on all ranks, like instantiating Population and Projection
+        #   objects.
+        # - The default RNG for Connectors is NumpyRNG(seed=151985012)
+        if self.seed is None:
+            self.seed = self.sim_params['shared_rng_seed']
+
+        # Make RNG seeds accessible
+        sim.state.shared_rng_seed = self.shared_seed = self.seed # original: 151985012
+        sim.state.rank_rng_seed = self.rank_seed = sim.state.native_rng_baseseed + sim.state.mpi_rank
+
+        # RNGs that can be passed to PyNN objects like Connector subclasses
+        # Store them on simulator.state so we can access from other custom classes
+        sim.state.shared_rng = self.shared_rng_pynn = sim.NumpyRNG(seed=self.shared_seed)
+        sim.state.rank_rng = self.rank_rng_pynn = sim.NumpyRNG(seed=self.rank_seed)
+
+        # Raw Numpy RNGs (numpy.random.RandomState) to be used in our own functions
+        self.shared_rng = self.shared_rng_pynn.rng
+        self.rank_rng = self.rank_rng_pynn.rng
+
+        # Global physiological conditions
+        DD = self.dopamine_depleted
+        if DD is None:
+            DD = self.sim_params.get('DD', None)
+        if DD is None:
+            raise ValueError("Dopamine depleted condition not specified "
+                             "in config file nor as simulation argument.")
+        self.DD = self.dopamine_depleted = DD
+
+        if mpi_rank == 0:
+            print("Simulation settings are:\n"
+                  "    - DD = {}\n"
+                  "    - sim_dt = {}\n"
+                  "    - with_dbs = {}\n"
+                  "    - with_lfp = {}".format(DD, self.sim_dt, self.with_dbs,
+                                               self.with_lfp))
+
+        self.params_global_context = globals()
+        self.params_local_context = locals() # capture function arguments
+
+        # Set NEURON integrator/solver options
+        # if emfield_rec and not emfield_stim:
+        #     sim.state.cvode.use_fast_imem(True)
+        # sim.state.cvode.cache_efficient(True) # necessary for fast_imem lfp + 33% reduction in simulation time
+
+        # Parameters to be saved to pickle file
+        self.saved_params = {'dopamine_depleted': DD}
+
+
+    ############################################################################
+    # UTILITY FUNCTIONS
+    ############################################################################
+
+    def inside_encapsulation_layer(self, points):
+        """
+        Check whether points are inside encapsulation layer
+
+        @param  points : numpy.array[float] (N x 3)
+        """
+        r_encap = self.emf_params['encapsulation_radius_um']
+        p1 = np.array(self.emf_params['electrode_tip_point_um'])
+        p2 = np.array(self.emf_params['electrode_axis_point_um'])
+        
+        assert points.ndim == 2 and points.shape[1] == 3
+        p3 = points
 
         v12 = p2 - p1
         v13 = p3 - p1
 
         # Simplest test: within tip radius
-        if np.sqrt(np.dot(v13, v13)) <= r_encap:
-            return True
+        inside_tip = np.linalg.norm(v13, axis=1) <= r_encap
 
         # Find point on electrode axis closest to test point
-        u = np.dot(v12, v13) / np.dot(v12, v12)
-        p_isect = p1 + u * v12
+        u = np.dot(v13, v12) / np.dot(v12, v12) # shape (N,)
+        p_isect = p1 + u.reshape((-1,1)) * v12  # shape (N, 3)
         v_i3 = p3 - p_isect
-        ax_dist = np.sqrt(np.dot(v_i3, v_i3))
+        ax_dist = np.linalg.norm(v_i3, axis=1)  # np.sqrt(np.dot(v_i3, v_i3))
+        inside_shaft = (u >= 0) & (ax_dist <= r_encap)
 
-        if u >= 0:
-            # Axis point is in cylindrical region
-            return ax_dist <= r_encap
-
-        # Axis point is below cylindrical region and we are not within tip radius
-        return False
+        inside_encap = inside_tip | inside_shaft
+        return inside_encap
 
 
-
-    ############################################################################
-    # SIMULATOR SETUP
-    ############################################################################
-
-    if sim_dt is None:
-        sim_dt = sim_params['timestep']
-    else:
-        logger.warning("Simulation timestep overridden from command line: dt = %f", sim_dt)
-
-    sim.setup(timestep=sim_dt,
-              min_delay=0.1, max_delay=10.0, use_cvode=False)
-
-    if mpi_rank == 0:
-        init_logging(logfile=None, debug=True)
-
-    print("\nThis is rank {} (node {} of {})".format(
-          sim.rank(), sim.rank() + 1, sim.num_processes()))
-
-    sim.state.duration = sim_dur # not used by PyNN, only by our custom funcs
-    sim.state.rec_dt = sim_params['recording_timestep']
-    sim.state.mcellran4_rng_indices = {} # Keep track of MCellRan4 indices for independent random streams.
-    finit_handlers = []
-
-    # Make one random generator that is shared and should yield same results
-    # for each MPI rank, and one with unique results.
-    # - The shared (parallel-safe) RNGs should be used in functions that are
-    #   executed on all ranks, like instantiating Population and Projection
-    #   objects.
-    # - The default RNG for Connectors is NumpyRNG(seed=151985012)
-    if seed is None:
-        seed = sim_params['shared_rng_seed']
-
-    # Make RNG seeds accessible
-    sim.state.shared_rng_seed = shared_seed = seed # original: 151985012
-    sim.state.rank_rng_seed = rank_seed = sim.state.native_rng_baseseed + sim.state.mpi_rank
-
-    # RNGs that can be passed to PyNN objects like Connector subclasses
-    # Store them on simulator.state so we can access from other custom classes
-    sim.state.shared_rng = shared_rng_pynn = sim.NumpyRNG(seed=shared_seed)
-    sim.state.rank_rng = rank_rng_pynn = sim.NumpyRNG(seed=rank_seed)
-
-    # Raw Numpy RNGs (numpy.random.RandomState) to be used in our own functions
-    shared_rng = shared_rng_pynn.rng
-    rank_rng = rank_rng_pynn.rng
-
-    # Global physiological conditions
-    DD = dopamine_depleted
-    if DD is None:
-        DD = dopamine_depleted = sim_params.get('DD', None)
-    if DD is None:
-        raise ValueError("Dopamine depleted condition not specified "
-                         "in config file nor as simulation argument.")
-    if mpi_rank == 0:
-        print("Simulation settings are:\n"
-              "    - DD = {}\n"
-              "    - sim_dt = {}\n"
-              "    - with_dbs = {}\n"
-              "    - with_lfp = {}".format(DD, sim_dt, with_dbs, with_lfp))
-
-
-    ############################################################################
-    # LOCAL FUNCTIONS
-    ############################################################################
-
-    params_global_context = globals()
-    params_local_context = locals() # capture function arguments
-
-    def get_pop_parameters(pop, *param_names):
+    def get_pop_parameters(self, pop, *param_names):
         """
         Get population parameters from config and evaluate them.
         """
-        config_locals = net_conf[pop].get('local_context', {})
-        param_specs = getdictvals(net_conf[pop], *param_names, as_dict=True)
-        pvals = eval_params(param_specs, params_global_context,
-                            [params_local_context, config_locals])
+        config_locals = self.net_conf[pop].get('local_context', {})
+        param_specs = getdictvals(self.net_conf[pop], *param_names, as_dict=True)
+        pvals = eval_params(param_specs, self.params_global_context,
+                            [self.params_local_context, config_locals])
         return getdictvals(pvals, *param_names)
 
-    def get_param_group(pop, group_name=None, mapping=None):
+
+    def get_param_group(self, pop, group_name=None, mapping=None):
         """
         Get a group of parameters for a population as dictionary.
         """
-        config_locals = net_conf[pop].get('local_context', {})
+        config_locals = self.net_conf[pop].get('local_context', {})
         if group_name is None:
-            param_specs = net_conf[pop]
+            param_specs = self.net_conf[pop]
         else:
-            param_specs = net_conf[pop][group_name]
+            param_specs = self.net_conf[pop][group_name]
         if mapping is not None:
             param_specs = {v: param_specs[k] for k,v in mapping.iteritems()}
-        return eval_params(param_specs, params_global_context,
-                           [params_local_context, config_locals])
+        return eval_params(param_specs, self.params_global_context,
+                           [self.params_local_context, config_locals])
 
-    def get_cell_parameters(pop):
+
+    def get_cell_parameters(self, pop):
         """
         Get PyNN cell parameters as dictionary of numerical values.
         """
-        config_locals = net_conf[pop].get('local_context', {})
-        param_specs = net_conf[pop].get('PyNN_cell_parameters', {})
-        return eval_params(param_specs, params_global_context,
-                           [params_local_context, config_locals])
+        config_locals = self.net_conf[pop].get('local_context', {})
+        param_specs = self.net_conf[pop].get('PyNN_cell_parameters', {})
+        return eval_params(param_specs, self.params_global_context,
+                           [self.params_local_context, config_locals])
 
-    def synapse_from_config(pre, post):
+
+    def synapse_from_config(self, pre, post):
         """
         Make Synapse object from config dict
         """
-        config_locals = net_conf[post].get('local_context', {})
-        syn_type, syn_params = getdictvals(net_conf[post][pre]['synapse'],
+        config_locals = self.net_conf[post].get('local_context', {})
+        syn_type, syn_params = getdictvals(self.net_conf[post][pre]['synapse'],
                                            'name', 'parameters')
         if hasattr(custom_synapses, syn_type):
             syn_class = getattr(custom_synapses, syn_type)
         else:
             syn_class = getattr(sim, syn_type)
-        syn_pvals = eval_params(syn_params, params_global_context,
-                                [params_local_context, config_locals])
-        num_contacts = net_conf[post][pre].get('num_contacts', 1)
+        syn_pvals = eval_params(syn_params, self.params_global_context,
+                                [self.params_local_context, config_locals])
+        num_contacts = self.net_conf[post][pre].get('num_contacts', 1)
         syntype_obj = syn_class(**syn_pvals)
         syntype_obj.num_contacts = num_contacts
         return syntype_obj
 
-    def connector_from_config(pre, post, rng=None):
+
+    def connector_from_config(self, pre, post, rng=None):
         """
         Make Connector object from config dict
         """
-        config_locals = net_conf[post].get('local_context', {})
-        con_type, con_params = getdictvals(net_conf[post][pre]['connector'],
+        config_locals = self.net_conf[post].get('local_context', {})
+        con_type, con_params = getdictvals(self.net_conf[post][pre]['connector'],
                                            'name', 'parameters')
         connector_class = getattr(sim, con_type)
-        con_pvals = eval_params(con_params, params_global_context,
-                               [params_local_context, config_locals])
+        con_pvals = eval_params(con_params, self.params_global_context,
+                               [self.params_local_context, config_locals])
         connector = connector_class(**con_pvals)
         if rng is not None:
             connector.rng = rng
         return connector
 
-    axon_scales = { 'mm' : 1.0, 'um': 1e-3, 'm': 1e3 }
-    axon_scale = axon_scales[cell_conf['units']['axons']]
 
-    def get_axon_coordinates(cell_def):
+    def get_axon_coordinates(self, cell_def, reject_encap=True):
         """
         Get axon coordinates for cell definition
+
+        @param  reject_encap : bool
+                Reject axons intersecting the electrode encapsulation tissue
         """
         axon_spec = cell_def['axon'].split('*')
 
         # No glob pattern : axon is axon identifier
         if len(axon_spec) == 1:
-            return np.asarray(axon_coordinates[cell_def['axon']]) * axon_scale
+            if reject_encap:
+                raise ValueError("Only possible with dynamic axon selection.")
+            return np.asarray(self.axon_coordinates[cell_def['axon']]) * self.axon_scale
 
         # With glob pattern: axon spec matches group
         candidate_axons = [
-            np.asarray(coords) * axon_scale for ax_id, coords in axon_coordinates.iteritems() if ax_id.startswith(axon_spec[0])
+            np.asarray(coords) * self.axon_scale for ax_id, coords in self.axon_coordinates.iteritems() if ax_id.startswith(axon_spec[0])
         ]
 
         # Find axon with closest end to cell center
@@ -488,6 +646,8 @@ def simulate_model(
         min_dist = 1e12
         closest_axon = None
         for ax_coords in candidate_axons:
+            if reject_encap and any(self.inside_encapsulation_layer(ax_coords)):
+                continue
             for i in 0, -1:
                 dist_end = np.linalg.norm(cell_coords - ax_coords[i])
                 if dist_end < min_dist:
@@ -496,7 +656,35 @@ def simulate_model(
 
         return closest_axon
 
-    def get_morphology_path(morphology_id, default_morphology=None):
+
+    def get_axons_for_projection(self, proj_label, reject_encap=True):
+        """
+        Get all axon trajectories belonging to a given projection
+        """
+        proj_def = next((p for p in self.cell_conf["projections"] if p["label"] == proj_label))
+        axon_patterns = proj_def['axons']
+        
+        # Collect axons that match name pattern
+        candidate_axons = {}
+        for pattern in axon_patterns:
+            axon_spec = pattern.split('*')
+            if len(axon_spec) == 1:
+                candidate_axons[axon_spec[0]] = np.asarray(
+                    self.axon_coordinates[axon_spec[0]]) * self.axon_scale
+            else:
+                for ax_id, coords in self.axon_coordinates.iteritems():
+                    if ax_id.startswith(axon_spec[0]):
+                        candidate_axons[ax_id] = np.asarray(coords) * self.axon_scale
+
+        # Reject axons that intersect encapsulation layer or electrode
+        if reject_encap:
+            for k in candidate_axons.keys():
+                if any(self.inside_encapsulation_layer(candidate_axons[k])):
+                    del candidate_axons[k]
+        return candidate_axons
+
+
+    def get_morphology_path(self, morphology_id, default_morphology=None):
         """
         Get morphology file path from morphology name.
         """
@@ -504,873 +692,884 @@ def simulate_model(
             if default_morphology is None:
                 return ValueError('No default morphology for empty morphology.')
             morphology_id = default_morphology
-        return os.path.join(morph_dir, morphology_id + '.swc')
+        return os.path.join(self.morph_dir, morphology_id + '.swc')
 
-
-    # Set NEURON integrator/solver options
-    # if emfield_rec and not emfield_stim:
-    #     sim.state.cvode.use_fast_imem(True)
-    # sim.state.cvode.cache_efficient(True) # necessary for fast_imem lfp + 33% reduction in simulation time
-
-    # Parameters to be saved to pickle file
-    saved_params = {'dopamine_depleted': DD}
 
     ############################################################################
     # POPULATIONS
     ############################################################################
-    # Define each cell population with its cell type, number of cells
-    # NOTE:
-    # - to query cell model attributes, use population[i]._cell
-    print("rank {}: starting phase POPULATIONS.".format(mpi_rank))
 
-    config_pop_labels = [k for k in net_conf.keys() if not k in
-                            ('simulation', 'electromagnetics')]
 
-    # 3D info for cell positioning
-    gpi_cell_positions = [
-        np.array(cell['transform'])[0:3, 3].reshape(-1,3) for cell in cell_conf['cells'] if
-            (cell['population'] == 'GPI')
-    ]
-
-    #===========================================================================
-    # STN POPULATION
-
-    stn_ncell_base, = get_pop_parameters('STN', 'base_population_size')
-    stn_ncell_biophys = int(stn_ncell_base * pop_scale)
-
-    #---------------------------------------------------------------------------
-    # STN cell model
-
-    # List all candidate cell definitions
-    all_cell_defs = [
-        cell for cell in cell_conf['cells'] if (cell['population'] == 'STN')
-    ]
-    for cell in all_cell_defs:
-        cell['transform'] = np.asarray(cell['transform'])
-
-    # Select cells that are eligible given electrode position
-    cell_defs = [
-        cell for cell in all_cell_defs if 
-            not intersects_encapsulation_layer(cell['transform'][0:3, 3])
-    ]
-    assert len(cell_defs) >= stn_ncell_biophys
-    cell_defs = cell_defs[:stn_ncell_biophys]
-
-    # Save positions for later
-    stn_cell_positions = np.array([cell['transform'][0:3, 3] for cell in cell_defs]) # Nx3
-
-    # Choose a random morphology for each cell
-    candidate_morphologies = np.array(cell_conf['default_morphologies']['STN'])
-    morph_indices = np.array(net_conf['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies)
-    cells_morph_paths = [
-        get_morphology_path(m) for m in candidate_morphologies[morph_indices]
-    ]
-
-    # Axons and collaterals
-    cells_axon_coords = [get_axon_coordinates(cell) for cell in cell_defs]
-    stn_collateralization_fraction = 7.0/8.0 # Koshimizu (2013): 7/8 Gpe-projecting neurons
-    stn_collat_nbranch = np.zeros((stn_ncell_biophys, 2), dtype=int)
-    stn_collat_nbranch[:, 0] = 1 # one branch at first branch point
-    stn_collat_nbranch[:, 1] = 2 # two branches at second branch point
-    # Select cells without collaterals
-    no_collat_idx = shared_rng.choice(stn_ncell_biophys,
-                        int((1.0-stn_collateralization_fraction)*stn_ncell_biophys),
-                        replace=False)
-    stn_collat_nbranch[no_collat_idx, 0] = 0
-    stn_collat_nbranch = [nbr.reshape((-1, 2)) for nbr in stn_collat_nbranch]
-
-    # Load default parameters from sim config
-    stn_cell_params = get_cell_parameters('STN')
-
-    # Add parameters from other sources
-    stn_cell_params['with_extracellular_stim'] = with_dbs and net_conf['STN'].get('with_dbs', True)
-    stn_cell_params['with_extracellular_rec'] = with_lfp and net_conf['STN'].get('with_lfp', True)
-    # stn_cell_params['seclists_with_dbs'] = np.array('axonal')
-    stn_cell_params['morphology_path'] = cells_morph_paths
-    stn_cell_params['transform'] = [cell['transform'] for cell in cell_defs]
-    ## Axon parameters
-    stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
-    stn_cell_params['collateral_branch_points_um'] = gpi_cell_positions[:stn_ncell_biophys]
-    stn_cell_params['collateral_target_points_um'] = gpi_cell_positions[:stn_ncell_biophys]
-    stn_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[100.0, 100.0]]))
-    stn_cell_params['collateral_lvl_num_branches'] = stn_collat_nbranch
-    ## DBS parameters
-    stn_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
-    stn_cell_params['electrode_coordinates_um'] = electrode_tip_point_um
-    stn_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
-
-
-    stn_type = miocinovic.StnMorphType(**stn_cell_params)
-
-    # Trace back cell indices to morphology definitions:
-    if mpi_rank == 0:
-        for param_name in 'morphology_path', 'transform':
-            saved_params.setdefault('STN', {})[param_name] = stn_cell_params[param_name]
-        saved_params.setdefault('STN', {})['cell_defs'] = cell_defs
-        # logger.debug("Mapping of STN cell indices to morphologies is:\n" +
-        #     "\n".join(("{}: {}\n".format(i, c) for i,c in enumerate(cells_morph_paths))))
-        # logger.debug("Mapping of STN cell indices to transforms is:\n" +
-        #     "\n".join(("{}: {}\n".format(i, c) for i,c in enumerate(cells_transforms))))
-
-    #---------------------------------------------------------------------------
-    # STN population
-
-    # Grid structure for calculating connectivity
-    stn_dx, = get_pop_parameters('STN', 'grid_dx')
-    stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
-
-    # Initial values for state variables
-    vinit = stn_type.default_initial_values['v']
-    initial_values = {
-        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
-    }
-
-    pop_stn = Population(stn_ncell_biophys,
-                         cellclass=stn_type,
-                         label='STN',
-                         structure=stn_grid,
-                         initial_values=initial_values)
-
-
-    # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates:
-        write_compartment_coordinates(pop_stn, out_dir, activating_function=with_dbs)
-
-    # # Check coordinates
-    # stn_gpe_all_nodes = []
-    # for cell_id in pop_stn:
-    #     model = cell_id._cell
-
-    #     # Save compartment centers
-    #     all_centers, all_n3d = morph_3d.get_segment_centers([model.get_all_sections()], samples_as_rows=True)
-    #     stn_gpe_all_nodes.extend(all_centers)
-
-    #     # Export cell
-    #     morph_io.morphology_to_PLY([model.get_all_sections()],
-    #         'STN_after_{}.ply'.format(int(cell_id)),
-    #         segment_centers=True)
-
-    #     # Check coordinates
-    #     sec_start = np.array([[h.x3d(0, sec=sec), h.y3d(0, sec=sec), h.z3d(0, sec=sec)]
-    #                             for sec in model.icell.all])
-    #     node_xyz = np.array(all_centers)
-    #     ref_coord = [17113.8, 6340.13, 6848.05]
-    #     node_diffs = node_xyz - ref_coord
-
-    #     node_dists = np.linalg.norm(node_diffs, axis=1)
-    #     if any(node_dists > 5000.0):
-    #         raise Exception('too far from STN center! Check morphology')
-
-    #---------------------------------------------------------------------------
-    # STN Surrogate spike sources
-
-    frac_surrogate, surr_rate = get_pop_parameters('STN',
-        'surrogate_fraction', 'surrogate_rate')
-
-    ncell_surrogate = int(stn_ncell_biophys * frac_surrogate)
-    if ncell_surrogate > 0:
-        pop_stn_surrogate = Population(ncell_surrogate,
-                                       sim.SpikeSourcePoisson(rate=surr_rate),
-                                       label='STN.surrogate')
-        asm_stn = sim.Assembly(pop_stn, pop_stn_surrogate,
-                               label='STN.all')
-    else:
-        asm_stn = sim.Assembly(pop_stn, label='STN.all')
-
-    stn_pop_size = asm_stn.size
-
-    #===========================================================================
-    # GPE POPULATION (prototypic)
-
-    gpe_ncell_base, frac_proto = get_pop_parameters('GPE.all',
-                        'base_population_size', 'prototypic_fraction')
-    gpe_ncell_biophys = int(gpe_ncell_base *frac_proto * pop_scale)
-
-    #---------------------------------------------------------------------------
-    # GPe cells parameters
-
-    # Select cells to simulate
-    pop_cell_defs = [
-        cell for cell in cell_conf['cells'] if
-            (cell['population'] == 'GPE') and (cell['axon'] is not None)
-    ]
-    cell_defs = pop_cell_defs[:gpe_ncell_biophys]
-
-    # Get 3D morphology properties of each cell
-    cells_transforms = [np.asarray(cell['transform']) for cell in cell_defs]
-
-    # GPe axons and collaterals
-    cells_axon_coords = [get_axon_coordinates(cell['axon']) for cell in cell_defs]
-    gpe2gpi_collateralization = 0.5 # Kita & Kitai (1994): two out of four
-
-    ## Number of branches at each level of the collateral, for each branch point
-    gpe2gpi_nbranch = np.zeros((gpe_ncell_biophys, 2), dtype=int)
-    gpe2gpi_nbranch[:, 0] = 1 # one branch at first branch point
-    gpe2gpi_nbranch[:, 1] = 2 # two branches at second branch point
-    no_collat_num = int((1.0-gpe2gpi_collateralization) * gpe_ncell_biophys)
-    no_collat_idx = shared_rng.choice(gpe_ncell_biophys, no_collat_num, replace=False)
-    gpe2gpi_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
-    gpe2stn_nbranch = [1, 2]
-    gpe_collat_nbranch = [
-        np.concatenate((gpe2gpi.reshape((-1, 2)), [gpe2stn_nbranch]), axis=0)
-            for gpe2gpi in gpe2gpi_nbranch
-    ]
-    gpe2gpi_collat_lengths = [100.0, 100.0] # 100 um in Johson & McIntyre (2008)
-    gpe2stn_collat_lengths = [250.0, 250.0]
-    gpe_collat_lvl_lengths = np.array([gpe2gpi_collat_lengths, gpe2stn_collat_lengths])
-
-    ## Branch points and target points for each collateral
-    gpi_targets = gpi_cell_positions[:gpe_ncell_biophys]
-    stn_targets = stn_cell_positions[shared_rng.choice(stn_ncell_biophys, gpe_ncell_biophys)]
-    gpe_collat_branch_pts = [
-        np.concatenate((gpi_pos, stn_pos.reshape((-1,3))), axis=0) for (gpi_pos, stn_pos) in zip(
-            gpi_targets, stn_targets)
-    ]
-
-
-    # Load default parameters from sim config
-    gpe_cell_params = get_cell_parameters('GPE.all')
-
-    # Add parameters from other sources
-    gpe_cell_params['with_extracellular_stim'] = with_dbs and net_conf['GPE.all'].get('with_dbs', True)
-    gpe_cell_params['with_extracellular_rec'] = with_lfp and net_conf['GPE.all'].get('with_lfp', True)
-    gpe_cell_params['transform'] = cells_transforms
-    ## Axon parameters
-    gpe_cell_params['termination_method'] = np.array('nodal_cutoff')
-    gpe_cell_params['netcon_source_spec'] = np.array('branch_point:1:collateral')
-    gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
-    gpe_cell_params['collateral_branch_points_um'] = gpe_collat_branch_pts
-    gpe_cell_params['collateral_target_points_um'] = gpe_collat_branch_pts
-    gpe_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(gpe_collat_lvl_lengths)
-    gpe_cell_params['collateral_lvl_num_branches'] = gpe_collat_nbranch
-    ## FEM parameters
-    gpe_cell_params['rho_extracellular_ohm_cm'] = rho_ohm_cm
-    gpe_cell_params['electrode_coordinates_um'] = electrode_tip_point_um
-    gpe_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(transfer_impedance_matrix)
-
-    proto_type = gunay.GpeProtoCellType(**gpe_cell_params)
-
-    #---------------------------------------------------------------------------
-    # GPe prototypic population
-
-    # Get common parameters for GPE cells
-    gpe_dx, frac_proto, = get_pop_parameters('GPE.all',
-                            'grid_dx', 'prototypic_fraction',)
-
-    # Grid structure for calculating connectivity
-    gpe_grid = space.Line(x0=0.0, dx=gpe_dx,
-                          y=1e6, z=0.0)
-
-    # Initial values for state variables
-    vinit = proto_type.default_initial_values['v']
-    initial_values={
-        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
-    }
-
-    pop_gpe_proto = Population(gpe_ncell_biophys,
-                               cellclass=proto_type,
-                               label='GPE.proto',
-                               structure=gpe_grid,
-                               initial_values=initial_values)
-
-    # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates:
-        write_compartment_coordinates(pop_gpe_proto, out_dir, activating_function=with_dbs)
-
-    # # Check coordinates
-    # for cell_id in pop_gpe_proto:
-    #     model = cell_id._cell
-
-    #     # Save compartment centers
-    #     all_centers, all_n3d = morph_3d.get_segment_centers([model.get_all_sections()], samples_as_rows=True)
-    #     stn_gpe_all_nodes.extend(all_centers)
-
-
-    # # Write out analytical Ztransfer
-    # def impedance_func(xyz):
-    #     x1, y1, z1 = xyz
-    #     x2, y2, z2 = electrode_tip_point_um
-    #     dist = np.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
-
-    #     if dist == 0:
-    #         dist = 0.5 # seg.diam / 2
-
-    #     # 0.01 converts rho's cm to um and ohm to megohm
-    #     return (rho_ohm_cm / 4 / np.pi) * (1 / dist) * 0.01
-
-    # stn_gpe_Zmat = np.array(
-    #     [(xyz[0], xyz[1], xyz[2], impedance_func(xyz))
-    #         for xyz in stn_gpe_all_nodes])
-
-    # np.save('transfer_impedance_matrix.npy', stn_gpe_Zmat)
-
-    #---------------------------------------------------------------------------
-    # GPE surrogate population
-
-    frac_surrogate, surr_rate = get_pop_parameters('GPE.all',
-        'surrogate_fraction', 'surrogate_rate')
-
-    ncell_surrogate = int(gpe_ncell_base * pop_scale * frac_surrogate)
-    if ncell_surrogate > 0:
-        pop_gpe_surrogate = Population(ncell_surrogate,
-                                       sim.SpikeSourcePoisson(rate=surr_rate),
-                                       label='GPE.surrogate')
-    else:
-        pop_gpe_surrogate = None
-
-    #---------------------------------------------------------------------------
-    # GPE axon population (relay)
-
-    # num_gpe_axons = (gpe_ncell_biophys + ncell_surrogate)
-
-    # # NOTE: can use any axon per cell, since they are not electrically connected
-    # gpe_conn_defs = [
-    #     c for c in cell_conf['connections'] if (c['projection'] == 'GPE-STN')
-    # ]
-
-    # gpe_axon_coords = [
-    #     get_axon_coordinates(connection['axon']) for connection in gpe_conn_defs
-    # ][:num_gpe_axons]
-
-    # # Trace back cell indices to axon definitions used:
-    # if mpi_rank == 0:
-    #     saved_params.setdefault('GPE.axons', {})['axon_definitions'] = gpe_conn_defs[:num_gpe_axons]
-
-    # # Get axon associated with cell (not necessary if no electrical connection)
-    # # gpe_axon_coords = [
-    # #     get_axon_coordinates(cell['axon']) for cell in pop_cell_defs if
-    # #         (cell['axon'] is not None)
-    # # ][:num_gpe_axons]
-
-    # # Re-use axon definitions if insufficient
-    # while len(gpe_axon_coords) < num_gpe_axons:
-    #     num_additional = num_gpe_axons - len(gpe_axon_coords)
-    #     gpe_axon_coords += gpe_axon_coords[:num_additional]
-    #     logger.warning('GPe: Re-using %d axon definitions', num_additional)
-
-    # # Cell type for axons
-    # gpe_axon_params = {
-    #     'axon_class':                   AxonFoust2011,
-    #     'streamline_coordinates_mm':    gpe_axon_coords,
-    #     'termination_method':           np.array('terminal_sequence'),
-    #     'with_extracellular':           with_lfp or with_dbs,
-    #     'electrode_coordinates_um' :    electrode_tip_point_um,
-    #     'rho_extracellular_ohm_cm' :    rho_ohm_cm,
-    # }
-
-    # gpe_axon_type = AxonRelayType(**gpe_axon_params)
-
-    # # Initial values for state variables
-    # vinit = gpe_axon_type.default_initial_values['v']
-    # initial_values={
-    #     'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
-    # }
-
-    # pop_gpe_axons = Population(num_gpe_axons,
-    #                            cellclass=gpe_axon_type,
-    #                            label='GPE.axons',
-    #                            initial_values=initial_values)
-
-    #---------------------------------------------------------------------------
-    # GPE Assembly (all GPe subtypes)
-
-    if pop_gpe_surrogate is None:
-        asm_gpe = sim.Assembly(pop_gpe_proto, pop_gpe_surrogate, label='GPE.all')
-    else:
-        asm_gpe = sim.Assembly(pop_gpe_proto, label='GPE.all')
-    gpe_pop_size = asm_gpe.size
-
-
-    #===========================================================================
-    # CTX POPULATION
-
-    #---------------------------------------------------------------------------
-    # CTX SPIKE GENERATORS
-    ctx_pop_size, = get_pop_parameters('CTX', 'base_population_size')
-    ctx_burst_params = get_param_group('CTX', 'spiking_pattern')
-    spikegen_name = ctx_burst_params.pop('algorithm')
-    spikegen_func = getattr(spikegen, spikegen_name)
-
-    ctx_spike_generator = spikegen_func(duration=sim_dur,
-                                        rng=rank_rng,
-                                        **ctx_burst_params)
-
-    ctx_ncell = int(ctx_pop_size * pop_scale)
-    pop_ctx = Population(
-        ctx_ncell,
-        cellclass=sim.SpikeSourceArray(spike_times=ctx_spike_generator),
-        label='CTX')
-
-    #---------------------------------------------------------------------------
-    # CTX AXONS
-
-    num_ctx_axons = ctx_ncell
-
-    ctx_conn_defs = [
-        c for c in cell_conf['connections'] if (c['projection'] == 'CTX-STN')
-    ]
-
-    num_axon_reused = 0
-    while len(ctx_conn_defs) < num_ctx_axons:
-        num_additional = num_ctx_axons - len(ctx_conn_defs)
-        ctx_conn_defs += ctx_conn_defs[:num_additional]
-        num_axon_reused += num_additional
-    logger.warning('CTX: Re-using %d axon definitions', num_axon_reused)
-
-    # Trace back cell indices to axon definitions used:
-    if mpi_rank == 0:
-        saved_params.setdefault('CTX.axons', {})['axon_definitions'] = ctx_conn_defs
-
-    ctx_axon_coords = [
-        get_axon_coordinates(connection['axon']) for connection in ctx_conn_defs
-    ]
-
-
-    # Cell type for axons
-    ctx_axon_params = {
-        'axon_class':                   AxonFoust2011,
-        'streamline_coordinates_mm':    ctx_axon_coords,
-        'termination_method':           np.array('any_cutoff'),
-        'with_extracellular_stim':      with_dbs and net_conf['CTX.axons'].get('with_dbs', True),
-        'with_extracellular_rec':       with_lfp and net_conf['CTX.axons'].get('with_lfp', True),
-        'electrode_coordinates_um' :    electrode_tip_point_um,
-        'rho_extracellular_ohm_cm' :    rho_ohm_cm,
-    }
-
-    # Axon collateral parameters
-    cst_stn_branch_points = [
-        stn_cell_positions[i].reshape((-1,3)) for i in shared_rng.choice(
-            stn_ncell_biophys, num_ctx_axons)
-    ]
-    ctx_axon_params['collateral_branch_points_um'] = cst_stn_branch_points
-    ctx_axon_params['collateral_target_points_um'] = cst_stn_branch_points
-    ctx_axon_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[250.0, 250.0]]))
-    ctx_axon_params['collateral_lvl_num_branches'] = [np.array([[1,2]]) for i in range(num_ctx_axons)]
-    ctx_axon_params['netcon_source_spec'] = np.array('branch_point:0:collateral')
-
-    ctx_axon_type = AxonRelayType(**ctx_axon_params)
-
-    # Initial values for state variables
-    vinit = ctx_axon_type.default_initial_values['v']
-    initial_values={
-        'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=shared_rng_pynn)
-    }
-
-    pop_ctx_axons = Population(num_ctx_axons,
-                               cellclass=ctx_axon_type,
-                               label='CTX.axons',
-                               initial_values=initial_values)
-
-    # Export 3D coordinates of compartment centers
-    if export_compartment_coordinates:
-        write_compartment_coordinates(pop_ctx_axons, out_dir, activating_function=with_dbs)
-
-    #===========================================================================
-    # STR.MSN POPULATION
-
-    # STR.MSN spike sources
-    msn_pop_size, = get_pop_parameters(
-        'STR.MSN', 'base_population_size')
-
-    msn_burst_params = get_param_group('STR.MSN', 'spiking_pattern')
-    spikegen_name = msn_burst_params.pop('algorithm')
-    spikegen_func = getattr(spikegen, spikegen_name)
-    msn_spike_generator = spikegen_func(duration=sim_dur,
-                                        rng=rank_rng,
-                                        **msn_burst_params)
-
-    pop_msn = Population(
-        int(msn_pop_size * pop_scale),
-        cellclass=sim.SpikeSourceArray(spike_times=msn_spike_generator),
-        label='STR.MSN')
-
-
-    ############################################################################
-    # EXTRACELLULAR FIELD
-    ############################################################################
-
-    if with_dbs:
-
-        # Create DBS waveform
-        pulse_train, pulse_time = stimulation.make_pulse_train(
-                                    frequency=emf_params['dbs_frequency_hz'],
-                                    phase_deg=emf_params.get('dbs_phase_deg', 0.0),
-                                    pulse_width_ms=emf_params['dbs_pulse_width_ms'],
-                                    amp0=emf_params['dbs_pulse0_amplitude_mA'],
-                                    amp1=emf_params['dbs_pulse1_amplitude_mA'],
-                                    dt=emf_params['dbs_sample_period_ms'],
-                                    duration=sim_dur,
-                                    off_intervals=emf_params['dbs_off_intervals'],
-                                    coincident_discontinuities=True)
-
-        # Play DBS waveform into GLOBAL variable for this thread
-        pulse_avec = h.Vector(pulse_train)
-        pulse_tvec = h.Vector(pulse_time)
-        dbs_started = False
-        for sec in h.allsec():
-            if h.ismembrane('xtra', sec=sec):
-                pulse_avec.play(h._ref_is_xtra, pulse_tvec, 1)
-                dbs_started = True
-                break
-
-        if not dbs_started:
-            raise Exception('Could not find mechanism "xtra" in any section.')
-
-    ############################################################################
-    # CONNECTIONS
-    ############################################################################
-
-    # All populations by label
-    all_pops = {pop.label : pop for pop in Population.all_populations}
-    all_asm = {asm.label: asm for asm in (asm_gpe,)}
-
-    # All projections by population label
-    all_proj = {pop.label : {} for pop in Population.all_populations}
-    all_proj[asm_gpe.label] = {} # add Assembly projections manually
-
-    # Make distinction between 'real' and surrogate subpopulations
-    # (note: NativeCellType is common base class for all NEURON cells)
-    biophysical_pops = [
-        pop for pop in Population.all_populations if
-            isinstance(pop.celltype, sim.cells.NativeCellType)
-            and not isinstance(pop.celltype, AxonRelayType)
-    ]
-
-    artificial_pops = [pop for pop in Population.all_populations if not isinstance(
-                        pop.celltype, sim.cells.NativeCellType)]
-
-    # Update local context for eval() statements
-    params_local_context.update(locals())
-
-    # Make all Projections directly from (pre, post) pairs in config
-    for post_label, pop_config in net_conf.iteritems():
-
-        # Get PRE Population from label
-        if post_label in all_pops.keys():
-            post_pop = all_pops[post_label]
-        elif post_label in all_asm.keys():
-            post_pop = all_asm[post_label]
+    def build_pop_stn(self):
+
+        net_conf = self.net_conf
+        cell_conf = self.cell_conf
+
+        # Define each cell population with its cell type, number of cells
+        # NOTE:
+        # - to query cell model attributes, use population[i]._cell
+        print("rank {}: starting phase POPULATIONS.".format(mpi_rank))
+ 
+
+        #===========================================================================
+        # STN POPULATION
+
+        stn_ncell_base, = self.get_pop_parameters('STN', 'base_population_size')
+        self.stn_ncell_biophys = stn_ncell_biophys = int(stn_ncell_base * self.pop_scale)
+
+        #---------------------------------------------------------------------------
+        # STN cell model
+
+        # List all candidate cell definitions
+        pop_cell_defs = [
+            cell for cell in cell_conf['cells'] if (cell['population'] == 'STN')
+        ]
+        for cell in pop_cell_defs:
+            cell['transform'] = np.asarray(cell['transform'])
+
+        # Selection final cells to be simulated
+        if self.select_cells_dynamic:
+            # Select cells that are eligible given electrode position
+            cell_defs = [
+                cell for cell in pop_cell_defs if 
+                    not self.inside_encapsulation_layer(
+                        cell['transform'][0:3, 3].reshape((1, -1)))
+            ]
+            assert len(cell_defs) >= stn_ncell_biophys
         else:
-            continue
-        print("rank {}: starting phase {} AFFERENTS.".format(mpi_rank, post_label))
+            # Select cells that had explicit axon assigned
+            cell_defs = [cell for cell in pop_cell_defs if cell['axon'] is not None]
+        
+        cell_defs = cell_defs[:stn_ncell_biophys]
+        self.stn_cell_positions = np.array(
+            [cell['transform'][0:3, 3] for cell in cell_defs]) # Nx3
 
-        # Create one Projection per post-synaptic population/assembly
-        for pre_label in pop_config.keys():
-            # get pre-synaptic Population
-            if pre_label in all_pops.keys():
-                pre_pop = all_pops[pre_label]
-            elif pre_label in all_asm.keys():
-                pre_pop = all_asm[pre_label]
+        # Choose a random morphology for each cell
+        candidate_morphologies = np.array(cell_conf['default_morphologies']['STN'])
+        morph_indices = np.array(net_conf['STN']['morphology_indices'][:stn_ncell_biophys]) % len(candidate_morphologies)
+        cells_morph_paths = [
+            self.get_morphology_path(m) for m in candidate_morphologies[morph_indices]
+        ]
+
+        # Axons and collaterals
+        cells_axon_coords = [
+            self.get_axon_coordinates(cell, reject_encap=self.select_cells_dynamic) 
+                for cell in cell_defs
+        ]
+        stn_collateralization_fraction = 7.0/8.0 # Koshimizu (2013): 7/8 Gpe-projecting neurons
+        stn_collat_nbranch = np.zeros((stn_ncell_biophys, 2), dtype=int)
+        stn_collat_nbranch[:, 0] = 1 # one branch at first branch point
+        stn_collat_nbranch[:, 1] = 2 # two branches at second branch point
+        # Select cells without collaterals
+        no_collat_idx = self.shared_rng.choice(stn_ncell_biophys,
+                            int((1.0-stn_collateralization_fraction)*stn_ncell_biophys),
+                            replace=False)
+        stn_collat_nbranch[no_collat_idx, 0] = 0
+        stn_collat_nbranch = [nbr.reshape((-1, 2)) for nbr in stn_collat_nbranch]
+
+        # Load default parameters from sim config
+        stn_cell_params = self.get_cell_parameters('STN')
+
+        # Add parameters from other sources
+        stn_cell_params['with_extracellular_stim'] = self.with_dbs and net_conf['STN'].get('with_dbs', True)
+        stn_cell_params['with_extracellular_rec'] = self.with_lfp and net_conf['STN'].get('with_lfp', True)
+        # stn_cell_params['seclists_with_dbs'] = np.array('axonal')
+        stn_cell_params['morphology_path'] = cells_morph_paths
+        stn_cell_params['transform'] = [cell['transform'] for cell in cell_defs]
+        ## Axon parameters
+        stn_cell_params['streamline_coordinates_mm'] = cells_axon_coords
+        stn_cell_params['collateral_branch_points_um'] = self.gpi_cell_positions[:stn_ncell_biophys]
+        stn_cell_params['collateral_target_points_um'] = self.gpi_cell_positions[:stn_ncell_biophys]
+        stn_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[100.0, 100.0]]))
+        stn_cell_params['collateral_lvl_num_branches'] = stn_collat_nbranch
+        ## DBS parameters
+        stn_cell_params['rho_extracellular_ohm_cm'] = self.emf_params['rho_extracellular_ohm_cm']
+        stn_cell_params['electrode_coordinates_um'] = self.emf_params['electrode_tip_point_um']
+        stn_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(self.transfer_impedance_matrix)
+
+
+        stn_type = miocinovic.StnMorphType(**stn_cell_params)
+
+        # Trace back cell indices to morphology definitions:
+        if mpi_rank == 0:
+            for param_name in 'morphology_path', 'transform':
+                self.saved_params.setdefault('STN', {})[param_name] = stn_cell_params[param_name]
+            self.saved_params.setdefault('STN', {})['cell_defs'] = cell_defs
+            # logger.debug("Mapping of STN cell indices to morphologies is:\n" +
+            #     "\n".join(("{}: {}\n".format(i, c) for i,c in enumerate(cells_morph_paths))))
+            # logger.debug("Mapping of STN cell indices to transforms is:\n" +
+            #     "\n".join(("{}: {}\n".format(i, c) for i,c in enumerate(cells_transforms))))
+
+        #---------------------------------------------------------------------------
+        # STN population
+
+        # Grid structure for calculating connectivity
+        stn_dx, = self.get_pop_parameters('STN', 'grid_dx')
+        stn_grid = space.Line(x0=0.0, dx=stn_dx, y=0.0, z=0.0)
+
+        # Initial values for state variables
+        vinit = stn_type.default_initial_values['v']
+        initial_values = {
+            'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=self.shared_rng_pynn)
+        }
+
+        self.pop_stn = Population(
+                            stn_ncell_biophys,
+                            cellclass=stn_type,
+                            label='STN',
+                            structure=stn_grid,
+                            initial_values=initial_values)
+
+
+        # Export 3D coordinates of compartment centers
+        if self.export_compartment_coordinates:
+            write_compartment_coordinates(self.pop_stn, self.out_dir,
+                                          activating_function=self.with_dbs)
+
+        # # Check coordinates
+        # stn_gpe_all_nodes = []
+        # for cell_id in pop_stn:
+        #     model = cell_id._cell
+
+        #     # Save compartment centers
+        #     all_centers, all_n3d = morph_3d.get_segment_centers([model.get_all_sections()], samples_as_rows=True)
+        #     stn_gpe_all_nodes.extend(all_centers)
+
+        #     # Export cell
+        #     morph_io.morphology_to_PLY([model.get_all_sections()],
+        #         'STN_after_{}.ply'.format(int(cell_id)),
+        #         segment_centers=True)
+
+        #     # Check coordinates
+        #     sec_start = np.array([[h.x3d(0, sec=sec), h.y3d(0, sec=sec), h.z3d(0, sec=sec)]
+        #                             for sec in model.icell.all])
+        #     node_xyz = np.array(all_centers)
+        #     ref_coord = [17113.8, 6340.13, 6848.05]
+        #     node_diffs = node_xyz - ref_coord
+
+        #     node_dists = np.linalg.norm(node_diffs, axis=1)
+        #     if any(node_dists > 5000.0):
+        #         raise Exception('too far from STN center! Check morphology')
+
+        #---------------------------------------------------------------------------
+        # STN Surrogate spike sources
+
+        frac_surrogate, surr_rate = self.get_pop_parameters('STN',
+            'surrogate_fraction', 'surrogate_rate')
+
+        ncell_surrogate = int(stn_ncell_biophys * frac_surrogate)
+        if ncell_surrogate > 0:
+            self.pop_stn_surrogate = Population(ncell_surrogate,
+                                           sim.SpikeSourcePoisson(rate=surr_rate),
+                                           label='STN.surrogate')
+            self.asm_stn = sim.Assembly(self.pop_stn, self.pop_stn_surrogate,
+                                   label='STN.all')
+        else:
+            self.asm_stn = sim.Assembly(self.pop_stn, label='STN.all')
+
+        # Total number of STN cells
+        self.stn_ncell_surrogate = ncell_surrogate
+        self.stn_ncell_total = self.asm_stn.size
+
+
+    def build_pop_gpe(self):
+
+        #===========================================================================
+        # GPE POPULATION (prototypic)
+
+        gpe_ncell_base, frac_proto = self.get_pop_parameters('GPE.all',
+                            'base_population_size', 'prototypic_fraction')
+        gpe_ncell_biophys = int(gpe_ncell_base * frac_proto * self.pop_scale)
+
+        #---------------------------------------------------------------------------
+        # GPe cells parameters
+
+        # Select cells to simulate
+        pop_cell_defs = [
+            cell for cell in self.cell_conf['cells'] if (
+                cell['population'] == 'GPE') # and (cell['axon'] is not None)
+        ]
+        for cell in pop_cell_defs:
+            cell['transform'] = np.asarray(cell['transform'])
+        
+        # Selection final cells to be simulated
+        if self.select_cells_dynamic:
+            # Select cells that are eligible given electrode position
+            cell_defs = [
+                cell for cell in pop_cell_defs if 
+                    not self.inside_encapsulation_layer(
+                        cell['transform'][0:3, 3].reshape((1, -1)))
+            ]
+            assert len(cell_defs) >= self.stn_ncell_biophys
+        else:
+            # Select cells that had explicit axon assigned
+            cell_defs = [cell for cell in pop_cell_defs if cell['axon'] is not None]
+        cell_defs = cell_defs[:gpe_ncell_biophys]
+
+        # GPe axons and collaterals
+        cells_axon_coords = [
+            self.get_axon_coordinates(cell, reject_encap=self.select_cells_dynamic)
+                for cell in cell_defs
+        ]
+        gpe2gpi_collateralization = 0.5 # Kita & Kitai (1994): two out of four
+
+        ## Number of branches at each level of the collateral, for each branch point
+        gpe2gpi_nbranch = np.zeros((gpe_ncell_biophys, 2), dtype=int)
+        gpe2gpi_nbranch[:, 0] = 1 # one branch at first branch point
+        gpe2gpi_nbranch[:, 1] = 2 # two branches at second branch point
+        no_collat_num = int((1.0-gpe2gpi_collateralization) * gpe_ncell_biophys)
+        no_collat_idx = self.shared_rng.choice(gpe_ncell_biophys, no_collat_num, replace=False)
+        gpe2gpi_nbranch[no_collat_idx, 0] = 0 # cells without collaterals
+        gpe2stn_nbranch = [1, 2]
+        gpe_collat_nbranch = [
+            np.concatenate((gpe2gpi.reshape((-1, 2)), [gpe2stn_nbranch]), axis=0)
+                for gpe2gpi in gpe2gpi_nbranch
+        ]
+        gpe2gpi_collat_lengths = [100.0, 100.0] # 100 um in Johson & McIntyre (2008)
+        gpe2stn_collat_lengths = [250.0, 250.0]
+        gpe_collat_lvl_lengths = np.array([gpe2gpi_collat_lengths, gpe2stn_collat_lengths])
+
+        ## Branch points and target points for each collateral
+        gpi_targets = self.gpi_cell_positions[:gpe_ncell_biophys]
+        stn_targets = self.stn_cell_positions[self.shared_rng.choice(
+            self.stn_ncell_biophys, gpe_ncell_biophys)]
+        gpe_collat_branch_pts = [
+            np.concatenate((gpi_pos, stn_pos.reshape((-1,3))), axis=0) for (gpi_pos, stn_pos) in zip(
+                gpi_targets, stn_targets)
+        ]
+
+
+        # Load default parameters from sim config
+        gpe_cell_params = self.get_cell_parameters('GPE.all')
+
+        # Add parameters from other sources
+        gpe_cell_params['with_extracellular_stim'] = self.with_dbs and self.net_conf['GPE.all'].get('with_dbs', True)
+        gpe_cell_params['with_extracellular_rec'] = self.with_lfp and self.net_conf['GPE.all'].get('with_lfp', True)
+        gpe_cell_params['transform'] = [cell['transform'] for cell in cell_defs]
+        
+        ## Axon parameters
+        gpe_cell_params['termination_method'] = np.array('nodal_cutoff')
+        gpe_cell_params['netcon_source_spec'] = np.array('branch_point:1:collateral')
+        gpe_cell_params['streamline_coordinates_mm'] = cells_axon_coords
+        gpe_cell_params['collateral_branch_points_um'] = gpe_collat_branch_pts
+        gpe_cell_params['collateral_target_points_um'] = gpe_collat_branch_pts
+        gpe_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(gpe_collat_lvl_lengths)
+        gpe_cell_params['collateral_lvl_num_branches'] = gpe_collat_nbranch
+        
+        ## FEM parameters
+        gpe_cell_params['rho_extracellular_ohm_cm'] = self.emf_params['rho_extracellular_ohm_cm']
+        gpe_cell_params['electrode_coordinates_um'] = self.emf_params['electrode_tip_point_um']
+        gpe_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(self.transfer_impedance_matrix)
+
+        proto_type = gunay.GpeProtoCellType(**gpe_cell_params)
+
+        #---------------------------------------------------------------------------
+        # GPe prototypic population
+
+        # Get common parameters for GPE cells
+        gpe_dx, frac_proto, = self.get_pop_parameters('GPE.all',
+                                'grid_dx', 'prototypic_fraction',)
+
+        # Grid structure for calculating connectivity
+        gpe_grid = space.Line(x0=0.0, dx=gpe_dx,
+                              y=1e6, z=0.0)
+
+        # Initial values for state variables
+        vinit = proto_type.default_initial_values['v']
+        initial_values={
+            'v': RandomDistribution('uniform', (vinit-5, vinit+5),
+                                    rng=self.shared_rng_pynn)
+        }
+
+        self.pop_gpe_proto = Population(gpe_ncell_biophys,
+                                   cellclass=proto_type,
+                                   label='GPE.proto',
+                                   structure=gpe_grid,
+                                   initial_values=initial_values)
+
+        # Export 3D coordinates of compartment centers
+        if self.export_compartment_coordinates:
+            write_compartment_coordinates(self.pop_gpe_proto, self.out_dir,
+                                          activating_function=self.with_dbs)
+
+        # # Check coordinates
+        # for cell_id in pop_gpe_proto:
+        #     model = cell_id._cell
+
+        #     # Save compartment centers
+        #     all_centers, all_n3d = morph_3d.get_segment_centers([model.get_all_sections()], samples_as_rows=True)
+        #     stn_gpe_all_nodes.extend(all_centers)
+
+
+        # # Write out analytical Ztransfer
+        # def impedance_func(xyz):
+        #     x1, y1, z1 = xyz
+        #     x2, y2, z2 = electrode_tip_point_um
+        #     dist = np.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
+
+        #     if dist == 0:
+        #         dist = 0.5 # seg.diam / 2
+
+        #     # 0.01 converts rho's cm to um and ohm to megohm
+        #     return (rho_ohm_cm / 4 / np.pi) * (1 / dist) * 0.01
+
+        # stn_gpe_Zmat = np.array(
+        #     [(xyz[0], xyz[1], xyz[2], impedance_func(xyz))
+        #         for xyz in stn_gpe_all_nodes])
+
+        # np.save('transfer_impedance_matrix.npy', stn_gpe_Zmat)
+
+        #---------------------------------------------------------------------------
+        # GPE surrogate population
+
+        frac_surrogate, surr_rate = self.get_pop_parameters('GPE.all',
+            'surrogate_fraction', 'surrogate_rate')
+
+        ncell_surrogate = int(gpe_ncell_base * self.pop_scale * frac_surrogate)
+        if ncell_surrogate > 0:
+            self.pop_gpe_surrogate = Population(ncell_surrogate,
+                                           sim.SpikeSourcePoisson(rate=surr_rate),
+                                           label='GPE.surrogate')
+        else:
+            self.pop_gpe_surrogate = None
+
+        #---------------------------------------------------------------------------
+        # GPE Assembly (all GPe subtypes)
+
+        if self.pop_gpe_surrogate is None:
+            self.asm_gpe = sim.Assembly(self.pop_gpe_proto,
+                                        self.pop_gpe_surrogate, label='GPE.all')
+        else:
+            self.asm_gpe = sim.Assembly(self.pop_gpe_proto, label='GPE.all')
+
+        self.gpe_ncell_total = self.asm_gpe.size
+        self.gpe_ncell_biophys = gpe_ncell_biophys
+        self.gpe_ncell_surrogate = ncell_surrogate
+
+
+    def build_pop_ctx(self):
+        """
+        CTX POPULATION
+        """
+
+        #---------------------------------------------------------------------------
+        # CTX SPIKE GENERATORS
+        ctx_pop_size, = self.get_pop_parameters('CTX', 'base_population_size')
+        ctx_burst_params = self.get_param_group('CTX', 'spiking_pattern')
+        spikegen_name = ctx_burst_params.pop('algorithm')
+        spikegen_func = getattr(spikegen, spikegen_name)
+
+        ctx_spike_generator = spikegen_func(duration=self.sim_dur,
+                                            rng=self.rank_rng,
+                                            **ctx_burst_params)
+
+        ctx_ncell = int(ctx_pop_size * self.pop_scale)
+        self.pop_ctx = Population(
+            ctx_ncell,
+            cellclass=sim.SpikeSourceArray(spike_times=ctx_spike_generator),
+            label='CTX')
+
+        #---------------------------------------------------------------------------
+        # CTX AXONS
+
+        num_ctx_axons = ctx_ncell
+
+        ctx_axon_defs = self.get_axons_for_projection('CTX-STN', reject_encap=self.select_cells_dynamic)
+
+        if self.select_cells_dynamic:
+            # Axon coordinates have been pre-filtered based on encapsulation layer
+            ctx_axon_coords = ctx_axon_defs.values()
+        else:
+            # Select explicitly assigned axons
+            ctx_axon_coords = [
+                ctx_axon_defs[c['axon']] for c in self.cell_conf['connections'] if (
+                    c['projection'] == 'CTX-STN')
+            ]
+
+        num_axon_reused = 0
+        while len(ctx_axon_coords) < num_ctx_axons:
+            num_additional = num_ctx_axons - len(ctx_axon_coords)
+            ctx_axon_coords += ctx_axon_coords[:num_additional]
+            num_axon_reused += num_additional
+        logger.warning('CTX: Re-using %d axon definitions', num_axon_reused)
+
+        # Trace back cell indices to axon definitions used:
+        if mpi_rank == 0:
+            self.saved_params.setdefault('CTX.axons', {})['axon_definitions'] = ctx_axon_defs.keys()
+
+
+        # Cell type for axons
+        ctx_axon_params = {
+            'axon_class':                   AxonFoust2011,
+            'streamline_coordinates_mm':    ctx_axon_coords,
+            'termination_method':           np.array('any_cutoff'),
+            'with_extracellular_stim':      self.with_dbs and self.net_conf['CTX.axons'].get('with_dbs', True),
+            'with_extracellular_rec':       self.with_lfp and self.net_conf['CTX.axons'].get('with_lfp', True),
+            'electrode_coordinates_um' :    self.emf_params['electrode_tip_point_um'],
+            'rho_extracellular_ohm_cm' :    self.emf_params['rho_extracellular_ohm_cm'],
+        }
+
+        # Axon collateral parameters
+        cst_stn_branch_points = [
+            self.stn_cell_positions[i].reshape((-1,3)) for i in self.shared_rng.choice(
+                self.stn_ncell_biophys, num_ctx_axons)
+        ]
+        ctx_axon_params['collateral_branch_points_um'] = cst_stn_branch_points
+        ctx_axon_params['collateral_target_points_um'] = cst_stn_branch_points
+        ctx_axon_params['collateral_lvl_lengths_um'] = ArrayParameter(np.array([[250.0, 250.0]]))
+        ctx_axon_params['collateral_lvl_num_branches'] = [np.array([[1,2]]) for i in range(num_ctx_axons)]
+        ctx_axon_params['netcon_source_spec'] = np.array('branch_point:0:collateral')
+
+        ctx_axon_type = AxonRelayType(**ctx_axon_params)
+
+        # Initial values for state variables
+        vinit = ctx_axon_type.default_initial_values['v']
+        initial_values={
+            'v': RandomDistribution('uniform', (vinit-5, vinit+5), rng=self.shared_rng_pynn)
+        }
+
+        pop_ctx_axons = Population(num_ctx_axons,
+                                   cellclass=ctx_axon_type,
+                                   label='CTX.axons',
+                                   initial_values=initial_values)
+
+        # Export 3D coordinates of compartment centers
+        if self.export_compartment_coordinates:
+            write_compartment_coordinates(pop_ctx_axons, self.out_dir,
+                                          activating_function=self.with_dbs)
+
+
+    def build_pop_msn(self):
+        """
+        STR.MSN POPULATION
+        """
+
+        # STR.MSN spike sources
+        msn_pop_size, = self.get_pop_parameters(
+            'STR.MSN', 'base_population_size')
+
+        msn_burst_params = self.get_param_group('STR.MSN', 'spiking_pattern')
+        spikegen_name = msn_burst_params.pop('algorithm')
+        spikegen_func = getattr(spikegen, spikegen_name)
+        msn_spike_generator = spikegen_func(duration=self.sim_dur,
+                                            rng=self.rank_rng,
+                                            **msn_burst_params)
+
+        self.pop_msn = Population(
+            int(msn_pop_size * self.pop_scale),
+            cellclass=sim.SpikeSourceArray(spike_times=msn_spike_generator),
+            label='STR.MSN')
+
+
+    def init_extracellular_field(self):
+        """
+        ############################################################################
+        # EXTRACELLULAR FIELD
+        ############################################################################
+        """
+
+        emf_params = self.emf_params
+
+        if self.with_dbs:
+
+            # Create DBS waveform
+            pulse_train, pulse_time = stimulation.make_pulse_train(
+                frequency=emf_params['dbs_frequency_hz'],
+                phase_deg=emf_params.get('dbs_phase_deg', 0.0),
+                pulse_width_ms=emf_params['dbs_pulse_width_ms'],
+                amp0=emf_params['dbs_pulse0_amplitude_mA'],
+                amp1=emf_params['dbs_pulse1_amplitude_mA'],
+                dt=emf_params['dbs_sample_period_ms'],
+                duration=self.sim_dur,
+                off_intervals=emf_params['dbs_off_intervals'],
+                coincident_discontinuities=True)
+
+            # Play DBS waveform into GLOBAL variable for this thread
+            pulse_avec = h.Vector(pulse_train)
+            pulse_tvec = h.Vector(pulse_time)
+            dbs_started = False
+            for sec in h.allsec():
+                if h.ismembrane('xtra', sec=sec):
+                    pulse_avec.play(h._ref_is_xtra, pulse_tvec, 1)
+                    dbs_started = True
+                    break
+
+            if not dbs_started:
+                raise Exception('Could not find mechanism "xtra" in any section.')
+
+
+    def build_connections(self):
+        """
+        ############################################################################
+        # CONNECTIONS
+        ############################################################################
+        """
+
+        # Make all Projections directly from (pre, post) pairs in config
+        for post_label, pop_config in self.net_conf.iteritems():
+
+            # Get PRE Population from label
+            if post_label in self.all_pops.keys():
+                post_pop = self.all_pops[post_label]
+            elif post_label in self.all_asm.keys():
+                post_pop = self.all_asm[post_label]
             else:
                 continue
-            proj_config = pop_config[pre_label]
+            print("rank {}: starting phase {} AFFERENTS.".format(mpi_rank, post_label))
 
-            # make PyNN Projection
-            all_proj[pre_label][post_label] = sim.Projection(
-                pre_pop, post_pop,
-                connector=connector_from_config(pre_label, post_label, rng=shared_rng_pynn),
-                synapse_type=synapse_from_config(pre_label, post_label),
-                receptor_type=proj_config['receptor_type'])
+            # Create one Projection per post-synaptic population/assembly
+            for pre_label in pop_config.keys():
+                # get pre-synaptic Population
+                if pre_label in self.all_pops.keys():
+                    pre_pop = self.all_pops[pre_label]
+                elif pre_label in self.all_asm.keys():
+                    pre_pop = self.all_asm[pre_label]
+                else:
+                    continue
+                proj_config = pop_config[pre_label]
 
-    #---------------------------------------------------------------------------
-    # Post-constructional modifications
+                # make PyNN Projection
+                connector = self.connector_from_config(pre_label, post_label,
+                                    rng=self.shared_rng_pynn)
 
-    # Reduce dendritic branching and number of GLU synapses in DD
-    num_prune = net_conf['STN'].get('prune_dendritic_GLUR', 0)
-    if DD and num_prune > 0:
-        # PD: dendritic AMPA & NMDA-NR2B/D afferents pruned
-        num_disabled = np.zeros(pop_stn.size)
-        for conn in all_proj['CTX']['STN'].connections:
-            if num_disabled[conn.postsynaptic_index] < num_prune:
-                conn.GLUsyn_gmax_AMPA = 0.0
-                conn.GLUsyn_gmax_NMDA = 0.0
-                num_disabled[conn.postsynaptic_index] += 1
+                self.all_proj[pre_label][post_label] = sim.Projection(
+                    pre_pop, post_pop,
+                    connector=connector,
+                    synapse_type=self.synapse_from_config(pre_label, post_label),
+                    receptor_type=proj_config['receptor_type'])
 
-    # Disable somatic/proximal fast NMDA subunits
-    if net_conf['STN'].get('disable_somatic_NR2A', False):
-        # NOTE: config uses a separate NMDAsyn point process for somatic NMDAR
-        all_proj['CTX']['STN'].set(NMDAsynTM_gmax_NMDA=0.0)
+        #---------------------------------------------------------------------------
+        # Post-constructional modifications
 
-    # Only allow GABA-B currents on reported fraction of cells
-    # (can also do this using separate Projections with only GABA-B/GABA-A)
-    num_without_GABAB = net_conf['STN'].get('num_cell_without_GABAB', 0)
-    if num_without_GABAB > 0:
-        # Pick subset of cells with GABA-B disabled
-        pop_sample = pop_stn.sample(num_without_GABAB, rng=shared_rng_pynn)
-        stn_ids = pop_sample.all_cells  # global ids
-        for pre in 'GPE.all', 'GPE.proto', 'GPE.surrogate':
-            if pre in all_proj and 'STN' in all_proj[pre]:
-                for conn in all_proj[pre]['STN'].connections:
-                    if conn.postsynaptic_cell in stn_ids:
-                        conn.gmax_GABAB = 0.0
-                        print('Disabled GABAB on STN cell with id {}'.format(conn.postsynaptic_cell))
+        # Reduce dendritic branching and number of GLU synapses in DD
+        num_prune = self.net_conf['STN'].get('prune_dendritic_GLUR', 0)
+        if self.DD and num_prune > 0:
+            # PD: dendritic AMPA & NMDA-NR2B/D afferents pruned
+            num_disabled = np.zeros(self.pop_stn.size)
+            for conn in self.all_proj['CTX']['STN'].connections:
+                if num_disabled[conn.postsynaptic_index] < num_prune:
+                    conn.GLUsyn_gmax_AMPA = 0.0
+                    conn.GLUsyn_gmax_NMDA = 0.0
+                    num_disabled[conn.postsynaptic_index] += 1
 
-    #---------------------------------------------------------------------------
-    # Sanity check: make sure all populations and projections are instantiated
+        # Disable somatic/proximal fast NMDA subunits
+        if self.net_conf['STN'].get('disable_somatic_NR2A', False):
+            # NOTE: config uses a separate NMDAsyn point process for somatic NMDAR
+            self.all_proj['CTX']['STN'].set(NMDAsynTM_gmax_NMDA=0.0)
 
-    undefined_pops = [cpop for cpop in config_pop_labels if (
-                        cpop not in all_pops and cpop not in all_asm)]
-    undefined_proj = [(pre, post) for (post, pre) in net_conf.items() if (
-                        (pre in config_pop_labels and post in config_pop_labels)
-                        and (pre not in all_proj or post not in all_proj[pre]))]
+        # Only allow GABA-B currents on reported fraction of cells
+        # (can also do this using separate Projections with only GABA-B/GABA-A)
+        num_without_GABAB = self.net_conf['STN'].get('num_cell_without_GABAB', 0)
+        if num_without_GABAB > 0:
+            # Pick subset of cells with GABA-B disabled
+            pop_sample = self.pop_stn.sample(num_without_GABAB, rng=self.shared_rng_pynn)
+            stn_ids = pop_sample.all_cells  # global ids
+            for pre in 'GPE.all', 'GPE.proto', 'GPE.surrogate':
+                if pre in self.all_proj and 'STN' in self.all_proj[pre]:
+                    for conn in self.all_proj[pre]['STN'].connections:
+                        if conn.postsynaptic_cell in stn_ids:
+                            conn.gmax_GABAB = 0.0
+                            print('Disabled GABAB on STN cell with id {}'.format(conn.postsynaptic_cell))
 
-    err_msg = ''
-    if len(undefined_pops) > 0:
-        err_msg += ("\nFollowing populations in config file were not "
-                    "instantiated in simulator: {}".format(undefined_pops))
 
-    if len(undefined_proj) > 0:
-        err_msg += ("\nFollowing projections in config file were not "
-                    "instantiated in simulator: {}".format(undefined_proj))
+    def check_network_integrity(self):
+        """
+        Sanity check: make sure all populations and projections are instantiated
+        """
+        config_pop_labels = [
+            k for k in self.net_conf.keys() if k not in ('simulation', 'electromagnetics')
+        ]
 
-    if err_msg:
-        raise Exception(err_msg)
+        undefined_pops = [
+            cpop for cpop in config_pop_labels if (
+                cpop not in self.all_pops and cpop not in self.all_asm)
+        ]
+        
+        undefined_proj = [
+            (pre, post) for (post, pre) in self.net_conf.items() if (
+                (pre in config_pop_labels and post in config_pop_labels)
+                and (pre not in self.all_proj or post not in self.all_proj[pre]))
+        ]
+
+        err_msg = ''
+        if len(undefined_pops) > 0:
+            err_msg += ("\nFollowing populations in config file were not "
+                        "instantiated in simulator: {}".format(undefined_pops))
+
+        if len(undefined_proj) > 0:
+            err_msg += ("\nFollowing projections in config file were not "
+                        "instantiated in simulator: {}".format(undefined_proj))
+
+        if err_msg:
+            raise Exception(err_msg)
+
 
     ############################################################################
     # RECORDING
     ############################################################################
-    print("rank {}: starting phase RECORDING.".format(mpi_rank))
 
-    # Default traces
-    traces_biophys = {
-        'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
-    }
+    def setup_recording(self):
+        """
+        Record all traces.
+        """
+    
+        print("rank {}: starting phase RECORDING.".format(mpi_rank))
 
-    for pop in biophysical_pops:
-        pop.record(traces_biophys.items(), sampling_interval=.05)
+        # Default traces
+        traces_biophys = {
+            'Vm':       {'sec':'soma[0]', 'loc':0.5, 'var':'v'},
+        }
 
-    for pop in all_pops.values():
-        pop.record(['spikes'], sampling_interval=.05)
+        for pop in self.biophysical_pops:
+            pop.record(traces_biophys.items(), sampling_interval=.05)
 
-    if with_lfp:
-        for pop in Population.all_populations:
-            if pop.celltype.has_parameter('with_extracellular_rec'):
-                # Check if there is at least one cell with extracellular mechanisms
-                record_pop_lfp = reduce(
-                    lambda x,y: x or y,
-                    pop.celltype.parameter_space['with_extracellular_rec'])
-                if record_pop_lfp:
-                    pop.record(['lfp'], sampling_interval=.05)
+        for pop in self.all_pops.values():
+            pop.record(['spikes'], sampling_interval=.05)
 
-    # Traces defined in config file
-    for pop_label, pop_config in net_conf.iteritems():
-        if 'traces' not in pop_config:
-            continue
-        if pop_label in all_pops:
-            target_pop = all_pops[pop_label]
-        elif pop_label in all_asm:
-            target_pop = all_asm[pop_label]
-        else:
-            raise ValueError("Unknown population to record from: {}".format(pop_label))
+        if self.with_lfp:
+            for pop in Population.all_populations:
+                if pop.celltype.has_parameter('with_extracellular_rec'):
+                    # Check if there is at least one cell with extracellular mechanisms
+                    record_pop_lfp = reduce(
+                        lambda x,y: x or y,
+                        pop.celltype.parameter_space['with_extracellular_rec'])
+                    if record_pop_lfp:
+                        pop.record(['lfp'], sampling_interval=.05)
 
-        # Translate trace group specifier to Population.record() call
-        for trace_group in pop_config['traces']:
-            pop_sample = trace_group['cells']
-            if pop_sample in (':', 'all'):
-                target_cells = target_pop
-            elif isinstance(pop_sample, int):
-                target_cells = target_pop.sample(pop_sample, rng=shared_rng_pynn)
-            elif isinstance(pop_sample, (str, unicode)):
-                slice_args = [int(i) if i!='' else None for i in pop_sample.split(':')]
-                target_cells = target_pop[slice(*slice_args)]
-            elif isinstance(pop_sample, list):
-                target_cells = target_pop[pop_sample]
+        # Traces defined in config file
+        for pop_label, pop_config in self.net_conf.iteritems():
+            if 'traces' not in pop_config:
+                continue
+            if pop_label in self.all_pops:
+                target_pop = self.all_pops[pop_label]
+            elif pop_label in self.all_asm:
+                target_pop = self.all_asm[pop_label]
             else:
-                raise ValueError("Cannot interpret cell indices '{}'".format(pop_sample))
-            target_cells.record(trace_group['specs'].items(),
-                                sampling_interval=trace_group['sampling_period'])
+                raise ValueError("Unknown population to record from: {}".format(pop_label))
+
+            # Translate trace group specifier to Population.record() call
+            for trace_group in pop_config['traces']:
+                pop_sample = trace_group['cells']
+                if pop_sample in (':', 'all'):
+                    target_cells = target_pop
+                elif isinstance(pop_sample, int):
+                    target_cells = target_pop.sample(pop_sample, rng=self.shared_rng_pynn)
+                elif isinstance(pop_sample, (str, unicode)):
+                    slice_args = [int(i) if i!='' else None for i in pop_sample.split(':')]
+                    target_cells = target_pop[slice(*slice_args)]
+                elif isinstance(pop_sample, list):
+                    target_cells = target_pop[pop_sample]
+                else:
+                    raise ValueError("Cannot interpret cell indices '{}'".format(pop_sample))
+                target_cells.record(trace_group['specs'].items(),
+                                    sampling_interval=trace_group['sampling_period'])
 
 
     ############################################################################
     # WRITE PARAMETERS
     ############################################################################
-    print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
-
-    # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
-    #       - cannot perform any gather() operations before initializing MPI transfer
-    #       - must do gather() operations on all nodes
-
-    # Save cell information
-    for pop in all_pops.values() + all_asm.values():
-        pop_params = saved_params.setdefault(pop.label, {})
-        pop_cell_gids = list(pop.all_cells.astype(int))
-        pop_subcell_gids = sum((sim.state.get_spkgids(gid) for gid in pop_cell_gids), [])
-        pop_params['gids'] = pop_cell_gids + pop_subcell_gids
-
-    # Save connection information
-    for pre_pop, post_pops in all_proj.iteritems():
-        saved_params.setdefault(pre_pop, {})
-        for post_pop, proj in post_pops.iteritems():
-
-            # Plot connectivity matrix ('O' is connection, ' ' is no connection)
-            utf_matrix, float_matrix = connection_plot(proj)
-            # max_line_length = 500
-            # if mpi_rank == 0 and proj.post.size < max_line_length:
-            #     logger.debug("{}->{} connectivity matrix (dim[0,1] = [src,target]: \n".format(proj.pre.label, proj.post.label) + utf_matrix)
-
-            # This does an mpi gather() on all the parameters
-            conn_params = ["delay", "weight"]
-            gsyn_params = ['gmax_AMPA', 'gmax_NMDA', 'gmax_GABAA', 'gmax_GABAB']
-            conn_params.extend([
-                p for p in gsyn_params if p in proj.synapse_type.default_parameters
-            ])
-            pre_post_params = np.array(proj.get(conn_params, format="list",
-                                       gather='all', multiple_synapses='sum'))
-
-            # Sanity check: minimum and maximum delays and weights
-            mind = min(pre_post_params[:,2])
-            maxd = max(pre_post_params[:,2])
-            minw = min(pre_post_params[:,3])
-            maxw = max(pre_post_params[:,3])
-
-            if mpi_rank == 0:
-                logger.debug(
-                    "Error check for projection {pre}->{post}:\n"
-                    "    - delay  [min, max] = [{mind}, {maxd}]\n"
-                    "    - weight [min, max] = [{minw}, {maxw}]\n".format(
-                        pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
-                        minw=minw, maxw=maxw))
-
-            # Save all connectivity pairs, using cell indices, and GIDs
-            pop_idx_pairs = [tuple(pair) for pair in pre_post_params[:, 0:2].astype(int)]
-            cell_gid_pairs = []
-            for conn in proj.connections:
-                if hasattr(conn, 'presynaptic_gid'):
-                    cell_gid_pairs.append((conn.presynaptic_gid, conn.postsynaptic_gid))
-                else:
-                    cell_gid_pairs.append((int(conn.presynaptic_cell), int(conn.postsynaptic_cell)))
-
-            # Append to saved dictionary
-            proj_params = saved_params[pre_pop].setdefault(post_pop, {})
-            proj_params['conn_matrix'] = float_matrix
-            proj_params['conpair_pop_indices'] = pop_idx_pairs
-            proj_params['conpair_gids'] = cell_gid_pairs
-            proj_params['conpair_pvals'] = pre_post_params
-            proj_params['conpair_pnames'] = conn_params
 
 
-    # Write model parameters
-    print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
-    if mpi_rank==0 and output is not None:
+    def save_parameters(self):
+
+        print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
+
+        # NOTE: - any call to Population.get() Projection.get() does a ParallelContext.gather()
+        #       - cannot perform any gather() operations before initializing MPI transfer
+        #       - must do gather() operations on all nodes
+
+        # Save cell information
+        for pop in self.all_pops.values() + self.all_asm.values():
+            pop_params = self.saved_params.setdefault(pop.label, {})
+            pop_cell_gids = list(pop.all_cells.astype(int))
+            pop_subcell_gids = sum((sim.state.get_spkgids(gid) for gid in pop_cell_gids), [])
+            pop_params['gids'] = pop_cell_gids + pop_subcell_gids
+
+        # Save connection information
+        for pre_pop, post_pops in self.all_proj.iteritems():
+            self.saved_params.setdefault(pre_pop, {})
+            for post_pop, proj in post_pops.iteritems():
+
+                # Plot connectivity matrix ('O' is connection, ' ' is no connection)
+                utf_matrix, float_matrix = connection_plot(proj)
+                # max_line_length = 500
+                # if mpi_rank == 0 and proj.post.size < max_line_length:
+                #     logger.debug("{}->{} connectivity matrix (dim[0,1] = [src,target]: \n".format(proj.pre.label, proj.post.label) + utf_matrix)
+
+                # This does an mpi gather() on all the parameters
+                conn_params = ["delay", "weight"]
+                gsyn_params = ['gmax_AMPA', 'gmax_NMDA', 'gmax_GABAA', 'gmax_GABAB']
+                conn_params.extend([
+                    p for p in gsyn_params if p in proj.synapse_type.default_parameters
+                ])
+                pre_post_params = np.array(proj.get(conn_params, format="list",
+                                           gather='all', multiple_synapses='sum'))
+
+                # Sanity check: minimum and maximum delays and weights
+                mind = min(pre_post_params[:,2])
+                maxd = max(pre_post_params[:,2])
+                minw = min(pre_post_params[:,3])
+                maxw = max(pre_post_params[:,3])
+
+                if mpi_rank == 0:
+                    logger.debug(
+                        "Error check for projection {pre}->{post}:\n"
+                        "    - delay  [min, max] = [{mind}, {maxd}]\n"
+                        "    - weight [min, max] = [{minw}, {maxw}]\n".format(
+                            pre=pre_pop, post=post_pop, mind=mind, maxd=maxd,
+                            minw=minw, maxw=maxw))
+
+                # Save all connectivity pairs, using cell indices, and GIDs
+                pop_idx_pairs = [tuple(pair) for pair in pre_post_params[:, 0:2].astype(int)]
+                cell_gid_pairs = []
+                for conn in proj.connections:
+                    if hasattr(conn, 'presynaptic_gid'):
+                        cell_gid_pairs.append((conn.presynaptic_gid, conn.postsynaptic_gid))
+                    else:
+                        cell_gid_pairs.append((int(conn.presynaptic_cell), int(conn.postsynaptic_cell)))
+
+                # Append to saved dictionary
+                proj_params = self.saved_params[pre_pop].setdefault(post_pop, {})
+                proj_params['conn_matrix'] = float_matrix
+                proj_params['conpair_pop_indices'] = pop_idx_pairs
+                proj_params['conpair_gids'] = cell_gid_pairs
+                proj_params['conpair_pvals'] = pre_post_params
+                proj_params['conpair_pnames'] = conn_params
 
 
-        # Save projection parameters
-        extension = out_ext[:-4] + '.pkl'
-        params_outfile = "{dir}pop-parameters{ext}".format(dir=out_dir, ext=extension)
-        with open(params_outfile, 'wb') as fout:
-            pickle.dump(saved_params, fout)
+        # Write model parameters
+        print("rank {}: starting phase WRITE PARAMETERS.".format(mpi_rank))
+        if mpi_rank==0 and self.output is not None:
+
+
+            # Save projection parameters
+            extension = self.out_ext[:-4] + '.pkl'
+            params_outfile = "{dir}pop-parameters{ext}".format(dir=self.out_dir, ext=extension)
+            with open(params_outfile, 'wb') as fout:
+                pickle.dump(self.saved_params, fout)
 
 
     ############################################################################
     # INITIALIZE & SIMULATE
     ############################################################################
-    print("rank {}: starting phase SIMULATE.".format(mpi_rank))
 
-    # Set physiological conditions
-    h.celsius = 36.0
-    h.nai0_na_ion = 15
-    h.nao0_na_ion = 128.5
-    h.ki0_k_ion = 140
-    h.ko0_k_ion = 2.5
-    h.cai0_ca_ion = 1e-04
-    h.cao0_ca_ion = 2.0
-    h("cli0_cl_ion = 4")
-    h("clo0_cl_ion = 132.5")
+    def simulate(self):
 
-    # Simulation statistics
-    num_segments = sum((sec.nseg for sec in h.allsec()))
-    num_cell = sum((1 for sec in h.allsec()))
-    each_num_segments = comm.gather(num_segments, root=0)
-    if mpi_rank == 0:
-        # only rank 0 receives broadcast result
-        total_num_segments = sum(each_num_segments)
-        print("Entire network consists of {} segments (compartments)".format(
-              total_num_segments))
+        print("rank {}: starting phase SIMULATE.".format(mpi_rank))
 
-    print("MPI rank {} will simulate {} segments ({} sections) for {} ms.".format(
-            mpi_rank, num_segments, num_cell, sim_dur))
+        # Set physiological conditions
+        h.celsius = 36.0
+        h.nai0_na_ion = 15
+        h.nao0_na_ion = 128.5
+        h.ki0_k_ion = 140
+        h.ko0_k_ion = 2.5
+        h.cai0_ca_ion = 1e-04
+        h.cao0_ca_ion = 2.0
+        h("cli0_cl_ion = 4")
+        h("clo0_cl_ion = 132.5")
 
-
-    tstart = time.time()
-    outdir, filespec = os.path.split(output)
-    progress_file = os.path.join(outdir, '{}_sim_progress.log'.format(
-        datetime.fromtimestamp(tstart).strftime('%Y.%m.%d-%H.%M.%S')))
-
-
-    # Times for writing out data to file
-    if transient_period is None:
-        transient_period = 0.0 # (ms)
-    steady_period = sim_dur - transient_period
-    if max_write_interval is None:
-        max_write_interval = 10e3 # (ms)
-    homogenize_intervals = False
-    if homogenize_intervals:
-        write_interval = steady_period / (steady_period // max_write_interval + 1)
-    else:
-        write_interval = max_write_interval
-    if transient_period == 0:
-        first_write_time = write_interval
-    else:
-        first_write_time = transient_period
-    write_times = list(np.arange(first_write_time, sim_dur, write_interval)) + [sim_dur]
-    last_write_time = 0.0
-    last_report_time = tstart
-
-    # Restore state
-    if restore_state:
-        sim.state.restore = True
-
-    # SIMULATE
-    while sim.state.t < sim_dur:
-        sim.run(report_interval)
-
-        # Report simulation progress
+        # Simulation statistics
+        num_segments = sum((sec.nseg for sec in h.allsec()))
+        num_cell = sum((1 for sec in h.allsec()))
+        each_num_segments = comm.gather(num_segments, root=0)
         if mpi_rank == 0:
-            tnow = time.time()
-            t_elapsed = tnow - tstart
-            t_stepdur = tnow - last_report_time
-            last_report_time = tnow
-            # ! No newlines in progress report - passed to shell
-            progress = ("Simulation time is {} of {} ms. "
-                        "CPU time elapsed is {} s, last step took {} s".format(
-                        sim.state.t, sim_dur, t_elapsed, t_stepdur))
-            print(progress)
+            # only rank 0 receives broadcast result
+            total_num_segments = sum(each_num_segments)
+            print("Entire network consists of {} segments (compartments)".format(
+                  total_num_segments))
 
-            if report_progress:
-                stamp = datetime.fromtimestamp(tnow).strftime('%Y-%m-%d@%H:%M:%S')
-                os.system("echo [{}]: {} >> {}".format(stamp, progress, progress_file))
+        print("MPI rank {} will simulate {} segments ({} sections) for {} ms.".format(
+                mpi_rank, num_segments, num_cell, self.sim_dur))
 
-        # Write recorded data
-        if len(write_times) > 0 and abs(sim.state.t - write_times[0]) <= 5.0:
-            suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
-            for pop in all_pops.values():
-                write_population_data(pop, output, suffix, gather=True, clear=True)
-            write_times.pop(0)
-            last_write_time = sim.state.t
 
-    # Report simulation statistics
-    tstop = time.time()
-    cputime = tstop - tstart
-    each_num_segments = comm.gather(num_segments, root=0)
-    if mpi_rank == 0:
-        # only rank 0 receives broadcast result
-        total_num_segments = sum(each_num_segments)
-        print("Simulated {} segments for {} ms in {} s CPU time".format(
-                total_num_segments, sim.state.tstop, cputime))
+        tstart = time.time()
+        outdir, filespec = os.path.split(self.output)
+        progress_file = os.path.join(outdir, '{}_sim_progress.log'.format(
+            datetime.fromtimestamp(tstart).strftime('%Y.%m.%d-%H.%M.%S')))
 
-    # Save simulator state
-    if save_state:
-        sim.state.save_state()
 
-    if export_locals:
-        globals().update(locals())
+        # Times for writing out data to file
+        if self.transient_period is None:
+            self.transient_period = 0.0 # (ms)
+        steady_period = self.sim_dur - self.transient_period
+        if self.max_write_interval is None:
+            self.max_write_interval = 10e3 # (ms)
+        homogenize_intervals = False
+        if homogenize_intervals:
+            write_interval = steady_period / (steady_period // self.max_write_interval + 1)
+        else:
+            write_interval = self.max_write_interval
+        if self.transient_period == 0:
+            first_write_time = write_interval
+        else:
+            first_write_time = self.transient_period
+        write_times = list(
+            np.arange(first_write_time, self.sim_dur, write_interval)) + [self.sim_dur]
+        last_write_time = 0.0
+        last_report_time = tstart
 
-    print("rank {}: SIMULATION FINISHED.".format(mpi_rank))
+        # Restore state
+        if self.restore_state:
+            sim.state.restore = True
+
+        # SIMULATE
+        while sim.state.t < self.sim_dur:
+            sim.run(self.report_interval)
+
+            # Report simulation progress
+            if mpi_rank == 0:
+                tnow = time.time()
+                t_elapsed = tnow - tstart
+                t_stepdur = tnow - last_report_time
+                last_report_time = tnow
+                # ! No newlines in progress report - passed to shell
+                progress = ("Simulation time is {} of {} ms. "
+                            "CPU time elapsed is {} s, last step took {} s".format(
+                            sim.state.t, self.sim_dur, t_elapsed, t_stepdur))
+                print(progress)
+
+                if self.report_progress:
+                    stamp = datetime.fromtimestamp(tnow).strftime('%Y-%m-%d@%H:%M:%S')
+                    os.system("echo [{}]: {} >> {}".format(stamp, progress, progress_file))
+
+            # Write recorded data
+            if len(write_times) > 0 and abs(sim.state.t - write_times[0]) <= 5.0:
+                suffix = "_{:.0f}ms-{:.0f}ms".format(last_write_time, sim.state.t)
+                for pop in self.all_pops.values():
+                    write_population_data(pop, self.output, suffix, gather=True, clear=True)
+                write_times.pop(0)
+                last_write_time = sim.state.t
+
+        # Report simulation statistics
+        tstop = time.time()
+        cputime = tstop - tstart
+        each_num_segments = comm.gather(num_segments, root=0)
+        if mpi_rank == 0:
+            # only rank 0 receives broadcast result
+            total_num_segments = sum(each_num_segments)
+            print("Simulated {} segments for {} ms in {} s CPU time".format(
+                    total_num_segments, sim.state.tstop, cputime))
+
+        # Save simulator state
+        if self.save_state:
+            sim.state.save_state()
+
+        print("rank {}: SIMULATION FINISHED.".format(mpi_rank))
 
 
 if __name__ == '__main__':
     # Parse arguments passed to `python model.py [args]`
     import argparse
+
+    def str2bool(v):
+        if isinstance(v, bool):
+           return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
 
     parser = argparse.ArgumentParser(description='Run basal ganglia network simulation')
 
@@ -1419,6 +1618,10 @@ if __name__ == '__main__':
                         dest='export_compartment_coordinates', action='store_true',
                         help='Export compartment coordinates')
     parser.set_defaults(export_compartment_coordinates=True)
+
+    parser.add_argument("--avoidelectrode", type=str2bool, nargs='?',
+                        const=True, default=False,
+                        help="Select cells and axons to avoide electrode.")
 
     parser.add_argument('--dd',
                         dest='dopamine_depleted', action='store_true',
@@ -1524,12 +1727,14 @@ if __name__ == '__main__':
     # Read configuration files
     parsed_dict['net_conf'] = fileutils.parse_json_file(
                             parsed_dict['net_conf_path'], nonstrict=True)
+    
     parsed_dict['cell_conf'] = fileutils.parse_json_file(
                             parsed_dict['cell_conf'], nonstrict=True)
-    if parsed_dict['fem_conf'] is not None:
-        parsed_dict['fem_conf'] = np.load(parsed_dict['fem_conf'])
-    with open(parsed_dict['axon_coord_file'], 'rb') as axon_file:
-        parsed_dict['axon_coordinates'] = pickle.load(axon_file)
+
+    parsed_dict['fem_conf'] = read_binary_data(parsed_dict['fem_conf'],
+                                delimiter=',', dtype=float, unpack=False)
+
+    parsed_dict['axon_coordinates'] = read_binary_data(parsed_dict['axon_coord_file'])
 
 
     # Post process output specifier
@@ -1578,4 +1783,5 @@ if __name__ == '__main__':
                 if 'conf' not in k and k not in ('axon_coordinates',)))
 
     # Run the simulation
-    simulate_model(**parsed_dict)
+    netsim = Simulation(**parsed_dict)
+    netsim.run()

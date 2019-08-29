@@ -12,6 +12,8 @@ import logging
 from neuron import h
 import numpy as np
 
+from bgcellmodels.common.treeutils import prev_seg, next_segs
+
 PI = math.pi
 sqrt = math.sqrt
 logger = logging.getLogger('emfield.xtra_utils')
@@ -37,7 +39,7 @@ def set_transfer_impedances(seclist, impedance_lookup_func):
 
 def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
                                     max_dist, warn_dist, min_electrode_dist,
-                                    electrode_coords, Z_intersect=1e12):
+                                    electrode_coords, Z_intersect=0.0):
     """
     Set transfer impedances using nearest neighbor interpolation, or using
     matching coordinates (set max_dist=eps).
@@ -119,7 +121,7 @@ def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
 
 def set_transfer_impedances_interp(seclist, Z_coords, Z_values,
                                    min_electrode_dist, electrode_coords,
-                                   method='linear', Z_intersect=1e12):
+                                   method='linear', Z_intersect=0.0):
     """
     Set transfer impedances using linear or cubic interpolation.
 
@@ -207,6 +209,9 @@ def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):
 
     @param  rho : float
             Resistivity of extracullular medium (Ohm * cm).
+
+    @return Z : float
+            Transfer impedance (MOhm)
     """
     x1, y1, z1 = seg_coords
     x2, y2, z2 = source_coords
@@ -219,14 +224,31 @@ def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):
     return (rho / 4 / PI) * (1 / dist) * 0.01
 
 
-def get_rattay_activating_function(icell, *seclist_names):
+def get_rattay_activating_function(
+        icell,
+        seclist_names,
+        warn_high_act=False,
+        raise_on_warn=False):
     """
     Get activation function values for each compartment (segment),
     grouped by default morphological section lists.
-
+    
+    @param  warn_high_act : bool or dict[str, float]
+            If true, use default threshold values for determining if activating
+            function value is too high, and give warning. If dict is given,
+            use custom threshold values and give warning.
     """
-    from bgcellmodels.common.treeutils import prev_seg, next_segs
-    from bgcellmodels.common.nrnutil import all_xnode
+    # Parse arguments
+    if warn_high_act == True:
+        act_warn_thresh = {
+            'somatic': 1e6,
+            'basal': .5e6,
+            'axonal': 4e6,
+        }
+    elif isinstance(warn_high_act, dict):
+        act_warn_thresh = warn_high_act
+    else:
+        warn_high_act = False
 
     # Preconditions for algorithm
     stim_amp_mA = 1.0
@@ -234,7 +256,6 @@ def get_rattay_activating_function(icell, *seclist_names):
     test_sec = list(icell.all)[0]
     root_sec = h.SectionRef(sec=test_sec).root
     h.distance(0, 0.5, sec=root_sec)
-
 
     # First collect required data for each compartment
     nodes_V_ext = {}            # mV
@@ -288,11 +309,6 @@ def get_rattay_activating_function(icell, *seclist_names):
     act_values = {}             # seclist_name -> list[float]
     dist_values = {}            # seclist_name -> list[float]
 
-    act_warn_thresh = {
-        'somatic': 1e6,
-        'basal': .5e6,
-        'axonal': 4e6,
-    }
     for sl_name in seclist_names:
 
         seclist = getattr(icell, sl_name, None)
@@ -322,9 +338,10 @@ def get_rattay_activating_function(icell, *seclist_names):
                     act_values[sl_name].append(act)
                     dist_values[sl_name].append(dist)
 
-                    if act > act_warn_thresh[sl_name]:
-                        print("ACT_FUN_HIGH: {}".format(seg))
-                        raise Exception('breakpoint')
+                    if warn_high_act != False and act > act_warn_thresh[sl_name]:
+                        logger.warning("ACT_FUN_HIGH: {}".format(seg))
+                        if raise_on_warn:
+                            raise Exception('breakpoint')
 
         assert len(act_values[sl_name]) == len(dist_values[sl_name])
 
