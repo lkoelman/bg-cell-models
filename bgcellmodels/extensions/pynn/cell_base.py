@@ -892,13 +892,17 @@ class MorphModelBase(object):
         seclists_with_xtra = seclists_with_dbs.union(seclists_with_lfp)
 
         # Make Hoc.SectionList with stimulated / recorded sections
-        if 'all' in seclists_with_dbs:
+        if not self.with_extracellular_stim:
+            stim_seclist = h.SectionList()
+        elif 'all' in seclists_with_dbs:
             stim_seclist = self.icell.all
         else:
             stim_seclist = nrnutil.join_seclists(
                 *(getattr(self.icell, sl) for sl in seclists_with_dbs))
 
-        if 'all' in seclists_with_lfp:
+        if not self.with_extracellular_rec:
+            rec_seclist = h.SectionList()
+        elif 'all' in seclists_with_lfp:
             rec_seclist = self.icell.all
         elif seclists_with_dbs == seclists_with_lfp:
             rec_seclist = stim_seclist
