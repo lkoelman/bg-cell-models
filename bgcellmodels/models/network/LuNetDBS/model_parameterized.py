@@ -285,7 +285,7 @@ class Simulation(object):
                     Dictionary with one entry per population label and one
                     key 'simulation' for simulation parameters.
 
-        @param      select_cells_dynamic : bool
+        @param      cells_avoid_electrode : bool
                     Select/reject cells and axons based on whether they intersect
                     the electrode and encapsulation tissue
         """
@@ -314,7 +314,7 @@ class Simulation(object):
             'restore_state'   : None,
             'save_state'      : None,
             'export_compartment_coordinates' : None,
-            'select_cells_dynamic' : False,
+            'cells_avoid_electrode' : False,
         }
 
         # Parse keyword argument and assign as properties
@@ -728,7 +728,7 @@ class Simulation(object):
             cell['transform'] = np.asarray(cell['transform'])
 
         # Selection final cells to be simulated
-        if self.select_cells_dynamic:
+        if self.cells_avoid_electrode:
             # Select cells that are eligible given electrode position
             cell_defs = [
                 cell for cell in pop_cell_defs if 
@@ -753,7 +753,7 @@ class Simulation(object):
 
         # Axons and collaterals
         cells_axon_coords = [
-            self.get_axon_coordinates(cell, reject_encap=self.select_cells_dynamic) 
+            self.get_axon_coordinates(cell, reject_encap=self.cells_avoid_electrode)
                 for cell in cell_defs
         ]
         stn_collateralization_fraction = 7.0/8.0 # Koshimizu (2013): 7/8 Gpe-projecting neurons
@@ -893,7 +893,7 @@ class Simulation(object):
             cell['transform'] = np.asarray(cell['transform'])
         
         # Selection final cells to be simulated
-        if self.select_cells_dynamic:
+        if self.cells_avoid_electrode:
             # Select cells that are eligible given electrode position
             cell_defs = [
                 cell for cell in pop_cell_defs if 
@@ -908,7 +908,7 @@ class Simulation(object):
 
         # GPe axons and collaterals
         cells_axon_coords = [
-            self.get_axon_coordinates(cell, reject_encap=self.select_cells_dynamic)
+            self.get_axon_coordinates(cell, reject_encap=self.cells_avoid_electrode)
                 for cell in cell_defs
         ]
         gpe2gpi_collateralization = 0.5 # Kita & Kitai (1994): two out of four
@@ -1074,9 +1074,9 @@ class Simulation(object):
 
         num_ctx_axons = ctx_ncell
 
-        ctx_axon_defs = self.get_axons_for_projection('CTX-STN', reject_encap=self.select_cells_dynamic)
+        ctx_axon_defs = self.get_axons_for_projection('CTX-STN', reject_encap=self.cells_avoid_electrode)
 
-        if self.select_cells_dynamic:
+        if self.cells_avoid_electrode:
             # Axon coordinates have been pre-filtered based on encapsulation layer
             ctx_axon_coords = ctx_axon_defs.values()
         else:
@@ -1619,8 +1619,9 @@ if __name__ == '__main__':
                         help='Export compartment coordinates')
     parser.set_defaults(export_compartment_coordinates=True)
 
-    parser.add_argument("--avoidelectrode", type=str2bool, nargs='?',
-                        const=True, default=False,
+    parser.add_argument("-ae", "--avoidelectrode", nargs='?',
+                        type=str2bool, const=True, default=False,
+                        dest='cells_avoid_electrode',
                         help="Select cells and axons to avoide electrode.")
 
     parser.add_argument('--dd',

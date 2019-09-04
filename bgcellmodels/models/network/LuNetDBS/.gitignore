@@ -1,0 +1,5 @@
+*.json
+*.ply
+*.pkl
+*.npy
+*conf_[0-9].py
