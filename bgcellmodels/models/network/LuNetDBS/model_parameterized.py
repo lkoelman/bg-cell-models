@@ -349,7 +349,7 @@ class Simulation(object):
         # Baumanm (2010): 370 Ohm*cm
         emf_params['rho_extracellular_ohm_cm'] = \
             1.0 / (emf_params['sigma_extracellular_S/m'] * 1e-2)
-        
+
         self.transfer_impedance_matrix = [] if self.fem_conf is None else self.fem_conf
         self.with_fem_voltages = len(self.transfer_impedance_matrix) > 0
 
@@ -529,7 +529,7 @@ class Simulation(object):
         r_encap = self.emf_params['encapsulation_radius_um']
         p1 = np.array(self.emf_params['electrode_tip_point_um'])
         p2 = np.array(self.emf_params['electrode_axis_point_um'])
-        
+
         assert points.ndim == 2 and points.shape[1] == 3
         p3 = points
 
@@ -663,7 +663,7 @@ class Simulation(object):
         """
         proj_def = next((p for p in self.cell_conf["projections"] if p["label"] == proj_label))
         axon_patterns = proj_def['axons']
-        
+
         # Collect axons that match name pattern
         candidate_axons = {}
         for pattern in axon_patterns:
@@ -709,7 +709,7 @@ class Simulation(object):
         # NOTE:
         # - to query cell model attributes, use population[i]._cell
         print("rank {}: starting phase POPULATIONS.".format(mpi_rank))
- 
+
 
         #===========================================================================
         # STN POPULATION
@@ -731,7 +731,7 @@ class Simulation(object):
         if self.cells_avoid_electrode:
             # Select cells that are eligible given electrode position
             cell_defs = [
-                cell for cell in pop_cell_defs if 
+                cell for cell in pop_cell_defs if
                     not self.inside_encapsulation_layer(
                         cell['transform'][0:3, 3].reshape((1, -1)))
             ]
@@ -739,7 +739,7 @@ class Simulation(object):
         else:
             # Select cells that had explicit axon assigned
             cell_defs = [cell for cell in pop_cell_defs if cell['axon'] is not None]
-        
+
         cell_defs = cell_defs[:stn_ncell_biophys]
         self.stn_cell_positions = np.array(
             [cell['transform'][0:3, 3] for cell in cell_defs]) # Nx3
@@ -786,7 +786,6 @@ class Simulation(object):
         stn_cell_params['rho_extracellular_ohm_cm'] = self.emf_params['rho_extracellular_ohm_cm']
         stn_cell_params['electrode_coordinates_um'] = self.emf_params['electrode_tip_point_um']
         stn_cell_params['transfer_impedance_matrix_um'] = ArrayParameter(self.transfer_impedance_matrix)
-
 
         stn_type = miocinovic.StnMorphType(**stn_cell_params)
 
@@ -891,12 +890,12 @@ class Simulation(object):
         ]
         for cell in pop_cell_defs:
             cell['transform'] = np.asarray(cell['transform'])
-        
+
         # Selection final cells to be simulated
         if self.cells_avoid_electrode:
             # Select cells that are eligible given electrode position
             cell_defs = [
-                cell for cell in pop_cell_defs if 
+                cell for cell in pop_cell_defs if
                     not self.inside_encapsulation_layer(
                         cell['transform'][0:3, 3].reshape((1, -1)))
             ]
@@ -946,7 +945,7 @@ class Simulation(object):
         gpe_cell_params['with_extracellular_stim'] = self.with_dbs and self.net_conf['GPE.all'].get('with_dbs', True)
         gpe_cell_params['with_extracellular_rec'] = self.with_lfp and self.net_conf['GPE.all'].get('with_lfp', True)
         gpe_cell_params['transform'] = [cell['transform'] for cell in cell_defs]
-        
+
         ## Axon parameters
         gpe_cell_params['termination_method'] = np.array('nodal_cutoff')
         gpe_cell_params['netcon_source_spec'] = np.array('branch_point:1:collateral')
@@ -955,7 +954,7 @@ class Simulation(object):
         gpe_cell_params['collateral_target_points_um'] = gpe_collat_branch_pts
         gpe_cell_params['collateral_lvl_lengths_um'] = ArrayParameter(gpe_collat_lvl_lengths)
         gpe_cell_params['collateral_lvl_num_branches'] = gpe_collat_nbranch
-        
+
         ## FEM parameters
         gpe_cell_params['rho_extracellular_ohm_cm'] = self.emf_params['rho_extracellular_ohm_cm']
         gpe_cell_params['electrode_coordinates_um'] = self.emf_params['electrode_tip_point_um']
@@ -1185,12 +1184,12 @@ class Simulation(object):
                 coincident_discontinuities=True)
 
             # Play DBS waveform into GLOBAL variable for this thread
-            pulse_avec = h.Vector(pulse_train)
-            pulse_tvec = h.Vector(pulse_time)
+            self.pulse_avec = h.Vector(pulse_train)
+            self.pulse_tvec = h.Vector(pulse_time)
             dbs_started = False
             for sec in h.allsec():
                 if h.ismembrane('xtra', sec=sec):
-                    pulse_avec.play(h._ref_is_xtra, pulse_tvec, 1)
+                    self.pulse_avec.play(h._ref_is_xtra, self.pulse_tvec, 1)
                     dbs_started = True
                     break
 
@@ -1284,7 +1283,7 @@ class Simulation(object):
             cpop for cpop in config_pop_labels if (
                 cpop not in self.all_pops and cpop not in self.all_asm)
         ]
-        
+
         undefined_proj = [
             (pre, post) for (post, pre) in self.net_conf.items() if (
                 (pre in config_pop_labels and post in config_pop_labels)
@@ -1312,7 +1311,7 @@ class Simulation(object):
         """
         Record all traces.
         """
-    
+
         print("rank {}: starting phase RECORDING.".format(mpi_rank))
 
         # Default traces
@@ -1728,7 +1727,7 @@ if __name__ == '__main__':
     # Read configuration files
     parsed_dict['net_conf'] = fileutils.parse_json_file(
                             parsed_dict['net_conf_path'], nonstrict=True)
-    
+
     parsed_dict['cell_conf'] = fileutils.parse_json_file(
                             parsed_dict['cell_conf'], nonstrict=True)
 

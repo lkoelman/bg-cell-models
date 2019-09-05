@@ -41,7 +41,7 @@ def save_figure(fname, fig=None, **kwargs):
     """
     Save given or current figure.
     For LaTeX embedding, use extension pdf/pgf/eps in the figure name.
-    
+
     kwargs: see https://matplotlib.org/api/_as_gen/matplotlib.pyplot.savefig.html
     """
     kwargs.setdefault('bbox_inches', 'tight') # prevents cropping
@@ -87,7 +87,7 @@ def set_axes_size(w, h, ax=None):
     """
     Set the size of the axes (plotting area) instead of the whole figure
     which is the default.
-    
+
     w, h: width, height in inches
     """
     if not ax: ax=plt.gca()
@@ -101,28 +101,28 @@ def set_axes_size(w, h, ax=None):
 
 
 def get_pop_color(pop_label):
-    """ Colors from https://xkcd.com/color/rgb/ """ 
+    """ Colors from https://xkcd.com/color/rgb/ """
     if pop_label.startswith('CTX'):
         if 'axon' in pop_label.lower():
             return 'xkcd:lightblue'
         else:
             return 'c'
-    
+
     elif pop_label.startswith('STR'):
         return 'm'
-    
+
     elif pop_label.startswith('GPE'):
         if 'axon' in pop_label.lower():
             return 'xkcd:rose pink'
         else:
             return 'r'
-    
+
     elif pop_label.startswith('STN'):
         if 'axon' in pop_label.lower():
             return 'xkcd:sage'
         else:
             return 'g'
-    
+
     else:
         return 'b'
 
@@ -162,14 +162,14 @@ def find_stimlocked_spikes(pulse_times, spike_times, window_lo, window_hi):
     locked_spike_times = []
     for i_pulse, t_pulse in enumerate(pulse_times):
         mask_following = (
-            (spike_times > (t_pulse + window_lo)) & 
+            (spike_times > (t_pulse + window_lo)) &
             (spike_times <= (t_pulse + window_hi))
         )
         spikes_following = spike_times[mask_following]
         if spikes_following.size > 0:
             locked_indices.append(i_pulse)
             locked_spike_times.append(spikes_following)
-    
+
     indices_array = np.array(locked_indices)
     times_array = np.array(locked_spike_times)
     return indices_array, times_array
@@ -192,13 +192,13 @@ def find_stimlocked_indices(pulse_times, spike_times, window_lo, window_hi):
     locked_indices = []
     for i_pulse, t_pulse in enumerate(pulse_times):
         mask_following = (
-            (spike_times > (t_pulse + window_lo)) & 
+            (spike_times > (t_pulse + window_lo)) &
             (spike_times <= (t_pulse + window_hi))
         )
         spikes_following = spike_times[mask_following]
         if spikes_following.size > 0:
             locked_indices.append(i_pulse)
-    
+
     return np.array(locked_indices)
 
 
@@ -206,7 +206,7 @@ def calc_train_stimlock_fractions(spike_trains, onset_times, interval=None):
     """
     Calculate the percentage of pulses that have stimulus-locked spikes
     for each spike train in the population
-    
+
     @param    spike_trains : list[Neo.SpikeTrain]
               Population spke trains
     """
@@ -224,45 +224,60 @@ def calc_train_stimlock_fractions(spike_trains, onset_times, interval=None):
     return trains_locked_fractions
 
 
-def plot_spiketrain(spike_trains, cell_ids, t_range, pop_label=None,
+def plot_spiketrain(spike_trains, cell_indices, t_range, pop_label=None,
                     sharex=None, sharey=None, figsize=None, plot_compact=False,
                     export=False, order_by='cell_pop_idx', ticks_dx=1e3,
-                    grid=True):
+                    grid=True, y_labels='pop_index', sort_by='cell_gid'):
     """
     Plot spiketrains for one population.
-    
-    @param    cell_ids : list(int)
-              Cell indices in population that will be visible (y-axis constrainment).
+
+    @param   cell_ids : list(int)
+             Cell indices in population that will be visible (y-axis constrainment).
+
+    @param   y_labels : str
+            'pop_index' or 'cell_gid'
+
+    @param   sort_by : str
+             'pop_index' or 'cell_gid' : method for sorting spike trains
+             before indexing them using <cell_indices>
     """
     if figsize is None:
         figsize = (_data.page_width, _data.ax_height)
-    
+
+    if sort_by == 'pop_index':
+        spike_trains = sorted(spike_trains, key=lambda st: st.annotations['source_index'])
+    elif sort_by == 'cell_gid':
+        spike_trains = sorted(spike_trains, key=lambda st: st.annotations['source_id'])
+    elif sort_by is not None:
+        raise ValueError(sort_by)
+
     sim_dur = spike_trains[0].t_stop.magnitude
-    
+
     # Don't plot all rastergrams in same figure
     fig_spikes = plt.figure(figsize=figsize)
     ax = plt.subplot(1,1,1, sharex=sharex, sharey=sharey)
     # fig_spikes, ax = plt.subplot(1, 1, figsize=(page_width,ax_height), sharex=sharex)
     if not plot_compact:
         fig_spikes.suptitle('{} spiketrains'.format(pop_label))
-    
+
     # Plot all spiketrains but constrain y-axis later (so you can pan & zoom)
-    # for i_train in range(pop_size):
-    #     y = spiketrain.annotations.get('source_id', i_train)
     # Only plot selected spike trains
-    y_vals = np.empty(len(cell_ids))
-    for j, i_train in enumerate(cell_ids):
-        spiketrain = spike_trains[i_train]
+    y_vals = np.empty(len(cell_indices))
+    cell_gids = []
+    for j, cell_index in enumerate(cell_indices):
+        spiketrain = spike_trains[cell_index]
         if order_by == 'cell_pop_idx':
-            y_vals[j] = i_train
+            y_vals[j] = cell_index
         elif order_by == 'caller':
             y_vals[j] = j
+        if 'source_id' in spiketrain.annotations:
+            cell_gids.append(spiketrain.annotations['source_id'])
         y_vec = np.ones_like(spiketrain) * y_vals[j]
         ax.plot(spiketrain, y_vec,
-                marker='|', linestyle='', 
+                marker='|', linestyle='',
                 snap=True, color=get_pop_color(pop_label))
-    
-    
+
+
     # ax.set_xticks(np.arange(0, sim_dur+5000, 5000), minor=False) # uncomment for long time range
     if plot_compact:
         ax.set_yticks([]) # (np.arange(min(y_vals), max(y_vals)+1, 1), minor=False)
@@ -272,14 +287,26 @@ def plot_spiketrain(spike_trains, cell_ids, t_range, pop_label=None,
     else:
         ax.set_yticks(np.arange(min(y_vals), max(y_vals)+5, 5), minor=False)
         ax.set_xticks(np.arange(0, sim_dur+1000, ticks_dx), minor=False)
-        ax.set_ylabel('{} cell #'.format(pop_label))
-        
+        ax.set_ylabel(y_labels)
+
+    # Label each spike train
+    if y_labels == 'cell_gid':
+        if len(cell_gids) == 0 or len(cell_gids) != len(y_vals):
+            print('WARNING: cell GID data not found. '
+                  'Using population index for y-axis labels.')
+        else:
+            # ax.tick_params(axis='y', labelsize=14, labelcolor=grid_color)
+            ax.set_yticks(y_vals, minor=False)
+            ax.set_yticklabels([str(i) for i in cell_gids])
+    elif y_labels != 'pop_index':
+        raise ValueError(y_labels)
+
     ax.set_xlim(t_range)
     ax.set_ylim((min(y_vals)-0.5, max(y_vals)+0.5))
     ax.grid(grid, axis='x', which='major')
-    
+
     if _data.export_figs and export:
-        fname = 'rastergram_{}_cell-{}-{}'.format(pop_label, cell_ids[0], cell_ids[-1])
+        fname = 'rastergram_{}_cell-{}-{}'.format(pop_label, cell_indices[0], cell_indices[-1])
         save_figure(fname, fig=fig_spikes, bbox_inches='tight')
 
     return fig_spikes, ax
@@ -292,7 +319,7 @@ def plot_spiketrain(spike_trains, cell_ids, t_range, pop_label=None,
 def calc_psd(pop_label, interval=None, vm_sig=None, save=True):
     """
     Calculate PSD from membrane voltages of population.
-    
+
     It computes the PSD for the individual Vm traces and then
     averages the resulting PSDs.
     """
@@ -302,17 +329,17 @@ def calc_psd(pop_label, interval=None, vm_sig=None, save=True):
 
     # Ts = vm_sig.sampling_period.magnitude # ms
     fs = vm_sig.sampling_rate.rescale('Hz').magnitude
-    
+
     islice = neoutil.make_slice(vm_sig, interval)
     vm_segment = vm_sig[islice, :]
-    
+
     dF = max(0.5, fs / vm_segment.shape[0]) # dF for max window size is finest possible
     if dF != 0.5:
         print("Adjusted frequency resolution to data size: dF = {}".format(dF))
-    
+
     # Compute PSD of all 100 Vm signals at the same time
     freqs, psd = elephant.spectral.welch_psd(vm_segment, freq_res=dF)
-    
+
     # Average individual trace PSDs
     psd_avg = psd.sum(axis=0) / psd.shape[0]
     # psd_rel = psd_avg[0:int(250/dF)] # relevant region of psd
@@ -321,10 +348,10 @@ def calc_psd(pop_label, interval=None, vm_sig=None, save=True):
     if save:
         sig_label = pop_label + '_' + vm_sig.name
         _data.exported_data['PSD'][sig_label] = (freqs, psd_avg)
-    
+
     # Save units for other plotting functions
     _data.psd_units = psd.units
-    
+
     return freqs, psd_avg
 
 
@@ -332,15 +359,15 @@ def calc_spectrogram(pop_label, signal=None, max_avg=50, freq_res=1.0,
                      t_res=20.0, interval=None, save=True):
     """
     Calculate mean spectrogram (STFT) of membrane voltage traces.
-    
+
     The resulting time axis is missing 'nperseg' values on each side since
     each PSD sample is calculated on the interval [-nperseg/2, +nperseg/2]
     around it.
-    
+
     @param     max_avg : int
                Number of spectrograms to compute for averaging.
                WARNING: can lead to very high memory consumption.
-    
+
     @return    freqs, t, Sxx
                Sxx has t-dimension along axis 0 and f-dimension along axis 1.
     """
@@ -360,7 +387,7 @@ def calc_spectrogram(pop_label, signal=None, max_avg=50, freq_res=1.0,
     t_res = 20.0 # ms
     noverlap = nperseg - int(t_res/dt)
     islice = neoutil.make_slice(signal, interval)
-    
+
     if signal.ndim == 2:
         # Spectrogram of all signals along axis 0
         vm_sig = signal[islice, :]
@@ -379,7 +406,7 @@ def calc_spectrogram(pop_label, signal=None, max_avg=50, freq_res=1.0,
         sig_data = signal.ravel()[islice]
         freqs, t, Sxx = scipy.signal.spectrogram(sig_data, 1/dt, window='hanning',
                                                  nperseg=nperseg, noverlap=noverlap, scaling='density')
-    
+
     freqs = freqs * 1000
     t = t + signal.t_start.rescale('ms').magnitude
 
@@ -388,7 +415,7 @@ def calc_spectrogram(pop_label, signal=None, max_avg=50, freq_res=1.0,
         df = freqs[1]-freqs[0]
         _data.exported_data['spectrogram'][sig_label] = (
             freqs[0:int(50/df)], t, Sxx[:,0:int(50/df)])
-    
+
     return freqs, t, Sxx
 
 
@@ -412,20 +439,20 @@ def calc_mean_phase_vectors(spiketrains, pop_label, intervals=None,
     """
     Calculate mean phase vector of spikes with reference to given analytic signal
     (e.g. BP filtered + Hilbert transformed).
-    
-    The mean phase vector for a cell (spike train) is obtained by looking up the 
-    complex value of the normalized analytic signal at each spike time, 
+
+    The mean phase vector for a cell (spike train) is obtained by looking up the
+    complex value of the normalized analytic signal at each spike time,
     and averaging over all spikes in the spike train.
-    
+
     The population phase vector is obtained by taking the mean complex value
     of all cell phase vectors in the population.
-    
+
     Returns
     -------
-    
+
     @return    mean_phase_vec : numpy.array(dtype=complex)
                Array containing mean phase vector of each spike train as rows.
-    
+
     @return    pop_phase_vec : complex
                Mean phase vector over all cells in population.
     """
@@ -452,18 +479,18 @@ def calc_mean_phase_vectors(spiketrains, pop_label, intervals=None,
             spike_phase_vecs.append(cell_spike_phase_vecs)
         else:
             mean_phase_vecs.append(0.0 + 0.0j)
-    
+
     # Save phase vectors for export
     _data.exported_data['cell_phase_vecs'][pop_label] = mean_phase_vecs = np.array(mean_phase_vecs)
     _data.exported_data['pop_phase_vecs'][pop_label] = pop_phase_vec = np.mean(mean_phase_vecs)
     _data.spike_phase_vectors[pop_label] = spike_phase_vecs
-    
+
     return mean_phase_vecs, pop_phase_vec
 
 
 def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
                        rmax=None, rticks=None, rticks_pos=None,
-                       cell_color='green', pop_color='red', cell_opacity=0.5, 
+                       cell_color='green', pop_color='red', cell_opacity=0.5,
                        mark_cells_rim=False, ref_vec=None, extra_pop_vecs=None,
                        extra_cell_vecs=None, extra_labels=None, extra_colors=None,
                        extra_cell_colors=None, pop_line_width=3, show_legend=True):
@@ -473,13 +500,13 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
     """
     if extra_pop_vecs is None:
         extra_pop_vecs = []
-    
+
     # Reference angle for all plotted vectors
     if ref_vec is None:
         ref_ang = 0.0
     else:
         ref_ang = np.angle(ref_vec)
-    
+
     # Complex vectors to polar coordinates
     vec_angs = np.angle(mean_phase_vecs) - ref_ang
     vec_lens = np.abs(mean_phase_vecs)
@@ -492,10 +519,10 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
         rmax = (vmax // 0.1 + 1) * 0.1
     # if rticks is None:
     #     rticks = np.arange(0.1, 1.1, 0.1)
-    
+
     fig = plt.figure()
     ax = plt.subplot(111, projection='polar')
-    
+
     # Plot additional vectors if given
     for i, vec in enumerate(extra_pop_vecs):
         if extra_cell_vecs is not None:
@@ -506,19 +533,19 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
         # Population vector after/over cell vectors
         ax.vlines(np.angle(vec) - ref_ang, 0, np.abs(vec), color=extra_colors[i],
                   linewidth=pop_line_width, label=extra_labels[i])
-    
+
     # Plot cell vectors as points on outer circle
-    ax.vlines(vec_angs, 0, vec_lens, 
+    ax.vlines(vec_angs, 0, vec_lens,
               color=cell_color, alpha=cell_opacity, linewidth=1, snap=True)
     if mark_cells_rim:
-        ax.plot(vec_angs, np.zeros_like(vec_angs)+rmax, 'o', 
+        ax.plot(vec_angs, np.zeros_like(vec_angs)+rmax, 'o',
                 color=cell_color, markersize=5)
-    
+
     # Plot population vector as thick line
     # ax.plot(vec_angs, vec_lens, 'ro')
     ax.vlines(pop_ang, 0, pop_mag, label=pop_label,
               color=pop_color, linewidth=pop_line_width)
-    
+
     # Format axes
     ax.grid(True)
     if rticks is not None:
@@ -531,12 +558,12 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
     if show_legend:
         ax.legend(loc=(1, .8))
     # ax.set_title('Mean angle and vector length of {} neurons'.format(pop_label), va='bottom')
-    
+
 
     # kw = dict(arrowstyle="->", color='g')
     # for angle, radius in zip(phases, magnitudes):
     #     ax.annotate("", xy=(angle, radius), xytext=(0, 0), arrowprops=kw)
-    
+
     if _data.export_figs and export:
         fname = 'phase-vectors_{}'.format(pop_label)
         save_figure(fname, fig=fig)
@@ -555,12 +582,12 @@ def plot_phase_histogram(pop_label, ref_vec=None, num_bins=20,
         ref_ang = 0.0
     else:
         ref_ang = np.angle(ref_vec)
-    
+
     # Complex vectors to polar coordinates
     all_spike_vecs = np.concatenate(_data.spike_phase_vectors[pop_label], axis=0)
     assert (all_spike_vecs.ndim == 1) or (min(all_spike_vecs.shape) == 1)
     vec_angs = np.angle(all_spike_vecs) - ref_ang
-    
+
     # Histogram of phase angles
     bin_counts, bin_edges = np.histogram(vec_angs, bins=num_bins, range=(-np.pi, np.pi))
     bin_fractions = bin_counts.astype(float) / np.sum(bin_counts)
@@ -577,7 +604,7 @@ def plot_phase_histogram(pop_label, ref_vec=None, num_bins=20,
         bar.set_facecolor((r, g, b, face_alpha))
         bar.set_edgecolor(bar_color)
         # bar.set_alpha(0.1)
-    
+
     # Format axes
     if rticks is not None:
         ax.set_rticks(rticks)
@@ -598,7 +625,7 @@ def plot_phase_histogram(pop_label, ref_vec=None, num_bins=20,
         ax.set_rlabel_position(label_pos)
     elif isinstance(rlabel_angle, (float, int)):
         ax.set_rlabel_position(rlabel_angle)
-    
+
     if _data.export_figs and export:
         fname = 'phase-histogram_{}'.format(pop_label)
         save_figure(fname, fig=fig)
@@ -631,18 +658,18 @@ def plot_signal_interval(ax, signal, interval, channels, **kwargs):
     times = signal.times[irange[0]:irange[1]]
     ax.plot(times, signal[irange[0]:irange[1], channels], **kwargs)
 
-    
+
 def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=True,
                        channel_gates=None, channel_currents=None, beta_phase=True,
                        trace_names=None, extra_sigs=None, extra_plot_with=None,
                        extra_max_plot=5, vm_plot_with=None):
     """
     Plot Synaptic dynamics for specific cells and their recorded synapses.
-    
+
     Typically both the cells in the population and their synapses have
     been sampled.
-    
-    
+
+
     @pre    If arguments 'channel_gates' and 'channel_currents' are given,
             the signals they refer to are recorded from the same cells
             as the synaptic currents and conductances. I.e. the indices
@@ -670,7 +697,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
     existing_traces = [sig_name for sig_name, sigs in all_synaptic_sigs.items() if len(sigs)>0]
     num_ax_per_cell = len(existing_traces)
     num_cell = min(signal.shape[1], max_ncell)
-    
+
     # Select synapses to plot.
     selected_synapses = {'GLU': [], 'GABA': []} # trace suffixes of selected synapses
     for group in selected_synapses.keys():
@@ -693,7 +720,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
 
     # Make the figure
     num_axes = num_cell * num_ax_per_cell
-    fig, axes = plt.subplots(num_axes, 1, 
+    fig, axes = plt.subplots(num_axes, 1,
                              figsize=(0.75*_data.page_width, num_axes*_data.ax_height),
                              sharex=True)
     # fig.suptitle("{} synapse dynamics".format(pop_label))
@@ -709,7 +736,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                 ax = axes[i_ax]
             except TypeError:
                 ax = axes
-            
+
             # Plot all synapses for this axis (same conductance or current)
             ax_l_sigs = [] # signals plotted on left axis
             for j_sig, sig in enumerate(all_synaptic_sigs[tracename]):
@@ -721,19 +748,19 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                         ax.plot(times, sig[irange[0]:irange[1], i_cell], label=label)
                     else:
                         ax.plot(signal.times, sig[:, i_cell], label=label)
-            
+
             # Save axes limits for main traces
             ymin, ymax = ax.get_ylim()
-            
+
             # Plot Beta trigger signal (zero phase)
             if beta_phase:
                 ax.vlines(_data.phase_zero_times, ymin, ymax, label='$\phi$ = 0',
                           colors='black', linestyle='dashed', linewidths=0.5)
-            
+
             # NOTE: cell index -> see recorder._get_current_segment() -> should save source_ids/channel_ids
             # TODO: plot spike times or Vm of source_indices in same plot
             ax_r = None
-            
+
             # Plot additional signals on the right axis
             if channel_gates and tracename.startswith('g'):
                 # Plot channel gating variables if we are plotting conductance
@@ -757,7 +784,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                     plot_signal_interval(ax_r, csig, interval, i_cell, label=csig.name,
                                          color=color, linestyle=style)
                 ax_r.legend(loc='upper right')
-            
+
             # Plot channel currents if we are plotting synaptic currents
             elif channel_currents and tracename.startswith('i'):
                 ax_r = ax.twinx()
@@ -768,7 +795,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                                          color=color, linestyle=style)
                 ax_r.legend(loc='upper right')
                 ax_r.set_ylabel('current ($mA/cm^2$)')
-            
+
             # Plot membrane voltages recorded from given cell
             elif vm_plot_with(tracename) and 'source_indices' in ax_l_sigs[-1].annotations:
                 src_idxs = ax_l_sigs[-1].annotations['source_indices']
@@ -776,7 +803,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                 ax_r = ax.twinx()
                 # Plot somatic voltage
                 vsoma = next((sig for sig in segment.analogsignals if sig.name == 'Vm'))
-                plot_signal_interval(ax_r, vsoma, interval, cell_pop_idx, label=vsoma.name, 
+                plot_signal_interval(ax_r, vsoma, interval, cell_pop_idx, label=vsoma.name,
                                      color='gray', linewidth=0.2)
                 # Plot dendritic voltages
                 # vm_sigs = [sig for sig in segment.analogsignals if sig.name.lower().startswith('v')]
@@ -786,7 +813,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                 #                          color=color, linestyle=style)
                 ax_r.legend(loc='upper right')
                 ax_r.set_ylabel('Vm (mV)')
-            
+
             # Annotation and axes
             ax.grid(True, axis='y')
             if tracename.startswith('i'):
@@ -809,7 +836,7 @@ def combine_current_signals(post_pop, afferents_currents, cell_gid=None, cell_po
     @param    afferents_currents : dict[str, list(str)]
               Map of afferent population labels to recorded synaptic current names.
               e.g.: {'CTX': ('i_AMPA', 'i_NMDA')}
-    
+
     @return   tuple(np.array, dict[str, np.array])
               Tuple containing:
               - np.array: sum total current as a function of time
@@ -831,7 +858,7 @@ def combine_current_signals(post_pop, afferents_currents, cell_gid=None, cell_po
                                                       cell_pop_idx=cell_pop_idx)
         # Sum current signals of different types
         pops_itot[afferent_pop] = sum(currents_itot.values())
-    
+
     # Sum total current of all afferent populations
     allpops_itot = sum(pops_itot.values())
     return allpops_itot, pops_itot
@@ -841,7 +868,7 @@ def sum_cell_signals(traces=None, segment=None, sig_name=None,
                      cell_gid=None, cell_pop_idx=None, average=False):
     """
     Sum all signals recorded from the same cell.
-    
+
     @param    traces : list(Neo.AnalogSignal)
               Set of signals that will be searched for traces
               recorded from the given cell.
@@ -867,7 +894,7 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
                             trace_group_member=None, export_indices=None):
     """
     Plot factors contributing to network oscillations & synchronization.
-    
+
     @param    trace_group_member : str
               Name of any recorded signal in the same recorded trace group as
               plotted variabed. Used for finding cell indices.
@@ -877,10 +904,10 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
 
     currents_by_action = {'EXC': exc_currents, 'INH': inh_currents}
     segment = _data.pops_segments[pop]
-    
+
     # Get cells with recorded synapses and rank by phase locking strength
     cell_pop_idx_ranked = list(_data.exported_data['phaselock_ranking_source_indices'][pop])
-    test_signal = next((sig for sig in segment.analogsignals if 
+    test_signal = next((sig for sig in segment.analogsignals if
                         sig.name.startswith(trace_group_member)), None)
     if test_signal is None:
         print("No synaptic traces for population {}".format(pop))
@@ -891,7 +918,7 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
     recorded_cell_idx_ranked = sorted(recorded_cell_idx, key=lambda i: cell_pop_idx_ranked.index(i))
     plotted_cell_idx = recorded_cell_idx_ranked[ranking_slice]
     print("Ranked recorded cells: {}".format(recorded_cell_idx_ranked))
-    
+
     # Get signal time data
     rec_dt = test_signal.sampling_period.magnitude
     tstart = test_signal.t_start.magnitude
@@ -899,27 +926,27 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
     t0, t1 = interval
     irange = [int((t-tstart)/rec_dt) for t in interval]
     times = test_signal.times[irange[0]:irange[1]]
-    
+
     # Phase signal
     phase_ref = _data.sigmean_bpss
     phase_slice = neoutil.make_slice(_data.sigmean_bpss, interval)
     t_zcross = _data.phase_zero_times
     phase_zcross = t_zcross[(t_zcross > interval[0]) & (t_zcross < interval[1])]
-    
+
     # Voltage signal
     vm_sig = next((sig for sig in _data.pops_segments[pop].analogsignals if sig.name == 'Vm'))
     vm_slice = neoutil.make_slice(vm_sig, interval)
-    
+
     # Current signal
     isig_ref = sorted_signals(_data.pops_segments[pop], exc_currents.values()[0][0])[0]
     isig_slice = neoutil.make_slice(isig_ref, interval)
     isig_times = isig_ref.times[isig_slice]
-    
+
     # Gating variables
     if isinstance(gating_signals, (list, tuple)):
         # Ensure format is {<name of gating variable>: <list of signal labels>}
         gating_signals = {sig_name: [sig_name] for sig_name in gating_signals}
-    
+
     # Filter design
     Fs = isig_ref.sampling_rate.rescale('Hz').magnitude
     Fn = Fs / 2. # Nyquist frequency
@@ -931,7 +958,7 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
     num_cell = len(plotted_cell_idx)
     num_ax_per_cell = 2 + int(len(gating_signals.keys()) > 0)
     num_axes = num_cell * num_ax_per_cell
-    
+
     def add_rastergram(ax):
         """
         Add rastergram of afferents on new background axis
@@ -940,24 +967,24 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
         axb.set_ylim((0, 1))
         hide_axis(axb)
         for EI_label, pops_currents in currents_by_action.items():
-            base_color = 'green' if EI_label.startswith('E') else 'red'  
+            base_color = 'green' if EI_label.startswith('E') else 'red'
             y_mid = 0.15 if EI_label.startswith('E') else 0.05
             rastergram_presynaptic_pops_pooled(axb, post_gid, pop, pops_currents.keys(), interval, base_color, y_mid)
 
     # For each selected cell, plot currents and presynaptic rates
     for i_cell, cell_idx in enumerate(plotted_cell_idx):
-        
-        fig, axes = plt.subplots(num_ax_per_cell, 1, 
+
+        fig, axes = plt.subplots(num_ax_per_cell, 1,
                              figsize=(0.75*_data.page_width, num_ax_per_cell*_data.ax_height),
                              sharex=False)
         ax_i_offset = 0 # i_cell * num_ax_per_cell
-        
+
         # FIXME: comment temp solution
         # post_gid = network_params[pop]['gids'][cell_idx]
         vm_trace_idx = list(vm_sig.annotations['source_indices']).index(cell_idx)
         post_gid = vm_sig.annotations['source_ids'][vm_trace_idx]
         cell_ranking = cell_pop_idx_ranked.index(cell_idx)
-        
+
         #########################################################
         # FIGURE AXIS 1: membrane voltage
         ax1a = axes[ax_i_offset + 0]
@@ -966,10 +993,10 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
         ax1a.plot(vm_sig.times[vm_slice], vm_sig[vm_slice, vm_trace_idx], label='V_{m}')
         ax1a.set_ylim((-100, 25)) # create empty space above trace
         ax1a.set_ylabel('voltage (mV)')
-        
+
         ## Rastergram of afferent spikes
         add_rastergram(ax1a)
-        
+
         ## hilbert phase
 #         ax2 = ax1.twinx()
 #         ax2.plot(phase_ref.times[phase_slice], analphase_sigmean[phase_slice],
@@ -977,45 +1004,45 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
 #         ax2.set_ylim((-4*np.pi, np.pi)) # above voltage traces
 #         ax2.set_ylabel('phase (rad)')
         plot_phase_grid(phase_zcross, ax1a, False, False)
-        
+
         #########################################################
         # FIGURE AXIS 2: synaptic currents
         ## combined current on left axis
         ax2a = axes[ax_i_offset + 1]
         # another current on third axis
         # ax2c = ax2a.twinx()
-        
+
         # For each group of afferents (exc & inh pops), plot combined current and spikes
         for EI_label, pops_currents in currents_by_action.items():
             # Sum excitatory/inhibitory current signals
             itot_sig, itot_bypop = combine_current_signals(pop, pops_currents, cell_gid=post_gid)
             itot_filt = scipy.signal.sosfiltfilt(sos, itot_sig) # Filter current signal
-            
+
             EXCITATORY = EI_label.startswith('E')
             axi = ax2a # if EXCITATORY else ax2c
             base_color = 'green' if EXCITATORY else 'red'
             flip = -1.0 if EXCITATORY else 1.0
-            
+
             # Plot current
             base_color = 'green' if EI_label.startswith('E') else 'red'
             axi.plot(isig_times, flip*itot_filt[isig_slice], label='$i_{{{0:}}}$'.format(EI_label),
                      color=base_color, alpha=1.0)
             axi.set_ylabel('current (nA)') # color=base_color
             # axi.tick_params(axis='y', colors=base_color, size=4, width=1.5)
-            
+
             # Make space below
             y0, y1 = axi.get_ylim()
             y0 = 0 # y0-0.2*(y1-y0)
             axi.set_ylim(y0, y1)
-        
+
         ax2a.legend()
-        
+
         ## Rastergram of afferent spikes
         add_rastergram(ax2a)
-        
+
         ## Phase as gridlines
         plot_phase_grid(phase_zcross, ax2a, True, True)
-        
+
         #########################################################
         # FIGURE AXIS 3: gating variables
         if gating_signals:
@@ -1037,20 +1064,20 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
                 m_avg = sum_cell_signals(traces, cell_pop_idx=cell_idx, average=True)
                 ax3a.plot(msig_times, m_avg[msig_slice],
                           label="{} (mean)".format(gate_name))
-            
+
             # plot gating variables recorded from each compartment
             # for sig in gating_sigs:
             #     trace_idx = list(sig.annotations['source_indices']).index(cell_idx)
             #     ax3a.plot(msig_times, sig[msig_slice, trace_idx], label=sig.name)
-            
+
             # Legend and axes
             ax3a.legend()
             plot_phase_grid(phase_zcross, ax3a, True, True)
-        
+
         # Cleanup axes
         for ax in fig.axes:
             ax.set_xlim(interval)
-        
+
         if _data.export_figs and export_indices and cell_idx in export_indices:
             fname = 'phaselocking_cell-idx{}-gid{}-rank{}'.format(cell_idx, post_gid, cell_ranking)
             fpath = save_figure(fname, fig=fig)
@@ -1076,7 +1103,7 @@ def get_presynaptic_pop_indices(post_index, pre_pop, post_pop):
             if j==post_index
     ]
 
-     
+
 def rastergram_presynaptic_pops_pooled(
         ax, post_gid, post_pop, pre_pops, interval, color, y_mid
     ):
@@ -1088,7 +1115,7 @@ def rastergram_presynaptic_pops_pooled(
     for pre_pop in pre_pops:
         pre_gids = get_presynaptic_gids(post_gid, pre_pop, post_pop)
         pre_spikes.extend(_data.spiketrains_by_gid(pre_gids, pre_pop.split('.')[0]))
-    
+
     # Combined rastergram for presynaptic cells
     t0, t1 = interval
     all_spiketimes = [t.magnitude for t in pre_spikes]
@@ -1096,7 +1123,7 @@ def rastergram_presynaptic_pops_pooled(
     y_vec = np.ones_like(tot_spiketrain) * y_mid
     ax.plot(tot_spiketrain, y_vec, marker='|', linestyle='', snap=True, color=color)
 
-    
+
 def plot_phase_grid(zero_crossings, ax, set_xticks=False, label_xticks=False):
     """
     Plot phase zero crossings as vertical grid lines on axis.
@@ -1113,11 +1140,11 @@ def plot_phase_grid(zero_crossings, ax, set_xticks=False, label_xticks=False):
 def sum_total_current(currents_traces, cell_idx):
     """
     Sum synaptic currents for all recorded synapses of a given cell.
-    
+
     @param    currents_traces : dict[str, list(Neo.AnalogSignal)]
               Map of trace names (without index) to signals
-              
-    
+
+
     """
     itot = 0.0
     itot_tracetype = {k: 0.0 for k in currents_traces.keys()}
@@ -1134,22 +1161,22 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
     """
     Get total synaptic current for all afferent population and the ratio
     of excitatory to inhibitory currents.
-    
+
     @param    rec_ids : list(int)
               which cell to use out of all recorded cells
     """
     segment = _data.pops_segments[pop_label]
-    
+
     def afferents_total_current(afferents_currents, cell_idx):
         """
         Get total current for all given afferents onto cell.
-        
+
         @param    afferents_currents : dict[str, list(str)]
                   Map of afferent population labels to recorded synaptic current names
         """
         itot = 0.0 # total current for all given afferents
         pops_currents_itot = {}
-        
+
         for afferent_pop in afferents_currents.keys():
             # Afferent currents, by current type
             isyn_names = afferents_currents[afferent_pop]
@@ -1157,7 +1184,7 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
             num_rec_aff = len(aff_traces.values()[0]) # number of synapses for afferent population
             itot_sum, itot_bytrace = sum_total_current(aff_traces, cell_idx)
             pops_currents_itot[afferent_pop] = itot_bytrace
-            
+
             # Sum number of afferents (matrix column), should be same for each cell
             num_syn_aff = sum(
                 _data.network_params[afferent_pop][pop_label]['conn_matrix'][:, 0] > 0)
@@ -1169,17 +1196,17 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
             #        this is not a good estimate
             itot += itot_sum * num_syn_aff / num_rec_aff
         return itot, pops_currents_itot
-    
+
     cells_i_info = []
     cells_i_ratio = []
     for rec_id in rec_ids:
         print("{} cell {}:".format(pop_label, rec_id))
         itot_exc, iexc_bytype = afferents_total_current(exc_currents, rec_id)
         itot_inh, iinh_bytype = afferents_total_current(inh_currents, rec_id)
-        
+
         ratio = -1.0 * itot_exc / itot_inh # excitatory currents are negative by convention
         cells_i_ratio.append(ratio)
-        
+
         # Save all current info per recorded cell
         iaff_info = {}
         iaff_info.update(iexc_bytype)
@@ -1187,11 +1214,11 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
         iaff_info['EXC'] = itot_exc
         iaff_info['INH'] = itot_inh
         cells_i_info.append(iaff_info)
-        
+
     # Population average ratio EXC/INH
     _data.all_I_exc_inh[pop_label] = ratio = sum(cells_i_ratio) / len(cells_i_ratio)
     _data.all_I_afferents[pop_label] = cells_i_info
-    
+
     print("\n{}: EXC currents estimate".format(pop_label))
     print("\t=> Itot EXC estimate Itot = {}".format([i['EXC'] for i in cells_i_info]))
     print("\n{}: INH currents estimate".format(pop_label))
@@ -1223,10 +1250,11 @@ def gather_metrics(all_cell_metrics, metric):
 
 def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
         independent='sweep', pop_colors=None, regress='linear',
-        regression_report=False, metric_kwargs={}, plot_kwargs={}, **kwargs):
+        regression_report=False, metric_kwargs={}, plot_kwargs={},
+        export=False, **kwargs):
     """
     Linear regression of metric
-    
+
     @param    independent : str
               Independent variable for plot x-axis and linear regression
 
@@ -1238,7 +1266,7 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
         import pandas
 
     fig, ax = plt.subplots(figsize=(_data.fig_width, _data.fig_height))
-    
+
     # Function for converting saved metric to y-value
     if metric_func is None:
         metric_func = lambda x: x
@@ -1253,7 +1281,7 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
     else:
         # assume function
         pop_cmap = pop_colors
-    
+
     # Set independent variable for regression
     sweep_vals = np.array(sorted(_data.analysis_results.keys()))
     if independent == 'sweep':
@@ -1266,10 +1294,10 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
         x_ticks = kwargs.get('x_ticks', None)
     else:
         raise ValueError("Argument <independent> must be either 'sweep', 'exc_inh_ratio', or 'custom'.")
-    
-    
+
+
     ax.set_title(kwargs.get('title', metric_name))
-    
+
     # Plot for each population
     for i_pop, pop_label in enumerate(pop_labels):
         sig_label = pop_label
@@ -1287,7 +1315,7 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
         y = np.array(y_vals)
         slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
 
-        
+
         # Scatter plot + linear fit
         color = pop_cmap(pop_label)
         plt_kwargs = {
@@ -1299,18 +1327,19 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
         ax.plot(x, y, label=pop_label, **plt_kwargs)
 
         if regress == 'linear':
-            ax.plot(x, intercept + slope*x, '-', color=color, lw=1, label='linear fit')
-            
+            rcolor = 'k' # color
+            ax.plot(x, intercept + slope*x, '-', color=rcolor, lw=1, label='linear fit')
+
             # Print regression statistics
             ax.text(.98, .05 + i_pop * .20,
-                    '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
-                    color=color, transform=ax.transAxes, ha='right')
+                    '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value),
+                    color=rcolor, transform=ax.transAxes, ha='right')
 
             if regression_report:
                 data = pandas.DataFrame({'x': x, metric_name: y})
                 model = ols("{} ~ {}".format(metric_name, 'x'), data).fit()
                 print(model.summary()) # summary2()
-    
+
     if x_ticks is not None:
         ax.set_xticks(x_ticks)
     if 'y_lim' in kwargs:
@@ -1319,8 +1348,13 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
     ax.set_xlabel(x_label)
     ax.grid(True)
     ax.legend()
-    
+
     fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
+
+    # set_axes_size(ax_width, ax_height, ax)
+    if _data.export_figs and export:
+        fname = ax.get_title().replace(' ', '_') + '_pop-' + '-'.join(pop_labels)
+        save_figure(fname, fig=fig)
 
 
 def boxplots_burst_metrics(pop_label, metric_names=None, export_metrics=None):
@@ -1330,14 +1364,14 @@ def boxplots_burst_metrics(pop_label, metric_names=None, export_metrics=None):
     sweep_vals = np.array(sorted(_data.analysis_results.keys()))
     if metric_names == None:
         metric_names = _data.analysis_results[sweep_vals[0]]['burst_metrics'][pop_label][0].keys()
-    
+
     sweep_metrics = {}
     for metric_name in metric_names:
         for i, sweep_value in enumerate(sweep_vals):
             cell_metrics = _data.analysis_results[sweep_value]['burst_metrics'][pop_label]
             all_cell_vals = gather_metrics(cell_metrics, metric_name)
             sweep_metrics.setdefault(metric_name, []).append(all_cell_vals)
-    
+
         # Plot boxplots
         fig, ax = plt.subplots(figsize=(_data.ax_width, _data.ax_height))
         ax.set_title('{} {}'.format(pop_label, metric_name))
@@ -1348,9 +1382,9 @@ def boxplots_burst_metrics(pop_label, metric_names=None, export_metrics=None):
         ax.set_xlabel(_data.sweep_var_legend)
         ax.grid(True, which='major', axis='y')
         fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
-        
+
         # Save figure
-        if (_data.export_figs and (export_metrics is not None) 
+        if (_data.export_figs and (export_metrics is not None)
                               and (metric_name in export_metrics)):
             fname = '{}_{}'.format(metric_name, pop_label)
             save_figure(fname, fig=fig)
@@ -1366,25 +1400,25 @@ def regression_burst_metrics(pop_label, metric_names=None, detailed=True, export
     sweep_vals = np.array(sorted(_data.analysis_results.keys()))
     if metric_names == None:
         metric_names = _data.analysis_results[sweep_vals[0]]['burst_metrics'][pop_label][0].keys()
-    
+
     sweep_metrics = {}
     for metric_name in metric_names:
         for i, sweep_value in enumerate(sweep_vals):
             cell_metrics = _data.analysis_results[sweep_value]['burst_metrics'][pop_label]
             all_cell_vals = gather_metrics(cell_metrics, metric_name)
             sweep_metrics.setdefault(metric_name, []).append(all_cell_vals)
-        
+
         # Linear regression
         x = sweep_vals
         y = [np.median(mvals) for mvals in sweep_metrics[metric_name]]
         slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-        
+
         # Detailed linear regression
         if detailed:
             data = pandas.DataFrame({'x': x, metric_name: y})
             model = ols("{} ~ {}".format(metric_name, 'x'), data).fit()
             print(model.summary()) # summary2()
-        
+
         fig, ax = plt.subplots(figsize=(_data.ax_width, _data.ax_height))
         ax.set_title('{} {}'.format(pop_label, metric_name))
         ax.set_xticks(sweep_vals)
@@ -1393,12 +1427,12 @@ def regression_burst_metrics(pop_label, metric_names=None, detailed=True, export
         ax.set_ylabel(metric_name)
         ax.set_xlabel(_data.sweep_var_legend)
         ax.grid(True)
-        ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
+        ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value),
                 transform=ax.transAxes, ha='right')
         fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
-        
+
         # Save figure
-        if (_data.export_figs and (export_metrics is not None) 
+        if (_data.export_figs and (export_metrics is not None)
                               and (metric_name in export_metrics)):
             fname = '{}_{}'.format(metric_name, pop_label)
             save_figure(fname, fig=fig)
@@ -1412,41 +1446,41 @@ def summarize_burst_metrics(pop_label, metric_names, axsize=None, export=False):
     if axsize is None:
         axsize = (_data.ax_width, _data.ax_height)
 
-    
+
     fig, ax1 = plt.subplots()
     axes = [ax1] + [ax1.twinx() for m in metric_names[1:]]
     color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    
+
     sweep_metrics = {}
     for i_metric, metric_name in enumerate(metric_names):
         for i, sweep_value in enumerate(sweep_vals):
             cell_metrics = _data.analysis_results[sweep_value]['burst_metrics'][pop_label]
             all_cell_vals = gather_metrics(cell_metrics, metric_name)
             sweep_metrics.setdefault(metric_name, []).append(all_cell_vals)
-        
+
         # Linear regression
         x = sweep_vals
         y = [np.median(mvals) for mvals in sweep_metrics[metric_name]]
         slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
-        
+
         # Plot metric
         ax = axes[i_metric]
         act, = ax.plot(x, y, '--', marker='.', linewidth=1, markersize=6,
                        color=color_cycle[i_metric], label='original data')
         # ax.plot(x, intercept + slope*x, 'k--', label='linear fit')
-        
+
         ax.set_ylabel(metric_name, color=act.get_color())
         ax.tick_params(axis='y', colors=act.get_color(), size=4, width=1.5)
-        # ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
+        # ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value),
         #         transform=ax.transAxes, ha='right')
-        
+
         if i_metric == 0:
             ax.set_xticks(sweep_vals)
             ax.set_xlabel(_data.sweep_var_legend)
             ax.grid(True)
         elif i_metric == 2:
             offset_show_twin_yax(ax, offset=1.12)
-            
+
     fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
     set_axes_size(axsize[0], axsize[1], ax1)
 
@@ -1458,7 +1492,7 @@ def summarize_burst_metrics(pop_label, metric_names, axsize=None, export=False):
 
 def compare_covariance_complexity(sig_label, f_band=None, detailed=False, ymax=None):
     """
-    Compare distribution of Morgera-index values for time segments 
+    Compare distribution of Morgera-index values for time segments
     in simulation.
     """
     from statsmodels.formula.api import ols
@@ -1488,7 +1522,7 @@ def compare_covariance_complexity(sig_label, f_band=None, detailed=False, ymax=N
     std_M = np.std(M_array, axis=1)
     med_M = np.median(M_array, axis=1)
     ival_width = M_intervals[0][0][1] - M_intervals[0][0][0]
-    
+
     # Plot boxplots
     fig, ax = plt.subplots(figsize=(_data.ax_width, _data.ax_height))
     ax.set_title('Covariance complexity over {} ms intervals'.format(ival_width))
@@ -1499,7 +1533,7 @@ def compare_covariance_complexity(sig_label, f_band=None, detailed=False, ymax=N
     ax.set_xlabel(_data.sweep_var_legend)
     ax.grid(True, which='major', axis='y')
     fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
-    
+
     # Linear regression
     metric_name = 'M'
     x = sweep_vals
@@ -1523,6 +1557,6 @@ def compare_covariance_complexity(sig_label, f_band=None, detailed=False, ymax=N
     ax.set_ylabel('M (0-1)')
     ax.set_xlabel(_data.sweep_var_legend)
     ax.grid(True)
-    ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value), 
+    ax.text(.98, .05, '$R^2$ = {:.2f}\n$p^r$ = {:f}'.format(r_value**2, p_value),
             transform=ax.transAxes, ha='right')
     fig.subplots_adjust(bottom=0.15) # prevent clipped xlabel
