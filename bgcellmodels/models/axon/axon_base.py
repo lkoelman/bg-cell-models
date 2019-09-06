@@ -274,8 +274,8 @@ class AxonBuilder(object):
         # Get 3D coordinates of all nodal sections
         node_type = self.collateral_comp_sequence[0]
         node_secs = self.built_sections[node_type]
-        node_pt3d, node_n3d = morph_3d.get_segment_centers([node_secs],
-                                samples_as_rows=True)
+        node_pt3d, node_n3d, sl_nsec = morph_3d.get_segment_centers([node_secs],
+                                                    samples_as_rows=True)
         node_pt3d = np.array(node_pt3d)
 
         # Initialize data structures

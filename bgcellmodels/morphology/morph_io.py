@@ -304,17 +304,17 @@ def morphologies_to_edges(section_lists, segment_centers=True,
             into this array.
             
             - If flatten_cells is False, vertices is a list of Nx3 arrays, 
-            one for each cell, and edges a list of index matrices into the 
-            vertex array for each cell.
+            one for each SectionList, and edges a list of edges for each vertex
+            array.
     """
 
     # Get 3D samples
     if segment_centers:
-        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
-                                        samples_as_rows=True)
+        verts_data = morph_3d.get_segment_centers(section_lists, samples_as_rows=True)
     else:
-        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
-                                        include_diam=False)
+        verts_data = morph_3d.get_section_samples(section_lists, include_diam=False)
+
+    samples_xyz, secs_num3d, seclist_numsec = verts_data
     samples_xyz = np.array(samples_xyz)
 
     # Apply transformation before writing
@@ -331,37 +331,53 @@ def morphologies_to_edges(section_lists, segment_centers=True,
 
     # Create vertices
     if flatten_cells:
-        vertices = samples_xyz  # flat vertex list
+        all_verts = samples_xyz  # flat vertex list
     else:
-        vertices = []           # vertex list per cell
+        all_verts = []           # vertex list per cell
     
     # Create edges
-    secs_edges = []
+    all_edges = []
     sample_offset = 0
+    seclist_index = 0
+    seclist_bounds = np.cumsum(seclist_numsec)
+
     for i_sec, num_samples in enumerate(secs_num3d):
 
-        # Add edge [a, b]
         if flatten_cells:
-            edge_offset = sample_offset
+            edge_list = all_edges
+            vert_offset = sample_offset
         else:
-            edge_offset = 0
+            # Start a new vertex and edge list if section belongs to new SectionList
+            first_seclist = (i_sec == 0)
+            new_seclist = (i_sec >= seclist_bounds[seclist_index])
+            if first_seclist or new_seclist:
+                all_edges.append([])
+                all_verts.append([])
+                num_verts_added = 0
+                if new_seclist:
+                    seclist_index += 1
+            
+            vert_offset = num_verts_added
+            num_verts_added += num_samples
+            edge_list = all_edges[-1]
+            vert_list = all_verts[-1]
+            sec_samples = samples_xyz[sample_offset:(sample_offset+num_samples), :]
+            vert_list.extend(sec_samples)
+        
+        # Add one edge between each successive pair of samples in the section
         edges = [
-            (i, i+1) for i in xrange(edge_offset, edge_offset + num_samples - 1)
+            (i, i+1) for i in xrange(vert_offset, vert_offset + num_samples - 1)
         ]
-        if flatten_cells:
-            secs_edges.extend(edges)
-        else:
-            secs_edges.append(edges)
-            vertices.append(samples_xyz[sample_offset:(sample_offset+num_samples), :])
+        edge_list.extend(edges)
 
         sample_offset += num_samples
 
     # Correct return datatypes
     if flatten_cells:
-        edges = np.array(secs_edges)
+        all_edges = np.array(all_edges)
     else:
-        edges = secs_edges
-    return vertices, edges
+        all_verts = [np.array(verts) for verts in all_verts]
+    return all_verts, all_edges
 
 
 def edges_to_PLY(vertices, edges, filepath, rgb=(0.0, 0.0, 0.0), text=False,
@@ -446,11 +462,10 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
 
     # Get 3D samples
     if segment_centers:
-        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
-                                        samples_as_rows=True)
+        verts_data = morph_3d.get_segment_centers(section_lists, samples_as_rows=True)
     else:
-        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
-                                        include_diam=False)
+        verts_data = morph_3d.get_section_samples(section_lists, include_diam=False)
+    samples_xyz, secs_num3d, _ = verts_data
 
     # Apply transformation before writing
     if (translation is not None) or (transform is not None) or (scale != 1.0):
@@ -638,11 +653,10 @@ def morphology_to_TXT(section_lists, filepath, segment_centers=True,
 
     # Get 3D samples
     if segment_centers:
-        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
-                                        samples_as_rows=True)
+        verts_data = morph_3d.get_segment_centers(section_lists, samples_as_rows=True)
     else:
-        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
-                                        include_diam=False)
+        verts_data = morph_3d.get_section_samples(section_lists, include_diam=False)
+    samples_xyz, secs_num3d, _ = verts_data
 
     # Apply transformation before writing
     if (translation is not None) or (transform is not None) or (scale != 1.0):
