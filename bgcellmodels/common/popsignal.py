@@ -489,7 +489,7 @@ def calc_mean_phase_vectors(spiketrains, pop_label, intervals=None,
 
 
 def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
-                       rmax=None, rticks=None, rticks_pos=None,
+                       rmax=None, rticks=None, rticks_pos=None, plot_cell_vecs=True,
                        cell_color='green', pop_color='red', cell_opacity=0.5,
                        mark_cells_rim=False, ref_vec=None, extra_pop_vecs=None,
                        extra_cell_vecs=None, extra_labels=None, extra_colors=None,
@@ -525,7 +525,7 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
 
     # Plot additional vectors if given
     for i, vec in enumerate(extra_pop_vecs):
-        if extra_cell_vecs is not None:
+        if plot_cell_vecs and extra_cell_vecs is not None:
             extra_angs = np.angle(extra_cell_vecs[i]) - ref_ang
             extra_lens = np.abs(extra_cell_vecs[i])
             ax.vlines(extra_angs, 0, extra_lens, color=extra_cell_colors[i],
@@ -534,12 +534,14 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
         ax.vlines(np.angle(vec) - ref_ang, 0, np.abs(vec), color=extra_colors[i],
                   linewidth=pop_line_width, label=extra_labels[i])
 
-    # Plot cell vectors as points on outer circle
-    ax.vlines(vec_angs, 0, vec_lens,
-              color=cell_color, alpha=cell_opacity, linewidth=1, snap=True)
-    if mark_cells_rim:
-        ax.plot(vec_angs, np.zeros_like(vec_angs)+rmax, 'o',
-                color=cell_color, markersize=5)
+    # Plot cell vectors
+    if plot_cell_vecs:
+        ax.vlines(vec_angs, 0, vec_lens,
+                  color=cell_color, alpha=cell_opacity, linewidth=1, snap=True)
+        if mark_cells_rim:
+            # Mark points on rim of polar plot
+            ax.plot(vec_angs, np.zeros_like(vec_angs)+rmax, 'o',
+                    color=cell_color, markersize=5)
 
     # Plot population vector as thick line
     # ax.plot(vec_angs, vec_lens, 'ro')
@@ -648,15 +650,67 @@ def sorted_signals(segment, trace_name):
                   key=lambda sig: get_synapse_index(sig.name))
 
 
+def plot_signal(signal, interval, channels=None, pop_label=None, title=None,
+                ylabel=None, xlabel=None, ylim=None, figsize=None,
+                export=False, **plot_kwargs):
+    """
+    Plot neo.AnalogSignal in given interval.
+    """
+    if figsize is None:
+        figsize = (_data.fig_width, _data.fig_height)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    if title == True:
+        title = '{} ({})'.format(signal.name, pop_label)
+    if title:
+        fig.suptitle(title)
+    if pop_label:
+        sig_label = '{}-{}'.format(signal.name, pop_label)
+    else:
+        sig_label = signal.name
+
+    islice = neoutil.make_slice(signal, interval)
+    if isinstance(channels, slice):
+        cslice = channels
+    else:
+        cslice = slice(channels)
+
+    # sig_data = signal.asarray()
+    # if sig_data.ndim == 2:
+    #     sig_plotted = sig_data[islice, cslice]
+    # else:
+    #     sig_plotted = sig_data[islice]
+    ax.plot(signal.times[islice], signal[islice, cslice],
+            label=sig_label, **plot_kwargs)
+
+    if ylim:
+        ax.set_ylim(ylim)
+    ax.set_xlim(interval)
+    if ylabel is None:
+        ylabel = '{} ({})'.format(signal.name, signal.units)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel('time ({})'.format(signal.times.units))
+    ax.grid(True)
+
+    fig.subplots_adjust(bottom=0.15) # prevent clipping of xlabel
+
+    if _data.export_figs and export:
+        fname = '{}_t-{:.1f}-{:.1f}'.format(
+            sig_label, interval[0]*1e-3, interval[1]*1e-3)
+        save_figure(fname, fig=fig)
+
+    return fig, ax
+
+
 def plot_signal_interval(ax, signal, interval, channels, **kwargs):
     """
     Plot neo.AnalogSignal in given interval.
     """
     rec_dt = signal.sampling_period.magnitude
     tstart = signal.t_start.magnitude
-    irange = [int((t-tstart)/rec_dt) for t in interval]
-    times = signal.times[irange[0]:irange[1]]
-    ax.plot(times, signal[irange[0]:irange[1], channels], **kwargs)
+    i_range = [int((t-tstart)/rec_dt) for t in interval]
+    i_slice = slice(*i_range)
+    ax.plot(signal.times[i_slice], signal[i_slice, channels], **kwargs)
 
 
 def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=True,
