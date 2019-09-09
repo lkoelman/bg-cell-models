@@ -149,7 +149,7 @@ proc xtra_setpointers() { local im_extracellular
  *
  */
 proc xtra_set_impedances_pointsource() { \
-    local x_elec, y_elec, z_elec \
+    local x_elec, y_elec, z_elec, r_min \
     localobj seclist
 
     // Parse arguments
@@ -171,7 +171,8 @@ proc xtra_set_impedances_pointsource() { \
                 // if electrode is exactly at a node, r will be 0
                 // this would be meaningless since the location would be inside the cell
                 // so force r to be at least as big as local radius
-                if (r==0) r = diam(x)/2
+                r_min = diam(x) / 2
+                if (r < r_min) r = r_min
                 rx_xtra(x) = (rho / 4 / PI)*(1/r)*0.01
             }
         }
