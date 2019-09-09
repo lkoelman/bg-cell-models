@@ -37,19 +37,19 @@ def morphology_to_dict(sections):
 
     # Assign index to each sections (for expressing topology relations)
     section_map = {sec: i for i, sec in enumerate(sections)}
-    
+
     # adds 3D info using simple algorithm if not present
     h.define_shape()
-    
+
     result = []
     for sec in sections:
         parent_sec = parent(sec)
 
         parent_x = -1 if parent_sec is None else parent_loc(sec, parent_sec)
         parent_id = -1 if parent_sec is None else section_map[parent_sec] # get parent index
-        
+
         n3d = int(h.n3d(sec=sec))
-        
+
         result.append({
             'section_orientation':  h.section_orientation(sec=sec),
             'parent':               parent_id,
@@ -58,15 +58,15 @@ def morphology_to_dict(sections):
             'y':                    [h.y3d(i, sec=sec) for i in xrange(n3d)],
             'z':                    [h.z3d(i, sec=sec) for i in xrange(n3d)],
             'diam':                 [h.diam3d(i, sec=sec) for i in xrange(n3d)],
-            'name':                 sec.hname()           
+            'name':                 sec.hname()
         })
-    
+
     return result
 
 
 def morphology_to_SWC(sections, filename):
     """
-    Convert all instantiated NEURON cells to SWC. 
+    Convert all instantiated NEURON cells to SWC.
 
     Each isolated tree is written to a separate .swc file.
 
@@ -85,7 +85,7 @@ def read_SWC_samples(file_path, structured=True):
 
     @return     samples : list[list[<7 sample elements>]]
 
-                A sample consists of 7 elements, i.e. [sample_number (int), 
+                A sample consists of 7 elements, i.e. [sample_number (int),
                 structure_identifier (int), x (float), y (float), z (float),
                 radius (float), parent_sample_number (int)]
 
@@ -135,7 +135,7 @@ def save_json(sections, filename, encoding='utf-8'):
     Save morphology to JSON
     """
     morph_dicts = morphology_to_dict(sections)
-    
+
     # json_string = json.dumps(morph_dict, indent=2)
 
     if encoding == 'ascii':
@@ -168,7 +168,7 @@ def load_json(morphfile):
            # connect children to parent compartments
            for sec,sd in zip(seclist,secdata):
               if sd['parent_loc'] >= 0:
-               parent_sec = seclist[sd['parent']] # not parent_loc, grab from sec_list not sec 
+               parent_sec = seclist[sd['parent']] # not parent_loc, grab from sec_list not sec
                sec.connect(parent_sec(sd['parent_loc']), sd['section_orientation'])
 
                return seclist
@@ -183,7 +183,7 @@ def test_json_export():
 
     """
         Create the tree
-       
+
               s0
         s1    s2         s3
         s4           s5      s6
@@ -191,7 +191,7 @@ def test_json_export():
     """
     for p, c in [[0, 1], [0, 2], [0, 3], [1, 4], [4, 7], [3, 5], [3, 6], [5, 8], [5, 9], [6, 10]]:
         s[c].connect(s[p])
-   
+
     print json.dumps(morphology_to_dict([s[3], s[5], s[8], s[0], s[1], s[4], s[7]]), indent=2)
 
 
@@ -233,7 +233,7 @@ def morphology_to_STEP_1D(secs, filepath):
 
     @param  secs : neuron.SectionList
 
-            SectionList containing sections whose geometry will be exported. 
+            SectionList containing sections whose geometry will be exported.
             It is important that this is a SectionList so that the CAS will be
             set correctly during iterations.
     """
@@ -252,7 +252,7 @@ def morphology_to_STEP_1D(secs, filepath):
     from OCC.STEPControl import STEPControl_Writer, STEPControl_AsIs
     from OCC.IFSelect import IFSelect_RetDone # Return codes
     from OCC.Interface import Interface_Static_SetCVal
-    
+
     step_writer = STEPControl_Writer()
     Interface_Static_SetCVal("write.step.schema", "AP203")
     c_edges = TopoDS_Compound() # group edges in a compound shape
@@ -298,23 +298,23 @@ def morphologies_to_edges(section_lists, segment_centers=True,
     @see    morphology_to_PLY()
 
     @return (vertices, edges) : tuple
-            
+
             - If flatten_cells is True, vertices is an Nx3 numpy array containing
             all the compartment coordinates, and edges are pairs of indices
             into this array.
-            
-            - If flatten_cells is False, vertices is a list of Nx3 arrays, 
-            one for each cell, and edges a list of index matrices into the 
-            vertex array for each cell.
+
+            - If flatten_cells is False, vertices is a list of Nx3 arrays,
+            one for each SectionList, and edges a list of edges for each vertex
+            array.
     """
 
     # Get 3D samples
     if segment_centers:
-        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
-                                        samples_as_rows=True)
+        verts_data = morph_3d.get_segment_centers(section_lists, samples_as_rows=True)
     else:
-        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
-                                        include_diam=False)
+        verts_data = morph_3d.get_section_samples(section_lists, include_diam=False)
+
+    samples_xyz, secs_num3d, seclist_numsec = verts_data
     samples_xyz = np.array(samples_xyz)
 
     # Apply transformation before writing
@@ -331,37 +331,53 @@ def morphologies_to_edges(section_lists, segment_centers=True,
 
     # Create vertices
     if flatten_cells:
-        vertices = samples_xyz  # flat vertex list
+        all_verts = samples_xyz  # flat vertex list
     else:
-        vertices = []           # vertex list per cell
-    
+        all_verts = []           # vertex list per cell
+
     # Create edges
-    secs_edges = []
+    all_edges = []
     sample_offset = 0
+    seclist_index = 0
+    seclist_bounds = np.cumsum(seclist_numsec)
+
     for i_sec, num_samples in enumerate(secs_num3d):
 
-        # Add edge [a, b]
         if flatten_cells:
-            edge_offset = sample_offset
+            edge_list = all_edges
+            vert_offset = sample_offset
         else:
-            edge_offset = 0
+            # Start a new vertex and edge list if section belongs to new SectionList
+            first_seclist = (i_sec == 0)
+            new_seclist = (i_sec >= seclist_bounds[seclist_index])
+            if first_seclist or new_seclist:
+                all_edges.append([])
+                all_verts.append([])
+                num_verts_added = 0
+                if new_seclist:
+                    seclist_index += 1
+
+            vert_offset = num_verts_added
+            num_verts_added += num_samples
+            edge_list = all_edges[-1]
+            vert_list = all_verts[-1]
+            sec_samples = samples_xyz[sample_offset:(sample_offset+num_samples), :]
+            vert_list.extend(sec_samples)
+
+        # Add one edge between each successive pair of samples in the section
         edges = [
-            (i, i+1) for i in xrange(edge_offset, edge_offset + num_samples - 1)
+            (i, i+1) for i in xrange(vert_offset, vert_offset + num_samples - 1)
         ]
-        if flatten_cells:
-            secs_edges.extend(edges)
-        else:
-            secs_edges.append(edges)
-            vertices.append(samples_xyz[sample_offset:(sample_offset+num_samples), :])
+        edge_list.extend(edges)
 
         sample_offset += num_samples
 
     # Correct return datatypes
     if flatten_cells:
-        edges = np.array(secs_edges)
+        all_edges = np.array(all_edges)
     else:
-        edges = secs_edges
-    return vertices, edges
+        all_verts = [np.array(verts) for verts in all_verts]
+    return all_verts, all_edges
 
 
 def edges_to_PLY(vertices, edges, filepath, rgb=(0.0, 0.0, 0.0), text=False,
@@ -378,7 +394,7 @@ def edges_to_PLY(vertices, edges, filepath, rgb=(0.0, 0.0, 0.0), text=False,
     @param  multiple : bool
             If True, treat arguments 'vertices' and 'edges' as multiple
             collections of vertices and edges. These will be concatenated into
-            one PLY file  
+            one PLY file
     """
     from plyfile import PlyData, PlyElement
 
@@ -395,11 +411,11 @@ def edges_to_PLY(vertices, edges, filepath, rgb=(0.0, 0.0, 0.0), text=False,
     vertex_dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
     vertices = np.array(vertices, dtype=vertex_dtype) # argument must be list of tuple
     verts_element = PlyElement.describe(vertices, 'vertex')
-    
+
     # Create edges in PLY format
     if multiple:
         secs_edges = [
-            (e[0] + pre[i_set], e[1] + pre[i_set], rgb[0], rgb[1], rgb[2]) 
+            (e[0] + pre[i_set], e[1] + pre[i_set], rgb[0], rgb[1], rgb[2])
                 for i_set, edge_set in enumerate(edges) for e in edge_set
         ]
     else:
@@ -408,7 +424,7 @@ def edges_to_PLY(vertices, edges, filepath, rgb=(0.0, 0.0, 0.0), text=False,
     # Concatenate all edges
     edge_dtype = [ # edge format: http://paulbourke.net/dataformats/ply/
         ('vertex1', 'i4'),
-        ('vertex2', 'i4'), 
+        ('vertex2', 'i4'),
         ('red',   'u1'),
         ('green', 'u1'),
         ('blue',  'u1')
@@ -446,11 +462,10 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
 
     # Get 3D samples
     if segment_centers:
-        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
-                                        samples_as_rows=True)
+        verts_data = morph_3d.get_segment_centers(section_lists, samples_as_rows=True)
     else:
-        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
-                                        include_diam=False)
+        verts_data = morph_3d.get_section_samples(section_lists, include_diam=False)
+    samples_xyz, secs_num3d, _ = verts_data
 
     # Apply transformation before writing
     if (translation is not None) or (transform is not None) or (scale != 1.0):
@@ -468,7 +483,7 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
     vertex_dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
     vertices = np.array(samples_xyz, dtype=vertex_dtype) # argument must be list of tuple
     verts_element = PlyElement.describe(vertices, 'vertex')
-    
+
     # Create all faces and edges
     secs_faces = []
     secs_edges = []
@@ -495,7 +510,7 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
 
     # Concatenate all faces
     face_dtype = [
-        ('vertex_indices', 'i4', (3,)), 
+        ('vertex_indices', 'i4', (3,)),
         ('red',   'u1'),
         ('green', 'u1'),
         ('blue',  'u1')
@@ -506,7 +521,7 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
     # Concatenate all edges
     edge_dtype = [ # edge format: http://paulbourke.net/dataformats/ply/
         ('vertex1', 'i4'),
-        ('vertex2', 'i4'), 
+        ('vertex2', 'i4'),
         ('red',   'u1'),
         ('green', 'u1'),
         ('blue',  'u1')
@@ -523,7 +538,7 @@ def morphology_to_PLY(section_lists, filepath, segment_centers=True,
     PlyData(elements, text=text).write(filepath)
 
 
-def SWC_nrn_to_PLY(morphology_path, ply_path=None, icell=None, quiet=False, 
+def SWC_nrn_to_PLY(morphology_path, ply_path=None, icell=None, quiet=False,
                       **ply_kwargs):
     """
     Export SWC or ASC morphology to PLY file (easy to import in Blender
@@ -612,7 +627,7 @@ def SWC_raw_to_PLY(morphology_path, ply_path=None, single_ply_file=False,
     if single_ply_file:
         edges_to_PLY(all_cell_vertices, all_cell_edges, ply_path, multiple=True,
                      **ply_kwargs)
-            
+
 
 
 def morphology_to_TXT(section_lists, filepath, segment_centers=True,
@@ -638,11 +653,10 @@ def morphology_to_TXT(section_lists, filepath, segment_centers=True,
 
     # Get 3D samples
     if segment_centers:
-        samples_xyz, secs_num3d = morph_3d.get_segment_centers(section_lists, 
-                                        samples_as_rows=True)
+        verts_data = morph_3d.get_segment_centers(section_lists, samples_as_rows=True)
     else:
-        samples_xyz, secs_num3d = morph_3d.get_section_samples(section_lists,
-                                        include_diam=False)
+        verts_data = morph_3d.get_section_samples(section_lists, include_diam=False)
+    samples_xyz, secs_num3d, _ = verts_data
 
     # Apply transformation before writing
     if (translation is not None) or (transform is not None) or (scale != 1.0):

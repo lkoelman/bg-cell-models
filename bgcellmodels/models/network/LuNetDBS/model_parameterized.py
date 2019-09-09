@@ -194,7 +194,7 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None,
     cells = [gid._cell for gid in pop if pop.is_local(gid)]
     cells_activations_dists = [
         xtra_utils.get_rattay_activating_function(cell.icell,
-            'basal', 'somatic', 'axonal') for cell in cells
+            ('basal', 'somatic', 'axonal')) for cell in cells
     ]
     cell_acts, cell_dists = zip(*cells_activations_dists)
 

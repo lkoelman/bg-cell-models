@@ -12,6 +12,8 @@ import logging
 from neuron import h
 import numpy as np
 
+from bgcellmodels.common.treeutils import prev_seg, next_segs
+
 PI = math.pi
 sqrt = math.sqrt
 logger = logging.getLogger('emfield.xtra_utils')
@@ -37,7 +39,7 @@ def set_transfer_impedances(seclist, impedance_lookup_func):
 
 def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
                                     max_dist, warn_dist, min_electrode_dist,
-                                    electrode_coords, Z_intersect=1e12):
+                                    electrode_coords, Z_intersect=0.0):
     """
     Set transfer impedances using nearest neighbor interpolation, or using
     matching coordinates (set max_dist=eps).
@@ -117,6 +119,89 @@ def set_transfer_impedances_nearest(seclist, Z_coords, Z_values,
             sec(c).rx_xtra = Z_node
 
 
+def set_transfer_impedances_interp(seclist, Z_coords, Z_values,
+                                   min_electrode_dist, electrode_coords,
+                                   method='linear', Z_intersect=0.0):
+    """
+    Set transfer impedances using linear or cubic interpolation.
+
+    Similar to function scipy.interpolate.griddata, except the interpolator
+    object is saved between queries.
+
+    @param  method : str
+            Interpolation method: 'linear' or 'cubic'
+
+    @param  Z_coords : array_like of shape (N x 3)
+            Coordinates of transfer impedances in Z_values (micron)
+
+    @param  Z_values : arrayLike of length N
+            Transfer impedances at coordinates in Z_coords
+    """
+    if method == 'linear':
+        from scipy.interpolate import LinearNDInterpolator
+        interp = LinearNDInterpolator(Z_coords, Z_values)
+    elif method == 'cubic':
+        from scipy.interpolate import CloughTocher2DInterpolator
+        interp = CloughTocher2DInterpolator(Z_coords, Z_values)
+    else:
+        raise ValueError(method)
+
+
+    for sec in seclist:
+        if not h.ismembrane('xtra', sec=sec):
+            logger.debug("Skipping section '%s', no mechanism 'xtra' found.", sec.name())
+            continue
+
+        # Get coordinates of compartment centers
+        num_samples = int(h.n3d(sec=sec))
+        nseg = sec.nseg
+
+        # Get 3D sample points for section
+        xx = h.Vector([h.x3d(i, sec=sec) for i in xrange(num_samples)])
+        yy = h.Vector([h.y3d(i, sec=sec) for i in xrange(num_samples)])
+        zz = h.Vector([h.z3d(i, sec=sec) for i in xrange(num_samples)])
+
+        # Length in micron from start of section to sample i
+        pt_locs = h.Vector([h.arc3d(i, sec=sec) for i in xrange(num_samples)])
+        L = pt_locs.x[num_samples-1]
+
+        # Normalized location of 3D sample points (0-1)
+        pt_locs.div(L)
+
+        # Normalized locations of nodes (0-1)
+        node_locs = h.Vector(nseg + 2)
+        node_locs.indgen(1.0 / nseg)
+        node_locs.sub(1.0 / (2 * nseg))
+        node_locs.x[0] = 0.0
+        node_locs.x[nseg+1] = 1.0
+
+        # Now calculate 3D locations of nodes (segment centers + 0 + 1)
+        # by interpolating 3D locations of samples
+        node_xlocs = h.Vector(nseg+2)
+        node_ylocs = h.Vector(nseg+2)
+        node_zlocs = h.Vector(nseg+2)
+        node_xlocs.interpolate(node_locs, pt_locs, xx)
+        node_ylocs.interpolate(node_locs, pt_locs, yy)
+        node_zlocs.interpolate(node_locs, pt_locs, zz)
+        node_coords = np.array(zip(node_xlocs, node_ylocs, node_zlocs))
+
+        # Interpolate node coordinates
+        z_vals_nodes = interp(node_coords)
+
+        # Check electrode distance
+        for i, c in enumerate(node_locs):
+            node_xyz = node_coords[i]
+            if np.linalg.norm(node_xyz - electrode_coords) <= min_electrode_dist:
+                # Node is too close to electrode
+                Z_node = Z_intersect
+            else:
+                # No issues, nearest neighbor and electrode distance OK
+                Z_node = z_vals_nodes[i]
+
+            # Assign transfer impedance
+            sec(c).rx_xtra = Z_node
+
+
 def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):
     """
     Analytical transfer resistance between electrical point source
@@ -124,6 +209,9 @@ def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):
 
     @param  rho : float
             Resistivity of extracullular medium (Ohm * cm).
+
+    @return Z : float
+            Transfer impedance (MOhm)
     """
     x1, y1, z1 = seg_coords
     x2, y2, z2 = source_coords
@@ -136,14 +224,31 @@ def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):
     return (rho / 4 / PI) * (1 / dist) * 0.01
 
 
-def get_rattay_activating_function(icell, *seclist_names):
+def get_rattay_activating_function(
+        icell,
+        seclist_names,
+        warn_high_act=False,
+        raise_on_warn=False):
     """
     Get activation function values for each compartment (segment),
     grouped by default morphological section lists.
 
+    @param  warn_high_act : bool or dict[str, float]
+            If true, use default threshold values for determining if activating
+            function value is too high, and give warning. If dict is given,
+            use custom threshold values and give warning.
     """
-    from bgcellmodels.common.treeutils import prev_seg, next_segs
-    from bgcellmodels.common.nrnutil import all_xnode
+    # Parse arguments
+    if warn_high_act == True:
+        act_warn_thresh = {
+            'somatic': 1e6,
+            'basal': .5e6,
+            'axonal': 4e6,
+        }
+    elif isinstance(warn_high_act, dict):
+        act_warn_thresh = warn_high_act
+    else:
+        warn_high_act = False
 
     # Preconditions for algorithm
     stim_amp_mA = 1.0
@@ -151,7 +256,6 @@ def get_rattay_activating_function(icell, *seclist_names):
     test_sec = list(icell.all)[0]
     root_sec = h.SectionRef(sec=test_sec).root
     h.distance(0, 0.5, sec=root_sec)
-
 
     # First collect required data for each compartment
     nodes_V_ext = {}            # mV
@@ -205,11 +309,6 @@ def get_rattay_activating_function(icell, *seclist_names):
     act_values = {}             # seclist_name -> list[float]
     dist_values = {}            # seclist_name -> list[float]
 
-    act_warn_thresh = {
-        'somatic': 1e6,
-        'basal': .5e6,
-        'axonal': 4e6,
-    }
     for sl_name in seclist_names:
 
         seclist = getattr(icell, sl_name, None)
@@ -239,9 +338,10 @@ def get_rattay_activating_function(icell, *seclist_names):
                     act_values[sl_name].append(act)
                     dist_values[sl_name].append(dist)
 
-                    if act > act_warn_thresh[sl_name]:
-                        print("ACT_FUN_HIGH: {}".format(seg))
-                        raise Exception('breakpoint')
+                    if warn_high_act != False and act > act_warn_thresh[sl_name]:
+                        logger.warning("ACT_FUN_HIGH: {}".format(seg))
+                        if raise_on_warn:
+                            raise Exception('breakpoint')
 
         assert len(act_values[sl_name]) == len(dist_values[sl_name])
 

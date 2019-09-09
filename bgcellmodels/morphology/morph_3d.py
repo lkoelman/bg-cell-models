@@ -31,9 +31,12 @@ def get_section_samples(section_lists, include_diam=True):
     """
     all_samples = []
     sections_numsample = []
+    seclists_numsec = []
 
     for sections in section_lists:
+        num_sec = 0
         for sec in sections:
+            num_sec += 1
             num_samples = int(h.n3d(sec=sec))
             if include_diam:
                 sec_samples = [
@@ -53,12 +56,14 @@ def get_section_samples(section_lists, include_diam=True):
             all_samples.extend(sec_samples)
             sections_numsample.append(num_samples)
 
-    return all_samples, sections_numsample
+        seclists_numsec.append(num_sec)
+
+    return all_samples, sections_numsample, seclists_numsec
 
 
 def get_segment_centers(section_lists, samples_as_rows=False):
     """
-    Calculate segment center coordinates for Section that has 3d sample points 
+    Calculate segment center coordinates for Section that has 3d sample points
     assigned to it.
 
     @param  section_lists
@@ -71,9 +76,12 @@ def get_segment_centers(section_lists, samples_as_rows=False):
     y_allsec = []
     z_allsec = []
     sections_numsample = []
+    seclists_numsec = []
 
     for sections in section_lists:
+        num_sec = 0
         for sec in sections:
+            num_sec += 1
             num_samples = int(h.n3d(sec=sec))
             nseg = sec.nseg
             sections_numsample.append(nseg + 2)
@@ -110,10 +118,12 @@ def get_segment_centers(section_lists, samples_as_rows=False):
             y_allsec.extend(list(node_ylocs))
             z_allsec.extend(list(node_zlocs))
 
+        seclists_numsec.append(num_sec)
+
     if samples_as_rows:
-        return zip(x_allsec, y_allsec, z_allsec), sections_numsample
+        return zip(x_allsec, y_allsec, z_allsec), sections_numsample, seclists_numsec
     else:
-        return (x_allsec, y_allsec, z_allsec), sections_numsample
+        return (x_allsec, y_allsec, z_allsec), sections_numsample, seclists_numsec
 
 
 def find_closest_section(point3d, sections, measure_from='segment_centers'):
@@ -129,9 +139,11 @@ def find_closest_section(point3d, sections, measure_from='segment_centers'):
             point (depending on argument 'measure_from')
     """
     if measure_from == 'segment_centers':
-        node_pt3d, node_n3d = get_segment_centers([sections], samples_as_rows=True)
+        node_pt3d, node_n3d, _ = get_segment_centers(
+                                        [sections], samples_as_rows=True)
     elif measure_from == 'pt3d':
-        node_pt3d, node_n3d = get_section_samples([sections], include_diam=False)
+        node_pt3d, node_n3d, _ = get_section_samples(
+                                        [sections], include_diam=False)
     else:
         raise ValueError(measure_from)
     node_pt3d = np.array(node_pt3d)
@@ -266,7 +278,7 @@ if __name__ == '__main__':
     for seed in range(10):
         perturbed_samples = perturb_sample_angles(samples,
                                 max_angle=max_angle, seed=seed)
-        
+
         out_file = swc_file[:-4] + '_alpha-{:.0f}deg_seed-{}.swc'.format(
                         max_angle_deg, seed)
 
