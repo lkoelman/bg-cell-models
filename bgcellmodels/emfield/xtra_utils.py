@@ -217,8 +217,9 @@ def transfer_resistance_pointsource(seg, seg_coords, source_coords, rho):
     x2, y2, z2 = source_coords
     dist = sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
 
-    if dist == 0:
-        dist = seg.diam / 2
+    r_min = seg.diam / 2.0
+    if dist < r_min:
+        dist = r_min
 
     # 0.01 converts rho's cm to um and ohm to megohm
     return (rho / 4 / PI) * (1 / dist) * 0.01
