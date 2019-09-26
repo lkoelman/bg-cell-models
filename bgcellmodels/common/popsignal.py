@@ -56,6 +56,7 @@ def save_figure(fname, fig=None, **kwargs):
         plt.savefig(fig_filepath, **kwargs) # save current figure
     else:
         fig.savefig(fig_filepath, **kwargs) # save specific figure
+
     print("Figure saved to file {}".format(fig_filepath))
     return fig_filepath
 
@@ -71,16 +72,17 @@ def offset_show_twin_yax(ax, offset=1.2):
     ax.patch.set_visible(False)
     for sp in ax.spines.values():
         sp.set_visible(False)
+
     ax.spines["right"].set_visible(True)
 
 
-def hide_axis(ax):
+def hide_axis(ax, frame=True, x=True, y=True):
     """
     Hide axis lines and frame box of figure.
     """
-    ax.set_frame_on(False)
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
+    ax.set_frame_on(not frame)
+    ax.get_xaxis().set_visible(not x)
+    ax.get_yaxis().set_visible(not y)
 
 
 def set_axes_size(w, h, ax=None):
@@ -137,6 +139,182 @@ def get_pop_order(pop_label):
         return 3
     else:
         return 100
+
+def plot_signal(signal, interval, channels=None, pop_label=None, title=None,
+                ylabel=None, xlabel=None, ylim=None, figsize=None,
+                export=False, **plot_kwargs):
+    """
+    Plot neo.AnalogSignal in given interval.
+    """
+    if figsize is None:
+        figsize = (_data.fig_width, _data.fig_height)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    if title == True:
+        title = '{} ({})'.format(signal.name, pop_label)
+    if title:
+        fig.suptitle(title)
+    if pop_label:
+        sig_label = '{}-{}'.format(signal.name, pop_label)
+    else:
+        sig_label = signal.name
+
+    islice = neoutil.make_slice(signal, interval)
+    if isinstance(channels, slice):
+        cslice = channels
+    else:
+        cslice = slice(channels)
+
+    # sig_data = signal.asarray()
+    # if sig_data.ndim == 2:
+    #     sig_plotted = sig_data[islice, cslice]
+    # else:
+    #     sig_plotted = sig_data[islice]
+    ax.plot(signal.times[islice], signal[islice, cslice],
+            label=sig_label, **plot_kwargs)
+
+    if ylim:
+        ax.set_ylim(ylim)
+
+    ax.set_xlim(interval)
+
+    if ylabel is None:
+        ylabel = '{} ({})'.format(signal.name, signal.units)
+
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel('time ({})'.format(signal.times.units))
+    ax.grid(True)
+
+    fig.subplots_adjust(bottom=0.15) # prevent clipping of xlabel
+
+    if _data.export_figs and export:
+        fname = '{}_t-{:.1f}-{:.1f}'.format(
+            sig_label, interval[0]*1e-3, interval[1]*1e-3)
+        save_figure(fname, fig=fig)
+
+    return fig, ax
+
+
+################################################################################
+# Continuous-time Signals
+################################################################################
+
+
+def plot_vm_signals(signal, cell_indices, interval, interval_only=True,
+                    as_gids=False, title=None, trigger=None,
+                    plot_labels=False, ylim=(-90, 25),
+                    figsize=None, export=False, multiple_axes=True,
+                    dy_major=50.0, dy_minor=10.0, **plot_kwargs):
+    """
+    Plot membrane voltage signals on vertically stacked axes.
+    """
+    if figsize is None:
+        figsize = (_data.fig_width, _data.ax_height)
+
+    if as_gids:
+        pop_gids = list(signal.annotations['source_ids'])
+        cell_indices = [pop_gids.index(gid) for gid in cell_indices]
+
+    rec_dt = signal.sampling_period.magnitude
+    tstart = signal.t_start.magnitude
+    irange = [0, signal.shape[0]-1] if interval is None else [int((t-tstart)/rec_dt) for t in interval]
+    times = signal.times[irange[0]:irange[1]]
+    ydiff = ylim[1] - ylim[0]
+
+    num_axes = len(cell_indices) if multiple_axes else 1
+    fig, axes = plt.subplots(num_axes, 1,
+                             figsize=(figsize[0], 0.5*figsize[1]*len(cell_indices)),
+                             sharex=True, sharey=True)
+    if title is None:
+        title = "{} membrane voltage".format(signal.annotations['source_population'])
+        fig.suptitle(title)
+
+    if trigger is not None:
+        if interval_only:
+            trigger_times = trigger[(trigger >= interval[0]) & trigger <= interval[1]]
+        else:
+            trigger_times = trigger
+            trigger_level = np.zeros_like(trigger_times) - 40.0
+
+    # Plot each Vm on separate axis
+    cell_gids = []
+    trace_y_offsets = []
+    trace_yticks_major = []
+    trace_yticks_labels = []
+    trace_yticks_minor = []
+
+    for i_ax, i_cell in enumerate(cell_indices):
+        try:
+            ax = axes[i_ax]
+        except TypeError:
+            ax = axes
+
+        if 'source_ids' in signal.annotations:
+            gid = signal.annotations['source_ids'][i_cell]
+            label = "id {}".format(gid)
+            cell_gids.append(gid)
+            # ax.text(.98, .05, signal.annotations['source_ids'][i_cell] , transform=ax.transAxes, ha='right')
+        else:
+            label = "cell {}".format(i_cell)
+
+        # Offset for trace if plotted on single axis
+        y0 = 0.0 if multiple_axes else i_ax * (ylim[1] - ylim[0])
+        trace_y_offsets.append(y0)
+
+        sigdata = signal.as_array()
+        if interval_only:
+            ax.plot(times, sigdata[irange[0]:irange[1], i_cell] + y0,
+                    label=label, **plot_kwargs)
+        else:
+            ax.plot(signal.times, sigdata[:, i_cell] + y0, label=label,
+                    **plot_kwargs)
+
+        if trigger is not None:
+            ax.plot(trigger_times, trigger_level + y0, marker='|', linestyle='',
+                    snap=True, color='red', markersize=15)
+
+        if multiple_axes:
+            ax.grid(True, which='major')
+            ax.set_ylabel(label)
+            ax.set_yticks(np.arange(-100, 100, dy_minor), minor=True)
+            ax.set_yticks(np.arange(-100, 100, dy_major), minor=False)
+            ax.set_ylim(ylim)
+            ax.set_xlim((times[0].magnitude, times[-1].magnitude))
+        else:
+            ax.text(int(times[0])-15, y0+ylim[0]+0.5*ydiff,
+                    'id {}'.format(gid), ha='right', rotation=90)
+            ticks = y0 + np.arange(ylim[0], ylim[1], dy_major)
+            trace_yticks_major.extend(ticks)
+            trace_yticks_labels.extend(ticks - i_ax * (ylim[1] - ylim[0]))
+            # trace_yticks_minor.append(y0 + np.arange(ylim[0], ylim[1], 10))
+
+    if not multiple_axes:
+        ax.set_yticks(trace_yticks_major, minor=False)
+        ax.set_yticklabels(['{:.0f}'.format(y) for y in trace_yticks_labels])
+        ax.set_xlim((times[0].magnitude, times[-1].magnitude))
+        ax.grid(True, which='major')
+
+    #ax.set_ylabel("voltage ({})".format(signal.units))
+    ax.set_xlabel('time (ms)')
+    # fig.text(0.06, 0.5, "voltage ({})".format(signal.units), va='center', rotation='vertical')
+    fig.subplots_adjust(bottom=0.15) # prevent clipping of xlabel
+
+    # Save figure
+    if _data.export_figs and export:
+        pop_label = signal.annotations['source_population']
+        fname = 'Vm-sigs_' + pop_label + '_gids-' + '-'.join([str(gid) for gid in cell_gids])
+        save_figure(fname, fig=fig, bbox_inches='tight')
+
+
+def plot_signal_interval(ax, signal, interval, channels, **kwargs):
+    """
+    Plot neo.AnalogSignal in interval on existing axis.
+    """
+    rec_dt = signal.sampling_period.magnitude
+    tstart = signal.t_start.magnitude
+    i_range = [int((t-tstart)/rec_dt) for t in interval]
+    i_slice = slice(*i_range)
+    ax.plot(signal.times[i_slice], signal[i_slice, channels], **kwargs)
 
 
 ################################################################################
@@ -212,15 +390,18 @@ def calc_train_stimlock_fractions(spike_trains, onset_times, interval=None):
     """
     if interval is None:
         interval = _data.ROI_INTERVAL
+
     inter_pulse_interval = onset_times[1] - onset_times[0]
     mask = (onset_times >= interval[0]) & (onset_times <= interval[1])
     onset_times = onset_times[mask]
     trains_locked_fractions = []
+
     for st in spike_trains:
         pulse_indices = find_stimlocked_indices(onset_times, st.as_array(),
-                            0.0, inter_pulse_interval)
+                                                0.0, inter_pulse_interval)
         locked_fraction = float(len(pulse_indices)) / len(onset_times)
         trains_locked_fractions.append(locked_fraction)
+
     return trains_locked_fractions
 
 
@@ -266,12 +447,15 @@ def plot_spiketrain(spike_trains, cell_indices, t_range, pop_label=None,
     cell_gids = []
     for j, cell_index in enumerate(cell_indices):
         spiketrain = spike_trains[cell_index]
+
         if order_by == 'cell_pop_idx':
             y_vals[j] = cell_index
         elif order_by == 'caller':
             y_vals[j] = j
+
         if 'source_id' in spiketrain.annotations:
             cell_gids.append(spiketrain.annotations['source_id'])
+
         y_vec = np.ones_like(spiketrain) * y_vals[j]
         ax.plot(spiketrain, y_vec,
                 marker='|', linestyle='',
@@ -395,8 +579,12 @@ def calc_spectrogram(pop_label, signal=None, max_avg=50, freq_res=1.0,
             sig_data = vm_sig.as_array()[:, 0:max_avg]
         else:
             sig_data = vm_sig.as_array()
-        freqs, t, Sxx = scipy.signal.spectrogram(sig_data, 1/dt, axis=0, window='hanning',
-                                                 nperseg=nperseg, noverlap=noverlap, scaling='density')
+
+        freqs, t, Sxx = scipy.signal.spectrogram(sig_data, 1/dt, axis=0,
+                                                 window='hanning',
+                                                 nperseg=nperseg,
+                                                 noverlap=noverlap,
+                                                 scaling='density')
 
         # Average over cell dimension -> Sxx dims are now (freqs, t)
         assert sig_data.shape[1] == Sxx.shape[1]
@@ -460,9 +648,11 @@ def calc_mean_phase_vectors(spiketrains, pop_label, intervals=None,
     spikes_during = [] # list of numpy array
     for i, st in enumerate(spiketrains):
         spiketimes = st.magnitude
+
         mask = np.zeros_like(spiketimes, dtype=bool)
         for ival in intervals:
             mask = mask | ((spiketimes > ival[0]) & (spiketimes <= ival[1]))
+
         spikes_during.append(spiketimes[mask])
 
 
@@ -516,7 +706,9 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
         vmax = pop_mag
         if extra_pop_vecs:
             vmax = max(vmax, *(np.abs(v) for v in extra_pop_vecs))
+
         rmax = (vmax // 0.1 + 1) * 0.1
+
     # if rticks is None:
     #     rticks = np.arange(0.1, 1.1, 0.1)
 
@@ -530,6 +722,7 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
             extra_lens = np.abs(extra_cell_vecs[i])
             ax.vlines(extra_angs, 0, extra_lens, color=extra_cell_colors[i],
                       alpha=cell_opacity, linewidth=1, snap=True)
+
         # Population vector after/over cell vectors
         ax.vlines(np.angle(vec) - ref_ang, 0, np.abs(vec), color=extra_colors[i],
                   linewidth=pop_line_width, label=extra_labels[i])
@@ -552,15 +745,17 @@ def plot_phase_vectors(mean_phase_vecs, pop_phase_vec, pop_label, export=False,
     ax.grid(True)
     if rticks is not None:
         ax.set_rticks(rticks) # less radial ticks
+
     ax.set_rmax(rmax)
     if rticks_pos is not None:
         ax.set_rlabel_position(rticks_pos)  # Move radial labels away from plotted line
+
     ax.tick_params(axis='y', labelsize=14)  # labelcolor='blue'
     ax.tick_params(axis='x', labelsize=14)
     if show_legend:
         ax.legend(loc=(1, .8))
-    # ax.set_title('Mean angle and vector length of {} neurons'.format(pop_label), va='bottom')
 
+    # ax.set_title('Mean angle and vector length of {} neurons'.format(pop_label), va='bottom')
 
     # kw = dict(arrowstyle="->", color='g')
     # for angle, radius in zip(phases, magnitudes):
@@ -610,18 +805,22 @@ def plot_phase_histogram(pop_label, ref_vec=None, num_bins=20,
     # Format axes
     if rticks is not None:
         ax.set_rticks(rticks)
+
     data_rmax = max(bin_fractions)
     if (rmax is not None) and (data_rmax <= rmax or rmax_strict):
         ax.set_rmax(rmax)
+
     grid_color = 'gray'
     ax.grid(True, color=grid_color)
     # Appearance of radial tick labels
     ax.tick_params(axis='x', labelsize=14)
     ax.tick_params(axis='y', labelsize=14, labelcolor=grid_color)  # labelcolor=grid_color
+
     if rlabel_start:
         ax.set_yticklabels(['{:.2f}'.format(y) if y >= rlabel_start else '' for y in ax.get_yticks()])
     else:
         ax.set_yticklabels(['{:.2f}'.format(y) for y in ax.get_yticks()])
+
     if rlabel_angle == 'minimum':
         label_pos = np.degrees(bin_centers[bin_counts.argmin()]) + 9
         ax.set_rlabel_position(label_pos)
@@ -650,73 +849,10 @@ def sorted_signals(segment, trace_name):
                   key=lambda sig: get_synapse_index(sig.name))
 
 
-def plot_signal(signal, interval, channels=None, pop_label=None, title=None,
-                ylabel=None, xlabel=None, ylim=None, figsize=None,
-                export=False, **plot_kwargs):
-    """
-    Plot neo.AnalogSignal in given interval.
-    """
-    if figsize is None:
-        figsize = (_data.fig_width, _data.fig_height)
-
-    fig, ax = plt.subplots(figsize=figsize)
-    if title == True:
-        title = '{} ({})'.format(signal.name, pop_label)
-    if title:
-        fig.suptitle(title)
-    if pop_label:
-        sig_label = '{}-{}'.format(signal.name, pop_label)
-    else:
-        sig_label = signal.name
-
-    islice = neoutil.make_slice(signal, interval)
-    if isinstance(channels, slice):
-        cslice = channels
-    else:
-        cslice = slice(channels)
-
-    # sig_data = signal.asarray()
-    # if sig_data.ndim == 2:
-    #     sig_plotted = sig_data[islice, cslice]
-    # else:
-    #     sig_plotted = sig_data[islice]
-    ax.plot(signal.times[islice], signal[islice, cslice],
-            label=sig_label, **plot_kwargs)
-
-    if ylim:
-        ax.set_ylim(ylim)
-    ax.set_xlim(interval)
-    if ylabel is None:
-        ylabel = '{} ({})'.format(signal.name, signal.units)
-    ax.set_ylabel(ylabel)
-    ax.set_xlabel('time ({})'.format(signal.times.units))
-    ax.grid(True)
-
-    fig.subplots_adjust(bottom=0.15) # prevent clipping of xlabel
-
-    if _data.export_figs and export:
-        fname = '{}_t-{:.1f}-{:.1f}'.format(
-            sig_label, interval[0]*1e-3, interval[1]*1e-3)
-        save_figure(fname, fig=fig)
-
-    return fig, ax
-
-
-def plot_signal_interval(ax, signal, interval, channels, **kwargs):
-    """
-    Plot neo.AnalogSignal in given interval.
-    """
-    rec_dt = signal.sampling_period.magnitude
-    tstart = signal.t_start.magnitude
-    i_range = [int((t-tstart)/rec_dt) for t in interval]
-    i_slice = slice(*i_range)
-    ax.plot(signal.times[i_slice], signal[i_slice, channels], **kwargs)
-
-
 def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=True,
-                       channel_gates=None, channel_currents=None, beta_phase=True,
-                       trace_names=None, extra_sigs=None, extra_plot_with=None,
-                       extra_max_plot=5, vm_plot_with=None):
+                        channel_gates=None, channel_currents=None, beta_phase=True,
+                        trace_names=None, extra_sigs=None, extra_plot_with=None,
+                        extra_max_plot=5, vm_plot_with=None, export=False):
     """
     Plot Synaptic dynamics for specific cells and their recorded synapses.
 
@@ -739,9 +875,11 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
     default_tracenames = 'gAMPA', 'gNMDA', 'iGLU', 'gGABAA', 'gGABAB', 'iGABA'
     if trace_names is None:
         trace_names = default_tracenames
+
     all_synaptic_sigs = {tn: sorted_signals(segment, tn) for tn in trace_names}
     trace_groups = {k:'GABA' if ('GABA' in k) else 'GLU' for k in all_synaptic_sigs}
     signal = next((sigs[0] for sigs in all_synaptic_sigs.values() if len(sigs)>0), None)
+
     if signal is None:
         print("No synaptic traces for population {}".format(pop_label))
         return
@@ -769,6 +907,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
     tstop = signal.t_stop.magnitude
     if interval is None:
         interval = (tstart, tstop)
+
     irange = [int((t-tstart)/rec_dt) for t in interval]
     times = signal.times[irange[0]:irange[1]]
 
@@ -824,6 +963,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                     color, style = analysis.pick_line_options('red', 'broken', k)
                     plot_signal_interval(ax_r, csig, interval, i_cell, label=csig.name,
                                          color=color, linestyle=style)
+
                 ax_r.legend(loc='upper right')
                 ax_r.set_ylabel('open')
 
@@ -837,6 +977,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                     color, style = analysis.pick_line_options('red', 'broken', k)
                     plot_signal_interval(ax_r, csig, interval, i_cell, label=csig.name,
                                          color=color, linestyle=style)
+
                 ax_r.legend(loc='upper right')
 
             # Plot channel currents if we are plotting synaptic currents
@@ -847,6 +988,7 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                     color, style = analysis.pick_line_options('red', 'broken', k)
                     plot_signal_interval(ax_r, csig, interval, i_cell, label=csig.name,
                                          color=color, linestyle=style)
+
                 ax_r.legend(loc='upper right')
                 ax_r.set_ylabel('current ($mA/cm^2$)')
 
@@ -874,12 +1016,19 @@ def plot_synapse_traces(pop_label, max_ncell, max_nsyn, interval, interval_only=
                 ax.set_ylabel('current (nA)')
             else:
                 ax.set_ylabel('conductance (uS)')
+
             if i_plotted == 0:
                 ax.set_title('{} cell {}'.format(pop_label, i_cell))
+
             # ax.set_xlabel('time (ms)')
             ax.set_ylim((ymin, ymax))
             ax.set_xlim((times[0].magnitude, times[-1].magnitude))
             ax.legend(loc='upper left')
+
+    if _data.export_figs and export:
+        fname = 'gsyn-{}_cells-{}_syns-{}'.format(pop_label, max_ncell,
+                                                  max_nsyn)
+        save_figure(fname, fig=fig)
 
 
 def combine_current_signals(post_pop, afferents_currents, cell_gid=None, cell_pop_idx=None):
@@ -910,6 +1059,7 @@ def combine_current_signals(post_pop, afferents_currents, cell_gid=None, cell_po
             # traces is all signals (synapses) recorded from the same synapse type
             currents_itot[current] = sum_cell_signals(traces, cell_gid=cell_gid,
                                                       cell_pop_idx=cell_pop_idx)
+
         # Sum current signals of different types
         pops_itot[afferent_pop] = sum(currents_itot.values())
 
@@ -929,16 +1079,20 @@ def sum_cell_signals(traces=None, segment=None, sig_name=None,
     """
     if traces is None:
         traces = sorted_signals(segment, sig_name)
+
     itot = None
     for sig in traces:
         if cell_gid is not None:
             trace_idx = list(sig.annotations['source_ids']).index(cell_gid)
         elif cell_pop_idx is not None:
             trace_idx = list(sig.annotations['source_indices']).index(cell_pop_idx)
+
         isyn = sig.magnitude[:, trace_idx]
         itot = isyn if (itot is None) else (itot + isyn)
+
     if average:
         itot /= len(traces)
+
     print("Summed {} signals for cell gid {}".format(len(traces), cell_gid))
     return itot
 
@@ -1029,8 +1183,8 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
     for i_cell, cell_idx in enumerate(plotted_cell_idx):
 
         fig, axes = plt.subplots(num_ax_per_cell, 1,
-                             figsize=(0.75*_data.page_width, num_ax_per_cell*_data.ax_height),
-                             sharex=False)
+                                 figsize=(0.75*_data.page_width, num_ax_per_cell*_data.ax_height),
+                                 sharex=False)
         ax_i_offset = 0 # i_cell * num_ax_per_cell
 
         # FIXME: comment temp solution
@@ -1052,11 +1206,11 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
         add_rastergram(ax1a)
 
         ## hilbert phase
-#         ax2 = ax1.twinx()
-#         ax2.plot(phase_ref.times[phase_slice], analphase_sigmean[phase_slice],
-#                  label='$\phi$', color='magenta', alpha=0.5)
-#         ax2.set_ylim((-4*np.pi, np.pi)) # above voltage traces
-#         ax2.set_ylabel('phase (rad)')
+        # ax2 = ax1.twinx()
+        # ax2.plot(phase_ref.times[phase_slice], analphase_sigmean[phase_slice],
+        #          label='$\phi$', color='magenta', alpha=0.5)
+        # ax2.set_ylim((-4*np.pi, np.pi)) # above voltage traces
+        # ax2.set_ylabel('phase (rad)')
         plot_phase_grid(phase_zcross, ax1a, False, False)
 
         #########################################################
@@ -1110,7 +1264,7 @@ def plot_oscillatory_traces(pop, exc_currents, inh_currents, ranking_slice=None,
             # plot mean of gating variable recorded from distinct compartments
             for gate_name, sig_names in gating_signals.items():
                 traces = [sig for sig in segment.analogsignals if any(
-                                         sig.name.startswith(n) for n in sig_names)]
+                    sig.name.startswith(n) for n in sig_names)]
                 if len(traces) == 0:
                     continue
                 msig_slice = neoutil.make_slice(traces[0], interval)
@@ -1159,8 +1313,7 @@ def get_presynaptic_pop_indices(post_index, pre_pop, post_pop):
 
 
 def rastergram_presynaptic_pops_pooled(
-        ax, post_gid, post_pop, pre_pops, interval, color, y_mid
-    ):
+        ax, post_gid, post_pop, pre_pops, interval, color, y_mid):
     """
     Add rastergram of POOLED presynaptic spikes (one population per line).
     """
@@ -1191,7 +1344,7 @@ def plot_phase_grid(zero_crossings, ax, set_xticks=False, label_xticks=False):
         ax.set_xticklabels(['{}$\pi$'.format(2*i) for i in range(len(zero_crossings))])
 
 
-def sum_total_current(currents_traces, cell_idx):
+def sum_total_current(currents_traces, cell_idx, interval=None):
     """
     Sum synaptic currents for all recorded synapses of a given cell.
 
@@ -1205,13 +1358,21 @@ def sum_total_current(currents_traces, cell_idx):
     for current, traces in currents_traces.items():
         # traces is all signals (synapses) recorded from the same synapse type
         for sig in traces:
-            isyn = sig.magnitude[:, cell_idx]
+            if interval is not None:
+                islice = neoutil.make_slice(sig, interval)
+            else:
+                islice = slice(None) # same as np.s_[:]
+
+            isyn = sig.magnitude[islice, cell_idx]
             itot_tracetype[current] += isyn.sum()
+
         itot += itot_tracetype[current]
+
     return itot, itot_tracetype
 
 
-def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
+def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids,
+                       interval=None, print_report=True):
     """
     Get total synaptic current for all afferent population and the ratio
     of excitatory to inhibitory currents.
@@ -1221,7 +1382,21 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
     """
     segment = _data.pops_segments[pop_label]
 
-    def afferents_total_current(afferents_currents, cell_idx):
+    # Signal units
+    test_current = exc_currents.values()[0][0]
+    test_signals = sorted_signals(segment, test_current)
+    rec_units = test_signals[0].sampling_period
+    rec_dt = rec_units.magnitude # ms
+    assert rec_units.dimensionality.string == 'ms'
+    if interval is None:
+        interval = [test_signals[0].t_start.magnitude, test_signals[0].t_stop.magnitude]
+
+    delta_t = (interval[1] - interval[0])
+
+    # Report intermediate calculations
+    reports = []
+
+    def afferents_total_current(afferents_currents, cell_idx, reports=reports):
         """
         Get total current for all given afferents onto cell.
 
@@ -1236,14 +1411,16 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
             isyn_names = afferents_currents[afferent_pop]
             aff_traces = {curr: sorted_signals(segment, curr) for curr in isyn_names}
             num_rec_aff = len(aff_traces.values()[0]) # number of synapses for afferent population
-            itot_sum, itot_bytrace = sum_total_current(aff_traces, cell_idx)
+            itot_sum, itot_bytrace = sum_total_current(aff_traces, cell_idx,
+                                                       interval=interval)
             pops_currents_itot[afferent_pop] = itot_bytrace
 
             # Sum number of afferents (matrix column), should be same for each cell
             num_syn_aff = sum(
                 _data.network_params[afferent_pop][pop_label]['conn_matrix'][:, 0] > 0)
-            print("\t- {} afferents ({}): {}/{} synapses recorded".format(
-                      afferent_pop, ",".join(isyn_names), num_rec_aff, num_syn_aff))
+
+            reports.append("\t- {} afferents ({}): {}/{} synapses recorded".format(
+                afferent_pop, ",".join(isyn_names), num_rec_aff, num_syn_aff))
 
             # Multiply total currents by ratio of recorded to afferent synapses
             # FIXME: if separate connection matrix for surrogate/real cells but same synaptic trace name
@@ -1252,35 +1429,56 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids):
         return itot, pops_currents_itot
 
     cells_i_info = []
-    cells_i_ratio = []
     for rec_id in rec_ids:
-        print("{} cell {}:".format(pop_label, rec_id))
+        reports.append("{} cell {}:".format(pop_label, rec_id))
         itot_exc, iexc_bytype = afferents_total_current(exc_currents, rec_id)
         itot_inh, iinh_bytype = afferents_total_current(inh_currents, rec_id)
 
-        ratio = -1.0 * itot_exc / itot_inh # excitatory currents are negative by convention
-        cells_i_ratio.append(ratio)
+        # excitatory currents are negative by convention
+        itot_exc *= -1.0
+        if itot_inh == 0:
+            ratio = np.inf
+        else:
+            ratio = itot_exc / itot_inh
 
         # Save all current info per recorded cell
+        # units for synaptic currents: nA = nC/s = pC/ms
         iaff_info = {}
         iaff_info.update(iexc_bytype)
         iaff_info.update(iinh_bytype)
+        iaff_info['EXC:INH'] = ratio
         iaff_info['EXC'] = itot_exc
         iaff_info['INH'] = itot_inh
+        iaff_info['EXC_charge_pC'] = itot_exc * rec_dt # pC/ms * ms = pC
+        iaff_info['INH_charge_pC'] = itot_inh * rec_dt
+        iaff_info['EXC_avg_nA'] = itot_exc * rec_dt / delta_t
+        iaff_info['INH_avg_nA'] = itot_inh * rec_dt / delta_t
         cells_i_info.append(iaff_info)
 
     # Population average ratio EXC/INH
-    _data.all_I_exc_inh[pop_label] = ratio = sum(cells_i_ratio) / len(cells_i_ratio)
-    _data.all_I_afferents[pop_label] = cells_i_info
+    cells_i_ratio = [info['EXC:INH'] for info in cells_i_info]
+    ratio = sum(cells_i_ratio) / len(cells_i_ratio)
+    _data.exported_data["I_exc_inh_ratio"][pop_label] = ratio
+    _data.exported_data["I_afferents"][pop_label] = cells_i_info
 
-    print("\n{}: EXC currents estimate".format(pop_label))
-    print("\t=> Itot EXC estimate Itot = {}".format([i['EXC'] for i in cells_i_info]))
-    print("\n{}: INH currents estimate".format(pop_label))
-    print("\t=> Itot INH estimate Itot = {}".format([i['INH'] for i in cells_i_info]))
-    print("\n{}: Ratio of integrated current EXC / INH:"
-          "\n\t=> cell ratios = {}"
-          "\n\t=> pop average ratio = {}".format(pop_label, cells_i_ratio, ratio))
-    return ratio
+    reports.append("""
+{}: TOTAL currents estimate
+    I_EXC_avg = {} nA
+    I_INH_avg = {} nA
+""".format(pop_label, [i['EXC_avg_nA'] for i in cells_i_info],
+           [i['INH_avg_nA'] for i in cells_i_info]))
+
+    reports.append("""
+{}: Ratio of integrated current EXC / INH:
+    => cell ratios = {}
+    => pop average ratio = {}""".format(pop_label, cells_i_ratio, ratio))
+
+    report = "\n".join(reports)
+    if print_report:
+        print(report)
+
+    return ratio, cells_i_info, report
+
 
 ################################################################################
 # Sweep analysis
@@ -1298,14 +1496,16 @@ def gather_metrics(all_cell_metrics, metric):
         map_func = lambda x,y: x + y
     else:
         map_func = lambda x,y: x + list(y)
-    all_cell_vals = reduce(map_func, (cell_metrics[metric] for cell_metrics in all_cell_metrics), [])
+
+    all_cell_vals = reduce(map_func,
+                           (cell_metrics[metric] for cell_metrics in all_cell_metrics), [])
     return all_cell_vals
 
 
 def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
-        independent='sweep', pop_colors=None, regress='linear',
-        regression_report=False, metric_kwargs={}, plot_kwargs={},
-        export=False, **kwargs):
+                      independent='sweep', pop_colors=None, regress='linear',
+                      regression_report=False, metric_kwargs={}, plot_kwargs={},
+                      export=False, **kwargs):
     """
     Linear regression of metric
 
@@ -1398,6 +1598,7 @@ def plot_metric_sweep(pop_labels, metric_name=None, metric_func=None,
         ax.set_xticks(x_ticks)
     if 'y_lim' in kwargs:
         ax.set_ylim(kwargs['y_lim'])
+
     ax.set_ylabel(kwargs.get('y_label', metric_name))
     ax.set_xlabel(x_label)
     ax.grid(True)
@@ -1439,7 +1640,7 @@ def boxplots_burst_metrics(pop_label, metric_names=None, export_metrics=None):
 
         # Save figure
         if (_data.export_figs and (export_metrics is not None)
-                              and (metric_name in export_metrics)):
+            and (metric_name in export_metrics)):
             fname = '{}_{}'.format(metric_name, pop_label)
             save_figure(fname, fig=fig)
 
@@ -1487,7 +1688,7 @@ def regression_burst_metrics(pop_label, metric_names=None, detailed=True, export
 
         # Save figure
         if (_data.export_figs and (export_metrics is not None)
-                              and (metric_name in export_metrics)):
+            and (metric_name in export_metrics)):
             fname = '{}_{}'.format(metric_name, pop_label)
             save_figure(fname, fig=fig)
 
@@ -1567,7 +1768,9 @@ def compare_covariance_complexity(sig_label, f_band=None, detailed=False, ymax=N
             # Morgera index was only computed in default band (5, 200) Hz
             if f_band:
                 raise ValueError('Morgera index was only computed in f = (5, 200)')
+
             t, M = fbands_M
+
         M_datasets.append(M)
         M_intervals.append(t)
 
@@ -1603,10 +1806,12 @@ def compare_covariance_complexity(sig_label, f_band=None, detailed=False, ymax=N
     # Plot linear regression
     fig, ax = plt.subplots(figsize=(_data.ax_width, _data.ax_height))
     ax.set_title('Median covariance complexity over {} ms intervals'.format(ival_width))
+
     ax.plot(x, y, 'o', color='g', label='original data')
     ax.plot(x, intercept + slope*x, 'k--', label='linear fit')
     if ymax:
         ax.set_ylim((0, ymax))
+
     ax.set_xticks(sweep_vals)
     ax.set_ylabel('M (0-1)')
     ax.set_xlabel(_data.sweep_var_legend)
