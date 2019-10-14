@@ -1372,13 +1372,16 @@ def sum_total_current(currents_traces, cell_idx, interval=None):
 
 
 def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids,
-                       interval=None, print_report=True):
+                       interval=None, print_report=True, conductance=False):
     """
     Get total synaptic current for all afferent population and the ratio
     of excitatory to inhibitory currents.
 
     @param    rec_ids : list(int)
               which cell to use out of all recorded cells
+
+    @param    conductance : bool
+              signals are conductances instead of currents
     """
     segment = _data.pops_segments[pop_label]
 
@@ -1435,7 +1438,9 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids,
         itot_inh, iinh_bytype = afferents_total_current(inh_currents, rec_id)
 
         # excitatory currents are negative by convention
-        itot_exc *= -1.0
+        if not conductance:
+            itot_exc *= -1.0
+
         if itot_inh == 0:
             ratio = np.inf
         else:
@@ -1449,26 +1454,56 @@ def calc_exc_inh_ratio(pop_label, exc_currents, inh_currents, rec_ids,
         iaff_info['EXC:INH'] = ratio
         iaff_info['EXC'] = itot_exc
         iaff_info['INH'] = itot_inh
-        iaff_info['EXC_charge_pC'] = itot_exc * rec_dt # pC/ms * ms = pC
-        iaff_info['INH_charge_pC'] = itot_inh * rec_dt
-        iaff_info['EXC_avg_nA'] = itot_exc * rec_dt / delta_t
-        iaff_info['INH_avg_nA'] = itot_inh * rec_dt / delta_t
+        if conductance:
+            iaff_info['EXC_integral_aoc'] = itot_exc * rec_dt # pC/ms * ms = pC
+            iaff_info['INH_integral_aoc'] = itot_inh * rec_dt
+            iaff_info['EXC_integral_avg'] = itot_exc * rec_dt / delta_t
+            iaff_info['INH_integral_avg'] = itot_inh * rec_dt / delta_t
+        else:
+            iaff_info['EXC_charge_pC'] = itot_exc * rec_dt # pC/ms * ms = pC
+            iaff_info['INH_charge_pC'] = itot_inh * rec_dt
+            iaff_info['EXC_avg_nA'] = itot_exc * rec_dt / delta_t
+            iaff_info['INH_avg_nA'] = itot_inh * rec_dt / delta_t
         cells_i_info.append(iaff_info)
 
     # Population average ratio EXC/INH
     cells_i_ratio = [info['EXC:INH'] for info in cells_i_info]
     ratio = sum(cells_i_ratio) / len(cells_i_ratio)
-    _data.exported_data["I_exc_inh_ratio"][pop_label] = ratio
-    _data.exported_data["I_afferents"][pop_label] = cells_i_info
 
-    reports.append("""
+    # Save data
+    if conductance:
+        key_pop = "G_exc_inh_ratio"
+        key_cells = "G_afferents"
+    else:
+        key_pop = "I_exc_inh_ratio"
+        key_cells = "I_afferents"
+
+    _data.exported_data[key_pop][pop_label] = ratio
+    _data.exported_data[key_cells][pop_label] = cells_i_info
+
+    if conductance:
+        reports.append("""
+{}: TOTAL conductance estimate
+    G_EXC_avg = {} uS
+    G_INH_avg = {} uS
+""".format(pop_label,
+           [i['EXC_integral_avg'] for i in cells_i_info],
+           [i['INH_integral_avg'] for i in cells_i_info]))
+
+        reports.append("""
+{}: Ratio of integrated conductance EXC / INH:
+    => cell ratios = {}
+    => pop average ratio = {}""".format(pop_label, cells_i_ratio, ratio))
+
+    else:
+        reports.append("""
 {}: TOTAL currents estimate
     I_EXC_avg = {} nA
     I_INH_avg = {} nA
 """.format(pop_label, [i['EXC_avg_nA'] for i in cells_i_info],
            [i['INH_avg_nA'] for i in cells_i_info]))
 
-    reports.append("""
+        reports.append("""
 {}: Ratio of integrated current EXC / INH:
     => cell ratios = {}
     => pop average ratio = {}""".format(pop_label, cells_i_ratio, ratio))
