@@ -3,19 +3,20 @@ Test suite for reduce_cell.py : reductions of specific cell models.
 """
 
 import re
-import sys
+import logging
 
-pkg_root = ".." # root dir for our packages
-sys.path.append(pkg_root)
+# import sys
+# pkg_root = ".." # root dir for our packages
+# sys.path.append(pkg_root)
 
-from cersei.collapse.fold_reduction import ReductionMethod, FoldReduction
-
-import gillies_model
+from bgcellmodels.common import logutils
+from bgcellmodels.cersei.collapse.fold_algorithm import ReductionMethod
+from bgcellmodels.cersei.collapse.fold_reduction import FoldReduction
+from bgcellmodels.models.STN.GilliesWillshaw import gillies_model
 from neuron import h
 
-import logging, common.logutils
 logger = logging.getLogger('gillies')
-common.logutils.setLogLevel('verbose', ['gillies', 'marasco', 'folding'])
+logutils.setLogLevel('verbose', ['gillies', 'marasco', 'folding'])
 
 ################################################################################
 # Cell model-specific implementations of reduction functions
@@ -167,6 +168,11 @@ def make_reduction(method, reduction_params=None, tweak=False):
 
     @param  method : ReductionMethod
             Accepted values are BushSejnowski and Marasco
+
+    @param  reduction_params : dict[str, object]
+            Parameters that define the reduction (optional).
+            These parameters are determined by the reduction method
+            but can be overridden.
     """
     if not isinstance(method, ReductionMethod):
         method = ReductionMethod.from_str(str(method))

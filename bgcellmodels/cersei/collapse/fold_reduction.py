@@ -5,20 +5,26 @@ Object-oriented interface for various compartmental cell reduction methods.
 @date   24-08-2017
 """
 
+import logging
 from abc import abstractmethod, ABCMeta
 
 from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
 from bgcellmodels.common.treeutils import check_tree_constraints
 from neuron import h
 
-from fold_algorithm import ReductionMethod
-import marasco_folding as marasco
-import tapered_folding as taper
-import mapsyn, redutils, interpolation as interp
+from .fold_algorithm import ReductionMethod
+from . import (
+    marasco_folding as marasco,
+    tapered_folding as taper,
+    mapsyn,
+    redutils,
+    interpolation as interp
+)
 
 # logging of DEBUG/INFO/WARNING messages
-import logging
-logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
+logging.basicConfig(
+    format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s',
+    level=logging.DEBUG)
 logname = 'folding'
 logger = logging.getLogger(logname) # create logger for this module
 

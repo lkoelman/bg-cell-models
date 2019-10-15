@@ -11,8 +11,8 @@ import neuron
 h = neuron.h
 
 # Our own modules
-import redutils
 from bgcellmodels.common.nrnutil import ExtSecRef, get_range_var
+from . import redutils
 
 # Enable logging
 import logging

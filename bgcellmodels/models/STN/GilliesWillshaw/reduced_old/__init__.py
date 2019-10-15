@@ -5,10 +5,10 @@
 # from mymodule import myclass
 
 # Make sure top-level modules are on Python path
-import sys, os.path
-scriptdir, scriptfile = os.path.split(__file__)
-repo_root = os.path.normpath(os.path.join(scriptdir, '..', '..'))
-sys.path.append(repo_root)
+# import sys, os.path
+# scriptdir, scriptfile = os.path.split(__file__)
+# repo_root = os.path.normpath(os.path.join(scriptdir, '..', '..'))
+# sys.path.append(repo_root)
 
 # Create new logging level to follow low-level operations (extremely verbose)
 import logging

@@ -19,8 +19,9 @@ from neuron import h
 
 from bgcellmodels.common.nrnutil import (
     getsecref, seg_index, seg_xmin, seg_xmax,
-    copy_ion_styles, get_ion_styles, set_ion_styles, ion_styles_bits_to_dict)
-from bgcellmodels.common.treeutils import subtreeroot, dfs_iter_tree_stack
+    copy_ion_styles, get_ion_styles, set_ion_styles
+)
+from bgcellmodels.common.treeutils import subtreeroot
 from bgcellmodels.common.electrotonic import seg_lambda
 
 # Load NEURON function libraries
@@ -311,6 +312,24 @@ class SecProps(object):
         self.__dict__.update(kwds)
 
 EqProps = SecProps # alias
+
+
+def dfs_traversal_iter(start_node):
+    """
+    Return generator that does depth-first tree traversal.
+
+    @param  start_node : object
+            Object with iterable attribute 'children'
+
+    @note   non-recursive, avoids making a new generator per descent
+            and avoids blowing up the stack trace
+    """
+    stack = [start_node]
+    while stack:
+        node = stack.pop() # LIFO stack
+        yield node
+        for child in node.children:
+            stack.append(child)
 
 
 def get_sec_range_props(src_sec, mechs_pars):
@@ -687,7 +706,7 @@ def find_secprops(node, filter_fun, find_all=True):
     @return             list(SecProps) that match the filter function (may be
                         empty)
     """
-    nodes_gen = dfs_iter_tree_stack(node)
+    nodes_gen = dfs_traversal_iter(node)
 
     if find_all:
         return list(filter(filter_fun, nodes_gen))

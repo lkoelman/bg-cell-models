@@ -14,7 +14,7 @@ from neuron import h
 from bgcellmodels.common.nrnutil import getsecref, seg_index
 from bgcellmodels.common.treeutils import next_segs
 
-import redutils
+from . import redutils
 
 
 def find_collapsable(

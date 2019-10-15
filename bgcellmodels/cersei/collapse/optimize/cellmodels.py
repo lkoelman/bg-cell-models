@@ -31,7 +31,7 @@ import bluepyopt.ephys as ephys
 
 class Cell(object):
     """
-    Insntantiated cell class, substitute for Hoc template.
+    Instantiated cell class, substitute/mock for Hoc template.
     """
 
     def __init__(self):

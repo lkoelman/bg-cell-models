@@ -9,7 +9,7 @@ import math
 PI = math.pi
 
 # Our modules
-from redutils import EqProps, getsecref, seg_index
+from .redutils import EqProps, getsecref, seg_index
 
 
 ################################################################################

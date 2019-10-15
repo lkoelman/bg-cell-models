@@ -13,8 +13,8 @@ logger = logging.getLogger(logname) # create logger for this module
 # hdlr.setFormatter(fmtr)
 # logger.addHandler(hdlr) 
 
-import redutils as redtools
-from redutils import getsecref
+from . import redutils as redtools
+from .redutils import getsecref
 
 
 class Cluster(object):

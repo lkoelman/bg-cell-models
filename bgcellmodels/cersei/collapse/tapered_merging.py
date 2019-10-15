@@ -15,7 +15,7 @@ import functools
 from bgcellmodels.common.treeutils import next_segs
 from bgcellmodels.common.nrnutil import seg_xmin, seg_xmax, getsecref
 from bgcellmodels.common.electrotonic import seg_lambda, calc_lambda_AC
-import redutils
+from . import redutils
 
 from numpy import interp
 

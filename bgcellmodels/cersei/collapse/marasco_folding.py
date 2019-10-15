@@ -8,7 +8,7 @@ Morphology reduction using method described in Marasco & Migliore (2012)
 # Python modules
 import re
 import math
-PI = math.pi
+import logging
 
 # NEURON modules
 import neuron
@@ -16,16 +16,22 @@ h = neuron.h
 h.load_file("stdlib.hoc") # Load the standard library
 
 # Own modules
-import redutils, tree_edit as treeops
 import bgcellmodels.common.electrotonic as electro
-import logging, common.logutils as logutils
+from bgcellmodels.common import logutils
 from bgcellmodels.common.nrnutil import ExtSecRef, seg_index
 from bgcellmodels.common.treeutils import subtree_topology
-import cluster as clutools
-from cluster import Cluster
-import interpolation as interp
-from fold_algorithm import FoldingAlgorithm, ReductionMethod
-from marasco_merging import merge_seg_subtree
+
+from . import (
+    redutils,
+    tree_edit as treeops,
+    cluster as clutools,
+    interpolation as interp
+)
+from .fold_algorithm import FoldingAlgorithm, ReductionMethod
+from .marasco_merging import merge_seg_subtree
+
+PI = math.pi
+Cluster = clutools.Cluster
 
 logger = logutils.getBasicLogger(
                     name='marasco', level=logging.DEBUG,

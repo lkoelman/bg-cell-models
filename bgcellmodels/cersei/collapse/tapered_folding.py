@@ -9,7 +9,7 @@ diameter.
 # Python modules
 import re
 import math
-PI = math.pi
+import logging
 
 # NEURON modules
 import neuron
@@ -17,25 +17,28 @@ h = neuron.h
 h.load_file("stdlib.hoc") # Load the standard library
 
 # Own modules
+from bgcellmodels.common import logutils
 from bgcellmodels.common.treeutils import subtree_topology
 from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
 from bgcellmodels.common.stdutil import isclose
 from bgcellmodels.common.electrotonic import calc_min_nseg_hines
 
-import cluster
-import redutils
-import tree_edit
-import interpolation as interp
-from fold_algorithm import FoldingAlgorithm
-import tapered_merging as taper
+from . import (
+    cluster,
+    redutils,
+    tree_edit,
+    fold_algorithm,
+    interpolation as interp,
+    tapered_merging as taper
+)
 
-import logging, common.logutils as logutils
+PI = math.pi
 logger = logutils.getBasicLogger(
                     name='marasco', level=logging.DEBUG,
                     format="%(levelname)s@%(filename)s:%(lineno)s  %(message)s")
 
 
-class TaperedFolder(FoldingAlgorithm):
+class TaperedFolder(fold_algorithm.FoldingAlgorithm):
     """
     Tapered folding procedure.
 
