@@ -9,10 +9,10 @@ Creation of EFEL parameters for STN model optimization.
 
 import bluepyopt.ephys as ephys
 
-from bgcellmodels.extensions.bluepyopt.bpop_extensions import NrnScaleRangeParameter
+from bgcellmodels.extensions.bluepyopt.bpop_parameters import NrnScaleRangeParameter
 
 # Gillies & Willshaw model mechanisms
-import gillies_model
+from bgcellmodels.models.STN.GilliesWillshaw import gillies_model
 gleak_name = gillies_model.gleak_name
 
 ################################################################################

@@ -7,5 +7,5 @@ Subthalamic nucleus (STN) cell models.
 # __all__ = ["module_a", "module_b", "module_c"]
 
 # make classes available at package level
-# from . import submodule as submodule_alias
+from . import GilliesWillshaw as gillies
 # from .submodule import myclass

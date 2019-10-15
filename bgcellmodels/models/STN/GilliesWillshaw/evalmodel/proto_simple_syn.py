@@ -17,7 +17,7 @@ from bgcellmodels.cellpopdata import (
 )
 
 # Stimulation protocols
-from proto_common import (
+from bgcellmodels.common.stimprotocols import (
 	StimProtocol, EvaluationStep, 
 	register_step, pick_random_segments,
 )

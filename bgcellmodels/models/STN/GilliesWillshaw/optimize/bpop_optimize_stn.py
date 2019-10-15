@@ -18,21 +18,22 @@ import bluepyopt.ephys as ephys
 
 # Our custom BluePyOpt modules
 import bgcellmodels.extensions.bluepyopt.bpop_extensions as bpop_extensions
-from bgcellmodels.extensions.bluepyopt.bpop_cellmodels import StnFullModel, StnReducedModel
-
-import bpop_protocols_stn as StnProtocols
-from bpop_protocols_stn import BpopProtocolWrapper
-import bpop_features_stn as StnFeatures
-import bpop_parameters_stn as StnParameters
-from bpop_analysis_stn import run_proto_responses, plot_proto_responses, save_proto_responses, load_proto_responses
+from bgcellmodels.cellpopdata import StnModel
+from bgcellmodels.models.STN.GilliesWillshaw.optimize import (
+    bpop_cellmodels as stn_models,
+    bpop_protocols_stn as stn_protos,
+    bpop_parameters_stn as stn_params,
+    bpop_features_stn as stn_feats,
+    bpop_analysis_stn as stn_anls,
+)
 
 # Gillies & Willshaw model mechanisms
-import gillies_model
+from bgcellmodels.models.STN.GilliesWillshaw import gillies_model
 gleak_name = gillies_model.gleak_name
 
 # Physiology parameters
-from bgcellmodels.cellpopdata import StnModel
-from evalmodel.proto_common import StimProtocol
+
+from bgcellmodels.common.stimprotocols import StimProtocol
 CLAMP_PLATEAU = StimProtocol.CLAMP_PLATEAU
 CLAMP_REBOUND = StimProtocol.CLAMP_REBOUND
 MIN_SYN_BURST = StimProtocol.MIN_SYN_BURST
@@ -46,7 +47,7 @@ logger = logging.getLogger('__main__')
 
 
 # SETPARAM: filepath of saved responses
-PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/fullmodel/STN_Gillies2005_proto_responses_3.pkl" # backup is in filename.old.pkl
+PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/Gillies2005_fullmodel/responses/STN_Gillies2005_proto_responses_3.pkl" # backup is in filename.old.pkl
 
 
 ################################################################################
@@ -75,7 +76,7 @@ def test_protocol(stim_proto, model_type, export_locals=True):
 
 
 	# instantiate protocol
-	proto = BpopProtocolWrapper.make(stim_proto, model_type)
+	proto = stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
 
 	# Get protocol mechanisms that need to be isntantiated
 	proto_mechs = proto.proto_vars.get('pp_mechs', []) + \
@@ -85,12 +86,12 @@ def test_protocol(stim_proto, model_type, export_locals=True):
 
 	# Make cell model
 	if fullmodel:
-		cellmodel = StnFullModel(
+		cellmodel = stn_models.StnFullModel(
 						name		= 'StnGillies',
 						mechs		= proto_mechs,
 						params		= proto_params)
 	else:
-		cellmodel = StnReducedModel(
+		cellmodel = stn_models.StnReducedModel(
 						name		= 'StnFolded',
 						fold_method	= 'marasco',
 						num_passes	= 7,
@@ -140,7 +141,7 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
 
 
 	# instantiate protocol
-	proto = BpopProtocolWrapper.make(stim_proto, model_type)
+	proto = stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
 
 	# Get protocol mechanisms that need to be isntantiated
 	proto_mechs = proto.proto_vars.get('pp_mechs', []) + \
@@ -150,12 +151,12 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
 
 	# Make cell model
 	if fullmodel:
-		cellmodel = StnFullModel(
+		cellmodel = stn_models.StnFullModel(
 						name		= 'StnGillies',
 						mechs		= proto_mechs,
 						params		= proto_params)
 	else:
-		cellmodel = StnReducedModel(
+		cellmodel = stn_models.StnReducedModel(
 						name		= 'StnFolded',
 						fold_method	= 'marasco',
 						num_passes	= 7,
@@ -189,7 +190,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 	dend_gl_param = ephys.parameters.NrnSectionParameter(
 						name		= 'gleak_dend_param',
 						param_name	= gleak_name,
-						locations	= [StnParameters.dendritic_region],
+						locations	= [stn_params.dendritic_region],
 						bounds		= [gleak_fit*1e-1, gleak_fit*1e1],
 						value		= gleak_orig, # SETPARAM: use fitted gl value
 						frozen		= True)
@@ -199,7 +200,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 	dend_cm_param = ephys.parameters.NrnSectionParameter(
 						name		= 'cm_dend_param',
 						param_name	= 'cm',
-						locations	= [StnParameters.dendritic_region],
+						locations	= [stn_params.dendritic_region],
 						bounds		= [1.0, 1.0],
 						value		= cm_orig, # SETPARAM: use fitted cm value
 						frozen		= True)
@@ -208,7 +209,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 	frozen_params = [] # SETPARAM: frozen params from previous optimisations
 
 	# FREE PARAMETERS are active conductances with large impact on response
-	free_params = StnParameters.dend_active_params # SETPARAM: parameters that are optimised (must be not frozen)
+	free_params = stn_params.dend_active_params # SETPARAM: parameters that are optimised (must be not frozen)
 
 	# NOTE: we don't need to define NrnModMechanism for these parameters, since they are not inserted by BluePyOpt but by our custom model setup code
 
@@ -221,21 +222,25 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 	opt_stim_protocols = [CLAMP_REBOUND, MIN_SYN_BURST]
 
 	# Make all protocol data
-	red_protos = {stim_proto: BpopProtocolWrapper.make(stim_proto, stn_model_type) 
-					for stim_proto in opt_stim_protocols}
+	red_protos = {
+		stim_proto: stn_protos.BpopProtocolWrapper.make(stim_proto, stn_model_type) 
+			for stim_proto in opt_stim_protocols
+	}
 
 	# Collect al frozen mechanisms and parameters required for protocols to work
-	proto_mechs, proto_params = BpopProtocolWrapper.all_mechs_params(red_protos.values())
+	proto_mechs, proto_params = stn_protos.BpopProtocolWrapper.all_mechs_params(red_protos.values())
 
 	# Distinguish between sets of parameters (used, frozen, free/optimised)
 	frozen_params += proto_params
 	used_params = frozen_params + free_params
-	for param in frozen_params: assert param.frozen
-	for param in free_params: assert (not param.frozen)
+	for param in frozen_params:
+		assert param.frozen
+	for param in free_params:
+		assert (not param.frozen)
 
 	# Create reduced model
 	if red_model is None:
-		red_model = StnReducedModel(
+		red_model = stn_models.StnReducedModel(
 						name		= 'StnFolded',
 						fold_method	= 'marasco',
 						num_passes	= 7,
@@ -251,26 +256,26 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 
 	# Get protocol responses for full model
 	if PROTO_RESPONSES_FILE is not None:
-		full_responses = load_proto_responses(PROTO_RESPONSES_FILE)
+		full_responses = stn_anls.load_proto_responses(PROTO_RESPONSES_FILE)
 	else:
-		full_protos = [BpopProtocolWrapper.make(stim_proto, stn_model_type) for stim_proto in opt_stim_protocols]
-		full_mechs, full_params = BpopProtocolWrapper.all_mechs_params(full_protos)
-		full_model = StnFullModel(
+		full_protos = [stn_protos.BpopProtocolWrapper.make(stim_proto, stn_model_type) for stim_proto in opt_stim_protocols]
+		full_mechs, full_params = stn_protos.BpopProtocolWrapper.all_mechs_params(full_protos)
+		full_model = stn_models.StnFullModel(
 						name		= 'StnGillies',
 						mechs		= full_mechs,
 						params		= full_params)
-		full_responses = run_proto_responses(full_model, full_protos)
+		full_responses = stn_anls.run_proto_responses(full_model, full_protos)
 
 	# Make EFEL feature objects
-	stimprotos_feats = StnFeatures.make_opt_features(red_protos.values())
+	stimprotos_feats = stn_feats.make_opt_features(red_protos.values())
 
 	# Calculate target values from full model responses
-	StnFeatures.calc_feature_targets(stimprotos_feats, full_responses)
+	stn_feats.calc_feature_targets(stimprotos_feats, full_responses)
 
 	############################################################################
 	# TEST
 
-	# default_params = {k : v*1.1 for k,v in StnParameters.default_params.items() if k in [p.name for p in used_params]}
+	# default_params = {k : v*1.1 for k,v in stn_params.default_params.items() if k in [p.name for p in used_params]}
 
 	# stim_proto = MIN_SYN_BURST
 	# e_proto = red_protos[stim_proto]
@@ -303,7 +308,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 	# Objective / Fitness calculation
 
 	# Collect characteristic features for all protocols used in evaluation
-	all_opt_features, all_opt_weights = StnFeatures.all_features_weights(stimprotos_feats.values())
+	all_opt_features, all_opt_weights = stn_feats.all_features_weights(stimprotos_feats.values())
 
 	# Make final objective function based on selected set of features
 	# total_objective = ephys.objectives.WeightedSumObjective(
@@ -437,24 +442,24 @@ def save_fullmodel_responses(plot=True):
 	model_type = StnModel.Gillies2005
 
 	# Make all available protocols
-	all_stim_protos = StnProtocols.PROTOCOL_WRAPPERS.keys()
-	full_protos = [BpopProtocolWrapper.make(stim_proto, model_type) for stim_proto in all_stim_protos]
+	all_stim_protos = stn_protos.PROTOCOL_WRAPPERS.keys()
+	full_protos = [stn_protos.BpopProtocolWrapper.make(stim_proto, model_type) for stim_proto in all_stim_protos]
 
 	# Make cell model
-	full_mechs, full_params = BpopProtocolWrapper.all_mechs_params(full_protos)
-	full_model = StnFullModel(
+	full_mechs, full_params = stn_protos.BpopProtocolWrapper.all_mechs_params(full_protos)
+	full_model = stn_models.StnFullModel(
 					name		= 'StnGillies',
 					mechs		= full_mechs,
 					params		= full_params)
 
 	# Run protocols and save responses
 	ephys_protos = [proto.ephys_protocol for proto in full_protos]
-	full_responses = run_proto_responses(full_model, ephys_protos)
+	full_responses = stn_anls.run_proto_responses(full_model, ephys_protos)
 	
-	save_proto_responses(full_responses, PROTO_RESPONSES_FILE)
+	stn_anls.save_proto_responses(full_responses, PROTO_RESPONSES_FILE)
 
 	if plot:
-		plot_proto_responses(full_responses)
+		stn_anls.plot_proto_responses(full_responses)
 
 
 if __name__ == '__main__':
@@ -462,5 +467,5 @@ if __name__ == '__main__':
 	# proto_feats = get_features_targets()
 
 	# Load and plot
-	responses = load_proto_responses(PROTO_RESPONSES_FILE)
-	plot_proto_responses(responses)
+	responses = stn_anls.load_proto_responses(PROTO_RESPONSES_FILE)
+	stn_anls.plot_proto_responses(responses)

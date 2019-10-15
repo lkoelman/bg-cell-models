@@ -27,7 +27,7 @@ logging.basicConfig(format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s',
 logger = logging.getLogger('protocols') # create logger for this module
 
 # Experimental protocols
-from .protocols import StimProtocol, extend_dictitem
+from .stimprotocols import StimProtocol, extend_dictitem
 
 
 class CellEvaluator(object):

@@ -13,6 +13,7 @@ import neuron
 nrn = neuron.nrn # types nrn.Section and nrn.Segment
 h = neuron.h
 
+from bgcellmodels.mechanisms import synapses
 from physiotypes import Populations, NTReceptors, ParameterSource
 Pop = Populations
 Rec = NTReceptors
@@ -259,14 +260,18 @@ syn_mech_correctors = {
 
 
 # @unique
-# class MSRCorrection(Enum):
-#     """
-#     Correction method to take into account multi-synaptic contacts
-#     (Multi Synapse Rule).
-#     """
-#     SCALE_GSYN_MSR = 0,         # Divide synaptic conductance by average number of contacts
-#     SCALE_NUMSYN_MSR = 1,       # Number of SYNAPSE objects = number of synapses (observed) divided by average number of contacts
-#     SCALE_NUMSYN_GSYN = 2,      # Number of SYNAPSE objects = number needed to get total observed synaptic conductance
+class MSRCorrection(object):
+    """
+    Correction method to take into account multi-synaptic contacts
+    (Multi Synapse Rule).
+    """
+    SCALE_GSYN_MSR = 0,     # Divide synaptic conductance by average number of contacts
+
+    SCALE_NUMSYN_MSR = 1,   # Number of SYNAPSE objects = number of synapses 
+                            # (observed) divided by average number of contacts
+    
+    SCALE_NUMSYN_GSYN = 2,  # Number of SYNAPSE objects = number needed to get
+                            # total observed synaptic conductance
 
 
 class SynInfo(object):

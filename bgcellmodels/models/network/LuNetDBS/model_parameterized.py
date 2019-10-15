@@ -71,7 +71,7 @@ from pyNN.utility import init_logging # connection_plot is bugged
 import neo.io
 
 # Custom PyNN extensions
-# from bgcellmodels.extensions.pynn import simulator as pynn_sim_ext
+from bgcellmodels.extensions.pynn import simulator as pynn_sim_ext
 from bgcellmodels.extensions.pynn import synapses as custom_synapses
 from bgcellmodels.extensions.pynn.utility import connection_plot
 from bgcellmodels.extensions.pynn.populations import Population
@@ -214,12 +214,16 @@ def write_compartment_coordinates(pop, out_dir, scale=1.0, translation=None,
         flatten_cells=False, scale=scale, translation=translation)
 
     # Activating function values for each cell
-    cells = [gid._cell for gid in pop if pop.is_local(gid)]
-    cells_activations_dists = [
-        xtra_utils.get_rattay_activating_function(cell.icell,
-            ('basal', 'somatic', 'axonal')) for cell in cells
-    ]
-    cell_acts, cell_dists = zip(*cells_activations_dists)
+    if activating_function:
+        cells = [gid._cell for gid in pop if pop.is_local(gid)]
+        cells_activations_dists = [
+            xtra_utils.get_rattay_activating_function(cell.icell,
+                ('basal', 'somatic', 'axonal')) for cell in cells
+        ]
+        cell_acts, cell_dists = zip(*cells_activations_dists)
+    else:
+        cell_acts = []
+        cell_dists = []
 
     # Gather this data from all MPI ranks
     this_rank_data = {
@@ -1466,6 +1470,17 @@ class Simulation(object):
         h.cao0_ca_ion = 2.0
         h("cli0_cl_ion = 4")
         h("clo0_cl_ion = 132.5")
+
+        # BBSaveState
+        # sim.state.bbss = h.BBSaveState()
+        # num_cell = 0
+        # num_segments = 0
+        # for sec in h.allsec():
+        #     num_cell += 1
+        #     for seg in sec:
+        #         num_segments += 1
+        #         for pp in seg.point_processes():
+        #             sim.state.bbss.ignore(pp)
 
         # Simulation statistics
         num_segments = sum((sec.nseg for sec in h.allsec()))

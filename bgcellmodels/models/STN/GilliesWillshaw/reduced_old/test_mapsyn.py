@@ -14,7 +14,7 @@ from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
-import gillies_model as gillies
+from bgcellmodels.models.STN.GilliesWillshaw import gillies_model as gillies
 import marasco_foldbased as marasco
 import mapsyn
 from bgcellmodels.common import analysis

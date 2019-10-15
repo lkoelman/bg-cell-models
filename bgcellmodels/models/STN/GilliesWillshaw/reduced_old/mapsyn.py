@@ -13,7 +13,7 @@ from neuron import h
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
 
-import gillies_model as gillies
+from bgcellmodels.models.STN.GilliesWillshaw import gillies_model as gillies
 import redutils as redtools
 from bgcellmodels.common import configutil
 from redutils import getsecref, seg_index

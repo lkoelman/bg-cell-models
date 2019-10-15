@@ -27,7 +27,8 @@ from marasco_merging import merge_seg_subtree
 import folding
 
 # Gillies STN model
-from gillies_model import gillies_gdict, gillies_glist
+from bgcellmodels.models.STN.GilliesWillshaw.gillies_model import (
+	gillies_gdict, gillies_glist)
 
 mechs_chans = gillies_gdict
 glist = gillies_glist

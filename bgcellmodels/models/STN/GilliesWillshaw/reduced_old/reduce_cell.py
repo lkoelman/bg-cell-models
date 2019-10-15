@@ -433,7 +433,7 @@ def gillies_stratford_reduction():
 	"""
 	Make FoldReduction object with Stratford method.
 	"""
-	import gillies_model
+	from bgcellmodels.models.STN.GilliesWillshaw import gillies_model
 	if not hasattr(h, 'SThcell'):
 		gillies_model.stn_cell_gillies()
 
@@ -501,7 +501,7 @@ def gillies_marasco_reduction(tweak=True):
 	Make FoldReduction object with Marasco method.
 	"""
 
-	import gillies_model
+	from bgcellmodels.models.STN.GilliesWillshaw import gillies_model
 	if not hasattr(h, 'SThcell'):
 		gillies_model.stn_cell_gillies()
 

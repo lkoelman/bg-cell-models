@@ -7,7 +7,7 @@ Physiological & Anatomical parameters: see notes/BG_observations_experiments.md
 
 """
 
-# Python stdlib
+# Standard library
 import re
 from collections import namedtuple
 
@@ -26,12 +26,8 @@ from bgcellmodels.cellpopdata import (
 )
 
 # Stimulation protocols
-from proto_common import (
-    StimProtocol, EvaluationStep, 
-    register_step, pick_random_segments,
-    rec_GABA_traces, rec_GLU_traces,
-    rec_Vm, rec_spikes
-)
+from bgcellmodels.common import stimprotocols
+from bgcellmodels.common.stimprotocols import StimProtocol, EvaluationStep, register_step
 
 from bgcellmodels.common import logutils
 logger = logutils.getBasicLogger(name='stn_protos')
@@ -340,14 +336,14 @@ def rec_traces(self, protocol, traceSpecs):
     }
 
     # record synaptic traces
-    rec_GABA_traces(**rec_kwargs)
-    rec_GLU_traces(**rec_kwargs)
+    stimprotocols.rec_GABA_traces(**rec_kwargs)
+    stimprotocols.rec_GLU_traces(**rec_kwargs)
 
     # record membrane voltages
-    rec_Vm(**rec_kwargs)
+    stimprotocols.rec_Vm(**rec_kwargs)
 
     # Record input spikes
-    rec_spikes(**rec_kwargs)
+    stimprotocols.rec_spikes(**rec_kwargs)
 
 
 @register_step(EvaluationStep.PLOT_TRACES, StimProtocol.SYN_BACKGROUND_HIGH)
@@ -430,7 +426,7 @@ def make_background_inputs(**kwargs):
 
     # Get target segments: distribute synapses over dendritic trees
     dendritic_secs = icell.dendritic
-    target_segs = pick_random_segments(dendritic_secs, n_syn, is_target_seg, rng=rng)
+    target_segs = stimprotocols.pick_random_segments(dendritic_secs, n_syn, is_target_seg, rng=rng)
 
     # Data for configuring inputs
     tstart = 300

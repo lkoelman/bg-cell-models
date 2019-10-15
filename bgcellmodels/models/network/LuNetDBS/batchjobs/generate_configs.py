@@ -19,27 +19,29 @@ import numpy as np
 
 # SETPARAM: template file and output directory
 template_paths = """
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs/circuits/calibrate_no-dbs.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/configs/circuits/netconf-V6_rec-axmid-EI_dbs-amp-0.8.json
 """.strip().split()
 
 for template_path in template_paths:
 
     template_dir, template_name = os.path.split(template_path)
-    outdir = "../configs/sweeps_g-ctx-stn" # SETPARAM: output dir
+    outdir = "../configs/sweeps-gsyn" # SETPARAM: output dir
     config = fileutils.parse_json_file(template_path, nonstrict=True, ordered=True)
 
     # SETPARAM: substitutions
-    factors =  np.arange(0.2, 1.4, 0.1)
+    factors =  np.arange(0.5, 3.0 + 0.5, 0.5)
+    offsets = [-3e-3, -2e-3, -1e-3, 0.0, 1e-3, 2e-3]
+    gs_K4 =      config['STN']['GPE.all']['synapse']['parameters']['K4']
     # gs_gabaa = config['STN']['GPE.all']['synapse']['parameters'][
     #                   'gmax_GABAA']['locals']['gmax_base']
     # gs_gabab = config['STN']['GPE.all']['synapse']['parameters'][
     #                   'gmax_GABAB']['locals']['gmax_base']
-    cs_ampa = config['STN']['CTX.axons']['synapse']['parameters'][
-                      'GLUsyn_gmax_AMPA']['locals']['gmax_base']
-    cs_nmda_dend = config['STN']['CTX.axons']['synapse']['parameters'][
-                      'GLUsyn_gmax_NMDA']['locals']['gmax_base']
-    cs_nmda_soma = config['STN']['CTX.axons']['synapse']['parameters'][
-                      'NMDAsynTM_gmax_NMDA']['locals']['gmax_base']
+    # cs_ampa = config['STN']['CTX.axons']['synapse']['parameters'][
+    #                   'GLUsyn_gmax_AMPA']['locals']['gmax_base']
+    # cs_nmda_dend = config['STN']['CTX.axons']['synapse']['parameters'][
+    #                   'GLUsyn_gmax_NMDA']['locals']['gmax_base']
+    # cs_nmda_soma = config['STN']['CTX.axons']['synapse']['parameters'][
+    #                   'NMDAsynTM_gmax_NMDA']['locals']['gmax_base']
     # gg_gabaa = config['GPE.proto']['GPE.all']['synapse']['parameters'][
     #                   'gmax_GABAA']['locals']['gmax_base']
     # gg_gabab = config['GPE.proto']['GPE.all']['synapse']['parameters'][
@@ -54,17 +56,20 @@ for template_path in template_paths:
     # mg_factors = [1.0 + i*0.1*mg_gg_scale_ratio for i in range(1,10)]
 
     # Replace all occurrences of format keywords
+    # SETPARAM: multiplication/addition/replacement
     substitutions = {
+        ('STN', 'GPE.all', 'synapse', 'parameters', 'K4'): [
+            gs_K4+inc for inc in offsets],
         # ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
         #     'gmax_base'): [f*gs_gabaa for f in factors],
         # ('STN', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAB', 'locals', 
-        #     'gmax_base'): [0.2*gs_gabab for f in factors],
-        ('STN', 'CTX.axons', 'synapse', 'parameters', 'GLUsyn_gmax_AMPA', 'locals', 
-            'gmax_base'): [f*cs_ampa for f in factors],
-        ('STN', 'CTX.axons', 'synapse', 'parameters', 'GLUsyn_gmax_NMDA', 'locals', 
-            'gmax_base'): [f*cs_nmda_dend for f in factors],
-        ('STN', 'CTX.axons', 'synapse', 'parameters', 'NMDAsynTM_gmax_NMDA', 'locals', 
-            'gmax_base'): [f*cs_nmda_soma for f in factors],
+        #     'gmax_base'): [f*gs_gabab for f in factors],
+        # ('STN', 'CTX.axons', 'synapse', 'parameters', 'GLUsyn_gmax_AMPA', 'locals', 
+        #     'gmax_base'): [f*cs_ampa for f in factors],
+        # ('STN', 'CTX.axons', 'synapse', 'parameters', 'GLUsyn_gmax_NMDA', 'locals', 
+        #     'gmax_base'): [f*cs_nmda_dend for f in factors],
+        # ('STN', 'CTX.axons', 'synapse', 'parameters', 'NMDAsynTM_gmax_NMDA', 'locals', 
+        #     'gmax_base'): [f*cs_nmda_soma for f in factors],
         # ('GPE.proto', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
         #     'gmax_base'): [1.333*gg_gabaa for f in factors],
         # ('GPE.proto', 'GPE.all', 'synapse', 'parameters', 'gmax_GABAB', 'locals', 
@@ -74,8 +79,8 @@ for template_path in template_paths:
         # ('GPE.proto', 'STR.MSN', 'synapse', 'parameters', 'gmax_GABAA', 'locals', 
         #     'gmax_base'): [f*mg_gabaa for f in factors],
     }
-    suffix_format = '_g-ctx-stn-x-{:.1f}' # SETPARAM: format string for json filename
-    suffix_substitutions = factors
+    suffix_format = '_K4-{:.2e}' # SETPARAM: format string for json filename
+    suffix_substitutions = substitutions.values()[0] # SETPARAM: file name substitutions
     sweep_length = len(suffix_substitutions)
 
     for i in range(sweep_length):
@@ -94,14 +99,12 @@ for template_path in template_paths:
             if sweep_param not in parent_dict:
                 raise ValueError("Key {} not present at nesting level {}".format(
                     sweep_param, nested_keys))
-            # SETPARAM: substitution or multiplication of target value
             parent_dict[sweep_param] = sweep_vals[i]
-            # parent_dict[sweep_param] *= sweep_vals[i]
             print("Updated key {} for sweep {}".format(sweep_param, i))
 
         # Write config after doing all substitutions for current sweep value
         # SETPARAM: config filename substitution
-        outname = template_name.replace('.json',
+        outname = template_name.replace('_dbs-amp-0.8.json',
                         suffix_format.format(suffix_substitutions[i]) + '.json')
         outfile = os.path.join(outdir, outname)
         

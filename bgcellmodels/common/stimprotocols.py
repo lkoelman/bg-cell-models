@@ -9,7 +9,7 @@ import numpy as np
 import neuron, nrn
 h = neuron.h
 
-from bgcellmodels.common import analysis, treeutils, logutils
+from bgcellmodels.common import analysis, logutils
 logger = logutils.getBasicLogger(name='protocols')
 
 @unique
@@ -39,6 +39,39 @@ ClampProtocols = (StimProtocol.CLAMP_REBOUND, StimProtocol.CLAMP_PLATEAU)
 SynapticProtocols = tuple(proto for proto in list(StimProtocol) if (
                             (proto not in ClampProtocols) and
                             (proto != StimProtocol.SPONTANEOUS)))
+
+
+@unique
+class EvaluationStep(Enum):
+    """
+    Steps in evaluation of cell model
+    """
+    INIT_SIMULATION = 0
+    MAKE_INPUTS = 1
+    RECORD_TRACES = 2
+    PLOT_TRACES = 3
+
+# Protocol-specific functions registered for each evaluation step
+EVALUATION_FUNCS = {proto: {} for proto in list(StimProtocol)}
+
+
+def register_step(step, protocol):
+    """
+    Decorator factory to register a function implementing an evaluation step for given protocol.
+
+    @note   since it takes arguments, it is a decorator factory rather than a decorator
+            and should return the actual decorator function
+    """
+    
+    def decorate_step(step_func):
+        """ Actual decorator that function is passed to """
+        # don't make wrapper function, only register it
+        step_func.protocol = protocol
+        step_func.evaluation_step = step
+        EVALUATION_FUNCS[protocol][step] = step_func
+        return step_func
+
+    return decorate_step
 
 
 def pick_random_segments(sections, n_segs, elig_func, rng=None):
@@ -86,7 +119,7 @@ def pick_random_segments(sections, n_segs, elig_func, rng=None):
 
 
 # Backward compatibility
-sample_tree_uniformly = treeutils.sample_tree_uniformly
+# sample_tree_uniformly = treeutils.sample_tree_uniformly
 
 
 def extend_dictitem(d, key, val, append=True):

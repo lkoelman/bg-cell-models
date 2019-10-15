@@ -28,12 +28,20 @@ def pre_run(self):
         self._old_pre_run()
 
         # Restore simulator state
-        self.bbss = h.BBSaveState()
+        if getattr(self, 'ss', None) is None:
+            # self.bbss = h.BBSaveState()
+            self.ss = h.SaveState()
         if getattr(self, 'restore', False):
             if not os.path.exists('./in'):
                 raise ValueError('Simulator state files must be saved in ./in/')
-            self.bbss.restore_test()
-            self.bbss.vector_play_init()
+            # self.bbss.restore_test_bin()
+            # self.bbss.vector_play_init()
+            f = h.File('./in/classic_saved_state.{}of{}'.format(
+                self.mpi_rank, self.num_processes))
+            ignore_events = 1
+            self.ss.fread(f)
+            self.ss.restore(ignore_events)
+            h.t = 0
 
 
 def save_state(self):
@@ -47,7 +55,16 @@ def save_state(self):
         if not os.path.exists('./out'):
             os.makedirs('./out')
 
-    self.bbss.save_test()
+    # Using BBSaveState
+    # self.bbss.save_test_bin()
+    
+    # Using classic SaveState
+    f = h.File()
+    f.wopen('./out/classic_saved_state.{}of{}'.format(
+                self.mpi_rank, self.num_processes))
+    self.ss.save()
+    self.ss.fwrite(f)
+    
 
 
 simulator.state.__class__._pre_run = pre_run

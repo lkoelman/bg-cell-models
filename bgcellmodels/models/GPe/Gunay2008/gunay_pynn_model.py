@@ -160,7 +160,7 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         self._init_emfield()
 
         # Adjust compartment dimensions like in GENESIS code
-        self._fix_compartment_dimensions()
+        # self._fix_compartment_dimensions()
 
 
     def _init_axon(self, axon_class):

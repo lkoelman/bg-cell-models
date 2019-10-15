@@ -4,37 +4,22 @@ Extensions to BluePyOpt classes for optimizing Gillies STN neuron
 @author Lucas Koelman
 
 @date   13/09/2017
-
-
-ARCHITECTURE
-
-Different approaches to creating a cell model
-
-- create own ephys.Model or ephys.models.CellModel
-
-    + see CellModel class
-        * https://github.com/BlueBrain/BluePyOpt/blob/master/bluepyopt/ephys/models.py
-    
-    + see external use cases
-        * https://github.com/BlueBrain/BluePyOpt/wiki
-        * particularly the example at https://github.com/apdavison/BluePyOpt/blob/pynn-models/bluepyopt/ephys_pyNN/models.py
-
-    + see example of complex model at https://github.com/BlueBrain/BluePyOpt/tree/master/examples/l5pc
-
-    + see dummy cell model at https://github.com/BlueBrain/BluePyOpt/blob/master/bluepyopt/tests/test_ephys/testmodels/dummycells.py
-
 """
 
+# Standard library
 import collections
+import logging
 
+# Third party
 import bluepyopt.ephys as ephys
 
-import gillies_model
-from reducemodel import redutils, reduce_cell
+# Custom Modules
+from bgcellmodels.models.STN.GilliesWillshaw import gillies_model
+from bgcellmodels.models.STN.GilliesWillshaw.reduced_old import redutils, reduce_cell
+
 import bgcellmodels.cellpopdata as cpd
 
 
-import logging
 logger = logging.getLogger('bpop_ext')
 
 

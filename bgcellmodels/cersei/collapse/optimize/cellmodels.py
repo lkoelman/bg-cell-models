@@ -1,5 +1,5 @@
 """
-Extensions to BluePyOpt classes for optimizing Gillies STN neuron
+Extensions to BluePyOpt classes for optimizing reduced morphology models.
 
 @author Lucas Koelman
 

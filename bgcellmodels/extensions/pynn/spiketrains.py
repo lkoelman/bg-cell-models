@@ -16,7 +16,7 @@ from bgcellmodels.common import spikelib
 
 def continuous_bursts(bursting_fraction, synchronous, rng,
                       T_burst, dur_burst, f_intra, f_inter,
-                      f_background, duration):
+                      f_background, duration, min_spk_dt=1.0):
     """
     Make generator for continuous regularly bursting spike trains.
     """
@@ -46,15 +46,20 @@ def continuous_bursts(bursting_fraction, synchronous, rng,
                 # Spiketimes for bursting cells
                 burst_gen = make_bursts(T_burst, dur_burst, f_intra, f_inter,
                                         rng=rng, max_dur=duration)
-                spiketimes = Sequence(np.fromiter(burst_gen, float))
+                # Get rid of spikes that are spaced too closely
+                spk_cell = np.fromiter(burst_gen, float)
+                spk_clean = spk_cell[:-1][~(np.diff(spk_cell) < min_spk_dt)]
+                spiketimes = Sequence(spk_clean)
             else:
                 # Spiketimes for background activity
                 number = int(2 * duration * f_background / 1e3)
                 if number == 0:
                     spiketimes = Sequence([])
                 else:
-                    spiketimes = Sequence(np.add.accumulate(
-                        rng.exponential(1e3/f_background, size=number)))
+                    spk_cell = np.add.accumulate(
+                        rng.exponential(1e3/f_background, size=number))
+                    spk_clean = spk_cell[:-1][~(np.diff(spk_cell) < min_spk_dt)]
+                    spiketimes = Sequence(spk_clean)
             spiketimes_for_index.append(spiketimes)
         return spiketimes_for_index
 

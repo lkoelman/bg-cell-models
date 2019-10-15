@@ -12,17 +12,20 @@ NOTES
 
 """
 
+# Standard library
 import collections
+import logging
 
+# Third party
 import bluepyopt.ephys as ephys
 
+# Custom modules
 from bgcellmodels.extensions.bluepyopt.bpop_extensions import PhysioProtocol, NrnSpaceClamp
 from bgcellmodels.extensions.bluepyopt.bpop_protocol_ext import SelfContainedProtocol
-
-from evalmodel import (
-	proto_common, proto_background, proto_simple_syn
+from bgcellmodels.models.STN.GilliesWillshaw.evalmodel import (
+	proto_background, proto_simple_syn
 )
-from evalmodel.proto_common import StimProtocol
+from bgcellmodels.common.stimprotocols import StimProtocol
 
 import bgcellmodels.cellpopdata as cpd
 Pop = cpd.Populations
@@ -30,7 +33,7 @@ NTR = cpd.NTReceptors
 Ref = cpd.ParameterSource
 StnModel = cpd.StnModel
 
-import logging
+
 logger = logging.getLogger('bpop_ext')
 
 
@@ -63,7 +66,7 @@ class BpopProtocolWrapper(object):
 	@classmethod
 	def make(cls, stim_proto, *args, **kwargs):
 		"""
-		Instantiate protocol one of the protocol objects defined in this model.
+		Instantiate procol by name/enum value.
 		"""
 		if len(args) > 0:
 			kwargs['stn_model_type'] = args[0]
@@ -456,8 +459,8 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
 		]
 
 		proto_plot_funcs = [
-			# proto_common.plot_all_spikes,
-			# proto_common.report_spikes,
+			# stimprotocols.plot_all_spikes,
+			# stimprotocols.report_spikes,
 		]
 
 		self.ephys_protocol = SelfContainedProtocol(
@@ -619,8 +622,8 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 		]
 
 		proto_plot_funcs = [
-			proto_common.plot_all_spikes,
-			proto_common.report_spikes,
+			stimprotocols.plot_all_spikes,
+			stimprotocols.report_spikes,
 		]
 
 		self.ephys_protocol = SelfContainedProtocol(
