@@ -19,26 +19,40 @@ class StimProtocol(Enum):
     to administer to STN cell
     """
     SPONTANEOUS = 0             # spontaneous firing (no inputs)
+
+    # Current and voltage clamps
     CLAMP_PLATEAU = 1           # plateau potential (Gillies 2006, Fig. 10C-D)
     CLAMP_REBOUND = 2           # rebound burst (Gillies 2006, Fig. 3-4)
+
+    # Synaptic inputs
     SYN_BACKGROUND_HIGH = 3     # synaptic bombardment, high background activity
     SYN_BACKGROUND_LOW = 4      # synaptic bombardment, low background activity
-    SYN_PARK_PATTERNED = 5      # pathological input, strong patterned cortical input with strong GPi input in antiphase
+    SYN_PARK_PATTERNED = 5      # pathological input, strong patterned cortical
+                                # input with strong GPi input in antiphase
     SINGLE_SYN_GABA = 6
     SINGLE_SYN_GLU = 7
     MIN_SYN_BURST = 8           # burst using minimal combination of GLU + GABA synapses
     PASSIVE_SYN = 10            # propagation of EPSP/IPSP in passive cell
+
+    # Phase response curves
+    PRC_SYN_EXC_PROX = 11       # Excitatory synapses located proximally to soma
+    PRC_SYN_EXC_DIST = 12
+    PRC_SYN_INH_PROX = 13
+    PRC_SYN_INH_DIST = 14
 
     @classmethod
     def from_str(cls, descr):
         return cls._member_map_[descr.upper()]
 
 
+# Protocols by category
 ClampProtocols = (StimProtocol.CLAMP_REBOUND, StimProtocol.CLAMP_PLATEAU)
 
 SynapticProtocols = tuple(proto for proto in list(StimProtocol) if (
                             (proto not in ClampProtocols) and
                             (proto != StimProtocol.SPONTANEOUS)))
+
+PrcProtocols = tuple((p for p in list(StimProtocol) if str(p).startswith('PRC')))
 
 
 @unique

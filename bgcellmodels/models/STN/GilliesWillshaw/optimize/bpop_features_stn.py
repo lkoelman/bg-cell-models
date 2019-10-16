@@ -1,9 +1,9 @@
 """
 Creation of EFEL features for STN model optimization.
 
-@author	Lucas Koelman
+@author Lucas Koelman
 
-@date	3/10/2017
+@date   3/10/2017
 
 """
 import math
@@ -16,199 +16,199 @@ import logging
 logger = logging.getLogger('bluepyopt.ephys.efeatures')
 
 def make_features(proto_wrapper):
-	"""
-	Make eFEL features based on a protocol definition and its characterizing 
-	features.
+    """
+    Make eFEL features based on a protocol definition and its characterizing 
+    features.
 
-	@return		a dictionary {feature_names: feature_objects}
-	"""
-	protocol = proto_wrapper.ephys_protocol
+    @return     a dictionary {feature_names: feature_objects}
+    """
+    protocol = proto_wrapper.ephys_protocol
 
-	candidate_feats = {}
-	default_trace = {'': protocol.recordings[0].name}
+    candidate_feats = {}
+    default_trace = {'': protocol.recordings[0].name} # location : str -> recording : str
 
-	eFEL_available_features = efel.getFeatureNames()
-	custom_spiketrain_features = espk.getFeatureNames()
+    eFEL_available_features = efel.getFeatureNames()
+    custom_spiketrain_features = espk.getFeatureNames()
 
-	for feat_name, feat_params in proto_wrapper.characterizing_feats.iteritems():
+    for feat_name, feat_params in proto_wrapper.characterizing_feats.iteritems():
 
-		# Get interval of response trace from which feature is calculated
-		response_interval = feat_params.get('response_interval', proto_wrapper.response_interval)
+        # Get interval of response trace from which feature is calculated
+        response_interval = feat_params.get('response_interval', proto_wrapper.response_interval)
 
-		# Identify library providing feature and make it
-		if feat_name in eFEL_available_features:
+        # Identify library providing feature and make it
+        if feat_name in eFEL_available_features:
 
-			feature = ephys.efeatures.eFELFeature(
-						name				='{}.{}'.format(protocol.name, feat_name),
-						efel_feature_name	= feat_name,
-						recording_names		= feat_params.get('traces', default_trace),
-						stim_start			= response_interval[0],
-						stim_end			= response_interval[1],
-						double_settings		= feat_params.get('double', None),
-						int_settings		= feat_params.get('int', None),
-						threshold			= proto_wrapper.spike_threshold,
-						)
+            feature = ephys.efeatures.eFELFeature(
+                        name                ='{}.{}'.format(protocol.name, feat_name),
+                        efel_feature_name   = feat_name,
+                        recording_names     = feat_params.get('traces', default_trace),
+                        stim_start          = response_interval[0],
+                        stim_end            = response_interval[1],
+                        double_settings     = feat_params.get('double', None),
+                        int_settings        = feat_params.get('int', None),
+                        threshold           = proto_wrapper.spike_threshold,
+                        )
 
-		elif feat_name in custom_spiketrain_features:
+        elif feat_name in custom_spiketrain_features:
 
-			feature = espk.SpikeTrainFeature(
-						name				='{}.{}'.format(protocol.name, feat_name),
-						metric_name			= feat_name,
-						recording_names		= feat_params.get('traces', default_trace),
-						stim_start			= response_interval[0],
-						stim_end			= response_interval[1],
-						double_settings		= feat_params.get('double', None),
-						int_settings		= feat_params.get('int', None),
-						threshold			= proto_wrapper.spike_threshold,
-						)
+            feature = espk.SpikeTrainFeature(
+                        name                ='{}.{}'.format(protocol.name, feat_name),
+                        metric_name         = feat_name,
+                        recording_names     = feat_params.get('traces', default_trace),
+                        stim_start          = response_interval[0],
+                        stim_end            = response_interval[1],
+                        double_settings     = feat_params.get('double', None),
+                        int_settings        = feat_params.get('int', None),
+                        threshold           = proto_wrapper.spike_threshold,
+                        )
 
-		else:
-			raise ValueError('Unknown feature: <{}>'.format(feat_name))
+        else:
+            raise ValueError('Unknown feature: <{}>'.format(feat_name))
 
-		candidate_feats[feat_name] = feature
+        candidate_feats[feat_name] = feature
 
-	return candidate_feats
+    return candidate_feats
 
 
 def make_opt_features(proto_wrappers):
-	"""
-	Make features that associate each protocol with some relevant metrics.
+    """
+    Make features that associate each protocol with some relevant metrics.
 
-	@return		dict(StimProtocol : dict(feature_name : tuple(feature, weight)))
+    @return     dict(StimProtocol : dict(feature_name : tuple(feature, weight)))
 
-					I.e. a dictionary that maps ephys.protocol objects to another
-					dictionary, that maps feature names to a feature object and
-					its weight for the optimization.
+                    I.e. a dictionary that maps ephys.protocol objects to another
+                    dictionary, that maps feature names to a feature object and
+                    its weight for the optimization.
 
-	@note	available features:
-				- import efel; efel.getFeatureNames()
-				- see http://efel.readthedocs.io/en/latest/eFeatures.html
-				- see pdf linked there (ctrl+f: feature name with underscores as spaces)
-				- each feature has specific (required_features, required_trace_data, required_parameters)
+    @note   available features:
+                - import efel; efel.getFeatureNames()
+                - see http://efel.readthedocs.io/en/latest/eFeatures.html
+                - see pdf linked there (ctrl+f: feature name with underscores as spaces)
+                - each feature has specific (required_features, required_trace_data, required_parameters)
 
-	"""
+    """
 
-	proto_feat_dict = {}
+    proto_feat_dict = {} # StimProtocol -> dict[feat_name : str, tuple[feature, weight]]
 
-	# For each protocol used in optimization: make the Feature objects
-	for proto in proto_wrappers:
+    # For each protocol used in optimization: make the Feature objects
+    for proto in proto_wrappers:
 
-		proto_feat_dict[proto.IMPL_PROTO] = {} # feature_name -> (feature, weight)
+        proto_feat_dict[proto.IMPL_PROTO] = {} # feature_name -> (feature, weight)
 
-		# Make eFEL features
-		candidate_feats = make_features(proto)
+        # Make eFEL features
+        candidate_feats = make_features(proto)
 
-		# Add them to dict
-		for feat_name in candidate_feats.keys():
-			# Weight and normalization factor for feature score (distance)
-			feat_weight = proto.characterizing_feats[feat_name]['weight']
-			norm_factor = proto.characterizing_feats[feat_name].get('norm_factor', float('nan'))
-			
-			# Add to feature dict if nonzero weight
-			# NOTE: feature score = sum(feat[i] - exp_mean) / N / exp_std  => so exp_std determines weight (in case of SingletonObjective)
-			if feat_weight > 0.0:
-				feat_obj = candidate_feats[feat_name]
-				feat_obj.exp_std = norm_factor
-				proto_feat_dict[proto.IMPL_PROTO][feat_name] = feat_obj, feat_weight
+        # Save each feature and its weight
+        for feat_name in candidate_feats.keys():
+            # Weight and normalization factor for feature score (distance)
+            feat_weight = proto.characterizing_feats[feat_name]['weight']
+            norm_factor = proto.characterizing_feats[feat_name].get('norm_factor', float('nan'))
+            
+            # Add to feature dict if nonzero weight
+            # NOTE: feature score = sum(feat[i] - exp_mean) / N / exp_std  => so exp_std determines weight (in case of SingletonObjective)
+            if feat_weight > 0.0:
+                feat_obj = candidate_feats[feat_name]
+                feat_obj.exp_std = norm_factor
+                proto_feat_dict[proto.IMPL_PROTO][feat_name] = feat_obj, feat_weight
 
-	return proto_feat_dict
+    return proto_feat_dict
 
 
 def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True):
-	"""
-	Calculate target values for features used in optimization (using full model).
+    """
+    Calculate target values for features used in optimization (using full model).
 
 
-	@param		protocols			BpopProtocolFactory objects
+    @param      protocols           BpopProtocolFactory objects
 
 
-	@param		saved_responses		file path to pickled responses dictionary
+    @param      saved_responses     file path to pickled responses dictionary
 
-	@post		for each EFelFeature in given dictionary, the feature.exp_mean
-				and feature.exp_std will be set
-	"""
+    @post       for each EFelFeature in given dictionary, the feature.exp_mean
+                and feature.exp_std will be set
+    """
 
-	eFEL_available_features = efel.getFeatureNames()
-	custom_spiketrain_features = espk.getFeatureNames()
+    eFEL_available_features = efel.getFeatureNames()
+    custom_spiketrain_features = espk.getFeatureNames()
 
-	# Run each protocol and get its responses
-	for stim_proto, feat_dict in protos_feats.iteritems():
+    # Run each protocol and get its responses
+    for stim_proto, feat_dict in protos_feats.iteritems():
 
-		# Get response traces
-		responses = protos_responses[stim_proto.name]
+        # Get response traces
+        responses = protos_responses[stim_proto.name]
 
-		# Mark features that were not calculated correctly
-		problem_feat_names = []
+        # Mark features that were not calculated correctly
+        problem_feat_names = []
 
-		# Use response to calculate target value for each features
-		for feat_name, feat_data in feat_dict.iteritems():
+        # Use response to calculate target value for each features
+        for feat_name, feat_data in feat_dict.iteritems():
 
-			# Calculate feature value from full model response
-			e_feature, weight = feat_data
-			# weight = math.sqrt(weight) # because feature scores will be squared
+            # Calculate feature value from full model response
+            e_feature, weight = feat_data
+            # weight = math.sqrt(weight) # because feature scores will be squared
 
-			target_value = e_feature.calculate_feature(responses, raise_warnings=True)
+            target_value = e_feature.calculate_feature(responses, raise_warnings=True)
 
-			if feat_name in eFEL_available_features:
+            if feat_name in eFEL_available_features:
 
-				# Check if value is sane
-				if (target_value is None) or math.isinf(target_value) or math.isnan(target_value):
-					logger.warning('Feature {} value {} not sane for protocol {}'.format(
-								feat_name, target_value, stim_proto.name))
-					problem_feat_names.append(feat_name)
+                # Check if value is sane
+                if (target_value is None) or math.isinf(target_value) or math.isnan(target_value):
+                    logger.warning('Feature {} value {} not sane for protocol {}'.format(
+                                feat_name, target_value, stim_proto.name))
+                    problem_feat_names.append(feat_name)
 
-				# Now we can set the target value
-				# NOTE: distance is sum_i^N(feat[i] - exp_mean) / N / exp_std
-				# NOTE: exp_std will have as much influence as weight! This needs to be set in protocols file
-				e_feature.exp_mean = target_value
+                # Now we can set the target value
+                # NOTE: distance is sum_i^N(feat[i] - exp_mean) / N / exp_std
+                # NOTE: exp_std will have as much influence as weight! This needs to be set in protocols file
+                e_feature.exp_mean = target_value
 
-				# if a normalization factor was set, use it, otherwise distance will be relative to initial target
-				if math.isnan(e_feature.exp_std):
-					logger.debug('No normalization factor specified for feature {}'.format(e_feature.name))
-					e_feature.exp_std = abs(target_value / weight)
-				else:
-					e_feature.exp_std /= abs(weight)
+                # if a normalization factor was set, use it, otherwise distance will be relative to initial target
+                if math.isnan(e_feature.exp_std):
+                    logger.debug('No normalization factor specified for feature {}'.format(e_feature.name))
+                    e_feature.exp_std = abs(target_value / weight)
+                else:
+                    e_feature.exp_std /= abs(weight)
 
-			elif feat_name in custom_spiketrain_features:
+            elif feat_name in custom_spiketrain_features:
 
-				# Set target spike train
-				e_feature.set_target_values(target_value)
+                # Set target spike train
+                e_feature.set_target_values(target_value)
 
-				# target is not a number so need to decide normalization factor in other way
-				# exp_std was set to normalization factor or NaN
-				if math.isnan(e_feature.exp_std):
-					logger.warning(
-						'No normalization factor given for custom eFeature. '
-						'Since custom eFeatures may not have a value for a single response '
-						'it is highly recommended to provide a normalization factor.')
-					e_feature.exp_std = abs(1.0 / weight)
-				else:
-					e_feature.exp_std /= abs(weight) # exp_std already set to norm factor
+                # target is not a number so need to decide normalization factor in other way
+                # exp_std was set to normalization factor or NaN
+                if math.isnan(e_feature.exp_std):
+                    logger.warning(
+                        'No normalization factor given for custom eFeature. '
+                        'Since custom eFeatures may not have a value for a single response '
+                        'it is highly recommended to provide a normalization factor.')
+                    e_feature.exp_std = abs(1.0 / weight)
+                else:
+                    e_feature.exp_std /= abs(weight) # exp_std already set to norm factor
 
-			else:
-				raise ValueError('Unknown feature: <{}>'.format(feat_name))
+            else:
+                raise ValueError('Unknown feature: <{}>'.format(feat_name))
 
-		# Remove problematic features
-		if remove_problematic:
-			for feat_name in problem_feat_names:
-				feat_dict.pop(feat_name)
-				logger.debug('Removed feature {}:{}'.format(stim_proto.name, feat_name))
+        # Remove problematic features
+        if remove_problematic:
+            for feat_name in problem_feat_names:
+                feat_dict.pop(feat_name)
+                logger.debug('Removed feature {}:{}'.format(stim_proto.name, feat_name))
 
 
 def all_features_weights(feature_dicts):
-	"""
-	Concatenate all EFelFeature objects and all their corresponding weights
-	for the objective calculation into two lists.
+    """
+    Concatenate all EFelFeature objects and all their corresponding weights
+    for the objective calculation into two lists.
 
-	@param	feature_dicts		an iterable of dictionaries with feature names as
-								keys and tuples (EFelFeature, weight) as values.
-	"""
-	all_features = []
-	all_weights = []
-	for featdict in feature_dicts:
-		# Add features and weights for this protocol
-		feats, weights = zip(*featdict.values()) # values ist list of (feature, weight)
-		all_features.extend(feats)
-		all_weights.extend(weights)
+    @param  feature_dicts       an iterable of dictionaries with feature names as
+                                keys and tuples (EFelFeature, weight) as values.
+    """
+    all_features = []
+    all_weights = []
+    for featdict in feature_dicts:
+        # Add features and weights for this protocol
+        feats, weights = zip(*featdict.values()) # values ist list of (feature, weight)
+        all_features.extend(feats)
+        all_weights.extend(weights)
 
-	return all_features, all_weights
+    return all_features, all_weights

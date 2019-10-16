@@ -37,11 +37,11 @@ def getFeatureNames():
     """
     Return list with names of available features.
     """
-    return list(SpikeTrainFeature.DISTANCE_METRICS)
+    return SpikeTrainFeature.CALC_SCORE_FUNCS.keys()
 
 
 ################################################################################
-# Feature: spike train distance
+# Feature input value calculation
 ################################################################################
 
 
@@ -68,6 +68,40 @@ def calc_feat_values_spiketimes(self, efel_trace, raise_warnings):
     efel.reset()
 
     return efeat_values
+
+
+def calc_feat_values_ISI_voltage(self, efel_trace, raise_warnings):
+    """
+    Calculate feature values required for ISI voltage distance.
+    """
+
+    self._setup_efel()
+    import efel
+
+    # Calculate required features / dependencies
+    efel_feats = ['AP_begin_indices', 'AP_end_indices']
+    values = efel.getFeatureValues(
+        [efel_trace],
+        efel_feats,
+        raise_warnings=raise_warnings
+    )
+    efeat_values = {
+        feat_name: values[0][feat_name] for feat_name in efel_feats
+    }
+
+    # Voltage itself is required as well
+    # TODO: only save values where stim_start <= T <= stim_end
+    efeat_values['V'] = efel_trace['V'].values
+    efeat_values['dt'] = efel_trace['T'][1] - efel_trace['T'][0]
+
+    efel.reset()
+
+    return efeat_values
+
+
+################################################################################
+# Feature scores calculation
+################################################################################
 
 
 def calc_score_VP_dist(self, efel_trace, trace_check):
@@ -206,38 +240,6 @@ def calc_score_Kreuz_ISI_dist(self, efel_trace, trace_check):
 
     return score
 
-################################################################################
-# Feature: ISI Voltages
-################################################################################
-
-def calc_feat_values_ISI_voltage(self, efel_trace, raise_warnings):
-    """
-    Calculate feature values required for ISI voltage distance.
-    """
-
-    self._setup_efel()
-    import efel
-
-    # Calculate required features / dependencies
-    efel_feats = ['AP_begin_indices', 'AP_end_indices']
-    values = efel.getFeatureValues(
-        [efel_trace],
-        efel_feats,
-        raise_warnings=raise_warnings
-    )
-    efeat_values = {
-        feat_name: values[0][feat_name] for feat_name in efel_feats
-    }
-
-    # Voltage itself is required as well
-    # TODO: only save values where stim_start <= T <= stim_end
-    efeat_values['V'] = efel_trace['V'].values
-    efeat_values['dt'] = efel_trace['T'][1] - efel_trace['T'][0]
-
-    efel.reset()
-
-    return efeat_values
-
 
 def calc_score_ISI_voltage(self, efel_trace, trace_check):
     """
@@ -297,12 +299,11 @@ def calc_score_ISI_voltage(self, efel_trace, trace_check):
 
 
 ################################################################################
-# Feature class
+# BluePyOpt Ephys classes
 ################################################################################
 
 
 class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
-
     """
     Feature representing spike times in a particular interval. The distance is
     computed usinng a given similarity metric.
@@ -313,26 +314,22 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
                          'stim_start', 'stim_end', 'target_value_data',
                          'threshold', 'comment')
 
-    # List of available distance metrics
-    DISTANCE_METRICS = (
-        'Victor_Purpura_distance', 
-        'instantaneous_rate',
-        'ISI_voltage_distance',
-        'Kreuz_ISI_distance'
-    )
-
+    # Functions for calculating feature input data from traces
     CALC_FEAT_FUNCS = {
-        'Victor_Purpura_distance': calc_feat_values_spiketimes,
-        'instantaneous_rate': calc_feat_values_spiketimes,
-        'ISI_voltage_distance': calc_feat_values_ISI_voltage,
-        'Kreuz_ISI_distance': calc_feat_values_spiketimes,
+        'Victor_Purpura_distance'   : calc_feat_values_spiketimes,
+        'instantaneous_rate'        : calc_feat_values_spiketimes,
+        'ISI_voltage_distance'      : calc_feat_values_ISI_voltage,
+        'Kreuz_ISI_distance'        : calc_feat_values_spiketimes,
     }
 
+    # Functions for calculating score (comparing feature values)
     CALC_SCORE_FUNCS = {
-        'Victor_Purpura_distance': calc_score_VP_dist,
-        'instantaneous_rate': calc_score_instantaneous_rate,
-        'ISI_voltage_distance': calc_score_ISI_voltage,
-        'Kreuz_ISI_distance': calc_score_Kreuz_ISI_dist,
+        'Victor_Purpura_distance'   : calc_score_VP_dist,
+        'instantaneous_rate'        : calc_score_instantaneous_rate,
+        'ISI_voltage_distance'      : calc_score_ISI_voltage,
+        'Kreuz_ISI_distance'        : calc_score_Kreuz_ISI_dist,
+        'PRC_traditional'           : TODO, 
+        'PRC_corrected_Phoka'       : TODO,
     }
 
     def __init__(
@@ -411,7 +408,8 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         """
         Set data needed for computing distance.
 
-        @param value_dict   the result of a call to self.calculate_feature()
+        @param  value_dict : dict[str, object]
+                result of a call to self.calculate_feature()
         """
         self.target_value_data = value_dict
 
@@ -496,7 +494,8 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             feat_vals = None
         else:
             feat_name = self.metric_name
-            feat_vals = self.CALC_FEAT_FUNCS[feat_name](self, efel_trace, raise_warnings)
+            feat_func = self.CALC_FEAT_FUNCS[feat_name]
+            feat_vals = feat_func(self, efel_trace, raise_warnings)
 
         logger.debug('Calculated feature value for %s: %s', self.name, feat_vals)
         
@@ -507,6 +506,15 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         """
         Calculate score: spike train distance between given response and target
         spike train.
+
+        Call graph
+        ----------
+        
+        ephys.evaluators.CellEvaluator.evaluate_with_dicts(param_dict)
+        |- responses = evaluator.run_protocols
+        |- evaluator.objectivescalculator.calculate_scores(responses)
+           `- objective.calculate_feature_scores(responses)
+           `- feature.calculate_score(responses)
         """
 
         efel_trace = self._construct_efel_trace(responses)
@@ -515,7 +523,8 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             score = self.max_score
         else:
             feat_name = self.metric_name
-            score = self.CALC_SCORE_FUNCS[feat_name](self, efel_trace, trace_check)
+            score_func = self.CALC_SCORE_FUNCS[feat_name]
+            score = score_func(self, efel_trace, trace_check)
 
         logger.debug('Calculated score for %s: %f', self.name, score)
 

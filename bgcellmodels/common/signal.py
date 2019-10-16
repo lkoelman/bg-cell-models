@@ -964,3 +964,91 @@ def get_all_pyelectro_features(
     trace_analysis.analyse()
 
     return trace_analysis.analysis_results
+
+
+def compute_PRC(t_spikes, t_stim):
+    """
+    Compute phase response curve (PRC) using traditional method.
+
+    I.e. compute the phases of incoming spikes (t_stim) in the spike period 
+    (phi) and the phase advance/delay of each recorded spike (delta_phi).
+
+    @author     Lucas Koelman, ported from Matlab implementation by M. Giugliano
+                and J. Couto at https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=155735&file=/pkj_prc/matlab
+
+    @param      t_spikes  :  1 x N array
+                times of the recorded spikes
+
+    @param      t_stim : 1 x M array
+                times of the delivered pulses
+
+    @return     (phi, delta_phi) : tuple[<1 x M array>, <1 x M array>]
+                Phases of t_stim and phase shifts of spike_times. Phase
+                shifts are negative for delays and positive for advances.
+    """
+    mean_ISI    = np.mean(np.diff(t_spikes))
+    M           = len(t_stim)
+    phi         = np.zeros(M)
+    delta_phi   = np.zeros(M)
+
+
+    for i, t_pulse in enumerate(t_stim):
+        idx_preceding = np.where(t_spikes < t_pulse)[0][-1]
+        idx_following = idx_preceding + 1
+
+        tau = t_pulse - t_spikes[idx_preceding]
+        Ti = t_spikes[idx_following] - t_spikes[idx_preceding]
+
+        phi(i) = tau / mean_ISI
+        delta_phi(i) = 1.0 - (Ti / mean_ISI)
+
+
+def compute_PRC_corrected(t_spikes, t_stim):
+    """
+    Compute phase response curve (PRC) using corrected method
+    (Phoka et al., 2010).
+
+    The corrected method solves the dead zone ('bermuda triangle') problem in 
+    the PRC where it is impossible to get a phase advance (delta phi > 0) for a 
+    stimulus arriving late in the phase (phi ~= 1). See Phoka et al. (2010),
+    Fig. 2.N vs 3.E.
+
+    @author     Lucas Koelman, ported from Matlab implementation by M. Giugliano
+                and J. Couto at https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=155735&file=/pkj_prc/matlab
+
+    @param      t_spikes  :  1 x N array
+                times of the recorded spikes
+
+    @param      t_stim : 1 x M array
+                times of the delivered pulses
+
+    @return     (phi, delta_phi) : two numpy.array[float] of shape (M*3,)
+                Phases of t_stim and phase shifts of spike_times. Phase
+                shifts are negative for delays and positive for advances.
+    """
+    mean_ISI    = np.mean(np.diff(t_spikes))
+    M           = len(t_stim)
+    phi         = np.zeros((M, 3))
+    delta_phi   = np.zeros((M, 3))
+
+
+    for i, t_pulse in enumerate(t_stim):
+        idx_preceding = np.where(t_spikes < t_pulse)[0][-1]
+        idx_following = idx_preceding + 1
+
+        tau     = t_pulse - t_spikes[idx_preceding]
+        Ti      = t_spikes[idx_following] - t_spikes[idx_preceding]
+        Tim1    = t_spikes[preceding] - t_spikes[idx_preceding-1]
+        Tip1    = t_spikes[following+1] - t_spikes[following]
+
+        phi(i, 0)  = tau / mean_ISI
+        phi(i, 1) = (Tim1 + tau) / mean_ISI
+        phi(i, 2) = (tau - Ti) / mean_ISI
+
+        delta_phi(i, 0) = 1.0 - (Ti / mean_ISI)
+        delta_phi(i, 1) = 1.0 - (Tim1 / mean_ISI)
+        delta_phi(i, 2) = 1.0 - (Tip1 / mean_ISI)
+
+
+    phi         = phi.reshape((-1,))
+    delta_phi   = delta_phi.reshape((-1,))

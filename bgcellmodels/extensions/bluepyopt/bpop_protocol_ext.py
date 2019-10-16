@@ -17,6 +17,153 @@ import collections
 from bgcellmodels.common import analysis
 
 
+PROTOCOL_WRAPPERS = {} # StimProtocol : enum -> BpopProtocolWrapper
+
+
+class BpopProtocolWrapper(object):
+	"""
+	Common attributes:
+
+		ephys_protocol:		PhysioProtocol instance
+		
+		proto_vars:			dict with protocol variables
+		
+		response_interval:	expected time interval of response
+	"""
+
+	# SETPARAM: spike threshold for cell or specific protocol
+	spike_threshold = -10.0
+	
+	@classmethod
+	def make(cls, stim_proto, *args, **kwargs):
+		"""
+		Instantiate procol by name/enum value.
+		"""
+		if len(args) > 0:
+			kwargs['stn_model_type'] = args[0]
+
+		wrapper_class = PROTOCOL_WRAPPERS[stim_proto]
+		return wrapper_class(**kwargs)
+
+
+	def get_mechs_params(self):
+		"""
+		Get all ephys.mechanisms and ephys.parameters used by the protocols.
+
+		These need to be assigned to the cell model to run the protocol.
+
+		@return		tuple(mechs, params) containing a list of ephys.mechanisms 
+					and ephys.parameters respectively
+		"""
+
+		proto_mechs = self.proto_vars.get('pp_mechs', []) + \
+		              self.proto_vars.get('range_mechs', [])
+
+		proto_params = self.proto_vars.get('pp_mech_params', [])
+
+		return proto_mechs, proto_params
+
+
+	@classmethod
+	def all_mechs_params(cls, proto_wrappers):
+		"""
+		Concatenate all mechanisms and all parametes for given protocol wrappers.
+
+		This is useful for assigning to a cell model that must be able to run multiple protocols.
+		"""
+		all_mechs, all_params = [], []
+		for proto in proto_wrappers:
+			mechs, params = proto.get_mechs_params()
+			all_mechs.extend(mechs)
+			all_params.extend(params)
+
+		return all_mechs, all_params
+
+
+# Helper functions for SelfContainedProtocol
+
+def rng_getter(setup_kwargs):
+	"""
+	Function to get Numpy.Random object for stimulation protocol setup functions.
+	"""
+	import numpy as np
+	base_seed = setup_kwargs['base_seed']
+	return np.random.RandomState(base_seed)
+
+
+def connector_getter(setup_kwargs):
+	"""
+	Function to get CellConnector for stimulation protocol setup functions.
+	"""
+	import bgcellmodels.cellpopdata as cpd
+	physio_state = setup_kwargs['physio_state']
+	rng = setup_kwargs['rng']
+	return cpd.CellConnector(physio_state, rng)
+
+
+class PhysioProtocol(ephys.protocols.SweepProtocol):
+    """
+    Wrapper for SweepProtocol that adds an initialization function.
+    """
+
+    def __init__(
+            self,
+            name=None,
+            stimuli=None,
+            recordings=None,
+            cvode_active=None,
+            init_func=None):
+        """
+        Constructor
+        
+        Args:
+            init_func:  function(sim, model) that takes Simulator and instantiated 
+                        CellModel (icell) as arguments in that order
+        """
+
+        self._init_func = init_func
+
+        super(PhysioProtocol, self).__init__(
+            name,
+            stimuli=stimuli,
+            recordings=recordings,
+            cvode_active=cvode_active)
+
+
+    def instantiate(self, sim=None, icell=None):
+        """
+        Instantiate
+
+        NOTE: called in self._run_func() after model.instantiate()
+        """
+        # First apply physiological conditions
+        self._init_func(sim, icell)
+
+        # Then instantiate stimuli and recordings
+        super(PhysioProtocol, self).instantiate(
+            sim=sim,
+            icell=icell)
+
+    def destroy(self, sim=None):
+        """
+        Destroy protocol
+        """
+
+        # Make sure stimuli are not active in next protocol if cell model reused
+        # NOTE: should better be done in Stimulus objects themselves for encapsulation, but BluePyOpt built-in Stimuli don't do this
+        for stim in self.stimuli:
+            if hasattr(stim, 'iclamp'):
+                stim.iclamp.amp = 0
+                stim.iclamp.dur = 0
+            elif hasattr(stim, 'seclamp'):
+                for i in range(3):
+                    setattr(stim.seclamp, 'amp%d' % (i+1), 0)
+                    setattr(stim.seclamp, 'dur%d' % (i+1), 0)
+
+        # Calls destroy() on each stimulus
+        super(PhysioProtocol, self).destroy(sim=sim)
+
+
 class SelfContainedProtocol(ephys.protocols.SweepProtocol):
 	"""
 	Extension of BluePyOpt protocol that allow instantiating stimuli, synapses, etc. 

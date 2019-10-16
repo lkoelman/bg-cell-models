@@ -18,7 +18,7 @@ import bluepyopt as bpop
 import bluepyopt.ephys as ephys
 
 # Our custom BluePyOpt modules
-import bgcellmodels.extensions.bluepyopt.bpop_extensions as bpop_extensions
+from bgcellmodels.extensions.bluepyopt import bpop_evaluators
 from bgcellmodels.cellpopdata import StnModel
 from bgcellmodels.models.STN.GilliesWillshaw.optimize import (
     bpop_cellmodels as stn_models,
@@ -259,16 +259,18 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
     ############################################################################
     # Features
 
-    # Get protocol responses for full model
     if PROTO_RESPONSES_FILE is not None:
+        # Load full model responses from file
         full_responses = stn_anls.load_proto_responses(PROTO_RESPONSES_FILE)
     else:
+        # Run full model and obtain responses
         full_protos = [
             stn_protos.BpopProtocolWrapper.make(stim_proto, stn_model_type)
                 for stim_proto in opt_stim_protocols
         ]
         
         full_mechs, full_params = stn_protos.BpopProtocolWrapper.all_mechs_params(full_protos)
+        
         full_model = stn_models.StnFullModel(
                         name        = 'StnGillies',
                         mechs       = full_mechs,
@@ -276,7 +278,9 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
         
         full_responses = stn_anls.run_proto_responses(full_model, full_protos)
 
-    # Make EFEL feature objects
+    # Get features for each stimulation protocol
+    # - features are defined based on the response to each stimulation protocol
+    #   that we want to capture
     stimprotos_feats = stn_feats.make_opt_features(red_protos.values())
 
     # Calculate target values from full model responses
@@ -326,7 +330,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
     #                           name    = 'optimise_all',
     #                           features= all_opt_features,
     #                           weights = all_opt_weights)
-    total_objective = bpop_extensions.RootMeanSquareObjective(
+    total_objective = bpop_evaluators.RootMeanSquareObjective(
                                 name    = 'optimise_all',
                                 features= all_opt_features)
 
