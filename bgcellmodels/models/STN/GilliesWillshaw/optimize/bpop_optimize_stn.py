@@ -35,10 +35,7 @@ gleak_name = gillies_model.gleak_name
 # Physiology parameters
 
 from bgcellmodels.common.stimprotocols import StimProtocol
-CLAMP_PLATEAU = StimProtocol.CLAMP_PLATEAU
-CLAMP_REBOUND = StimProtocol.CLAMP_REBOUND
-MIN_SYN_BURST = StimProtocol.MIN_SYN_BURST
-SYN_BACKGROUND_HIGH = StimProtocol.SYN_BACKGROUND_HIGH
+sp = StimProtocol
 
 # Adjust verbosity of loggers
 import logging
@@ -111,9 +108,18 @@ def test_protocol(stim_proto, model_type, export_locals=True):
     ## Plot protocol responses
     from matplotlib import pyplot as plt
     for resp_name, traces in responses.iteritems():
-        plt.figure()
-        plt.plot(traces['time'], traces['voltage'])
+        if resp_name.lower().endswith('.v'):
+            plt.figure()
+            plt.plot(traces['time'], traces['voltage'])
+        elif resp_name.endswith('_times'):
+            plt.figure()
+            plt.plot(traces['time'], traces['voltage'],
+                    marker='|', linestyle='', snap=True)
+        else:
+            raise ValueError(resp_name)
+
         plt.suptitle(resp_name)
+
     plt.show(block=False)
 
     if export_locals:
@@ -124,10 +130,14 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
     """
     Test stimulation protocol applied to full cell model.
 
-    @param  model_type      either a CellModel object, StnModel enum instance,
-                            or string "full" / "reduced"
+    @param  stim_proto : StimProtocol
+            Enum instance identifying stimulation protocol
 
-    EXAMPLE USAGE:
+    @param  model_type : StnModel or str
+            Type of STN model to use ('full', 'reduced', StnModel.Gillies2005)
+
+    USAGE
+    -----
 
     proto = synburst_protocol
     test_protocol(proto, 'full')
@@ -142,13 +152,13 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
 
 
     # instantiate protocol
-    proto = stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
+    proto_wrapper = stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
 
     # Get protocol mechanisms that need to be isntantiated
-    proto_mechs = proto.proto_vars.get('pp_mechs', []) + \
-                  proto.proto_vars.get('range_mechs', [])
+    proto_mechs = proto_wrapper.proto_vars.get('pp_mechs', []) + \
+                  proto_wrapper.proto_vars.get('range_mechs', [])
 
-    proto_params = proto.proto_vars.get('pp_mech_params', [])
+    proto_params = proto_wrapper.proto_vars.get('pp_mech_params', [])
 
     # Make cell model
     if fullmodel:
@@ -169,7 +179,7 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
     # protocol.run() cleans up after running: therefore instantiate everything ourselves
     cellmodel.freeze({})
     cellmodel.instantiate(sim=nrnsim)
-    proto.instantiate(sim=nrnsim, icell=cellmodel.icell)
+    proto_wrapper.ephys_protocol.instantiate(sim=nrnsim, icell=cellmodel.icell)
 
 
     if export_locals:
@@ -223,8 +233,8 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 
     stn_model_type = StnModel.Gillies_FoldMarasco_Legacy # SETPARAM: model type to optimise
 
-    # Protocols to use for optimisation
-    opt_stim_protocols = [CLAMP_REBOUND, MIN_SYN_BURST]
+    # SETPARAM: Protocols to use for optimisation
+    opt_stim_protocols = [sp.CLAMP_REBOUND, sp.MIN_SYN_BURST] # 
 
     # Make all protocol data
     red_protos = {
@@ -358,6 +368,9 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
                         isolate_protocols   = True) # SETPARAM: enable multiprocessing
 
     # Make optimisation using the model evaluator
+    # NOTE: the map_function is registered with DEAP internally, using
+    #       deap.base.Toolbox.register("map", map_function).
+    #       Another map function is: from scoop import futures; map_function = futures.map
     optimisation = bpop.optimisations.DEAPOptimisation(
                         evaluator       = cell_evaluator,
                         offspring_size  = 10,
@@ -403,7 +416,7 @@ def optimize_active(**kwargs):
     return final_pop, hall_of_fame, logs, hist
 
 
-def get_map_function(parallel):
+def get_map_function(parallel=False):
     """
     Return a map() function for evaluating individuals in the population.
 
@@ -412,6 +425,7 @@ def get_map_function(parallel):
     @see    taken from example in https://github.com/BlueBrain/BluePyOpt/blob/master/examples/l5pc/opt_l5pc.py
 
     NOTES
+    -----
 
     To use ipyparallel you must start a controller and a number of 
     engine instances before starting ipython (see 
@@ -427,26 +441,39 @@ def get_map_function(parallel):
     if not parallel:
         return None # DEAPOptimisation will use its default map function
 
-    from datetime import datetime
-    from ipyparallel import Client
-    import socket
-    
-    # Create a connection to the server
-    rc = Client() # if profile specified: searches JSON file in ~/.ipython/profile_name
-    logger.debug('Using ipyparallel with %d engines', len(rc))
+    elif parallel in (True, 'ipyparallel'):
 
-    # Create a view of all the workers (ipengines)
-    lview = rc.load_balanced_view()
-    host_names = lview.apply_sync(socket.gethostname) # run gethostname on all ipengines
-    if isinstance(host_names, str):
-        host_names = [host_names]
-    print('Ready for parallel execution on folowing hosts: {}'.format(', '.join(host_names)))
+        from datetime import datetime
+        from ipyparallel import Client
+        import socket
+        
+        # Create a connection to the server
+        rc = Client() # if profile specified: searches JSON file in ~/.ipython/profile_name
+        logger.debug('Using ipyparallel with %d engines', len(rc))
 
-    def mapper(func, it):
-        start_time = datetime.now()
-        ret = lview.map_sync(func, it)
-        logger.debug('Generation took %s', datetime.now() - start_time)
-        return ret
+        # Create a view of all the workers (ipengines)
+        lview = rc.load_balanced_view()
+        host_names = lview.apply_sync(socket.gethostname) # run gethostname on all ipengines
+        if isinstance(host_names, str):
+            host_names = [host_names]
+        print('Ready for parallel execution on folowing hosts: {}'.format(', '.join(host_names)))
+
+        def mapper(func, it):
+            start_time = datetime.now()
+            ret = lview.map_sync(func, it)
+            logger.debug('Generation took %s', datetime.now() - start_time)
+            return ret
+
+    elif parallel == 'scoop':
+        # See 'DEAP Example' in https://github.com/BlueBrain/BluePyOpt/tree/master/cloud-config
+        # However, in class DEAPOptimisation, it looks like you can achieve the same
+        # by passing use_scoop=True and leaving map_function=None
+        from scoop import futures
+        mapper = futures.map
+
+    else:
+
+        raise ValueError(parallel)
 
     return mapper
 

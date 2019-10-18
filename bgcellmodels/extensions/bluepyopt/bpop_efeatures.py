@@ -24,10 +24,14 @@ ARCHITECTURE:
 
 import bluepyopt.ephys as ephys
 
-# Elephant library
+# Third party libraries
+import numpy as np
 from elephant import spike_train_dissimilarity as stds
 import quantities as pq
 import neo
+
+# Custom modules
+from bgcellmodels.common import signal
 
 import logging
 logger = logging.getLogger('bluepyopt.ephys.efeatures')
@@ -102,6 +106,78 @@ def calc_feat_values_ISI_voltage(self, efel_trace, raise_warnings):
 ################################################################################
 # Feature scores calculation
 ################################################################################
+
+def calc_data_PRC(self, efel_trace, trace_check):
+    """
+    Calculate feature score for new response with regard to target values
+
+    @pre    efel_trace must contain recording named 'PRC.stim_times'
+
+    @see    signal.compute_PRC
+    """
+
+    # Get spike times
+    self._setup_efel()
+    import efel
+
+    feat_vals = efel.getFeatureValues([efel_trace], ['peak_time'],
+                                      raise_warnings = True)
+    
+    spike_times = feat_vals[0]['peak_time']
+
+    # stimulus times (are just recordings)
+    stim_times = efel_trace['PRC.stim_times']
+
+    # Phase response curve
+    phi, delta_phi = signal.compute_PRC(spike_times, stim_times)
+
+    # Save feature data
+    efeat_values = {
+        'spike_times'   : spike_times,
+        'stim_times'    : stim_times,
+        'prc_phi'       : phi,
+        'prc_delta_phi' : delta_phi,
+    }
+
+    return efeat_values
+
+
+def calc_score_PRC(self, efel_trace, trace_check):
+    """
+    Calculate feature score for new response with regard to target values
+
+    @see    signal.compute_PRC
+    """
+
+    # Get spike and stimulus times
+    self._setup_efel()
+    import efel
+    feat_vals = efel.getFeatureValues([efel_trace], ['peak_time'],
+                                      raise_warnings = True)
+    spike_times = feat_vals[0]['peak_time']
+    stim_times = efel_trace['PRC.stim_times']
+
+    # Calculate PRC for candidate response
+    cand_phi, cand_delta_phi = signal.compute_PRC(spike_times, stim_times)
+
+
+    # Get PRC for original model/experiments
+    target_phi = self.target_value_data['prc_phi']
+    target_delta_phi = self.target_value_data['prc_delta_phi']
+
+    # Compare phase response curves
+    # NOTE: by choosing the target PRC as reference, you can ensure it has
+    #       enough sample points. If the candidate PRC would be the reference,
+    #       you could get very small distance for unequally sampled PRC.
+
+    ## Interpolate candidate data at phi-values of target
+    cand_delta_phi_interp = np.interp(target_phi, cand_phi, cand_delta_phi)
+
+    ## Return sum of squares distance
+    dy = np.asarray(cand_delta_phi_interp - target_delta_phi)
+    score = np.sum(dy**2)
+
+    return score
 
 
 def calc_score_VP_dist(self, efel_trace, trace_check):
@@ -320,6 +396,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         'instantaneous_rate'        : calc_feat_values_spiketimes,
         'ISI_voltage_distance'      : calc_feat_values_ISI_voltage,
         'Kreuz_ISI_distance'        : calc_feat_values_spiketimes,
+        'PRC_sum-squared-dist'      : calc_data_PRC, 
     }
 
     # Functions for calculating score (comparing feature values)
@@ -328,8 +405,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         'instantaneous_rate'        : calc_score_instantaneous_rate,
         'ISI_voltage_distance'      : calc_score_ISI_voltage,
         'Kreuz_ISI_distance'        : calc_score_Kreuz_ISI_dist,
-        'PRC_traditional'           : TODO, 
-        'PRC_corrected_Phoka'       : TODO,
+        'PRC_sum-squared-dist'      : calc_score_PRC, 
     }
 
     def __init__(
@@ -357,7 +433,8 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             metric_name (str):      name of similarity measure / distance metric to use
             
             recording_names (dict): eFEL features can accept several recordings
-                                    as input
+                                    as input. These are pairs 'location_name' :
+                                    'recording_name'.
             
             stim_start (float):     stimulation start time (ms)
             
@@ -436,33 +513,65 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         Construct trace that can be passed to eFEL
 
         @note   data type of time and voltage series is pandas.core.series.Series
+
+        DEVNOTES
+        --------
+
+        The original function with very convoluted logic is in
+        https://github.com/BlueBrain/BluePyOpt/blob/master/bluepyopt/ephys/efeatures.py
+        
+        The minimum data required for all features are "T", "V", 
+        "stim_start", "stim_end" and these are set using efel.setDoubleSetting(...)
+        internally.
+
+        So the required steps for a Feature (i.e. this class) to use eFel
+        is to construct a dict using these four values and pass it to eFel.
+        How it chooses one of the recordings to dump into the "T" and "V"
+        entries is up to this class.
+
+        The way it's done in the BluePyOpt example is that eFEL features
+        (ephys.efeatures.eFELFeature) are always passed the argument
+        `recording_names = {'': 'soma.v'}`, and this recording (marked
+        with empty location '') is used for setting 'T' and 'V'.
         """
 
         trace = {}
         if '' not in self.recording_names:
-            raise Exception(
-                'SpikeTrainFeature: \'\' needs to be in recording_names')
+            raise Exception('Recording with location \'\' needs to be in recording_names.\n'
+                            'This is the default recording used for T,V.')
+
+        trace['stim_start'] = [self.stim_start]
+        trace['stim_end']   = [self.stim_end]
+
+        # Use recording with location '' for T and V
+        default_rec_name = self.recording_names['']
+        if responses[default_rec_name] is None:
+            return None # same as original behavior
+
+        trace['T']  = responses[default_rec_name]['time']
+        trace['V'] = responses[default_rec_name]['voltage']
         
         for location_name, recording_name in self.recording_names.items():
             if location_name == '':
-                postfix = ''
-            else:
-                postfix = ';%s' % location_name
+                continue
 
             if recording_name not in responses:
-                logger.debug(
-                    "Recording named %s not found in responses %s",
-                    recording_name,
-                    str(responses))
+                raise ValueError('Expected recording "{}" in responses.'.format(
+                                    recording_name))
+
+            if responses[recording_name] is None:
                 return None
 
-            if responses[self.recording_names['']] is None or \
-                    responses[recording_name] is None:
-                return None
-            trace['T%s' % postfix] = responses[self.recording_names['']]['time']
-            trace['V%s' % postfix] = responses[recording_name]['voltage']
-            trace['stim_start%s' % postfix] = [self.stim_start]
-            trace['stim_end%s' % postfix] = [self.stim_end]
+            if recording_name.endswith('.v'):
+                # assume it is CompRecording -> original behavior
+                trace['V;' + location_name] = responses[recording_name]['voltage']
+                trace['T;' + location_name] = responses[recording_name]['time']
+            
+            elif recording_name.endswith('_times'):
+                # assume it is spike times, e.g. NetStimRecording
+                # TODO: for now, NetStimResponse is saved as TimeVoltageResponse, but could use Neo SpikeTrain
+                trace[recording_name] = responses[recording_name]['time']
+            
 
         return trace
 
@@ -483,9 +592,16 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
 
     def calculate_feature(self, responses, raise_warnings=True):
         """
-        Calculate feature value: for this EFeature it is just the spike train
-        as a sequence of spike times.
+        Calculate feature value for comparison with a candidate model. 
+        The result of the comparison is the feature score.
 
+        The resulting feature data is assigned as a target by calling
+        set_target_value(), which assigns self.target_value_data that is
+        is used in the score functions.
+
+        @return     feat_vals : dict
+                    All feature data from the target model that is required
+                    to calculate a feature score for a candidate model.
         """
 
         efel_trace = self._construct_efel_trace(responses)

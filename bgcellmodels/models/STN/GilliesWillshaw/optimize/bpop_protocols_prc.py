@@ -53,7 +53,12 @@ class PhaseResponseSynExcDist(BpopProtocolWrapper):
 
     IMPL_PROTO = StimProtocol.PRC_SYN_EXC_DIST
 
-    def __init__(self, **kwargs):
+    def __init__(
+            self,
+            stim_rate=20.0,
+            stim_noise=0.5,
+            stim_gmax=5e-4,
+            **kwargs):
         """
         Initialize all protocol variables for given model type
 
@@ -70,7 +75,7 @@ class PhaseResponseSynExcDist(BpopProtocolWrapper):
         self.response_interval = (stim_start, sim_dur)
 
         loc_soma_center = ephys.locations.NrnSeclistCompLocation(
-                name            = 'soma_center_loc',
+                name            = 'soma_center',
                 seclist_name    = 'somatic',
                 sec_index       = 0,
                 comp_x          = 0.5)
@@ -96,19 +101,18 @@ class PhaseResponseSynExcDist(BpopProtocolWrapper):
 
         # TODO: set weight dynamically? Or calibrate once based on passive Ztransfer
         # NOTE: mechs and params passed to cellmodel in our code
-
-        rate_syn1 = 50.0
         
         stim_syn_prox = ephys.stimuli.NrnNetStimStimulus(
                 total_duration  = stim_stop - stim_start,
+                interval        = 1e3 / stim_rate,
+                noise           = stim_noise,
                 number          = 1e9,
-                interval        = 1e3 / rate_syn1,
                 start           = stim_start,
-                weight          = 5e-4,
+                weight          = stim_gmax,
                 locations       = [loc_syn1])
 
         rec_stim_syn1 = bpop_recordings.NetStimRecording(
-                        name='{}.syn1.spikes'.format(self.IMPL_PROTO.name),
+                        name='PRC.stim_times', # name required by feature calculator
                         netstim=stim_syn_prox)
 
 
@@ -137,18 +141,18 @@ class PhaseResponseSynExcDist(BpopProtocolWrapper):
         # NOTE: these are feat_params used in bpop_features_stn/make_features
         self.characterizing_feats = {
             'PRC_traditional': {
-                'weight'        : TODO,
-                'norm_factor'   : TODO,
+                'weight'        : 1.0, # TODO: PRC weight
+                'norm_factor'   : 1.0, # TODO: PRC norm factor
                 'traces'        : {
+                    '' : rec_soma_v.name,
                     loc_syn1.name : rec_stim_syn1.name,
-                    loc_soma_center.name : rec_soma_v.name,
                 },
             },
-            TODO: feats, # other features to regularize cost (spike rate, ...)
+            # TODO: other features to regularize cost (spike rate, ...)
         }
 
 
 # Register protocols implemented here
 PROTOCOL_WRAPPERS.update({
-    StimProtocol.PRC_SYN_EXC_DIST: PhaseResponseSynExcDist,
+    StimProtocol.PRC_SYN_EXC_PROX: PhaseResponseSynExcDist,
 })

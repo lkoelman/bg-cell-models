@@ -62,7 +62,7 @@ class NetStimRecording(ephys.recordings.Recording):
         # self.rec_netcon.record(self.tvector)
 
         # Re-use existing netcon for recording
-        netcon = self.netstim.connections[self.location.name][0]
+        netcon = self.netstim.connections[self.location.name][0][0]
         netcon.record(self.tvector)
 
         self.instantiated = True

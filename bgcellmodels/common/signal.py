@@ -999,8 +999,10 @@ def compute_PRC(t_spikes, t_stim):
         tau = t_pulse - t_spikes[idx_preceding]
         Ti = t_spikes[idx_following] - t_spikes[idx_preceding]
 
-        phi(i) = tau / mean_ISI
-        delta_phi(i) = 1.0 - (Ti / mean_ISI)
+        phi[i] = tau / mean_ISI
+        delta_phi[i] = 1.0 - (Ti / mean_ISI)
+
+    return phi, delta_phi
 
 
 def compute_PRC_corrected(t_spikes, t_stim):
@@ -1038,17 +1040,18 @@ def compute_PRC_corrected(t_spikes, t_stim):
 
         tau     = t_pulse - t_spikes[idx_preceding]
         Ti      = t_spikes[idx_following] - t_spikes[idx_preceding]
-        Tim1    = t_spikes[preceding] - t_spikes[idx_preceding-1]
-        Tip1    = t_spikes[following+1] - t_spikes[following]
+        Tim1    = t_spikes[idx_preceding] - t_spikes[idx_preceding-1]
+        Tip1    = t_spikes[idx_following+1] - t_spikes[idx_following]
 
-        phi(i, 0)  = tau / mean_ISI
-        phi(i, 1) = (Tim1 + tau) / mean_ISI
-        phi(i, 2) = (tau - Ti) / mean_ISI
+        phi[i, 0]  = tau / mean_ISI
+        phi[i, 1] = (Tim1 + tau) / mean_ISI
+        phi[i, 2] = (tau - Ti) / mean_ISI
 
-        delta_phi(i, 0) = 1.0 - (Ti / mean_ISI)
-        delta_phi(i, 1) = 1.0 - (Tim1 / mean_ISI)
-        delta_phi(i, 2) = 1.0 - (Tip1 / mean_ISI)
+        delta_phi[i, 0] = 1.0 - (Ti / mean_ISI)
+        delta_phi[i, 1] = 1.0 - (Tim1 / mean_ISI)
+        delta_phi[i, 2] = 1.0 - (Tip1 / mean_ISI)
 
 
     phi         = phi.reshape((-1,))
     delta_phi   = delta_phi.reshape((-1,))
+    return phi, delta_phi
