@@ -14,7 +14,7 @@ from neuron import h
 cell = MyCell()
 
 delays = h.Vector(range(10))
-net_delay = h.NetVayDelay()
+net_delay = h.NetVarDelay()
 net_delay.set_delays(delays)
 
 nc_in = h.NetCon(net_delay, cell)
@@ -34,7 +34,12 @@ ENDCOMMENT
 
 NEURON {
     ARTIFICIAL_CELL NetVarDelay
+    RANGE tstart
     POINTER ptr
+}
+
+PARAMETER {
+    tstart = 0 (ms)
 }
 
 ASSIGNED {
@@ -52,7 +57,7 @@ NET_RECEIVE (w) {
     printf("The flag value is %f \n", flag)
 
     element() : read next delay from vector and assign to delay
-    if (index > 0) {
+    if (index > 0 && t >= tstart) {
         net_event(delay)
     }
 }

@@ -61,7 +61,7 @@ class NetStimRecording(ephys.recordings.Recording):
         # self.rec_netcon = sim.neuron.h.NetCon(netstim, None)
         # self.rec_netcon.record(self.tvector)
 
-        # Re-use existing netcon for recording
+        # Re-use existing netcon for recording (ensures delay is same)
         netcon = self.netstim.connections[self.location.name][0][0]
         netcon.record(self.tvector)
 

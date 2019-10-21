@@ -71,8 +71,9 @@ class NrnSpaceClamp(ephys.stimuli.Stimulus):
 
 
 class NrnVecStimStimulus(ephys.stimuli.Stimulus):
-
-    """Current stimulus based on current amplitude and time series"""
+    """
+    NetStimStimulus equivalent with spike times read from Vector.
+    """
 
     def __init__(self,
                  locations=None,
@@ -127,3 +128,96 @@ class NrnVecStimStimulus(ephys.stimuli.Stimulus):
             location
             for location in self.locations) \
             if self.locations is not None else "Netstim"
+
+
+class NetVarDelayStimulus(ephys.stimuli.Stimulus):
+    """
+    NetStimStimulus equivalent that delays incoming spike times by a variable
+    delay, read from a Vector.
+
+    @see    NetVarDelay.mod
+    """
+
+    def __init__(self,
+                 delays=None,
+                 start_time=None,
+                 target_locations=None,
+                 source_location=None,
+                 source_threshold=None,
+                 source_delay=0.1,
+                 target_delay=0.1,
+                 target_weight=1.0,
+                 total_duration=None):
+        """
+        Constructor
+        
+        @param  location: 
+                synapse point process location to connect to
+
+        @param  source_location : NrnSectionCompLocation
+                NEURON segment where voltage will be monitored for spikes
+
+        @param  delays : (list[float])
+                Delays for incoming spikes
+        """
+
+        super(NrnVecStimStimulus, self).__init__()
+        if total_duration is None:
+            raise ValueError(
+                'NrnNetStimStimulus: Need to specify a total duration')
+        else:
+            self.total_duration = total_duration
+
+        self.target_locations = target_locations
+        self.source_location = source_location
+        self.source_threshold = source_threshold
+        self.source_delay = source_delay
+        self.target_delay = target_delay
+        self.delays = delays
+        self.start_time = start_time
+        self.delays_vec = None
+        self.target_weight = target_weight
+        self.connections = {}
+
+    def instantiate(self, sim=None, icell=None):
+        """Run stimulus"""
+
+        self.delays_vec = sim.neuron.h.Vector(self.delays)
+
+        # Stimulator object
+        self.stim = net_delay = sim.neuron.h.NetVarDelay()
+        net_delay.tstart = start_time
+        net_delay.set_delays(self.delays_vec)
+
+        # Connection to source of events
+        src_seg = self.source_location.instantiate(sim=sim, icell=icell)
+        self.source_netcon = nc = h.NetCon(src_seg._ref_v, net_delay, sec=src_seg.sec)
+        nc.threshold    = self.source_threshold
+        nc.delay        = self.source_delay
+        nc.weight[0]    = 1.0 # not used
+
+        # Connection to targets (event consumers, e.g. synapses)
+        for location in self.target_locations:
+            self.connections[location.name] = []
+            for synapse in location.instantiate(sim=sim, icell=icell):
+                netstim = sim.neuron.h.VecStim()
+                netstim.play(self.delays_vec)
+                netcon = sim.neuron.h.NetCon(netstim, synapse)
+                netcon.delay     = self.target_delay
+                netcon.weight[0] = self.target_weight
+
+                self.connections[location.name].append((netcon, netstim))
+
+    def destroy(self, sim=None):
+        """Destroy stimulus"""
+
+        self.connections = None
+        self.delays = None
+        self.delays_vec = None
+
+    def __str__(self):
+        """String representation"""
+
+        return "NetVarDelayStimulus at %s" % ','.join(
+            location for location in self.target_locations) \
+            if self.target_locations is not None else "Netstim"

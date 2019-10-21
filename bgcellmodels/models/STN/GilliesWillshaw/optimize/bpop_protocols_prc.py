@@ -68,9 +68,26 @@ class PhaseResponseSynExcDist(BpopProtocolWrapper):
                                     - response_interval: expected time interval of response
         """
 
+        
+
+        # Parameters for PRC
+        cell_rate = 30.0        # (Hz)
+        cell_T = 1e3 / rate     # (ms)
+        prc_sampling_T = 1.0    # (ms) sampling period within ISI
+
+        # Sample each phase X times, and randomize order
+        prc_sampling_repeats = 2
+        prc_delays = np.arange(0, cell_T, prc_sampling_T)
+        prc_delays = np.tile(prc_delays, prc_sampling_repeats)
+        prc_delays = np.random.shuffle(prc_delays)
+
+        # Global parameters
         sim_dur = 2000.0
         stim_start = 200
-        stim_stop = sim_dur - 50.0
+        stim_stop = stim_start + (1.1 * cell_T * len(prc_delays))
+        if stim_stop > 5000.0:
+            raise ValueError('Long simulation time for combination of cell '
+                             'firing rate, PRC sampling interval, repeats.')
 
         self.response_interval = (stim_start, sim_dur)
 
@@ -80,36 +97,63 @@ class PhaseResponseSynExcDist(BpopProtocolWrapper):
                 sec_index       = 0,
                 comp_x          = 0.5)
 
-        # Synapse parameters ---------------------------------------------------
+        # Current stimulus -----------------------------------------------------
+        # To get neuron firing at target rate
+
+        stim_bias = ephys.stimuli.NrnSquarePulse(
+                        step_amplitude  = 0.01, # (nA) TODO: amplitude for target rate
+                        step_delay      = 0.0,
+                        step_duration   = sim_dur,
+                        location        = soma_center_loc,
+                        total_duration  = sim_dur)
+
+        # Synaptic stimulus ----------------------------------------------------
         
+        # Synaptic mechanism
         mech_syn1 = ephys.mechanisms.NrnMODPointProcessMechanism(
-                        name='expsyn',
-                        suffix='ExpSyn',
+                        name='syn1',
+                        suffix='Exp2Syn',
                         locations=[loc_soma_center])
 
         loc_syn1 = ephys.locations.NrnPointProcessLocation(
-                        'expsyn_loc',
-                        pprocess_mech=mech_syn1)
+                        name='loc_syn1', pprocess_mech=mech_syn1)
 
-        param_syn1_tau = ephys.parameters.NrnPointProcessParameter(
-                        name='expsyn_tau',
-                        param_name='tau',
-                        value=2,
-                        frozen=True,
-                        bounds=[0, 50],
-                        locations=[loc_syn1])
+        param_syn1_tau1 = ephys.parameters.NrnPointProcessParameter(
+                        param_name='tau1', value=1.0, frozen=True,
+                        locations=[loc_syn1], name='syn_tau1')
+
+        param_syn1_tau2 = ephys.parameters.NrnPointProcessParameter(
+                        param_name='tau2', value=3.0, frozen=True,
+                        locations=[loc_syn1], name='syn_tau2')
+
+        param_syn1_erev = ephys.parameters.NrnPointProcessParameter(
+                        param_name='e', value=0.0, frozen=True,
+                        locations=[loc_syn1], name='syn_erev')
 
         # TODO: set weight dynamically? Or calibrate once based on passive Ztransfer
         # NOTE: mechs and params passed to cellmodel in our code
         
-        stim_syn_prox = ephys.stimuli.NrnNetStimStimulus(
-                total_duration  = stim_stop - stim_start,
-                interval        = 1e3 / stim_rate,
-                noise           = stim_noise,
-                number          = 1e9,
-                start           = stim_start,
-                weight          = stim_gmax,
-                locations       = [loc_syn1])
+        # Stimulate using NetStim (non-adaptive, fixed rate or noisy)
+        # stim_syn_prox = ephys.stimuli.NrnNetStimStimulus(
+        #         total_duration  = stim_stop - stim_start,
+        #         interval        = 1e3 / stim_rate,
+        #         noise           = stim_noise,
+        #         number          = 1e9,
+        #         start           = stim_start,
+        #         weight          = stim_gmax,
+        #         locations       = [loc_syn1])
+
+        # Stimulate using NetVarDelay (adaptive, feeds back spikes with delay)
+        stim_syn_prox = bpop_stimuli.NetVarDelayStimulus(
+                        delays=prc_delays,
+                        start_time=stim_start,
+                        target_locations=[loc_syn1],
+                        source_location=loc_soma_center,
+                        source_threshold=-20.0,
+                        source_delay=0.1,
+                        target_delay=0.1,
+                        target_weight=stim_gmax,
+                        total_duration=None)
 
         rec_stim_syn1 = bpop_recordings.NetStimRecording(
                         name='PRC.stim_times', # name required by feature calculator
