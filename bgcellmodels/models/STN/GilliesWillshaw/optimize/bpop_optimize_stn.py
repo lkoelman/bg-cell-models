@@ -18,14 +18,16 @@ import bluepyopt as bpop
 import bluepyopt.ephys as ephys
 
 # Our custom BluePyOpt modules
-from bgcellmodels.extensions.bluepyopt import bpop_evaluators
+from bgcellmodels.extensions.bluepyopt import (
+    bpop_evaluators, feature_factory, protocol_analysis as anls_proto,
+)
+from bgcellmodels.extensions.bluepyopt.bpop_protocol_ext import PROTOCOL_WRAPPERS
 from bgcellmodels.cellpopdata import StnModel
 from bgcellmodels.models.STN.GilliesWillshaw.optimize import (
     bpop_cellmodels as stn_models,
     bpop_protocols_stn as stn_protos,
-    bpop_parameters_stn as stn_params,
-    bpop_features_stn as stn_feats,
-    bpop_analysis_stn as stn_anls,
+    bpop_protocols_prc as prc_protos, # import to register
+    bpop_parameters_stn as stn_params
 )
 
 # Gillies & Willshaw model mechanisms
@@ -45,7 +47,7 @@ logger = logging.getLogger('__main__')
 
 
 # SETPARAM: filepath of saved responses
-PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/Gillies2005_fullmodel/responses/STN_Gillies2005_proto_responses_3.pkl" # backup is in filename.old.pkl
+PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/Gillies2005_fullmodel/responses/STN_Gillies2005_proto_responses_4.pkl" # backup is in filename.old.pkl
 
 
 ################################################################################
@@ -57,12 +59,16 @@ def test_protocol(stim_proto, model_type, export_locals=True):
     """
     Test stimulation protocol applied to full cell model.
 
-    @param  model_type      either a CellModel object, StnModel enum instance,
-                            or string "full" / "reduced"
+    @param  stim_proto : StimProtocol
+            Enum instance identifying stimulation protocol
 
-    EXAMPLE:
+    @param  model_type : StnModel or str
+            Type of STN model to use ('full', 'reduced', StnModel.Gillies2005)
 
-        test_protocol(StimProtocol.MIN_SYN_BURST, 'full')
+    USAGE
+    -----
+
+    >>> test_protocol(StimProtocol.MIN_SYN_BURST, 'full')
     
     """
     if model_type in ('full', StnModel.Gillies2005):
@@ -77,10 +83,7 @@ def test_protocol(stim_proto, model_type, export_locals=True):
     proto = stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
 
     # Get protocol mechanisms that need to be isntantiated
-    proto_mechs = proto.proto_vars.get('pp_mechs', []) + \
-                  proto.proto_vars.get('range_mechs', [])
-
-    proto_params = proto.proto_vars.get('pp_mech_params', [])
+    proto_mechs, proto_params = proto.get_mechs_params()
 
     # Make cell model
     if fullmodel:
@@ -105,6 +108,19 @@ def test_protocol(stim_proto, model_type, export_locals=True):
                     sim             = nrnsim,
                     isolate         = False) # allows us to query cell with h.allsec()
 
+    protos_responses = {proto.ephys_protocol.name: responses}
+
+    # Get features for each stimulation protocol
+    # - features are defined based on the response to each stimulation protocol
+    #   that we want to capture
+    protos_features = feature_factory.make_opt_features([proto])
+
+    # Calculate target values from full model responses
+    feature_factory.calc_feature_targets(protos_features, protos_responses)
+
+    # Plot protocol responses
+    # anls_proto.plot_proto_responses(protos_responses)
+
     ## Plot protocol responses
     from matplotlib import pyplot as plt
     for resp_name, traces in responses.iteritems():
@@ -128,7 +144,9 @@ def test_protocol(stim_proto, model_type, export_locals=True):
 
 def inspect_protocol(stim_proto, model_type, export_locals=True):
     """
-    Test stimulation protocol applied to full cell model.
+    Inspect protocol after instantiation.
+
+    I.e. inspect the cell, and its synaptic/clamp inputs.
 
     @param  stim_proto : StimProtocol
             Enum instance identifying stimulation protocol
@@ -155,10 +173,7 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
     proto_wrapper = stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
 
     # Get protocol mechanisms that need to be isntantiated
-    proto_mechs = proto_wrapper.proto_vars.get('pp_mechs', []) + \
-                  proto_wrapper.proto_vars.get('range_mechs', [])
-
-    proto_params = proto_wrapper.proto_vars.get('pp_mech_params', [])
+    proto_mechs, proto_params = proto_wrapper.get_mechs_params()
 
     # Make cell model
     if fullmodel:
@@ -184,6 +199,46 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
 
     if export_locals:
         globals().update(locals())
+
+
+def save_protocol_responses(protos=None, plot=True):
+    """
+    Save responses to all stimulation protocols for full model to file.
+
+    @effect     responses are saved to pickle file specified in variable
+                PROTO_RESPONSES_FILE
+    """
+    # Save full model responses
+    model_type = StnModel.Gillies2005
+
+    # Make all available protocols
+    if protos is None:
+        all_stim_protos = PROTOCOL_WRAPPERS.keys()
+    else:
+        all_stim_protos = protos
+
+    full_protos = [
+        stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
+            for stim_proto in all_stim_protos
+    ]
+
+    # Make cell model
+    full_mechs, full_params = stn_protos.BpopProtocolWrapper.all_mechs_params(full_protos)
+    full_model = stn_models.StnFullModel(
+                    name        = 'StnGillies',
+                    mechs       = full_mechs,
+                    params      = full_params)
+
+    # Run protocols and save responses
+    ephys_protos = [proto.ephys_protocol for proto in full_protos]
+    full_responses = anls_proto.run_proto_responses(full_model, ephys_protos)
+    
+    version = int(PROTO_RESPONSES_FILE[-5])
+    new_filename = PROTO_RESPONSES_FILE[:-5] + '{:d}.pkl'.format(version + 1)
+    anls_proto.save_proto_responses(full_responses, new_filename)
+
+    if plot:
+        anls_proto.plot_proto_responses(full_responses)
 
 
 def make_optimisation(red_model=None, parallel=False, export_locals=False):
@@ -271,7 +326,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 
     if PROTO_RESPONSES_FILE is not None:
         # Load full model responses from file
-        full_responses = stn_anls.load_proto_responses(PROTO_RESPONSES_FILE)
+        full_responses = anls_proto.load_proto_responses(PROTO_RESPONSES_FILE)
     else:
         # Run full model and obtain responses
         full_protos = [
@@ -286,15 +341,15 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
                         mechs       = full_mechs,
                         params      = full_params)
         
-        full_responses = stn_anls.run_proto_responses(full_model, full_protos)
+        full_responses = anls_proto.run_proto_responses(full_model, full_protos)
 
     # Get features for each stimulation protocol
     # - features are defined based on the response to each stimulation protocol
     #   that we want to capture
-    stimprotos_feats = stn_feats.make_opt_features(red_protos.values())
+    stimprotos_feats = feature_factory.make_opt_features(red_protos.values())
 
     # Calculate target values from full model responses
-    stn_feats.calc_feature_targets(stimprotos_feats, full_responses)
+    feature_factory.calc_feature_targets(stimprotos_feats, full_responses)
 
     ############################################################################
     # TEST
@@ -332,7 +387,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
     # Objective / Fitness calculation
 
     # Collect characteristic features for all protocols used in evaluation
-    all_opt_features, all_opt_weights = stn_feats.all_features_weights(
+    all_opt_features, all_opt_weights = feature_factory.all_features_weights(
                                                     stimprotos_feats.values())
 
     # Make final objective function based on selected set of features
@@ -478,44 +533,18 @@ def get_map_function(parallel=False):
     return mapper
 
 
-def save_fullmodel_responses(plot=True):
-    """
-    Save responses to all stimulation protocols for full model to file.
-
-    @effect     responses are saved to pickle file specified in variable
-                PROTO_RESPONSES_FILE
-    """
-    # Save full model responses
-    model_type = StnModel.Gillies2005
-
-    # Make all available protocols
-    all_stim_protos = stn_protos.PROTOCOL_WRAPPERS.keys()
-    full_protos = [stn_protos.BpopProtocolWrapper.make(stim_proto, model_type) for stim_proto in all_stim_protos]
-
-    # Make cell model
-    full_mechs, full_params = stn_protos.BpopProtocolWrapper.all_mechs_params(full_protos)
-    full_model = stn_models.StnFullModel(
-                    name        = 'StnGillies',
-                    mechs       = full_mechs,
-                    params      = full_params)
-
-    # Run protocols and save responses
-    ephys_protos = [proto.ephys_protocol for proto in full_protos]
-    full_responses = stn_anls.run_proto_responses(full_model, ephys_protos)
-    
-    stn_anls.save_proto_responses(full_responses, PROTO_RESPONSES_FILE)
-
-    if plot:
-        stn_anls.plot_proto_responses(full_responses)
-
 
 if __name__ == '__main__':
     # Calculate features for each optimisation protocol
     # proto_feats = get_features_targets()
 
-    # Load and plot
-    responses = stn_anls.load_proto_responses(PROTO_RESPONSES_FILE)
-    stn_anls.plot_proto_responses(responses)
+    # TEST.1 : Load and plot
+    # responses = anls_proto.load_proto_responses(PROTO_RESPONSES_FILE)
+    # anls_proto.plot_proto_responses(responses)
 
-    # Do optimization
-    optimize_active(max_ngen=50)
+    # TEST.2 : Do optimization
+    # optimize_active(max_ngen=50)
+
+    saved_protos = [k for k,v in PROTOCOL_WRAPPERS.items() if v is not None]
+    # saved_protos = [StimProtocol.PRC_SYN_EXC_PROX]
+    save_protocol_responses(saved_protos)

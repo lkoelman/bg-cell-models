@@ -9,7 +9,7 @@ Creation of EFEL features for STN model optimization.
 import math
 
 import bluepyopt.ephys as ephys
-import bgcellmodels.extensions.bluepyopt.bpop_efeatures as espk
+import bgcellmodels.extensions.bluepyopt.efeatures_spiketrain as espk
 import efel
 
 import logging

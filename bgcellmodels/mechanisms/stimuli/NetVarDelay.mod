@@ -54,12 +54,14 @@ INITIAL {
 
 NET_RECEIVE (w) {
 
-    printf("The flag value is %f \n", flag)
-
-    element() : read next delay from vector and assign to delay
-    if (index > 0 && t >= tstart) {
-        net_event(delay)
+    : flag is zero for external events
+    if (flag == 0 && t >= tstart) {
+        element() : read next delay from vector and assign to delay
+        if (index > 0) {
+            net_event(t + delay)
+        }
     }
+
 }
 
 DESTRUCTOR {

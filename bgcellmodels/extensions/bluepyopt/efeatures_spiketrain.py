@@ -22,19 +22,21 @@ ARCHITECTURE:
 
 """
 
-import bluepyopt.ephys as ephys
-
 # Third party libraries
 import numpy as np
+
+import bluepyopt.ephys as ephys
 from elephant import spike_train_dissimilarity as stds
 import quantities as pq
 import neo
 
 # Custom modules
-from bgcellmodels.common import signal
+from bgcellmodels.common import signal, curvedist
 
 import logging
-logger = logging.getLogger('bluepyopt.ephys.efeatures')
+logger = logging.getLogger(__name__)
+
+DEBUG_TESTRUN = True
 
 
 def getFeatureNames():
@@ -113,6 +115,9 @@ def calc_data_PRC(self, efel_trace, trace_check):
 
     @pre    efel_trace must contain recording named 'PRC.stim_times'
 
+    @pre    Algorithm parameters set in 'double_settings':
+            'smooth_kernel_sigma'
+
     @see    signal.compute_PRC
     """
 
@@ -129,7 +134,23 @@ def calc_data_PRC(self, efel_trace, trace_check):
     stim_times = efel_trace['PRC.stim_times']
 
     # Phase response curve
-    phi, delta_phi = signal.compute_PRC(spike_times, stim_times)
+    phi, delta_phi = signal.compute_PRC(spike_times, stim_times, sort_by='phi')
+
+    if DEBUG_TESTRUN:
+        import matplotlib.pyplot as plt
+        # from scipy.ndimage.filters import gaussian_filter
+        # sigma_phi = self.double_settings['smooth_kernel_sigma']
+        coeff = np.polyfit(phi, delta_phi, 3)
+        poly = np.poly1d(coeff)
+        dphi_polyfit = [poly(x) for x in phi]
+        dphi_smooth = curvedist.smooth(delta_phi, window_len=11, window='hanning')
+
+        plt.figure()
+        plt.plot(phi, delta_phi, 'o', label='dphi')
+        plt.plot(phi, dphi_smooth, '-', marker='.', label='dphi_smooth')
+        plt.plot(phi, dphi_polyfit, label='dphi_polyfit')
+        plt.legend()
+        
 
     # Save feature data
     efeat_values = {
@@ -158,24 +179,22 @@ def calc_score_PRC(self, efel_trace, trace_check):
     stim_times = efel_trace['PRC.stim_times']
 
     # Calculate PRC for candidate response
-    cand_phi, cand_delta_phi = signal.compute_PRC(spike_times, stim_times)
-
+    phi_cand, dphi_cand = signal.compute_PRC(spike_times, stim_times, sort_by='phi')
 
     # Get PRC for original model/experiments
-    target_phi = self.target_value_data['prc_phi']
-    target_delta_phi = self.target_value_data['prc_delta_phi']
+    phi_targ = self.target_value_data['prc_phi']
+    dphi_targ = self.target_value_data['prc_delta_phi']
 
     # Compare phase response curves
     # NOTE: by choosing the target PRC as reference, you can ensure it has
     #       enough sample points. If the candidate PRC would be the reference,
     #       you could get very small distance for unequally sampled PRC.
+    dist_params = dict(self.int_settings)
+    dist_params.update(self.double_settings)
+    dist_params['reference'] = 0
 
-    ## Interpolate candidate data at phi-values of target
-    cand_delta_phi_interp = np.interp(target_phi, cand_phi, cand_delta_phi)
-
-    ## Return sum of squares distance
-    dy = np.asarray(cand_delta_phi_interp - target_delta_phi)
-    score = np.sum(dy**2)
+    score = curvedist.curve_distance((phi_targ, dphi_targ),
+                                     (phi_cand, dphi_cand), **dist_params)
 
     return score
 
@@ -396,7 +415,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         'instantaneous_rate'        : calc_feat_values_spiketimes,
         'ISI_voltage_distance'      : calc_feat_values_ISI_voltage,
         'Kreuz_ISI_distance'        : calc_feat_values_spiketimes,
-        'PRC_sum-squared-dist'      : calc_data_PRC, 
+        'PRC_traditional'           : calc_data_PRC, 
     }
 
     # Functions for calculating score (comparing feature values)
@@ -405,7 +424,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
         'instantaneous_rate'        : calc_score_instantaneous_rate,
         'ISI_voltage_distance'      : calc_score_ISI_voltage,
         'Kreuz_ISI_distance'        : calc_score_Kreuz_ISI_dist,
-        'PRC_sum-squared-dist'      : calc_score_PRC, 
+        'PRC_traditional'           : calc_score_PRC, 
     }
 
     def __init__(

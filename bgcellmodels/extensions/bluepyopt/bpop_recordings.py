@@ -26,7 +26,7 @@ class NetStimRecording(ephys.recordings.Recording):
 
         super(NetStimRecording, self).__init__(name=name)
 
-        assert len(netstim.locations) == 1
+        # assert len(netstim.locations) == 1
 
         self.netstim = netstim
         self.location = netstim.locations[0]

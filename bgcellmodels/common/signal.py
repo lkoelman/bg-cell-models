@@ -966,7 +966,7 @@ def get_all_pyelectro_features(
     return trace_analysis.analysis_results
 
 
-def compute_PRC(t_spikes, t_stim):
+def compute_PRC(t_spikes, t_stim, sort_by='spike_times'):
     """
     Compute phase response curve (PRC) using traditional method.
 
@@ -982,12 +982,16 @@ def compute_PRC(t_spikes, t_stim):
     @param      t_stim : 1 x M array
                 times of the delivered pulses
 
+    @param      sort_by : str
+                Order of data points: 'spike_times' or 'phi'
+
     @return     (phi, delta_phi) : tuple[<1 x M array>, <1 x M array>]
                 Phases of t_stim and phase shifts of spike_times. Phase
                 shifts are negative for delays and positive for advances.
     """
     mean_ISI    = np.mean(np.diff(t_spikes))
     M           = len(t_stim)
+    K           = len(t_spikes)
     phi         = np.zeros(M)
     delta_phi   = np.zeros(M)
 
@@ -995,12 +999,22 @@ def compute_PRC(t_spikes, t_stim):
     for i, t_pulse in enumerate(t_stim):
         idx_preceding = np.where(t_spikes < t_pulse)[0][-1]
         idx_following = idx_preceding + 1
+        if idx_following >= K:
+            break # pulse after last spike : no ISI
 
         tau = t_pulse - t_spikes[idx_preceding]
         Ti = t_spikes[idx_following] - t_spikes[idx_preceding]
 
         phi[i] = tau / mean_ISI
         delta_phi[i] = 1.0 - (Ti / mean_ISI)
+
+    if sort_by == 'phi':
+        isort     = np.argsort(phi)
+        phi       = phi[isort]
+        delta_phi = delta_phi[isort]
+
+    elif sort_by != 'spike_times':
+        raise ValueError(sort_by)
 
     return phi, delta_phi
 
@@ -1030,6 +1044,7 @@ def compute_PRC_corrected(t_spikes, t_stim):
     """
     mean_ISI    = np.mean(np.diff(t_spikes))
     M           = len(t_stim)
+    K           = len(t_spikes)
     phi         = np.zeros((M, 3))
     delta_phi   = np.zeros((M, 3))
 
@@ -1037,6 +1052,8 @@ def compute_PRC_corrected(t_spikes, t_stim):
     for i, t_pulse in enumerate(t_stim):
         idx_preceding = np.where(t_spikes < t_pulse)[0][-1]
         idx_following = idx_preceding + 1
+        if idx_following >= K:
+            break # pulse after last spike : no ISI
 
         tau     = t_pulse - t_spikes[idx_preceding]
         Ti      = t_spikes[idx_following] - t_spikes[idx_preceding]

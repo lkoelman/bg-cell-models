@@ -97,7 +97,7 @@ def load_proto_responses(filepath):
 		return responses
 
 
-def run_proto_responses(cell_model, ephys_protocols, param_values=None):
+def run_proto_responses(cell_model, ephys_protocols, param_values=None, isolate=True):
 	"""
 	Run protocols using given cell model and return responses,
 	indexed by protocol.name.
@@ -117,7 +117,7 @@ def run_proto_responses(cell_model, ephys_protocols, param_values=None):
 						cell_model		= cell_model, 
 						param_values	= param_values,
 						sim				= nrnsim,
-						isolate			= True)
+						isolate			= isolate)
 
 		all_responses[e_proto.name] = response
 

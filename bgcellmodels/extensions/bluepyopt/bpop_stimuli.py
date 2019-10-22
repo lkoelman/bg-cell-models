@@ -161,7 +161,7 @@ class NetVarDelayStimulus(ephys.stimuli.Stimulus):
                 Delays for incoming spikes
         """
 
-        super(NrnVecStimStimulus, self).__init__()
+        super(NetVarDelayStimulus, self).__init__()
         if total_duration is None:
             raise ValueError(
                 'NrnNetStimStimulus: Need to specify a total duration')
@@ -169,6 +169,7 @@ class NetVarDelayStimulus(ephys.stimuli.Stimulus):
             self.total_duration = total_duration
 
         self.target_locations = target_locations
+        self.locations = target_locations # compatibility with NetStimStimulus
         self.source_location = source_location
         self.source_threshold = source_threshold
         self.source_delay = source_delay
@@ -186,12 +187,13 @@ class NetVarDelayStimulus(ephys.stimuli.Stimulus):
 
         # Stimulator object
         self.stim = net_delay = sim.neuron.h.NetVarDelay()
-        net_delay.tstart = start_time
+        net_delay.tstart = self.start_time
         net_delay.set_delays(self.delays_vec)
 
         # Connection to source of events
         src_seg = self.source_location.instantiate(sim=sim, icell=icell)
-        self.source_netcon = nc = h.NetCon(src_seg._ref_v, net_delay, sec=src_seg.sec)
+        self.source_netcon = nc = sim.neuron.h.NetCon(
+            src_seg._ref_v, net_delay, sec=src_seg.sec)
         nc.threshold    = self.source_threshold
         nc.delay        = self.source_delay
         nc.weight[0]    = 1.0 # not used
@@ -200,13 +202,11 @@ class NetVarDelayStimulus(ephys.stimuli.Stimulus):
         for location in self.target_locations:
             self.connections[location.name] = []
             for synapse in location.instantiate(sim=sim, icell=icell):
-                netstim = sim.neuron.h.VecStim()
-                netstim.play(self.delays_vec)
-                netcon = sim.neuron.h.NetCon(netstim, synapse)
+                netcon = sim.neuron.h.NetCon(self.stim, synapse)
                 netcon.delay     = self.target_delay
                 netcon.weight[0] = self.target_weight
 
-                self.connections[location.name].append((netcon, netstim))
+                self.connections[location.name].append((netcon, self.stim))
 
     def destroy(self, sim=None):
         """Destroy stimulus"""

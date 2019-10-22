@@ -213,11 +213,6 @@ class BpopReboundProtocol(BpopProtocolWrapper):
     def __init__(self, **kwargs):
         """
         Initialize all protocol variables for given model type
-
-        @post                       following attributes will be available on this object:
-                                    - ephys_protocol: PhysioProtocol instance
-                                    - proto_vars: dict with protocol variables
-                                    - response_interval: expected time interval of response
         """
 
         dur_hyper = 500
