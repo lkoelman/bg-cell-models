@@ -55,7 +55,7 @@ PROTO_RESPONSES_FILE = "/home/luye/cloudstore_m/simdata/Gillies2005_fullmodel/re
 ################################################################################
 
 
-def test_protocol(stim_proto, model_type, export_locals=True):
+def test_protocol(stim_proto, model, export_locals=True):
     """
     Test stimulation protocol applied to full cell model.
 
@@ -71,13 +71,16 @@ def test_protocol(stim_proto, model_type, export_locals=True):
     >>> test_protocol(StimProtocol.MIN_SYN_BURST, 'full')
     
     """
-    if model_type in ('full', StnModel.Gillies2005):
+    cellmodel = None
+    if isinstance(model, ephys.models.Model):
+        cellmodel = model
+        model_type = cellmodel.model_type
+    elif model == 'full':
         model_type = StnModel.Gillies2005
-        fullmodel = True
-    elif model_type in ('reduced', StnModel.Gillies_FoldMarasco):
-        model_type = StnModel.Gillies_FoldMarasco
-        fullmodel = False
-
+    elif model == 'reduced':
+        model_type = StnModel.Gillies_FoldBush_Tapered
+    else:
+        model_type = model
 
     # instantiate protocol
     proto = stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
@@ -86,18 +89,14 @@ def test_protocol(stim_proto, model_type, export_locals=True):
     proto_mechs, proto_params = proto.get_mechs_params()
 
     # Make cell model
-    if fullmodel:
-        cellmodel = stn_models.StnFullModel(
-                        name        = 'StnGillies',
-                        mechs       = proto_mechs,
-                        params      = proto_params)
+    if cellmodel is None:
+        cellmodel = stn_models.make_cell_model(model_type,
+                        num_passes   = 7,
+                        proto_mechs  = proto_mechs,
+                        proto_params = proto_params)
     else:
-        cellmodel = stn_models.StnReducedModel(
-                        name        = 'StnFolded',
-                        fold_method = 'marasco',
-                        num_passes  = 7,
-                        mechs       = proto_mechs,
-                        params      = proto_params)
+        cellmodel.add_mechs(proto_mechs)
+        cellmodel.add_params(proto_params)
 
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
@@ -116,27 +115,30 @@ def test_protocol(stim_proto, model_type, export_locals=True):
     protos_features = feature_factory.make_opt_features([proto])
 
     # Calculate target values from full model responses
-    feature_factory.calc_feature_targets(protos_features, protos_responses)
+    feature_factory.calc_feature_targets(protos_features, protos_responses,
+                                         raise_check=False)
 
     # Plot protocol responses
     # anls_proto.plot_proto_responses(protos_responses)
 
     ## Plot protocol responses
-    from matplotlib import pyplot as plt
-    for resp_name, traces in responses.iteritems():
-        if resp_name.lower().endswith('.v'):
-            plt.figure()
-            plt.plot(traces['time'], traces['voltage'])
-        elif resp_name.endswith('_times'):
-            plt.figure()
-            plt.plot(traces['time'], traces['voltage'],
-                    marker='|', linestyle='', snap=True)
-        else:
-            raise ValueError(resp_name)
+    anls_proto.plot_proto_responses(protos_responses)
+   
+    # from matplotlib import pyplot as plt
+    # for resp_name, traces in responses.iteritems():
+    #     if resp_name.lower().endswith('.v'):
+    #         plt.figure()
+    #         plt.plot(traces['time'], traces['voltage'])
+    #     elif resp_name.endswith('_times'):
+    #         plt.figure()
+    #         plt.plot(traces['time'], traces['voltage'],
+    #                 marker='|', linestyle='', snap=True)
+    #     else:
+    #         raise ValueError(resp_name)
 
-        plt.suptitle(resp_name)
+    #     plt.suptitle(resp_name)
 
-    plt.show(block=False)
+    # plt.show(block=False)
 
     if export_locals:
         globals().update(locals())
@@ -161,13 +163,11 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
     test_protocol(proto, 'full')
     
     """
-    if model_type in ('full', StnModel.Gillies2005):
-        model_type = StnModel.Gillies2005
-        fullmodel = True
-    elif model_type in ('reduced', StnModel.Gillies_FoldMarasco):
-        model_type = StnModel.Gillies_FoldMarasco
-        fullmodel = False
 
+    if model_type == 'full':
+        model_type = StnModel.Gillies2005
+    elif model_type == 'reduced':
+        model_type = StnModel.Gillies_FoldBush_Tapered
 
     # instantiate protocol
     proto_wrapper = stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
@@ -176,18 +176,10 @@ def inspect_protocol(stim_proto, model_type, export_locals=True):
     proto_mechs, proto_params = proto_wrapper.get_mechs_params()
 
     # Make cell model
-    if fullmodel:
-        cellmodel = stn_models.StnFullModel(
-                        name        = 'StnGillies',
-                        mechs       = proto_mechs,
-                        params      = proto_params)
-    else:
-        cellmodel = stn_models.StnReducedModel(
-                        name        = 'StnFolded',
-                        fold_method = 'marasco',
-                        num_passes  = 7,
-                        mechs       = proto_mechs,
-                        params      = proto_params)
+    cellmodel = stn_models.make_cell_model(model_type,
+                    num_passes   = 7,
+                    proto_mechs  = proto_mechs,
+                    proto_params = proto_params)
 
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
@@ -241,17 +233,18 @@ def save_protocol_responses(protos=None, plot=True):
         anls_proto.plot_proto_responses(full_responses)
 
 
-def make_optimisation(red_model=None, parallel=False, export_locals=False):
+def make_optimisation(model_type=None, parallel=False, export_locals=False):
     """
     Optimization routine for reduced cell model.
 
-    @param  red_model : ephys.models.Model
-            Cell model that instantiates the reduced cell model.
+    @param  model_type : StnModel or str
+            Type of STN model to use ('full', 'reduced', StnModel.Gillies2005)
     """
+
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
-    ############################################################################
-    # Parameters & Cell Model
+
+    # Parameters ===============================================================
 
     # Make parameters
     # SETPARAM: passive parameters fit using PRAXIS
@@ -283,17 +276,15 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 
     # NOTE: we don't need to define NrnModMechanism for these parameters, since they are not inserted by BluePyOpt but by our custom model setup code
 
-    ############################################################################
-    # Protocols for optimisation
-
-    stn_model_type = StnModel.Gillies_FoldMarasco_Legacy # SETPARAM: model type to optimise
+    
+    # Protocols ================================================================
 
     # SETPARAM: Protocols to use for optimisation
     opt_stim_protocols = [sp.CLAMP_REBOUND, sp.MIN_SYN_BURST] # 
 
     # Make all protocol data
     red_protos = {
-        stim_proto: stn_protos.BpopProtocolWrapper.make(stim_proto, stn_model_type) 
+        stim_proto: stn_protos.BpopProtocolWrapper.make(stim_proto, model_type) 
             for stim_proto in opt_stim_protocols
     }
 
@@ -308,21 +299,8 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
     for param in free_params:
         assert (not param.frozen)
 
-    # Create reduced model
-    if red_model is None:
-        red_model = stn_models.StnReducedModel(
-                        name        = 'StnFolded',
-                        fold_method = 'marasco',
-                        num_passes  = 7,
-                        mechs       = proto_mechs,
-                        params      = used_params)
-    else:
-        red_model.set_mechs(proto_mechs)
-        red_model.set_params(used_params)
 
-
-    ############################################################################
-    # Features
+    # Features =================================================================
 
     if PROTO_RESPONSES_FILE is not None:
         # Load full model responses from file
@@ -330,7 +308,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
     else:
         # Run full model and obtain responses
         full_protos = [
-            stn_protos.BpopProtocolWrapper.make(stim_proto, stn_model_type)
+            stn_protos.BpopProtocolWrapper.make(stim_proto, model_type)
                 for stim_proto in opt_stim_protocols
         ]
         
@@ -351,8 +329,14 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
     # Calculate target values from full model responses
     feature_factory.calc_feature_targets(stimprotos_feats, full_responses)
 
-    ############################################################################
-    # TEST
+    # Cell model ===============================================================
+
+    cellmodel = stn_models.make_cell_model(model_type,
+                    num_passes   = 7,
+                    proto_mechs  = proto_mechs,
+                    proto_params = proto_params)
+
+    # TEST =====================================================================
 
     # default_params = {k : v*1.1 for k,v in stn_params.default_params.items() if k in [p.name for p in used_params]}
 
@@ -383,21 +367,17 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
 
     # import ipdb; ipdb.set_trace()
 
-    ############################################################################
-    # Objective / Fitness calculation
+    # Objective ================================================================
 
     # Collect characteristic features for all protocols used in evaluation
     all_opt_features, all_opt_weights = feature_factory.all_features_weights(
                                                     stimprotos_feats.values())
 
     # Make final objective function based on selected set of features
-    # total_objective = ephys.objectives.WeightedSumObjective(
-    #                           name    = 'optimise_all',
-    #                           features= all_opt_features,
-    #                           weights = all_opt_weights)
-    total_objective = bpop_evaluators.RootMeanSquareObjective(
-                                name    = 'optimise_all',
-                                features= all_opt_features)
+    total_objective = bpop_evaluators.WeightedSumOfSquaredObjective(
+                              name    = 'optimise_all',
+                              features= all_opt_features,
+                              weights = all_opt_weights)
 
     # Calculator maps model responses to scores
     fitcalc = ephys.objectivescalculators.ObjectivesCalculator([total_objective])
@@ -406,8 +386,7 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
     # all_objectives = [ephys.objectives.SingletonObjective(f.name, f) for f in all_opt_features]
     # fitcalc = ephys.objectivescalculators.ObjectivesCalculator(all_objectives)
 
-    ############################################################################
-    # Evaluators & Optimization
+    # Evaluator ================================================================
 
     # Make evaluator to evaluate model using objective calculator
     opt_ephys_protos = {k.name: v.ephys_protocol for k,v in red_protos.iteritems()}
@@ -415,14 +394,17 @@ def make_optimisation(red_model=None, parallel=False, export_locals=False):
     
     # TODO: check that: synapse parameters must be on model but unactive during clamp protocols
     cell_evaluator = ephys.evaluators.CellEvaluator(
-                        cell_model          = red_model,
+                        cell_model          = cellmodel,
                         param_names         = opt_params_names, # fitted parameters
                         fitness_protocols   = opt_ephys_protos,
                         fitness_calculator  = fitcalc,
                         sim                 = nrnsim,
                         isolate_protocols   = True) # SETPARAM: enable multiprocessing
 
+    # Optimisation =============================================================
+
     # Make optimisation using the model evaluator
+
     # NOTE: the map_function is registered with DEAP internally, using
     #       deap.base.Toolbox.register("map", map_function).
     #       Another map function is: from scoop import futures; map_function = futures.map

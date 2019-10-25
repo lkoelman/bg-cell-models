@@ -182,3 +182,52 @@ def smooth(x, window_len=11, window='hanning', pad_method='boundary'):
     # Convolution is integral, so scale by window sum
     y = np.convolve(w/w.sum(), s, mode='valid')
     return y
+
+
+def bin_curve_samples(x, y, dx, bin_y_func='median',
+                      fill_empty=True):
+    """
+    Return binned version of dataset x,y where the new
+    x-values are the bin centers, and new y-values are a given
+    function (e.g. mean) of y-values assigned to the bin.
+
+    @param  bin_y_func : str or callable
+            Function to transform bin y-values
+    """
+    # 
+    if isinstance(bin_y_func, str):
+        bin_y_func = getattr(np, bin_y_func)
+
+    # Bin x values
+    bin_edges = np.arange(0.0, max(x) + dx, dx)
+    x_bin_indices = np.digitize(x, bin_edges) # index of right bin edge
+    x_bin_centers = bin_edges[:-1] + 0.5 * dx
+    num_bins = len(bin_edges) - 1
+    
+    # Assign median y-value to each bin with sampled
+    placeholder = 1e9
+    y_interp = np.zeros(num_bins) + placeholder
+    full_bins = []
+    for i_bin in range(num_bins):
+        # bins are indexed by their right edge
+        bin_mask = (x_bin_indices == (i_bin + 1))
+        if any(bin_mask):
+            bin_vals = y[bin_mask]
+            y_interp[i_bin] = bin_y_func(bin_vals)
+            full_bins.append(i_bin)
+        
+    
+    # empty_bin_mask = y_interp == placeholder
+    empty_bin_mask = np.array([(i not in full_bins) for i in range(num_bins)])
+    
+    # Fill empty bins with linear interpolations
+    if fill_empty:
+        empty_bin_vals = np.interp(x_bin_centers[empty_bin_mask],
+                                   x_bin_centers[~empty_bin_mask],
+                                   y_interp[~empty_bin_mask])
+        y_interp[empty_bin_mask] = empty_bin_vals
+    else:
+        x_bin_centers = x_bin_centers[~empty_bin_mask]
+        y_interp = y_interp[~empty_bin_mask]
+
+    return x_bin_centers, y_interp

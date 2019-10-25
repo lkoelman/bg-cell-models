@@ -116,7 +116,28 @@ class CollapsableCell(ephys.models.Model):
         """
         Convenience function to be able to set mechanisms after making the model
         """
-        self.mechanisms = mechs 
+        self.mechanisms = mechs
+
+
+    def add_params(self, params, warn_override=True, raise_override=False):
+        """
+        Add parameters but warn if they exist
+        """
+        for param in params:
+            if param.name in self.params.keys():
+                if raise_override:
+                    raise ValueError('Parameter {} already exist.'.format(param.name))
+                if warn_override:
+                    print('WARNING: Overriding existing parameter {}'.format(param.name))
+
+            self.params[param.name] = param
+
+
+    def add_mechs(self, mechs):
+        """
+        Append a list of mechanisms
+        """
+        self.mechanisms.extend(mechs)
 
 
     def params_by_names(self, param_names):

@@ -51,7 +51,8 @@ def save_figure(fname, fig=None, **kwargs):
     except NameError:
         pass
     fname += '.' + kwargs.setdefault('format', 'pdf')
-    fig_filepath = os.path.join(_data.save_fig_path, fname)
+    fig_dir = kwargs.get('dir', _data.save_fig_path)
+    fig_filepath = os.path.join(fig_dir, fname)
     if fig is None:
         plt.savefig(fig_filepath, **kwargs) # save current figure
     else:

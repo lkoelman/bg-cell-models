@@ -11,6 +11,9 @@ from matplotlib.pyplot import cm
 import string
 from neuron import h
 import numbers
+# from neuron.rxd.morphology import parent, parent_loc # moved
+from bgcellmodels.common.treeutils import parent, parent_loc
+import json
 
 __author__ = "Alex H Williams"
 __copyright__ = "Copyright (c) 2016 Alex H. Williams and Robert McDougal"
@@ -569,10 +572,6 @@ def branch_precedence(h):
     #return [0 if p is None else 1 for p in prec], d[i][1]
     return [ secdict[sec] for sec in seclist ]
 
-
-from neuron import h
-from neuron.rxd.morphology import parent, parent_loc
-import json
 
 def morphology_to_dict(sections, outfile=None):
     section_map = {sec: i for i, sec in enumerate(sections)}

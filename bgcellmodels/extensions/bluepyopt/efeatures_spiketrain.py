@@ -7,6 +7,17 @@ distance metrics.
 @date   4/10/2017
 
 
+NOTES
+
+- the returned score of efeature.calculate_score() is the distance to the target
+  normalized by the standard devation
+- i.e. distance is sum_{i..N}(feat[i] - exp_mean) / N / exp_std
+- see https://github.com/BlueBrain/BluePyOpt/blob/master/bluepyopt/ephys/efeatures.py
+- this meands the standard deviation is the inverse 'weight' of the score
+    - weight = 1 / efeat.exp_std
+
+
+
 ARCHITECTURE:
 
    - make custom =EFeature= class that allows to set a target (in the form of spike train or histogram, e.g. a neo spiketrain)
@@ -136,6 +147,12 @@ def calc_data_PRC(self, efel_trace, trace_check):
     # Phase response curve
     phi, delta_phi = signal.compute_PRC(spike_times, stim_times, sort_by='phi')
 
+    # Bin phi values
+    bin_dphi = self.double_settings.get('bin_dphi', 0.025)
+    phi, delta_phi = curvedist.bin_curve_samples(phi, delta_phi, dx=bin_dphi,
+                                                 bin_y_func='median')
+
+
     if DEBUG_TESTRUN:
         import matplotlib.pyplot as plt
         # from scipy.ndimage.filters import gaussian_filter
@@ -195,6 +212,10 @@ def calc_score_PRC(self, efel_trace, trace_check):
 
     score = curvedist.curve_distance((phi_targ, dphi_targ),
                                      (phi_cand, dphi_cand), **dist_params)
+
+    score /= self.exp_std
+    if self.force_max_score:
+            score = max(score, self.max_score)
 
     return score
 
@@ -388,7 +409,7 @@ def calc_score_ISI_voltage(self, efel_trace, trace_check):
     efel.reset()
     score /= self.exp_std
     if self.force_max_score:
-            score = max(score, self.max_score)
+        score = max(score, self.max_score)
 
     return score
 
@@ -632,7 +653,7 @@ class SpikeTrainFeature(ephys.efeatures.EFeature, ephys.serializer.DictMixin):
             feat_func = self.CALC_FEAT_FUNCS[feat_name]
             feat_vals = feat_func(self, efel_trace, raise_warnings)
 
-        logger.debug('Calculated feature value for %s: %s', self.name, feat_vals)
+        # logger.debug('Calculated feature value for %s: %s', self.name, feat_vals)
         
         return feat_vals
 

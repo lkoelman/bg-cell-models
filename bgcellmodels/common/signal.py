@@ -966,7 +966,8 @@ def get_all_pyelectro_features(
     return trace_analysis.analysis_results
 
 
-def compute_PRC(t_spikes, t_stim, sort_by='spike_times'):
+def compute_PRC(t_spikes, t_stim, sort_by='phi',
+                exclude_multi_stim_isis=True):
     """
     Compute phase response curve (PRC) using traditional method.
 
@@ -989,18 +990,34 @@ def compute_PRC(t_spikes, t_stim, sort_by='spike_times'):
                 Phases of t_stim and phase shifts of spike_times. Phase
                 shifts are negative for delays and positive for advances.
     """
+    # Make sure datatype is numpy array
+    t_spikes    = np.asarray(t_spikes)
+    t_stim      = np.asarray(t_stim)
+
     mean_ISI    = np.mean(np.diff(t_spikes))
     M           = len(t_stim)
     K           = len(t_spikes)
     phi         = np.zeros(M)
     delta_phi   = np.zeros(M)
 
+    excluded_stim_mask = np.zeros(M, dtype=bool) # np.array([False] * M)
 
     for i, t_pulse in enumerate(t_stim):
+
+        # Find preceding and following spike
         idx_preceding = np.where(t_spikes < t_pulse)[0][-1]
         idx_following = idx_preceding + 1
         if idx_following >= K:
             break # pulse after last spike : no ISI
+
+        # Check if there is more than one pulse in ISI
+        isi_pulses_mask = ((t_stim > t_spikes[idx_preceding]) &
+                           (t_stim < t_spikes[idx_following]))
+        
+        if isi_pulses_mask.astype(int).sum() > 1 and exclude_multi_stim_isis:
+            excluded_stim_mask[i] = True
+            continue
+            # TODO: remove p
 
         tau = t_pulse - t_spikes[idx_preceding]
         Ti = t_spikes[idx_following] - t_spikes[idx_preceding]
@@ -1009,11 +1026,17 @@ def compute_PRC(t_spikes, t_stim, sort_by='spike_times'):
         delta_phi[i] = 1.0 - (Ti / mean_ISI)
 
     if sort_by == 'phi':
+        phi       = phi[~excluded_stim_mask]
+        delta_phi = delta_phi[~excluded_stim_mask]
         isort     = np.argsort(phi)
         phi       = phi[isort]
         delta_phi = delta_phi[isort]
 
-    elif sort_by != 'spike_times':
+    elif sort_by == 'spike_times':
+        phi[excluded_stim_mask]         = np.nan
+        delta_phi[excluded_stim_mask]   = np.nan
+
+    else:
         raise ValueError(sort_by)
 
     return phi, delta_phi

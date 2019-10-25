@@ -15,13 +15,15 @@ import bluepyopt.ephys as ephys
 
 # Custom Modules
 import bgcellmodels.cellpopdata as cpd
+from bgcellmodels.cellpopdata import StnModel
 from bgcellmodels.models.STN.GilliesWillshaw import gillies_model
 from bgcellmodels.models.STN.GilliesWillshaw.reduced_old import redutils, reduce_cell
-
-from bgcellmodels.cersei.collapse.optimize.cellmodels import CollapsableCell # Cell as MockCell
 from bgcellmodels.models.STN.GilliesWillshaw.reduced import cersei_reduce
 
+from bgcellmodels.cersei.collapse.optimize.cellmodels import CollapsableCell # Cell as MockCell
+from bgcellmodels.cersei.collapse.fold_algorithm import ReductionMethod
 
+# Module globals
 logger = logging.getLogger('stn_reduced')
 
 
@@ -108,11 +110,32 @@ class StnBaseModel(ephys.models.Model):
                 self.params[param.name] = param
 
 
+    def add_params(self, params, warn_override=True, raise_override=False):
+        """
+        Add parameters but warn if they exist
+        """
+        for param in params:
+            if param.name in self.params.keys():
+                if raise_override:
+                    raise ValueError('Parameter {} already exist.'.format(param.name))
+                if warn_override:
+                    logger.warning('Overriding existing parameter {}'.format(param.name))
+
+            self.params[param.name] = param
+
+
     def set_mechs(self, mechs):
         """
         Convenience function to be able to set mechanisms after making the model
         """
-        self.mechanisms = mechs 
+        self.mechanisms = mechs
+
+
+    def add_mechs(self, mechs):
+        """
+        Append a list of mechanisms
+        """
+        self.mechanisms.extend(mechs)
 
 
     def params_by_names(self, param_names):
@@ -460,7 +483,7 @@ class StnReducedCersei(CollapsableCell):
         
 
         # Make sure original STN cell is built
-        if self.reduction_method in [None, 'original', 'none', 'nonreduced']:
+        if self.reduction_method in [None, 'none']:
             return self.instantiate_nonreduced(sim=sim)
         
         elif self._persistent_refs is None:
@@ -574,7 +597,8 @@ class StnReducedCersei(CollapsableCell):
         # save SectionRef across model instantiation (icell will be destroyed)
         self._persistent_refs = self.icell._all_refs
 
-        # Apply parameters _before mapping_ (mapping measures electrotonic properties)
+        # Instantiate parameters _before mapping_ (mapping measures electrotonic properties)
+        # NOTE: does not change icell, just instantiates parameters
         icell = super(StnReducedCersei, self).instantiate(sim)
 
         # Do synapse mapping
@@ -600,26 +624,64 @@ class StnReducedCersei(CollapsableCell):
         logger.debug("Destroying Reduced cell model")
         self._persistent_refs = None
         return super(StnReducedCersei, self).destroy(sim=sim)
+    
+    
+def make_cell_model(model_type, num_passes=7, proto_mechs=None, proto_params=None):
+    """
+    Make reduced model based on model descriptions in cellpopdata.
+    """
+    if model_type == StnModel.Gillies2005:
+        model = StnFullModel(
+                    name        = 'StnGillies',
+                    mechs       = proto_mechs,
+                    params      = proto_params)
+    
+    elif model_type == StnModel.Gillies_FoldMarasco_Legacy:
+        model = StnReducedModel(
+                    name        = 'StnFolded',
+                    fold_method = 'marasco',
+                    num_passes  = num_passes,
+                    mechs       = proto_mechs,
+                    params      = proto_params)
+    
+    elif model_type == StnModel.Gillies_FoldStratford_Legacy:
+        model = StnReducedModel(
+                    name        = 'StnFolded',
+                    fold_method = 'stratford',
+                    num_passes  = num_passes,
+                    mechs       = proto_mechs,
+                    params      = proto_params)
+
+    # NOTE: CERSEI collapses iteratively in one pass starting at indicated forks
+    
+    elif model_type == StnModel.Gillies_FoldMarasco_Tapered:
+        reduction_params = {'num_collapse_passes': 1}
+        model = StnReducedCersei(
+                    reduction_method    = ReductionMethod.Marasco,
+                    reduction_params    = reduction_params,
+                    mechs       = proto_mechs,
+                    params      = proto_params)
+    
+    elif model_type == StnModel.Gillies_FoldBush_Tapered:
+        reduction_params = {'num_collapse_passes': 1}
+        model = StnReducedCersei(
+                    reduction_method    = ReductionMethod.BushSejnowski,
+                    reduction_params    = reduction_params,
+                    mechs       = proto_mechs,
+                    params      = proto_params)
+    
+    else:
+        raise ValueError(model_type)
+
+    model.model_type = model_type
+    return model
 
 
 if __name__ == '__main__':
     sim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
-    legacy = True
-
-    if legacy:
-        # Legacy reduction
-        model = StnReducedModel(
-                    name        = 'FoldLegacy1',
-                    fold_method = 'marasco',
-                    num_passes  = 7)
-
-    else:
-        # CERSEI reduction (see stn_model_evalation.py)
-        from bgcellmodels.cersei.collapse.fold_algorithm import ReductionMethod
-        reduction_params = {'num_collapse_passes': 7}
-        model = StnReducedCersei(
-                    reduction_method=ReductionMethod.BushSejnowski,
-                    reduction_params=reduction_params)
+    
+    model_type = StnModel.Gillies_FoldBush_Tapered
+    model = make_cell_model(model_type, num_passes=6)
 
     # Do reduction
     model.instantiate(sim=sim)

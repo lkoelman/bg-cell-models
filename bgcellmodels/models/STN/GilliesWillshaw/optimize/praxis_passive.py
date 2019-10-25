@@ -1,16 +1,22 @@
 # Gillies & Willshaw model mechanisms
-import gillies_model
-gleak_name = gillies_model.gleak_name
-
-from reducemodel import reduce_cell
-from neuron import h
 import math
+from neuron import h
+
+# Custom modules
+from bgcellmodels.models.STN.GilliesWillshaw import gillies_model
+from bgcellmodels.models.STN.GilliesWillshaw.reduced_old import reduce_cell
+
+from bgcellmodels.cersei.collapse.optimize.cellmodels import CollapsableCell # Cell as MockCell
+from bgcellmodels.models.STN.GilliesWillshaw.reduced import cersei_reduce
 
 # Adjust verbosity of loggers
 import logging
 logging.getLogger('redops').setLevel(logging.WARNING)
 logging.getLogger('folding').setLevel(logging.WARNING)
 logging.getLogger('marasco').setLevel(logging.WARNING)
+
+# Module globals
+gleak_name = gillies_model.gleak_name
 
 
 def optimize_passive(export_locals=True):
@@ -53,6 +59,12 @@ def optimize_passive(export_locals=True):
 	# Create reduced model
 	reduction = reduce_cell.gillies_marasco_reduction()
 	reduction.reduce_model(num_passes=7)
+    
+    # Make reduction object
+    reduction = make_reduction(method=ReductionMethod.BushSejnowski)
+    reduction.reduce_model(num_passes=7)
+    
+    # Disable active conductances
 	gillies_model.make_passive(reduction.all_sec_refs)
 
 	# Optimization cost function

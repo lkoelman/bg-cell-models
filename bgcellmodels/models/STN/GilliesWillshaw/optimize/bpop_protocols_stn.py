@@ -43,6 +43,87 @@ soma_center_loc = ephys.locations.NrnSeclistCompLocation(
                 sec_index       = 0,        # index in SectionList
                 comp_x          = 0.5)  # x-location in Section
 
+def init_spont(sim, model):
+    """
+    Initialize simulator to run plateau protocol
+
+    NOTE: function must be declared at top-level of module in order to be pickled
+    """
+    h = sim.neuron.h
+    h.celsius = 35
+    h.v_init = -60
+    h.set_aCSF(4) # gillies_model.set_aCSF(4) # if called before model.instantiate()
+    h.init()
+
+
+class BpopSpontProtocol(BpopProtocolWrapper):
+    """
+    Functions for setting up plateau protocol.
+    """
+
+    IMPL_PROTO = StimProtocol.SPONTANEOUS
+
+    def __init__(self, stn_model_type=None):
+        """
+        Initialize all protocol variables for given model type
+
+        @param stn_model_type       cellpopdata.StnModel enum instance
+        """
+
+        # stimulus interval for eFEL features
+        sim_dur = 2000.0
+        self.response_interval = (200.0, sim_dur)
+
+        stim_dummy = ephys.stimuli.NrnSquarePulse(
+                        step_amplitude  = 0,
+                        step_delay      = 0,
+                        step_duration   = 0,
+                        location        = soma_center_loc,
+                        total_duration  = sim_dur)
+
+
+        rec_soma_V = ephys.recordings.CompRecording(
+                        name            = '{}.soma.v'.format(self.IMPL_PROTO.name),
+                        location        = soma_center_loc,
+                        variable        = 'v')
+
+        self.ephys_protocol = PhysioProtocol(
+                        name        = self.IMPL_PROTO.name, 
+                        stimuli     = [stim_dummy],
+                        recordings  = [rec_soma_V],
+                        init_func   = init_spont)
+
+        self.proto_vars = {
+            # 'pp_mechs':           [],
+            # 'pp_comp_locs':       [],
+            # 'pp_target_locs': [],
+            # 'pp_mech_params': [],
+            'stims':            [stim_dummy],
+            'recordings':       [rec_soma_V],
+            # 'range_mechs':        [],
+        }
+
+    # Characterizing features and parameters for protocol
+    characterizing_feats = {
+        ### SPIKE TIMING RELATED ###
+        'Spikecount': {         # (int) The number of peaks during stimulus
+            'weight':   2.0,
+        },
+        'ISI_CV': {             # (float) coefficient of variation of ISI durations
+            'weight':   1.0,
+        },
+        ### SPIKE SHAPE RELATED ###
+        'AP_rise_rate': {       # (array) Voltage change rate during the rising phase of the action potential
+            'weight':   1.0,
+        },
+        'spike_half_width': {   # (array) The FWHM of each peak
+            'weight':   1.0,
+        },
+        'min_AHP_values': {     # (array) Voltage values at the AHP
+            'weight':   1.0,    # this feature recognizes that there is an elevated plateau
+        },
+    }
+
 ################################################################################
 # PLATEAU protocol
 
@@ -151,7 +232,7 @@ class BpopPlateauProtocol(BpopProtocolWrapper):
         # 'ISI_log',            # no documentation
         'Victor_Purpura_distance': {
             'weight':   2.0,
-            'norm_factor': 50.0,
+            'exp_std': 50.0,
             'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
         },
         ### SPIKE SHAPE RELATED ###
@@ -268,7 +349,7 @@ class BpopReboundProtocol(BpopProtocolWrapper):
         # 'ISI_log',            # no documentation
         # 'Victor_Purpura_distance': {
         #   'weight':   2.0,
-        #   'norm_factor': 50.0,
+        #   'exp_std': 50.0,
         #   'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
         # },
         ### SPIKE SHAPE RELATED ###
@@ -421,7 +502,7 @@ class BpopSynBurstProtocol(BpopProtocolWrapper):
             # 'ISI_log',            # no documentation
             'Victor_Purpura_distance': {
                 'weight':   2.0,
-                'norm_factor': 50.0,
+                'exp_std': 50.0,
                 'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
                 'response_interval': self.total_interval,
             },
@@ -559,7 +640,7 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
     characterizing_feats = {
         'Victor_Purpura_distance': {
             'weight':   8.0,
-            'norm_factor': 50.0,
+            'exp_std': 50.0,
             'double': { 'spike_shift_cost_ms' : 20.0 }, # 20 ms is kernel quarter width
         },
         # 'burst_mean_freq': {
@@ -567,11 +648,11 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
         # }
         'ISI_voltage_distance': {
             'weight':   5.0,
-            'norm_factor': 150.0,
+            'exp_std': 150.0,
         },
         'instantaneous_rate': {
             'weight':   5.0,
-            'norm_factor': 700.0,
+            'exp_std': 700.0,
             'int':      {'min_AP': 2.0},
             'double':   {'bin_width': 50.0},
         },
@@ -579,10 +660,14 @@ class BpopBackgroundProtocol(BpopProtocolWrapper):
 
 
 # Register protocols implemented here
+wrappers = [
+    BpopSpontProtocol, BpopPlateauProtocol, BpopReboundProtocol,
+    BpopSynBurstProtocol, BpopBackgroundProtocol
+]
+
 PROTOCOL_WRAPPERS.update({
-    StimProtocol.CLAMP_PLATEAU: BpopPlateauProtocol,
-    StimProtocol.CLAMP_REBOUND: BpopReboundProtocol,
-    StimProtocol.MIN_SYN_BURST: BpopSynBurstProtocol,
-    StimProtocol.SYN_BACKGROUND_HIGH: BpopBackgroundProtocol,
-    StimProtocol.SYN_BACKGROUND_LOW: BpopBackgroundProtocol, # quick fix, though need to specify impl_proto to __init__
+    wrapper.IMPL_PROTO: wrapper for wrapper in wrappers
 })
+
+# One class used for two protocols
+PROTOCOL_WRAPPERS[StimProtocol.SYN_BACKGROUND_LOW] = BpopBackgroundProtocol

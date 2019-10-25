@@ -33,7 +33,10 @@ def make_features(proto_wrapper):
     for feat_name, feat_params in proto_wrapper.characterizing_feats.iteritems():
 
         # Get interval of response trace from which feature is calculated
-        response_interval = feat_params.get('response_interval', proto_wrapper.response_interval)
+        response_interval   = feat_params.get('response_interval',
+                                             proto_wrapper.response_interval)
+        max_score           = feat_params.get('max_score', None)
+        force_max_score     = max_score is not None
 
         # Identify library providing feature and make it
         if feat_name in eFEL_available_features:
@@ -47,6 +50,8 @@ def make_features(proto_wrapper):
                         double_settings     = feat_params.get('double', None),
                         int_settings        = feat_params.get('int', None),
                         threshold           = proto_wrapper.spike_threshold,
+                        max_score           = max_score,
+                        force_max_score     = force_max_score,
                         )
 
         elif feat_name in custom_spiketrain_features:
@@ -60,6 +65,8 @@ def make_features(proto_wrapper):
                         double_settings     = feat_params.get('double', None),
                         int_settings        = feat_params.get('int', None),
                         threshold           = proto_wrapper.spike_threshold,
+                        max_score           = max_score,
+                        force_max_score     = force_max_score,
                         )
 
         else:
@@ -102,19 +109,20 @@ def make_opt_features(proto_wrappers):
         for feat_name in candidate_feats.keys():
             # Weight and normalization factor for feature score (distance)
             feat_weight = proto.characterizing_feats[feat_name]['weight']
-            norm_factor = proto.characterizing_feats[feat_name].get('norm_factor', float('nan'))
+            feat_std = proto.characterizing_feats[feat_name].get('exp_std', float('nan'))
             
             # Add to feature dict if nonzero weight
             # NOTE: feature score = sum(feat[i] - exp_mean) / N / exp_std  => so exp_std determines weight (in case of SingletonObjective)
             if feat_weight > 0.0:
                 feat_obj = candidate_feats[feat_name]
-                feat_obj.exp_std = norm_factor
+                feat_obj.exp_std = feat_std
                 proto_feat_dict[proto.IMPL_PROTO][feat_name] = feat_obj, feat_weight
 
     return proto_feat_dict
 
 
-def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True):
+def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True,
+                         raise_check=True):
     """
     Calculate target values for features used in optimization (using full model).
 
@@ -130,6 +138,11 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 
     eFEL_available_features = efel.getFeatureNames()
     custom_spiketrain_features = espk.getFeatureNames()
+
+    if raise_check:
+        def check_warn(msg): raise ValueError(msg)
+    else:
+        check_warn = logger.warning
 
     # Run each protocol and get its responses
     for stim_proto, feat_dict in protos_feats.iteritems():
@@ -163,11 +176,14 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
                 e_feature.exp_mean = target_value
 
                 # if a normalization factor was set, use it, otherwise distance will be relative to initial target
-                if math.isnan(e_feature.exp_std):
-                    logger.debug('No normalization factor specified for feature {}'.format(e_feature.name))
-                    e_feature.exp_std = abs(target_value / weight)
-                else:
-                    e_feature.exp_std /= abs(weight)
+                if math.isnan(e_feature.exp_std) or e_feature.exp_std is None:
+                    check_warn(
+                        "No standard deviation 'exp_std' specified for efeature {}.".format(e_feature.name))
+
+                # OLD SOLUTION (no weighted objective -> exp_std = 1 / weight)
+                #     e_feature.exp_std = abs(target_value / weight)
+                # else:
+                #     e_feature.exp_std /= abs(weight)
 
             elif feat_name in custom_spiketrain_features:
 
@@ -176,14 +192,17 @@ def calc_feature_targets(protos_feats, protos_responses, remove_problematic=True
 
                 # target is not a number so need to decide normalization factor in other way
                 # exp_std was set to normalization factor or NaN
-                if math.isnan(e_feature.exp_std):
-                    logger.warning(
-                        'No normalization factor given for custom eFeature. '
+                if math.isnan(e_feature.exp_std) or e_feature.exp_std is None:
+                    check_warn(
+                        'No standard deviation "exp_std" given for eFeature {}. '
                         'Since custom eFeatures may not have a value for a single response '
-                        'it is highly recommended to provide a normalization factor.')
-                    e_feature.exp_std = abs(1.0 / weight)
-                else:
-                    e_feature.exp_std /= abs(weight) # exp_std already set to norm factor
+                        'it is highly recommended to provide a normalization factor.'.format(
+                            e_feature.name))
+
+                # OLD SOLUTION (no weighted objective -> exp_std = 1 / weight)
+                #     e_feature.exp_std = abs(1.0 / weight)
+                # else:
+                #     e_feature.exp_std /= abs(weight) # exp_std already set to norm factor
 
             else:
                 raise ValueError('Unknown feature: <{}>'.format(feat_name))

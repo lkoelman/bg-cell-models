@@ -45,6 +45,38 @@ class SumOfSquaresObjective(ephys.objectives.EFeatureObjective):
         sumsq = sum((score**2 for score in feature_scores))
         return sumsq
 
+class WeightedSumOfSquaresObjective(ephys.objectives.EFeatureObjective):
+    """
+    Objective that calculates sum of squares of EFeature scores
+    """
+
+    def __init__(self, name, features, weights):
+        """
+        Constructor
+
+        Args:
+            name (str): name of this object
+            features (list of EFeatures): eFeatures in the objective
+            weights (list of float): weights of the eFeatures, in same order
+        """
+
+        super(WeightedSumOfSquaresObjective, self).__init__(name, features)
+        self.weights = weights
+
+
+    def calculate_score(self, responses):
+        """
+        Objective score
+        """
+
+        feature_scores = self.calculate_feature_scores(responses)
+
+        score = 0.0
+        for feature_score, weight in zip(feature_scores, self.weights):
+            score += weight * (feature_score**2)
+
+        return score
+
 
 class RootMeanSquareObjective(ephys.objectives.EFeatureObjective):
     """

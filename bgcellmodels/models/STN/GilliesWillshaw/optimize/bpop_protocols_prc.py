@@ -86,7 +86,7 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
             syn_comp_loc,
             **syn_mod_params):
         """
-        Make an Ephys synapse mechanism, including its parameters and 
+        Make an Ephys synapse mechanism, including its parameters and
         PointProcessLocation to link them.
         """
         pp_mech = ephys.mechanisms.NrnMODPointProcessMechanism(
@@ -126,7 +126,7 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
                 Location for synapse used to adminisiter PRC pulses
         """
         # protocol parameters
-        stim_gmax = kwargs.get('stim_gmax', 1e-3)
+        syn_gmax = kwargs.get('syn_gmax', 1e-3)
         bias_rate = kwargs.get('bias_rate', 20.0)
 
         # Current-firing rate curves
@@ -134,14 +134,14 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
             (.03, 33.5), (0.032, 34.9), (0.035, 37.1), (.05, 47.3), (.1, 76.2)]
         Idata, fdata = zip(*fullmodel_fI_data)
         bias_current = np.interp(bias_rate, fdata, Idata)
-        
+
 
         # Parameters for PRC
         cell_T = 1e3 / bias_rate    # (ms)
         prc_sampling_T = 2.0        # (ms) sampling period within ISI
 
         # Sample each phase X times, and randomize order
-        prc_sampling_repeats = 2
+        prc_sampling_repeats = 4
         prc_delays = np.arange(0, cell_T, prc_sampling_T)
         prc_delays = np.tile(prc_delays, prc_sampling_repeats)
         np.random.shuffle(prc_delays) # modifies in-place
@@ -153,8 +153,9 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
         stim_stop = stim_start + (1.1 * cell_T * len(prc_delays))
         sim_dur = stim_stop
         if stim_stop > 5000.0:
-            raise ValueError('Long simulation time for combination of cell '
-                             'firing rate, PRC sampling interval, repeats.')
+            logger.debug('Long simulation time ({} ms) for combination of cell '
+                         'firing rate, PRC sampling interval, repeats.'.format(
+                             sim_dur))
 
         self.response_interval = (stim_start, sim_dur)
 
@@ -173,9 +174,9 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
                         total_duration  = sim_dur)
 
         # Synaptic stimulus ----------------------------------------------------
-        
+
         # Synaptic mechanism
-        
+
 
         # TODO: set weight dynamically? Or calibrate once based on passive Ztransfer
         # NOTE: mechs and params passed to cellmodel in our code
@@ -189,7 +190,7 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
                         source_threshold=-20.0,
                         source_delay=0.1,
                         target_delay=0.1,
-                        target_weight=stim_gmax,
+                        target_weight=syn_gmax,
                         total_duration=sim_dur)
 
         rec_stim_syn1 = bpop_recordings.NetStimRecording(
@@ -208,7 +209,7 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
         proto_recordings = [rec_soma_v, rec_stim_syn1]
 
         self.ephys_protocol = PhysioProtocol(
-                        name        = self.IMPL_PROTO.name, 
+                        name        = self.IMPL_PROTO.name,
                         stimuli     = proto_stimuli,
                         recordings  = proto_recordings,
                         init_func   = init_stn_physiology)
@@ -266,6 +267,7 @@ class PhaseResponseSynExcDist(PhaseResponseProtocol):
                     syn_pp_mech     = pp_mech,
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
+                    syn_gmax        = 2e-3,
                     **kwargs)
 
 
@@ -292,6 +294,7 @@ class PhaseResponseSynExcProx(PhaseResponseProtocol):
                     syn_pp_mech     = pp_mech,
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
+                    syn_gmax        = 1e-3,
                     **kwargs)
 
 
@@ -319,6 +322,7 @@ class PhaseResponseSynInhProx(PhaseResponseProtocol):
                     syn_pp_mech     = pp_mech,
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
+                    syn_gmax        = 1e-3,
                     **kwargs)
 
 

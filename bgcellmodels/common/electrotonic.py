@@ -288,7 +288,7 @@ def measure_input_impedance(
     return imp.input(source.x, sec=source.sec)
 
 
-def measure_along_paths(root, leaves, measure_funcs, freq=None):
+def measure_along_paths(root, leaves, measure_funcs, freq):
     """
     Measure electrotonic properties along paths.
     
