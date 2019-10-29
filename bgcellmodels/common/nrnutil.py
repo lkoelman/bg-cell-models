@@ -308,6 +308,27 @@ def set_ion_styles(tar_sec, **kwargs):
         h.ion_style(ion+'_ion', c_style, e_style, einit, eadvance, cinit, sec=tar_sec)
 
 
+def make_ion_style_flags(style):
+    """
+    Decompose bit flags containing ion styles into individual
+    flags
+
+    EXAMPLE
+    -------
+
+    >>> styles = h.ion_style('na_ion', sec=sec)
+    >>> flags = make_ion_style_flags(style)
+    >>> h.ion_style('na_ion', *flags, sec=other)
+    """
+    c_style = int(style) & (1+2)
+    cinit = (int(style) & 4) >> 2
+    e_style = (int(style) & (8+16)) >> 3
+    einit = (int(style) & 32) >> 5
+    eadvance = (int(style) & 64) >> 6
+
+    return c_style, e_style, einit, eadvance, cinit
+
+
 def ion_styles_bits_to_dict(style):
     """
     Convert a float representing the styles of one ion to a dictionary

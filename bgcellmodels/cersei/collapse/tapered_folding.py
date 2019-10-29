@@ -364,7 +364,7 @@ class AdvancingFrontCollapse(object):
 
         # Post-process subtree
         subtree_seclist = h.SectionList()
-        par_sec.push(); subtree_seclist.subtree(); h.pop_section()
+        subtree_seclist.subtree(sec=par_sec)
         for child_sec in subtree_seclist: # iterates CAS
             # Make sure every Section has been visited and fully absorbed (until 1-end)
             child_ref = getsecref(child_sec, allsecrefs)

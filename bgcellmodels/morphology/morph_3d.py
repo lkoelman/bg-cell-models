@@ -20,8 +20,6 @@ Additional libraries to deal with NEURON morphologies:
 from neuron import h
 import numpy as np
 
-from transforms3d import axangles
-
 
 def get_section_samples(section_lists, include_diam=True):
     """
@@ -189,6 +187,9 @@ def perturb_sample_angles(samples, max_angle, rng=None, seed=None):
     """
     At each sample, rotate the subtree around the sample coordinates
 
+    @pre    requires module 'transforms3d' installed
+            e.g. pip install transforms3d
+
     @param  samples : list[list[float/int]]
             List of SWC samples, each represented by a list of 7 numbers.
 
@@ -198,6 +199,8 @@ def perturb_sample_angles(samples, max_angle, rng=None, seed=None):
     @return perturbed_sampled : list[list[float/int]]
             Samples with rotations applied to subtrees
     """
+    from transforms3d import axangles
+
     # Each time there is a 'break', rotate all children around the break-point.
     # You can keep track of the accumulated rotation matrices
     if rng is None:

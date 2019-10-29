@@ -217,10 +217,7 @@ def wholetree_secs(sec):
     Get all Sections in the same cell (i.e. that have a path to the given section)
     """
     tree_secs = h.SectionList()
-
-    sec.push()
-    tree_secs.wholetree()
-    h.pop_section()
+    tree_secs.wholetree(sec=sec)
 
     return list(tree_secs)
 
@@ -412,6 +409,10 @@ def ascend_sectionwise_dfs(start_node):
 def ascend_sectionwise_bfs(start_node):
     """
     Return generator that does breadth-first tree traversal starting at given node.
+
+    NOTE: this generates sections in the same order as NEURON functions
+          h.SectionList().wholetree(sec=root) and 
+          h.SectionList().wholetree(sec=root)
 
     @note   non-recursive, avoids making a new generator per descent
             and avoids blowing up the stack trace
@@ -630,6 +631,144 @@ def check_tree_constraints(sections):
 
     return is_unbranched, is_oriented, list(branched), list(misoriented)
 
+
+def gather_rangevar_along_paths(
+        root,
+        leaves=None, 
+        measure_funcs=None,
+        rangevar_names=None):
+    """
+    Measure electrotonic properties along paths.
+    
+    @param  root : nrn.Section
+            Root section for measurement
+
+    @param  leaves : iterable[nrn.Section]
+            Endpoints for measurements
+
+    @param  measure_funcs : function(nrn.Segment) -> any
+
+    @return path_measurements : list[dict[measure, list[float]]]
+            For each leaf node, a dictionary containing all the measurements
+            as a function of distance from the root node to the leaf node
+    """
+    # Get leaf sections
+    if leaves is None:
+        leaves = leaf_sections(root, subtree=False) # all leaves of tree
+    if measure_funcs is None:
+        measure_funcs = {}
+    if rangevar_names is None:
+        rangevar_names = []
+
+    # make paths to leaves and measure each measure
+    leaf_path_measurements = [] # one dict for each leaf
+
+    # Get path lengths
+    h.distance(0, 0.5, sec=root)
+    path_dist_um = lambda seg: h.distance(seg.x, sec=seg.sec)
+
+    # Get electrotonic measurements
+    for leaf_sec in leaves:
+
+        path_measurements = {}
+
+        path_segments = [seg for sec in path_sections(leaf_sec) for seg in sec]
+
+        # Get path lengths
+        path_measurements['path_dist_um'] = map(path_dist_um, path_segments)
+
+        # Collect rangevar names
+        for rangevar_name in rangevar_names:
+            # has_mechanism = lambda seg, mech: h.ismembrane(rangevar_name.split('_')[-1], sec=seg.sec) if '_' in mech else True
+            # measure_func = lambda seg: getattr(seg, rangevar_name) if h.ismembrane(rangevar_name.split('_')[-1], sec=seg.sec) else 0.0
+            path_measurements[rangevar_name] = map(
+                lambda seg: getattr(seg, rangevar_name),
+                path_segments)
+
+        # Measure using custom functions
+        for measure_name, measure_func in measure_funcs.iteritems():
+            path_measurements[measure_name] = map(measure_func, path_segments)
+
+        leaf_path_measurements.append(path_measurements)
+        
+    return leaf_path_measurements
+
+
+def plot_rangevar_per_section(
+        root_sec,
+        propname,
+        secfilter=None,
+        labelfunc=None,
+        y_range=None,
+        fig=None,
+        ax=None,
+        plt=None):
+    """
+    Plot neuron RANGE variable in each section, with one figure axis
+    per secton.
+
+
+    @param  root_sec : nrn.Section
+            Root section to start tree ascent
+
+    @param  propname : str
+            RANGE var name
+
+    @param  secfilter : function(nrn.Section) -> bool
+            filter function applied to each Section
+    """
+    if root_sec is None:
+        return
+
+    # Default arguments
+    if secfilter is None:
+        secfilter = lambda sec: True
+
+    # Set up plotting
+    first_call = fig is None
+    if first_call:
+        fig = plt.figure()
+    if y_range is None:
+        y_range = [float('inf'), float('-inf')]
+
+    # Plot current node
+    if secfilter(root_sec):
+        if not ax:
+            nax = len(fig.axes)
+            for i, ax in enumerate(fig.axes):
+                ax.change_geometry(nax+1, 1, i+1) # change grid and position in grid
+            ax = fig.add_subplot(nax+1, 1, nax+1)
+
+        # get data to plot
+        sec = root_sec
+        xg = [(seg.x, getattr(seg, propname)) for seg in sec]
+        xvals, gvals = zip(*xg)
+        if min(gvals) < y_range[0]:
+            y_range[0] = min(gvals)
+        if max(gvals) > y_range[1]:
+            y_range[1] = max(gvals)
+
+        # plot it
+        ax.plot(xvals, gvals, 'o')
+        ax.plot(xvals, gvals, '-')
+        # ax.set_xlabel('x')
+        ax.set_ylabel(labelfunc(sec))
+
+        if y_range is not None:
+            ax.set_ylim(y_range)
+
+    # plot children
+    for child_sec in sec.children():
+        plot_rangevar_per_section(child_sec, propname, secfilter, labelfunc, y_range, fig)
+
+    if first_call:
+        plt.suptitle(propname)
+        y_span = y_range[1]-y_range[0]
+        for ax in fig.axes:
+            ax.set_ylim((y_range[0]-0.1*y_span, y_range[1]+0.1*y_span))
+        plt.show(block=False)
+    
+    return fig
 
 
 # seg_builtin_attrs = ['area', 'cm', 'diam', 'hh', 'na_ion', 'k_ion', 'ca_ion', 'next', 'node_index', 'point_processes', 'ri', 'sec', 'v', 'x']

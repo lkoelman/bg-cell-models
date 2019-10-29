@@ -14,19 +14,25 @@ Additional libraries for working with NEURON morphologies:
 - Hoc2Swc :         https://github.com/JustasB/hoc2swc/
 - NeuroMorphoVis:   https://github.com/BlueBrain/NeuroMorphoVis
 """
-
-from neuron import h
-from bgcellmodels.common.treeutils import parent, parent_loc
+# Standard library
 import json, io, re, os
+
+# Third party libraries
+from neuron import h
 import numpy as np
 from numpy.lib import recfunctions as rfn
 
+# Custom libraries
+from bgcellmodels.common import nrnutil
+from bgcellmodels.common.treeutils import parent, parent_loc
 from . import morph_3d
 
 
 def morphology_to_dict(sections):
     """
     Extract morphology info from given sections.
+
+    @see        save_json() and load_json()
 
     @return     list(dict()) containing one dict for each section:
                 the dict contains its morphological & topological information
@@ -62,6 +68,148 @@ def morphology_to_dict(sections):
         })
     
     return result
+
+
+def cell_to_dict(section, descr=None, metadata=None, icell=None):
+    """
+    Save data required to reconstruct the cell in NEURON.
+
+    @pre    requires NEURON >= 7.6 for function Hoc.Section.psection()
+    """
+    if icell is None:
+        icell = section.cell() # set by NEURON
+
+    cell_data = {
+        'description'       : descr,
+        'metadata'          : metadata,
+        'section_data'      : [],
+        'cell_sectionlists' : {},
+    }
+
+    sl = h.SectionList()
+    sl.wholetree(sec=section)
+    seclist_bfs = list(sl)
+    section_map = {sec: i for i, sec in enumerate(seclist_bfs)}
+    
+    for sec in seclist_bfs:
+
+        # Connection to parent section
+        parent_sec = parent(sec)
+        parent_x = -1 if parent_sec is None else parent_loc(sec, parent_sec)
+        parent_idx = -1 if parent_sec is None else section_map[parent_sec] # get parent index
+
+        # Data not included in Section.psection() dict
+        sec_data = sec.psection() # requires NEURON >= 7.6
+        sec_data['morphology'].update({
+            'parent_idx'    : parent_idx,
+            'parent_loc'    : parent_x,
+            'section_orientation':  h.section_orientation(sec=sec),
+        })
+        for ion_name, ion_data in sec_data['ions'].items():
+            ion_data['ion_style'] = h.ion_style(ion_name+'_ion', sec=sec)
+
+        cell_data['section_data'].append(sec_data)
+
+    # Default SectionList membership (reconstruct using section names)
+    if icell is not None:
+        named_seclists = cell_data['cell_sectionlists']
+        for seclist_name in 'somatic', 'basal', 'apical', 'axonal':
+            named_seclists[seclist_name] = [
+                sec.name() for sec in getattr(icell, seclist_name)
+            ]
+
+    return cell_data
+
+
+
+def cell_from_dict(
+        cell_data,
+        hoc_sections=False,
+        name_prefix=None,
+        name_substitutions=None):
+    """
+    Recreate cell from saved data
+
+    @see    cell_to_dict
+
+    @param  name_substitutions : list[tuple[str, str/function]]
+            Substitutions to make in original name, as first and second
+            arguments to function re.sub. For example:
+            [
+                ('.', '_'),
+                (r"\\[(\\d+)\\]", lambda m: m.groups()[0])
+            ]
+    """
+    if name_prefix is None:
+        name_prefix = ''
+    if name_substitutions is None:
+        name_substitutions = []
+
+    # Sections by section list
+    seclists = {}
+    seclists['all'] = sections = []
+    for sl_name in cell_data['cell_sectionlists'].keys():
+        seclists[sl_name] = []
+
+    # Create all sections
+    for sec_data in cell_data['section_data']:
+        # make section
+        secname = name_prefix + sec_data['name']
+        for pattern, repl in name_substitutions:
+            secname = re.sub(r"[\[\]\.]", "", secname)
+        if hoc_sections:
+            created = h("create %s" % secname)
+            if created != 1:
+                raise Exception("Could not create section with name '{}'".format(secname))
+            sec = getattr(h, secname)
+        else:
+            sec = h.Section(name=secname)
+        sections.append(sec)
+
+        # Geometry
+        if len(sec_data['morphology']['pts3d']) > 0:
+            for x, y, z, d in sec_data['morphology']['pts3d']:
+                h.pt3dadd(x, y, z, d, sec=sec)
+            sec.nseg    = sec_data['nseg']
+        else:
+            sec.L       = sec_data['morphology']['L']
+            sec.nseg    = sec_data['nseg']
+            for i, seg in enumerate(sec):
+                seg.diam = sec_data['morphology']['diam'][i]
+        
+        # Passive biophysical properties
+        sec.Ra = sec_data['Ra']
+        for i, seg in enumerate(sec):
+            seg.cm = sec_data['cm'][i]
+
+        # RANGE properties
+        for mech_name, mech_params in sec_data['density_mechs'].items():
+            sec.insert(mech_name)
+            for pname, pvals in mech_params.items():
+                for i, seg in enumerate(sec):
+                    setattr(seg, pname+'_'+mech_name, pvals[i])
+
+        # Ions
+        for ion_name, ion_data in sec_data['ions'].items():
+            flags = nrnutil.make_ion_style_flags(ion_data['ion_style'])
+            h.ion_style(ion_name+'_ion', *flags, sec=sec)
+
+        # Section lists
+        for sl_name, sl_members in cell_data['cell_sectionlists'].items():
+            if sec_data['name'] in sl_members:
+                seclists[sl_name].append(sec)
+
+    # Connect sections following topology
+    # NOTE: reversed(...) will make sure that order of children() is same
+    for sec, sec_data in reversed(zip(sections, cell_data['section_data'])):
+        if sec_data['morphology']['parent_loc'] >= 0:
+            parent_sec  = sections[sec_data['morphology']['parent_idx']]
+            parent_loc  = sec_data['morphology']['parent_loc']
+            orient_loc  = sec_data['morphology']['section_orientation']
+            sec.connect(parent_sec(parent_loc), orient_loc)
+
+    return seclists
+
 
 
 def morphology_to_SWC(sections, filename):
@@ -153,25 +301,25 @@ def load_json(morphfile):
     """
 
     with open(morphfile, 'r') as f:
-     secdata = json.load(f)
+        secdata = json.load(f)
 
-     seclist = []
-     for sd in secdata:
+    seclist = []
+    for sd in secdata:
         # make section
         sec = h.Section(name=sd['name'])
         seclist.append(sec)
 
         # make 3d morphology
         for x,y,z,d in zip(sd['x'], sd['y'], sd['z'], sd('diam')):
-           h.pt3dadd(x, y, z, d, sec=sec)
+            h.pt3dadd(x, y, z, d, sec=sec)
 
-           # connect children to parent compartments
-           for sec,sd in zip(seclist,secdata):
-              if sd['parent_loc'] >= 0:
-               parent_sec = seclist[sd['parent']] # not parent_loc, grab from sec_list not sec 
-               sec.connect(parent_sec(sd['parent_loc']), sd['section_orientation'])
+    # connect children to parent compartments
+    for sec,sd in zip(seclist,secdata):
+        if sd['parent_loc'] >= 0:
+            parent_sec = seclist[sd['parent']] # not parent_loc, grab from sec_list not sec 
+            sec.connect(parent_sec(sd['parent_loc']), sd['section_orientation'])
 
-               return seclist
+    return seclist
 
 
 def test_json_export():

@@ -115,6 +115,7 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
             syn_pp_mech=None,
             syn_pp_params=None,
             syn_pp_loc=None,
+            expected_rate=None,
             **kwargs):
         """
         Initialize all protocol variables for given model type
@@ -137,12 +138,12 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
 
 
         # Parameters for PRC
-        cell_T = 1e3 / bias_rate    # (ms)
+        cell_T = 1e3 / expected_rate    # (ms)
         prc_sampling_T = 2.0        # (ms) sampling period within ISI
 
         # Sample each phase X times, and randomize order
-        prc_sampling_repeats = 4
-        prc_delays = np.arange(0, cell_T, prc_sampling_T)
+        prc_sampling_repeats = 10
+        prc_delays = np.arange(0, cell_T*1.2, prc_sampling_T)
         prc_delays = np.tile(prc_delays, prc_sampling_repeats)
         np.random.shuffle(prc_delays) # modifies in-place
         logger.debug('Delays for sampling ISI of {} ms (including repeats): {}'.format(
@@ -267,7 +268,8 @@ class PhaseResponseSynExcDist(PhaseResponseProtocol):
                     syn_pp_mech     = pp_mech,
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
-                    syn_gmax        = 2e-3,
+                    syn_gmax        = 1e-3,
+                    expected_rate   = 20.0,
                     **kwargs)
 
 
@@ -295,6 +297,7 @@ class PhaseResponseSynExcProx(PhaseResponseProtocol):
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
                     syn_gmax        = 1e-3,
+                    expected_rate   = 20.0,
                     **kwargs)
 
 
@@ -323,6 +326,7 @@ class PhaseResponseSynInhProx(PhaseResponseProtocol):
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
                     syn_gmax        = 1e-3,
+                    expected_rate   = 15.0,
                     **kwargs)
 
 

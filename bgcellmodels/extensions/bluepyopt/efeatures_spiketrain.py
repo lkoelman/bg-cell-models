@@ -48,6 +48,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 DEBUG_TESTRUN = True
+debug_data = None
 
 
 def getFeatureNames():
@@ -145,11 +146,11 @@ def calc_data_PRC(self, efel_trace, trace_check):
     stim_times = efel_trace['PRC.stim_times']
 
     # Phase response curve
-    phi, delta_phi = signal.compute_PRC(spike_times, stim_times, sort_by='phi')
+    phi0, delta_phi0 = signal.compute_PRC(spike_times, stim_times, sort_by='phi')
 
     # Bin phi values
     bin_dphi = self.double_settings.get('bin_dphi', 0.025)
-    phi, delta_phi = curvedist.bin_curve_samples(phi, delta_phi, dx=bin_dphi,
+    phi, delta_phi = curvedist.bin_curve_samples(phi0, delta_phi0, dx=bin_dphi,
                                                  bin_y_func='median')
 
 
@@ -162,11 +163,14 @@ def calc_data_PRC(self, efel_trace, trace_check):
         dphi_polyfit = [poly(x) for x in phi]
         dphi_smooth = curvedist.smooth(delta_phi, window_len=11, window='hanning')
 
-        plt.figure()
-        plt.plot(phi, delta_phi, 'o', label='dphi')
-        plt.plot(phi, dphi_smooth, '-', marker='.', label='dphi_smooth')
-        plt.plot(phi, dphi_polyfit, label='dphi_polyfit')
-        plt.legend()
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(phi0, delta_phi0, '.', label='original')
+        ax.plot(phi, dphi_smooth, '-', marker='.', label='smooth')
+        ax.plot(phi, dphi_polyfit, label='polynomial')
+        ax.legend()
+
+        global debug_data
+        debug_data = fig, ax # modifiable
         
 
     # Save feature data
