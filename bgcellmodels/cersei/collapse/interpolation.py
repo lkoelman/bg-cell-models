@@ -11,13 +11,12 @@ import neuron
 h = neuron.h
 
 # Our own modules
+from bgcellmodels.common import logutils
 from bgcellmodels.common.nrnutil import ExtSecRef, get_range_var
 from . import redutils
 
 # Enable logging
-import logging
-logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logger = logging.getLogger('redops') # create logger for this module
+logger = logutils.getLogger('redops') # create logger for this module
 
 
 def find_adj_path_segs(interp_prop, interp_L, path_secs):

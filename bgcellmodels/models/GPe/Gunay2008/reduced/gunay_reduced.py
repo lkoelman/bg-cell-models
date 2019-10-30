@@ -1,22 +1,19 @@
 """
 Morphology reduction of Gunay (2008) GPe cell model
 """
-
-import re
 import logging
 
-# import sys
-# pkg_root = ".." # root dir for our packages
-# sys.path.append(pkg_root)
-
 from bgcellmodels.common import logutils
+logging.basicConfig(level=logging.WARNING, format=logutils.DEFAULT_FORMAT)
+
 from bgcellmodels.cersei.collapse.fold_algorithm import ReductionMethod
 from bgcellmodels.cersei.collapse.fold_reduction import FoldReduction
 from bgcellmodels.models.GPe.Gunay2008 import gunay_model
 from neuron import h
 
-logger = logging.getLogger('gunay')
-logutils.setLogLevel('verbose', ['gunay', 'marasco', 'folding'])
+logger = logutils.getBasicLogger('gunay')
+logutils.setLogLevel('warning', ['gunay', 'bpop_ext', 'matplotlib',
+    'bluepyopt.ephys.parameters', 'bluepyopt.ephys.mechanisms'])
 
 ################################################################################
 # Cell model-specific implementations of reduction functions
@@ -35,14 +32,20 @@ class GpeCellReduction(FoldReduction):
         @param  balbi_motocell_id   (int) morphology file identifier
         """
 
-        ephys_cell, nrnsim = gunay_model.create_cell()
+        ephys_cell, nrnsim = gunay_model.create_cell(
+                                model=gunay_model.MODEL_GUNAY2008_AXONLESS)
         icell = ephys_cell.icell
+        self.ephys_cell = ephys_cell # save ref.
 
+        # Dendrites are connected
 
         # Set reduction parameters
         kwargs['soma_secs'] = list(icell.somatic)
         kwargs['dend_secs'] = list(icell.basal)
-        kwargs['fold_root_secs'] = TODO
+        kwargs['axon_secs'] = list(icell.axonal)
+        kwargs['fold_root_secs'] = [
+            icell.dend[0], icell.dend[11], icell.dend[22]
+        ]
 
         # Set all parameters
         kwargs['gleak_name']            = gunay_model.gleak_name
@@ -55,20 +58,20 @@ class GpeCellReduction(FoldReduction):
     def assign_region_label(reduction, secref):
         """
         Assign region labels to sections.
-        """
-        TODO: see documentation of this function in FoldReduction
-        arrayname = re.sub(r"\[?\d+\]?", "", secref.sec.name())
 
+        @override   FoldReduction.assign_region_label
+        """
         # Original sections
         if secref.is_original:
-            if arrayname.endswith('soma'):
+            if 'soma' in secref.sec.name():
                 secref.region_label = 'somatic'
-            elif arrayname.endswith('dend'):
+            elif 'dend' in secref.sec.name():
                 secref.region_label = 'dendritic'
+            elif 'axon' in secref.sec.name():
+                secref.region_label = 'axonal'
             else:
                 raise Exception("Unrecognized original section {}".format(secref.sec))
-        
-        # Substituted / equivalent sections
+
         elif hasattr(secref, 'merged_region_labels'):
             secref.region_label = '-'.join(sorted(secref.merged_region_labels))
 
@@ -90,15 +93,9 @@ class GpeCellReduction(FoldReduction):
     def init_cell_steadystate():
         """
         Initialize cell for analyzing electrical properties.
-        
-        @note   Ideally, we should restore the following, like SaveState.restore():
-                - all mechanism STATE variables
-                - voltage for all segments (seg.v)
-                - ion concentrations (nao,nai,ko,ki, ...)
-                - reversal potentials (ena,ek, ...)
         """
-        # TODO
-        pass
+        h.v_init = -68.0
+        h.init()
 
 
     @staticmethod
@@ -108,11 +105,12 @@ class GpeCellReduction(FoldReduction):
 
         @note   assigned to key 'set_ion_styles_func'
         """
-        # NOTE: h.ion_style(ion, c_style, e_style, einit, eadvance, cinit)
-        # TODO
-        h.ion_style("na_ion",1,2,1,0,1, sec=secref.sec)
-        h.ion_style("k_ion",1,2,1,0,1, sec=secref.sec)
-        h.ion_style("ca_ion",3,2,1,1,1, sec=secref.sec)
+        # Should be done automatically based on inserted mechanisms. If not:
+        # h.ion_style('na_ion', 0, 1, 0, 0, 0, sec=secref.sec)
+        # h.ion_style('k_ion', 0, 1, 0, 0, 0, sec=secref.sec)
+        # if 'axon' not in secref.sec.name():
+        #     h.ion_style('ca_ion', 3, 2, 1, 1, 1, sec=secref.sec)
+        pass
 
 
 
@@ -130,6 +128,7 @@ def make_reduction(method, reduction_params=None, tweak=False):
     """
     if not isinstance(method, ReductionMethod):
         method = ReductionMethod.from_str(str(method))
+    
     reduction = GpeCellReduction(method=method)
 
     # Common reduction parameters
@@ -148,30 +147,45 @@ def make_reduction(method, reduction_params=None, tweak=False):
             'gbar_init_method':     'area_weighted_average',
             'gbar_scale_method':    'surface_area_ratio',
             'passive_scale_method': 'surface_area_ratio',
-            # 'gbar_scale_method':    'match_input_impedance_subtrees',
-            # 'passive_scale_method': 'match_input_impedance_subtrees',
-            ### Splitting cylinders based on L/lambda ##########################
-            # 'split_criterion':      'eq_electrotonic_distance',
-            # 'split_dX':             3.0,
-            # 'lookahead_units':      'lambda',
-            # 'lookahead_dX':         3.0,
-            ### Splitting cylinders based on dL in micron ######################
             'split_criterion':      'micron_distance',
-            'split_dX':             50.0,
+            'split_dX':             2.0,
         })
     
     elif method == ReductionMethod.Marasco:
         reduction.set_reduction_params({
             'gbar_scaling' :        'area',
             'set_ion_styles_func':  reduction.set_ion_styles,
-            'post_tweak_funcs' :    [adjust_gbar_spontaneous] if tweak else [],
+            'post_tweak_funcs' :    [],
         })
     
     else:
-        raise ValueError("Reduction method {} not supported".format(method))
+        print("WARNING: ensure all parameters for reduction method {} "
+              "are included in dict: {}".format(method, reduction_params))
 
     # Apply addition parameters (override)
     if reduction_params is not None:
         reduction.set_reduction_params(reduction_params)
 
     return reduction
+
+
+if __name__ == '__main__':
+    reduction_method = ReductionMethod.BushSejnowski
+
+    # Reduce cell
+    reduction_params = {'num_collapse_passes': 1}
+    reduction = make_reduction(reduction_method, reduction_params)
+    reduction.reduce_model(num_passes=1, map_synapses=False)
+
+    cell_pkl_file = 'gpe-cell_gunay2008-axstub_reduced-{}.pkl'.format(
+                        str(reduction_method)[16:])
+
+    # Save cell
+    reduction.pickle_reduced_cell(cell_pkl_file)
+
+    # Load cell
+    from bgcellmodels.morphology import morph_io
+    import cPickle as pickle
+    with open(cell_pkl_file, 'rb') as file:
+        cell_data = pickle.load(file)
+    seclists = morph_io.cell_from_dict(cell_data)

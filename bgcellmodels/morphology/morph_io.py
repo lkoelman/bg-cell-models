@@ -98,13 +98,21 @@ def cell_to_dict(section, descr=None, metadata=None, icell=None):
         parent_x = -1 if parent_sec is None else parent_loc(sec, parent_sec)
         parent_idx = -1 if parent_sec is None else section_map[parent_sec] # get parent index
 
-        # Data not included in Section.psection() dict
+        # Get section data
         sec_data = sec.psection() # requires NEURON >= 7.6
+
+        # Delete raw Hoc objects
+        del sec_data['cell']
+        del sec_data['morphology']['parent']
+        del sec_data['morphology']['trueparent']
+
+        # Data not included in Section.psection() dict
         sec_data['morphology'].update({
             'parent_idx'    : parent_idx,
             'parent_loc'    : parent_x,
             'section_orientation':  h.section_orientation(sec=sec),
         })
+
         for ion_name, ion_data in sec_data['ions'].items():
             ion_data['ion_style'] = h.ion_style(ion_name+'_ion', sec=sec)
 

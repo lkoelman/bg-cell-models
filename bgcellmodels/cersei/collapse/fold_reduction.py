@@ -5,9 +5,9 @@ Object-oriented interface for various compartmental cell reduction methods.
 @date   24-08-2017
 """
 
-import logging
 from abc import abstractmethod, ABCMeta
 
+from bgcellmodels.common import logutils
 from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
 from bgcellmodels.common.treeutils import check_tree_constraints
 from neuron import h
@@ -22,11 +22,7 @@ from . import (
 )
 
 # logging of DEBUG/INFO/WARNING messages
-logging.basicConfig(
-    format='%(levelname)s:%(message)s @%(filename)s:%(lineno)s',
-    level=logging.DEBUG)
-logname = 'folding'
-logger = logging.getLogger(logname) # create logger for this module
+logger = logutils.getLogger(__name__) # create logger for this module
 
 
 ################################################################################
@@ -52,6 +48,7 @@ class FoldReduction(object):
             self,
             soma_secs=None,
             dend_secs=None,
+            axon_secs=None,
             fold_root_secs=None,
             method=None,
             mechs_gbars_dict=None,
@@ -83,14 +80,23 @@ class FoldReduction(object):
         self.folder = FolderClass(method)
         self.folder.reduction = self # bidirectional association
 
+        # Check presence of sections by type
+        if axon_secs is None:
+            axon_secs = []
+
         # Check orientation & unbranched cable constraint
-        unbranched, oriented, branched, misoriented = check_tree_constraints(dend_secs)
-        if not (unbranched and oriented):
-            raise ValueError(
-                    "Dendritic tree Sections must be unbranched and oriented from "
-                    "0-end to 1-end. Found {} branched sections:\n{} and "
-                    "{} misoriented sections:\n{}".format(len(branched), 
-                    branched, len(misoriented), misoriented))
+        for sec in fold_root_secs:
+            sl = h.SectionList()
+            sl.subtree(sec=sec)
+            fold_subtree = list(sl)
+            fold_subtree.remove(sec) # don't check connection of root to its parent
+            unbranched, oriented, branched, misoriented = check_tree_constraints(fold_subtree)
+            if not (unbranched and oriented):
+                raise ValueError(
+                        "Dendritic tree Sections must be unbranched and oriented from "
+                        "0-end to 1-end. Found {} branched sections:\n{} and "
+                        "{} misoriented sections:\n{}".format(len(branched), 
+                        branched, len(misoriented), misoriented))
 
         # Model mechanisms
         self.gleak_name = gleak_name
@@ -115,6 +121,7 @@ class FoldReduction(object):
         # Save unique sections
         self._soma_refs = [ExtSecRef(sec=sec) for sec in soma_secs]
         self._dend_refs = [ExtSecRef(sec=sec) for sec in dend_secs]
+        self._axon_refs = [ExtSecRef(sec=sec) for sec in axon_secs]
 
         # Save root sections
         self._root_ref = getsecref(root_sec, self._soma_refs)
@@ -125,13 +132,15 @@ class FoldReduction(object):
         self._syns_tomap = []
         self._map_syn_info = []
 
+        self.original_num_segments = self.count_segments()
+
 
     @property
     def all_sec_refs(self):
         """
         Get list of SectionRef to all sections.
         """
-        return list(self._soma_refs) + list(self._dend_refs)
+        return list(self._soma_refs) + list(self._dend_refs) + list(self._axon_refs)
 
 
     @property
@@ -148,6 +157,41 @@ class FoldReduction(object):
         Get list of SectionRef to dendritic sections.
         """
         return self._dend_refs
+
+
+    def count_segments(self):
+        """
+        Get total number of segments (= compartments) in cell
+        """
+        return sum((ref.sec.nseg for ref in self.all_sec_refs))
+
+
+    def pickle_reduced_cell(self, pkl_path):
+        """
+        Save reduced cell as binary pickle file.
+        """
+        from bgcellmodels.morphology import morph_io
+        import cPickle as pickle
+
+        if not pkl_path.endswith('.pkl'):
+            pkl_path += '.pkl'
+
+        description = ("Cell reduced using algorithm {} implemented in "
+                       "class {}, from {} to {} compartments.".format(
+                            str(self.active_method),
+                            str(self.folder.__class__),
+                            self.original_num_segments,
+                            self.count_segments()))
+
+        cell_data = morph_io.cell_to_dict(
+                        section=self.soma_refs[0].sec,
+                        descr=description)
+
+        with open(pkl_path, 'wb') as file:
+            pickle.dump(cell_data, file)
+
+        print('Reduced cell written to ' + pkl_path)
+
 
     def set_syns_tomap(self, syns):
         """
@@ -186,7 +230,8 @@ class FoldReduction(object):
         self.gbar_names = [gname+'_'+mech for mech,chans in gbar_dict.iteritems()
                                             for gname in chans]
         self.active_gbar_names = list(self.gbar_names)
-        self.active_gbar_names.remove(self.gleak_name)
+        if self.gleak_name in self.active_gbar_names:
+            self.active_gbar_names.remove(self.gleak_name)
 
 
 
@@ -451,6 +496,8 @@ class FoldReduction(object):
     def assign_region_label(self, secref):
         """
         Assigns a region label to the section.
+
+        Used by some reduction algorithms to identify functional regions.
 
         @post   SectionRef.region_label: <str> is set
         """

@@ -9,7 +9,6 @@ diameter.
 # Python modules
 import re
 import math
-import logging
 
 # NEURON modules
 import neuron
@@ -33,9 +32,7 @@ from . import (
 )
 
 PI = math.pi
-logger = logutils.getBasicLogger(
-                    name='marasco', level=logging.DEBUG,
-                    format="%(levelname)s@%(filename)s:%(lineno)s  %(message)s")
+logger = logutils.getLogger(__name__)
 
 
 class TaperedFolder(fold_algorithm.FoldingAlgorithm):

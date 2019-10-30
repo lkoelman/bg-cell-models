@@ -8,15 +8,10 @@ Cell reduction helper functions.
 
 """
 
-
-import logging
-logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = "redops" # __name__
-logger = logging.getLogger(logname) # create logger for this module
-
 import numpy as np
 from neuron import h
 
+from bgcellmodels.common import logutils
 from bgcellmodels.common.nrnutil import (
     getsecref, seg_index, seg_xmin, seg_xmax,
     copy_ion_styles, get_ion_styles, set_ion_styles
@@ -27,6 +22,10 @@ from bgcellmodels.common.electrotonic import seg_lambda
 # Load NEURON function libraries
 h.load_file("stdlib.hoc") # Load the standard library
 h.load_file("stdrun.hoc") # Load the standard run library
+
+# logging of DEBUG/INFO/WARNING messages
+logger = logutils.getLogger('redops')
+
 
 ################################################################################
 # Electrotonic structure
@@ -55,14 +54,10 @@ def sec_path_L_elec(secref, f, gleak_name):
 
     # Get path from soma (not including) up to and including this section
     calc_path = h.RangeVarPlot('v')
-    rootsec.push()
-    calc_path.begin(0.5)
-    secref.sec.push()
-    calc_path.end(0.5)
+    calc_path.begin(0.5, sec=rootsec)
+    calc_path.end(0.5, sec=secref.sec)
     root_path = h.SectionList() # SectionList structure to store path
     calc_path.list(root_path) # copy path sections to SectionList
-    h.pop_section()
-    h.pop_section()
 
     # Compute electrotonic path length
     secref.pathLelec1 = 0.0 # path length from root sec to 1 end of this sec
@@ -113,19 +108,11 @@ def sec_path_props(secref, f, gleak_name, linearize_gating=False, init_cell=None
     # Initialize path length calculation
     ## Get path from root section to end of given section
     calc_path = h.RangeVarPlot('v')
-    
-    rootsec.push()
-    calc_path.begin(0.0) # x doesn't matter since we only use sections
-    
-    secref.sec.push()
-    calc_path.end(1.0) # x doesn't matter (idem)
+    calc_path.begin(0.0, sec=rootsec) # x doesn't matter since we only use sections
+    calc_path.end(1.0, sec=secref.sec) # x doesn't matter (idem)
     
     root_path = h.SectionList() # SectionList structure to store path
     calc_path.list(root_path) # copy path sections to SectionList
-    
-    h.pop_section()
-    h.pop_section()
-
 
     # Initialize variables
     path_L = 0.0
@@ -196,14 +183,10 @@ def seg_path_L_elec(endseg, f, gleak_name, endpoint):
 
     # Get path from soma (not including) up to and including this section
     calc_path = h.RangeVarPlot('v')
-    rootsec.push()
-    calc_path.begin(0.5)
-    secref.sec.push()
-    calc_path.end(0.5)
+    calc_path.begin(0.5, sec=rootsec)
+    calc_path.end(0.5, sec=secref.sec)
     root_path = h.SectionList() # SectionList structure to store path
     calc_path.list(root_path) # copy path sections to SectionList
-    h.pop_section()
-    h.pop_section()
 
     # Initialize path walk
     path_L_elec = 0.0
@@ -263,14 +246,10 @@ def seg_path_L(endseg, endpoint):
     
     # Get path from root section to endseg
     calc_path = h.RangeVarPlot('v')
-    rootsec.push()
-    calc_path.begin(0.0) # x doesn't matter since we only use path sections
-    endseg.sec.push()
-    calc_path.end(endseg.x)
+    calc_path.begin(0.0, sec=rootsec) # x doesn't matter since we only use path sections
+    calc_path.end(endseg.x, sec=endseg.sec)
     root_path = h.SectionList() # SectionList structure to store path
     calc_path.list(root_path) # copy path sections to SectionList
-    h.pop_section()
-    h.pop_section()
 
     # Compute path length
     path_secs = list(root_path)

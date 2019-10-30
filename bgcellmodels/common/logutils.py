@@ -15,7 +15,7 @@ import sys
 import threading
 import traceback
 
-DEFAULT_FORMAT = '%(levelname)s:%(name)s@%(filename)s:%(lineno)s: %(message)s'
+DEFAULT_FORMAT = '[%(levelname)s::%(name)s@%(filename)s:%(lineno)s] %(message)s'
 
 ################################################################################
 # Custom logging functions
@@ -38,6 +38,8 @@ logging.Logger.anal = anal_logfun
 ################################################################################
 # Logging helpers
 ################################################################################
+
+getLogger = logging.getLogger
 
 def configure(logger, level=logging.WARNING, format=DEFAULT_FORMAT,
 			  stream=sys.stderr, propagate=1):
@@ -66,8 +68,15 @@ def setFormat(logger=None, format=DEFAULT_FORMAT):
 			h.setFormatter(fmt)
 
 
+def setConfig(level=logging.WARNING, format=DEFAULT_FORMAT):
+	"""
+	Configure level and format for all loggers.
+	"""
+	logging.basicConfig(level=level, format=format)
+
+
 def getBasicLogger(name=None, level=logging.WARNING, format=DEFAULT_FORMAT,
-				   stream=sys.stderr, propagate=1, propage_config=False):
+				   stream=sys.stderr, propagate=1, propagate_config=False):
 	"""
 	Similar to logging.basicConfig() except this works on a new logger rather
 	than on the root logger (logging.root).
@@ -109,7 +118,7 @@ def getBasicLogger(name=None, level=logging.WARNING, format=DEFAULT_FORMAT,
 		handler.setFormatter(fmt)
 		logger.addHandler(handler)
 
-	if propage_config:
+	if propagate_config:
 		# This configures the root logger
 		logging.basicConfig(level=level, format=format)
 
@@ -147,7 +156,7 @@ def getLogLevel(level):
 		raise ValueError(level)
 
 
-def setLogLevel(level, logger_names):
+def setLogLevel(level, logger_names=None):
 	"""
 	Set log level of all loggers with given names to level.
 
@@ -155,6 +164,9 @@ def setLogLevel(level, logger_names):
 					'verbose', 'quiet', 'silent', 'anal'
 	"""
 	level = getLogLevel(level)
+
+	if logger_names is None:
+		logger_names = logging.Logger.manager.loggerDict.keys()
 
 	for logname in logger_names:
 		if logname in logging.Logger.manager.loggerDict:

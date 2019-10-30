@@ -4,17 +4,15 @@ Functions for editing neuronal trees in NEURON.
 @author		Lucas Koelman
 """
 
-import logging
-logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s @%(filename)s:%(lineno)s', level=logging.DEBUG)
-logname = "redops" # __name__
-logger = logging.getLogger(logname) # create logger for this module
-
 from neuron import h
 
+from bgcellmodels.common import logutils
 from bgcellmodels.common.nrnutil import getsecref, seg_index
 from bgcellmodels.common.treeutils import next_segs
 
 from . import redutils
+
+logger = logutils.getLogger('redops')
 
 
 def find_collapsable(
@@ -191,9 +189,7 @@ def sub_equivalent_Y_sec(
 
         # Delete disconnected subtree if requested
         child_tree = h.SectionList()
-        subbed_sec.push()
-        child_tree.subtree()
-        h.pop_section()
+        child_tree.subtree(sec=subbed_sec)
         for sec in child_tree: # iterates CAS
             subbed_ref = getsecref(sec, allsecrefs)
             subbed_ref.is_substituted = True
@@ -213,9 +209,7 @@ def disconnect_subtree(parent_ref, candidate_refs, should_disconnect, delete=Fal
     
     # Delete disconnected subtree if requested
     subtree_seclist = h.SectionList()
-    parent_ref.sec.push()
-    subtree_seclist.subtree()
-    h.pop_section()
+    subtree_seclist.subtree(sec=parent_ref.sec)
     
     for child_sec in subtree_seclist: # iterates CAS
         

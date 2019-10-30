@@ -3,18 +3,12 @@ Functions for clustering sections in dendritic trees.
 """
 
 import re
-import logging
-logging.basicConfig(format='%(name)s:%(levelname)s:%(message)s', level=logging.DEBUG)
-logname = "reduction" # __name__
-logger = logging.getLogger(logname) # create logger for this module
-# Log to file
-# hdlr = logging.FileHandler('cluster.log')
-# fmtr = logging.Formatter('%(name)s:%(levelname)s:%(message)s')
-# hdlr.setFormatter(fmtr)
-# logger.addHandler(hdlr) 
 
 from . import redutils as redtools
 from .redutils import getsecref
+
+from bgcellmodels.common import logutils
+logger = logutils.getLogger(__name__)
 
 
 class Cluster(object):

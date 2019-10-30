@@ -572,9 +572,12 @@ def subtree_topology(sub_root, max_depth=1e9):
     return buff_string
 
 
-def check_tree_constraints(sections):
+def check_tree_constraints(sections, raise_any=False):
     """
     Check unbranched cable assumption and orientation constrained.
+
+    @param      raise_any : bool
+                Raise exception if any inconsistency is encountered
 
     @return     a tuple (unbranched, oriented, branched, misoriented) of type
                 tuple(bool, bool, list(Section), list(Section))
@@ -617,6 +620,11 @@ def check_tree_constraints(sections):
 
         is_unbranched = is_unbranched and branch_parent_ok and branch_self_ok
         is_oriented = is_oriented and orient_parent_ok and orient_self_ok
+
+        if raise_any and not (orient_parent_ok and orient_self_ok and
+                              branch_parent_ok and branch_self_ok):
+            raise Exception("Branching topology constraints not met at "
+                            "section {}".format(sec.name()))
 
 
         if not orient_parent_ok:

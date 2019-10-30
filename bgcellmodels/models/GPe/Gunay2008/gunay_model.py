@@ -29,6 +29,7 @@ import neuron
 import bluepyopt.ephys as ephys
 
 from bgcellmodels.common import units, fileutils
+
 units.set_units_module('pint')
 h = neuron.h
 
@@ -67,7 +68,7 @@ gbar_dict = {
     # Calcium channels / buffering
     'CaHVA':      ['gmax'],
 }
-gleak_name = 'gmax_leak'
+gleak_name = 'g_pas'
 
 # Mechanism parameters that are changed from default values in original model code
 mechs_params_dict = {
@@ -488,11 +489,11 @@ def define_cell(model, exclude_mechs=None):
     return cell
 
 
-def create_cell():
+def create_cell(model=MODEL_GUNAY2008_AXONLESS):
     """
     Instantiate GPe cell in NEURON simulator.
     """
-    cell = define_cell(MODEL_GUNAY2008_AXONLESS)
+    cell = define_cell(model)
     nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
 
     cell.instantiate(sim=nrnsim)

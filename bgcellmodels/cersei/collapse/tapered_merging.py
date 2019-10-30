@@ -572,19 +572,27 @@ class MergingWalk(object):
                 # TODO: make sure it works with above functions. Specifically:
                 #       - recompute target_dist_X based on actual splitpoints?
                 #       - end of segment?
-                merged_data = merge_until_distance(
+                # TODO: check in lookahead: if the distance walked is really small,
+                #       and we are at the end -> dont walk 
+                eq_cyl, end_splitpoints = merge_until_distance(
                                 split_seg, target_dist_X, 
                                 self.walking_distance_func,
                                 self.allsecrefs,
                                 self.gbar_names)
+
+                if len(end_splitpoints) == 0 and eq_cyl.area < 1e-6 and eq_cyl.L < 1e-3:
+                    # walked to end: assert len(split_seg.sec.children()) == 0
+                    # do not add tiny leaf cylinders
+                    continue
                 
-                branch_eqcyl, branch_stoppoints = merged_data
-                parallel_cyls.append(branch_eqcyl) # always one cylinder
-                parallel_splitpoints.extend(branch_stoppoints) # split points only if end not reached
+                parallel_cyls.append(eq_cyl) # always one cylinder
+                parallel_splitpoints.extend(end_splitpoints) # split points only if end not reached
+
 
             # Merge the equivalent cylinders in parallel
-            seq_cyl = merge_cylinders_parallel(parallel_cyls)
-            sequential_cyls.append(seq_cyl)
+            if len(parallel_cyls) > 0:
+                seq_cyl = merge_cylinders_parallel(parallel_cyls)
+                sequential_cyls.append(seq_cyl)
             
             # Update cable splitting points (new starting points)
             current_splitpoints = parallel_splitpoints
