@@ -183,9 +183,19 @@ class FoldReduction(object):
                             self.original_num_segments,
                             self.count_segments()))
 
+        # Make cell template
+        class ICell(object):
+            pass
+        icell = ICell()
+        icell.somatic   = [ref.sec for ref in self._soma_refs]
+        icell.basal     = [ref.sec for ref in self._dend_refs]
+        icell.axonal    = [ref.sec for ref in self._axon_refs]
+        # TODO: make this generic for 3D imported cells (separate dend in apical/basal)
+
         cell_data = morph_io.cell_to_dict(
                         section=self.soma_refs[0].sec,
-                        descr=description)
+                        descr=description,
+                        icell=icell)
 
         with open(pkl_path, 'wb') as file:
             pickle.dump(cell_data, file)

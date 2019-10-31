@@ -157,10 +157,10 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
         # self._init_gbar()
 
         # Init extracellular stimulation & recording
-        self._init_emfield()
+        self._init_emfield() # BEFORE adjusting comp. dimensions.
 
         # Adjust compartment dimensions like in GENESIS code
-        # self._fix_compartment_dimensions()
+        self._fix_compartment_dimensions()
 
 
     def _init_axon(self, axon_class):

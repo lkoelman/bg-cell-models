@@ -266,4 +266,21 @@ def fold_marasco(export_locals=False):
 
 
 if __name__ == '__main__':
-    fold_bush(export_locals=True)
+
+    # Reduce cell
+    reduction_method = ReductionMethod.BushSejnowski
+    # reduction = make_reduction(reduction_method, reduction_params=None)
+    # reduction.reduce_model(num_passes=1, map_synapses=False)
+
+    cell_pkl_file = 'stn-cell_Gillies2005_reduced-{}.pkl'.format(
+                        str(reduction_method)[16:])
+
+    # Save cell
+    # reduction.pickle_reduced_cell(cell_pkl_file)
+
+    # Load cell
+    # from bgcellmodels.morphology import morph_io
+    # import cPickle as pickle
+    # with open(cell_pkl_file, 'rb') as file:
+    #     cell_data = pickle.load(file)
+    # seclists = morph_io.cell_from_dict(cell_data)

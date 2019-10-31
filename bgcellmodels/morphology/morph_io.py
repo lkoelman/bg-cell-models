@@ -105,6 +105,10 @@ def cell_to_dict(section, descr=None, metadata=None, icell=None):
         del sec_data['cell']
         del sec_data['morphology']['parent']
         del sec_data['morphology']['trueparent']
+        for k in sec_data['point_processes'].keys():
+            sec_data['point_processes'][k] = [
+                str(pp) for pp in sec_data['point_processes'][k]
+            ]
 
         # Data not included in Section.psection() dict
         sec_data['morphology'].update({
@@ -122,9 +126,10 @@ def cell_to_dict(section, descr=None, metadata=None, icell=None):
     if icell is not None:
         named_seclists = cell_data['cell_sectionlists']
         for seclist_name in 'somatic', 'basal', 'apical', 'axonal':
-            named_seclists[seclist_name] = [
-                sec.name() for sec in getattr(icell, seclist_name)
-            ]
+            if hasattr(icell, seclist_name):
+                named_seclists[seclist_name] = [
+                    sec.name() for sec in getattr(icell, seclist_name)
+                ]
 
     return cell_data
 
@@ -147,6 +152,9 @@ def cell_from_dict(
                 ('.', '_'),
                 (r"\\[(\\d+)\\]", lambda m: m.groups()[0])
             ]
+
+    @return cell_seclists : dict[str, list[h.Section]]
+            Section lists containing instantiated sections
     """
     if name_prefix is None:
         name_prefix = ''
@@ -201,6 +209,10 @@ def cell_from_dict(
         for ion_name, ion_data in sec_data['ions'].items():
             flags = nrnutil.make_ion_style_flags(ion_data['ion_style'])
             h.ion_style(ion_name+'_ion', *flags, sec=sec)
+            ion_erev = 'e' + ion_name
+            # if flags[1] == 1 or flags[1] == 2:
+            for i, seg in enumerate(sec):
+                setattr(seg, ion_erev, ion_data[ion_erev][i])
 
         # Section lists
         for sl_name, sl_members in cell_data['cell_sectionlists'].items():

@@ -11,6 +11,17 @@ h = neuron.h
 
 from .nrnmodutil import get_mod_name # for backwards compatibility
 
+# default NEURON section arrays and SectionList names for cell prototypes
+# created by Hoc Import3d tool (for loading 3D morphologies)
+nrn_proto_seclists_arrays = {
+    'all'       : None,
+    'somatic'   : 'soma',
+    'basal'     : 'dend',
+    'apical'    : 'apic',
+    'axonal'    : 'axon',
+    'myelinated': 'myelin',
+}
+
 
 class ExtSection(neuron.hclass(h.Section)):
     """ Extension of Section to allow modifying attributes """

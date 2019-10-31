@@ -7,11 +7,13 @@ PyNN compatible cell models for Gillies STN cell model.
 
 """
 
+import os, os.path
+import cPickle as pickle
+
 import neuron
 import numpy as np
 
 # Load NEURON libraries, mechanisms
-import os, os.path
 script_dir = os.path.dirname(__file__)
 neuron.load_mechanisms(os.path.join(script_dir, 'mechanisms'))
 
@@ -22,9 +24,10 @@ os.chdir(script_dir)
 h.load_file("gillies_create_factory.hoc") 
 os.chdir(prev_cwd)
 
+from bgcellmodels.common import nrnutil
 from bgcellmodels.extensions.pynn import cell_base, ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
-import lfpsim # loads Hoc functions
+# import lfpsim # loads Hoc functions
 
 # Debug messages
 # logutils.setLogLevel('quiet', [
@@ -218,6 +221,82 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
                                 self.icell.soma[0], True, "PSA", sigma, 
                                 coords, self.icell.somatic, self.icell.basal)
 
+class StnCellReduced(StnCellModel):
+    """
+    Model class for Gillies STN cell.
+
+    DEVNOTES
+    --------
+
+    - instantiated using following call stack:
+        - ID._cell = Population.cell_type.model(**parameters)
+            - StnCellReduced.__init__()
+                - EphysModelWrapper.__init__()
+                    - MorphModelBase.__init__()
+                        - StnCellReduced.instantiate()
+
+        - parameters are those passed to the CellType on creation
+    
+    """
+
+    def __init__(self, *args, **kwargs):
+        # Define parameter names before calling superclass constructor
+        self.parameter_names = StnCellType.default_parameters.keys()
+        for rangevar in self.rangevar_names:
+            self.parameter_names.append(rangevar + '_scale')
+
+        self._pickle_file = kwargs.pop('cell_pickle_file')
+        
+        super(StnCellModel, self).__init__(*args, **kwargs)
+
+
+    class NrnStnProto(object):
+        """ Container for STN cell, like NEURON template/prototype """
+        pass
+
+
+    def instantiate(self, sim=None):
+        """
+        Instantiate cell in simulator
+
+        The default behaviour implemented here works for cells that have ephys
+        morphology, mechanism, and parameter definitions. If you want to use
+        a Hoc cell without these definitions, you should subclass to override
+        this behaviour.
+
+        @override       ephys.models.CellModel.instantiate()
+        """
+
+        # Load cell from file
+        from bgcellmodels.morphology import morph_io
+        with open(self._pickle_file, 'rb') as file:
+            cell_data = pickle.load(file)
+
+        name_subs_regex = [(r"[\[\]]", ""), [r"\.", "_"]]
+
+        saved_seclists = morph_io.cell_from_dict(
+                            cell_data,
+                            name_substitutions=name_subs_regex)
+
+        # default NEURON secarrays and seclists for 3D morphology
+        seclists_arrays = nrnutil.nrn_proto_seclists_arrays
+
+        # Instantiate empty NEURON template
+        icell = self.NrnStnProto() # stdutil.Bunch()
+
+        # Copy to template
+        # NOTE: SecList does not keep refs alive -> need to store lists
+        for sl_name, array_name in seclists_arrays.items():
+            if array_name is not None:
+                setattr(icell, array_name, list(saved_seclists.get(sl_name, [])))
+            seclist = h.SectionList()
+            setattr(icell, sl_name, seclist)
+            for sec in saved_seclists.get(sl_name, []):
+                seclist.append(sec=sec)
+
+        self.icell = icell
+        return icell
+
 
 class StnCellType(cell_base.MorphCellType):
     """
@@ -269,6 +348,14 @@ class StnCellType(cell_base.MorphCellType):
         Override or it uses pynn.neuron.record.recordable_pattern.match(variable)
         """
         return super(StnCellType, self).can_record(variable)
+
+
+class StnReduxType(StnCellType):
+    """
+    PyNN cell type for reduced STN model.
+    """
+    # All parameters the same as superclass
+    model = StnCellReduced
 
 
 def test_stn_cells_multiple(export_locals=True):
@@ -329,6 +416,11 @@ if __name__ == '__main__':
 
     # Make single cell
     import bluepyopt.ephys as ephys
-    cell = StnCellModel()
+
+    # cell = StnCellModel()
+    cell = StnCellReduced(
+        cell_pickle_file='/home/luye/cloudstore_m/simdata/Gillies2005_reduced/bush_sejnowski_tapered/stn-cell_Gillies2005_reduced-BushSejnowski.pkl',
+        owning_gid=1)
+
     sim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
     icell = cell.instantiate(sim=sim)
