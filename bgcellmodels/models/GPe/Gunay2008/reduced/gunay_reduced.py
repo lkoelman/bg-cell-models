@@ -32,8 +32,10 @@ class GpeCellReduction(FoldReduction):
         @param  balbi_motocell_id   (int) morphology file identifier
         """
 
-        ephys_cell, nrnsim = gunay_model.create_cell(
-                                model=gunay_model.MODEL_GUNAY2008_AXONLESS)
+        ephys_cell = kwargs.pop('ephys_model', None)
+        if ephys_cell is None:
+            ephys_cell, nrnsim = gunay_model.create_cell(
+                                    model=gunay_model.MODEL_GUNAY2008_AXONLESS)
         icell = ephys_cell.icell
         self.ephys_cell = ephys_cell # save ref.
 
@@ -44,6 +46,7 @@ class GpeCellReduction(FoldReduction):
         kwargs['dend_secs'] = list(icell.basal)
         kwargs['axon_secs'] = list(icell.axonal)
         kwargs['fold_root_secs'] = [
+            # sec for sec in soma.children() if sec not in icell.axonal
             icell.dend[0], icell.dend[11], icell.dend[22]
         ]
 
@@ -87,6 +90,8 @@ class GpeCellReduction(FoldReduction):
         """
         for ref in new_sec_refs:
             GpeCellReduction.set_ion_styles(ref)
+            ref.sec.ena = 50.0
+            ref.sec.ek = -90.0
 
 
     @staticmethod
@@ -114,7 +119,7 @@ class GpeCellReduction(FoldReduction):
 
 
 
-def make_reduction(method, reduction_params=None, tweak=False):
+def make_reduction(method, reduction_params=None, ephys_model=None, tweak=False):
     """
     Make FoldReduction object using given collasping method
 
@@ -129,7 +134,7 @@ def make_reduction(method, reduction_params=None, tweak=False):
     if not isinstance(method, ReductionMethod):
         method = ReductionMethod.from_str(str(method))
     
-    reduction = GpeCellReduction(method=method)
+    reduction = GpeCellReduction(method=method, ephys_model=ephys_model)
 
     # Common reduction parameters
     reduction.set_reduction_params({
@@ -170,22 +175,21 @@ def make_reduction(method, reduction_params=None, tweak=False):
 
 
 if __name__ == '__main__':
-    reduction_method = ReductionMethod.BushSejnowski
-
     # Reduce cell
-    reduction_params = {'num_collapse_passes': 1}
+    reduction_method = ReductionMethod.BushSejnowski
+    reduction_params = {'split_dX': 2.0}
     reduction = make_reduction(reduction_method, reduction_params)
     reduction.reduce_model(num_passes=1, map_synapses=False)
 
-    cell_pkl_file = 'gpe-cell_gunay2008-axstub_reduced-{}.pkl'.format(
-                        str(reduction_method)[16:])
+    # cell_pkl_file = 'gpe-cell_gunay2008-axstub_reduced-{}.pkl'.format(
+    #                     str(reduction_method)[16:])
 
-    # Save cell
-    reduction.pickle_reduced_cell(cell_pkl_file)
+    # # Save cell
+    # reduction.pickle_reduced_cell(cell_pkl_file)
 
-    # Load cell
-    from bgcellmodels.morphology import morph_io
-    import cPickle as pickle
-    with open(cell_pkl_file, 'rb') as file:
-        cell_data = pickle.load(file)
-    seclists = morph_io.cell_from_dict(cell_data)
+    # # Load cell
+    # from bgcellmodels.morphology import morph_io
+    # import cPickle as pickle
+    # with open(cell_pkl_file, 'rb') as file:
+    #     cell_data = pickle.load(file)
+    # seclists = morph_io.cell_from_dict(cell_data)

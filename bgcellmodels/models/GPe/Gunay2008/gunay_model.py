@@ -89,7 +89,8 @@ mechs_params_dict = {
     # Calcium channels / buffering
     'Calcium':  [''],
     'CaHVA':    ['gmax', 'e'], # high-voltage-activated calcium channel
-
+    # Built-in RANGE params
+    '':         ['ena', 'ek'],
 }
 
 # All mechanism parameters that are not conductances
@@ -101,13 +102,9 @@ for mech, params in mechs_params_nogbar.iteritems():
         except ValueError:
             pass
 
-# GLOBAL mechanism parameters (assigned using h.param = val)
-global_params_list = [
-    'ena', 'ek'
-]
 
 # List of mechanisms, max conductance params, active conductances
-mechs_list = list(mechs_params_dict.keys()) # all mechanisms
+mechs_list = [k for k in mechs_params_dict.keys() if k!=''] # all mechanisms
 gbar_list = [gname+'_'+mech for mech,chans in gbar_dict.iteritems() for gname in chans]
 active_gbar_names = [gname for gname in gbar_list if gname != gleak_name]
 
@@ -235,7 +232,7 @@ def define_parameters(
     # Create dummy section so we can query all units
     h('create dummy')
     dummysec = h.dummy
-    for mech_name in mechs_params_dict.keys():
+    for mech_name in mechs_list:
         dummysec.insert(mech_name)
 
     for param_spec in param_specs:
@@ -431,6 +428,10 @@ def fix_comp_dimensions(cell):
     Fix dimensions for each compartment after instantiating cell
     with specific quantities so that cable equation corresponds to
     the one solved by GENESIS.
+
+    @see    Use of variable 'dia' in files names 'GPcomps.g'
+            - Gunay (2008) code : https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=114639&file=/GunayEdgertonJaeger2008/common/GPcomps.g#tabs-2
+            - Hendrickson (2010) code : https://senselab.med.yale.edu/modeldb/ShowModel.cshtml?model=127728&file=%2farticleCode%2fcommonGPFull%2fGPcomps.g#tabs-2
     """
     # Everywhere L=1 and diam=1.
     # In soma they use sphere with diam=1, so we get L from following equality:
@@ -438,6 +439,7 @@ def fix_comp_dimensions(cell):
     for sec in cell.icell.all:
         sec.diam = 1.0
         sec.L = 1.0
+        # h.define_shape() # not necessary
 
 
 def define_cell(model, exclude_mechs=None):

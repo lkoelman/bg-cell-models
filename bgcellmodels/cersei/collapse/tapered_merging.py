@@ -550,6 +550,7 @@ class MergingWalk(object):
 
         # Initial cable splitting points
         current_splitpoints = [sec(0.0) for sec in self.start_node.sec.children()]
+        # Distance (from subtree root) of starting point
         target_dist_X = self.walking_distance_func(self.start_node.sec(1.0))
         sequential_cyls = []
 
@@ -572,8 +573,6 @@ class MergingWalk(object):
                 # TODO: make sure it works with above functions. Specifically:
                 #       - recompute target_dist_X based on actual splitpoints?
                 #       - end of segment?
-                # TODO: check in lookahead: if the distance walked is really small,
-                #       and we are at the end -> dont walk 
                 eq_cyl, end_splitpoints = merge_until_distance(
                                 split_seg, target_dist_X, 
                                 self.walking_distance_func,

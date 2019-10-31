@@ -318,14 +318,10 @@ def get_sec_range_props(src_sec, mechs_pars):
     @return     list(dict()) of length nseg containing property names and 
                 values for each segment in Section
     """
-
-    pnames = []
-    for mech, pars in mechs_pars.iteritems():
-        for par in pars:
-            if mech == '':
-                pnames.append(par)
-            else:
-                pnames.append(par+'_'+mech)
+    pnames = [
+        par+'_'+mech if mech != '' else par
+            for mech, pars in mechs_pars.iteritems() for par in pars
+    ]
 
     seg_props = [{} for i in xrange(src_sec.nseg)]
     
@@ -391,13 +387,10 @@ def get_sec_props_ref(
 
     # Initialize segment RANGE properties
     sec_props.seg = [{} for i in xrange(secref.sec.nseg)]
-    bprops = []
-    for mech, pars in mechs_pars.iteritems():
-        for par in pars:
-            if mech == '':
-                bprops.append(par)
-            else:
-                bprops.append(par+'_'+mech)
+    bprops = [
+        par+'_'+mech if mech != '' else par
+            for mech, pars in mechs_pars.iteritems() for par in pars
+    ]
     
     # Store segment RANGE properties
     for j_seg, seg in enumerate(secref.sec):
@@ -437,7 +430,10 @@ def get_sec_props(sec, mechs_pars):
 
     # Initialize dicts with RANGE properties
     sec_props.seg = [dict() for i in xrange(sec.nseg)]
-    parnames = [par+'_'+mech for mech, pars in mechs_pars.iteritems() for par in pars]
+    parnames = [
+        par+'_'+mech if mech != '' else par
+            for mech, pars in mechs_pars.iteritems() for par in pars
+    ]
     
     # Store segment RANGE properties
     for j_seg, seg in enumerate(sec):
@@ -466,11 +462,13 @@ def merge_sec_properties(
     @param  mechs_pars  dict mechanism_name -> [parameter_names] with segment 
                         properties (RANGE properties) to copy
     """
-    
 
     # keep track of assigned parameters
-    assigned_params = {par+'_'+mech: None for mech,pars in mechs_pars.iteritems() 
-                                            for par in pars}
+    assigned_params = {
+        par+'_'+mech if mech != '' else par: None
+            for mech,pars in mechs_pars.iteritems() for par in pars
+    }
+
     # merge all mechanism RANGE properties
     for src_sec in src_props:
         nseg = src_sec.nseg
@@ -486,7 +484,7 @@ def merge_sec_properties(
             
             # Copy parameter values
             for pname in parnames:
-                fullpname = pname+'_'+mechname
+                fullpname = pname+'_'+mechname if mechname != '' else pname
 
                 # Check that parameter values are uniform in section
                 mid_val = segs[int(nseg)/2].get(fullpname, None)

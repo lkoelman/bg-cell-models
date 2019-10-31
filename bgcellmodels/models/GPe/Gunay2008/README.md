@@ -19,18 +19,18 @@ wine NLMorphologyConverter.exe /home/me/mymorph.p /home/me/mymorph.swc SWC
 ## Units
 
 - GENESIS uses SI units
-  - Cm : F/m^2
-  - Rm : Ohm*m^2
-  - Ra : Ohm*m
-  - gbar : S/m^2
-  - E : V
+  - Cm  : `F/m^2`
+  - Rm  : `Ohm*m^2`
+  - Ra  : `Ohm*m`
+  - gbar: `S/m^2`
+  - E   : `V`
 
 - NEURON uses following units:
-  - Cm : uF/cm^2  == 1e-6/1e-4 * F/m^2 == 1e-2 * F/m^2    => x 1e2
-  - Rm : 1/gbar                                           => x 1e4
-  - Ra : Ohm*cm   == 1e-2 * Ohm*m                         => x 1e2
-  - gbar : S/cm^2 == 1/1e-4 * S/m^2 == 1e4 * S/m^2        => x 1e-4
-  - E : mV == V*1e-3                                      => x 1e3
+  - Cm : `uF/cm^2  == 1e-6/1e-4 * F/m^2 == 1e-2 * F/m^2`    => x 1e2
+  - Rm : `1/gbar `                                          => x 1e4
+  - Ra : `Ohm*cm   == 1e-2 * Ohm*m`                         => x 1e2
+  - gbar : `S/cm^2 == 1/1e-4 * S/m^2 == 1e4 * S/m^2`        => x 1e-4
+  - E : `mV == V*1e-3`                                      => x 1e3
 
 ## TODO porting
 
@@ -57,8 +57,8 @@ Gunay, Edgerton, and Jaeger (2008). _Channel Density Distributions Explain Spiki
       + `/common/actpars.g`             -> sets param variables
   
   + `/common/make_GP_libary.g`          -> uses param variables
-      + `/common.GPchans.g`             -> defines mechanisms using parameters
-      + `/common.GPcomps.g`             -> defines compartments using parameters
+      + `/common/GPchans.g`             -> defines mechanisms using parameters (similiar to .mod file in NEURON)
+      + `/common/GPcomps.g`             -> assign biophysical properties and insert channels in compartments defined in .p file
 
 
 - [X] TODO: look in online [supplemental materials](http://www.jneurosci.org/highwire/filestream/599434/field_highwire_adjunct_files/0/cengiz_p1_manuscript_R2_supptext_djv3_cg2.pdf) to see which exact parameter combinations within ranges in paper Table 1 were used.

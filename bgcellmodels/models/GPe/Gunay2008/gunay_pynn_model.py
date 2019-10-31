@@ -174,7 +174,8 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     def _fix_compartment_dimensions(self):
         """
         Normalizes all compartment dimensions to 1 um as in original
-        Gunay (2008) model code.
+        Gunay (2008) and Hendrickson (2010) model code (see files
+        names 'GPcomps.g'.
 
         Note that this is a huge headache since dimensions are not
         biphysically realistic anymore.
