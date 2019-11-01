@@ -7,12 +7,15 @@ PyNN compatible cell models for GPe cell model.
 
 """
 
+import cPickle as pickle
+
 from neuron import h
 import numpy as np
 
 # PyNN imports
 from pyNN.parameters import ArrayParameter
 
+from bgcellmodels.common import nrnutil
 from bgcellmodels.extensions.pynn import cell_base, ephys_models as ephys_pynn
 from bgcellmodels.extensions.pynn.ephys_locations import SomaDistanceRangeLocation
 from bgcellmodels.morphology import morph_3d
@@ -215,6 +218,87 @@ class GPeCellModel(ephys_pynn.EphysModelWrapper):
     def _update_position(self, xyz):
         pass
 
+    
+class GpeCellReduced(GPeCellModel):
+    """
+    Morphology reduction of Gunay (2008) GPe cell model, for use with PyNN.
+    """
+
+    # NOTE: we only subclass to inherit data members, but we override
+    #       al methods. Could also subclass EphysModelWrapper and
+    #       copy relevant data members.
+    
+    # Override/hide ephys parameters
+    _ephys_morphology   = None
+    _ephys_mechanisms   = []
+    _param_locations    = []
+    _ephys_parameters   = []
+        
+    def __init__(self, *args, **kwargs):
+        # Define parameter names before calling superclass constructor
+        self.parameter_names = GpeReducedType.default_parameters.keys() + \
+                               GpeReducedType.extra_parameters.keys()
+        for rangevar in self.rangevar_names:
+            self.parameter_names.append(rangevar + '_scale')
+            
+        self._pickle_file = kwargs.pop('cell_pickle_file')
+        
+        # skip superclass __init__
+        super(GPeCellModel, self).__init__(*args, **kwargs)
+
+
+    class NrnGpeProto(object):
+        """ Container for GPe cell, like NEURON template/prototype """
+        pass
+
+
+    def instantiate(self, sim=None):
+        """
+        Instantiate cell in simulator
+
+        @override       ephys.models.CellModel.instantiate()
+        """
+
+        # Load cell from file
+        from bgcellmodels.morphology import morph_io
+        with open(self._pickle_file, 'rb') as file:
+            cell_data = pickle.load(file)
+
+        name_subs_regex = [(r"[\[\]]", ""), [r"\.", "_"]]
+
+        saved_seclists = morph_io.cell_from_dict(
+                            cell_data,
+                            name_substitutions=name_subs_regex)
+
+        # default NEURON secarrays and seclists for 3D morphology
+        seclists_arrays = nrnutil.nrn_proto_seclists_arrays
+
+        # Instantiate empty NEURON template
+        self.icell = icell = self.NrnGpeProto() # stdutil.Bunch()
+
+        # Copy to template
+        # NOTE: SecList does not keep refs alive -> need to store lists
+        for sl_name, array_name in seclists_arrays.items():
+            if array_name is not None:
+                setattr(icell, array_name, list(saved_seclists.get(sl_name, [])))
+            seclist = h.SectionList()
+            setattr(icell, sl_name, seclist)
+            for sec in saved_seclists.get(sl_name, []):
+                seclist.append(sec=sec)
+
+        # Transform morphology
+        if len(self.transform) > 0 and not np.allclose(self.transform, np.eye(4)):
+            morph_3d.transform_sections(self.icell.all, self.transform)
+
+        # Create and append axon
+        self.with_axon = (len(self.streamline_coordinates_mm) > 0)
+        if self.with_axon:
+            self._init_axon(self.axon_class)
+
+        # Init extracellular stimulation & recording
+        self._init_emfield() # BEFORE adjusting comp. dimensions.
+
+        return icell
 
 
 class GPeCellType(cell_base.MorphCellType):
@@ -285,7 +369,35 @@ class GPeCellType(cell_base.MorphCellType):
         """
         return super(GPeCellType, self).can_record(variable)
 
+
 GpeProtoCellType = GPeCellType
+
+
+class GpeReducedType(GPeCellType):
+    """
+    PyNN cell type for reduced GPe model.
+    """
+    # All parameters the same as superclass
+    model = GpeCellReduced
+
+    # Defaults for our custom PyNN parameters
+    # NOTE: same as GpeCellType but leave out ephys parameter values
+    default_parameters = {
+        # Morphology & 3D specification
+        'transform': ArrayParameter([]),
+        # Inputs
+        'default_GABA_mechanism': np.array('GABAsyn'),
+        'default_GLU_mechanism': np.array('GLUsyn'),
+        'membrane_noise_std': 0.0,
+        # Biophysical properties
+        'tau_m_scale': 1.0,
+    }
+    default_parameters.update(cell_base.MorphCellType._axon_parameters)
+    default_parameters.update(cell_base.MorphCellType._emf_parameters)
+    
+    default_parameters['cell_pickle_file'] = np.array(
+        '/home/luye/cloudstore_m/simdata/GunayEdgerton2008_reduced'
+        '/gpe-cell_gunay2008_reduce-BushSejnowski_dL-1.pkl')
 
 
 class GpeArkyCellType(GPeCellType):

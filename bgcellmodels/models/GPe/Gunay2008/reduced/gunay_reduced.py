@@ -177,15 +177,16 @@ def make_reduction(method, reduction_params=None, ephys_model=None, tweak=False)
 if __name__ == '__main__':
     # Reduce cell
     reduction_method = ReductionMethod.BushSejnowski
-    reduction_params = {'split_dX': 2.0}
+    reduction_params = {'split_dX': 1.0}
     reduction = make_reduction(reduction_method, reduction_params)
     reduction.reduce_model(num_passes=1, map_synapses=False)
 
-    # cell_pkl_file = 'gpe-cell_gunay2008-axstub_reduced-{}.pkl'.format(
-    #                     str(reduction_method)[16:])
+    cell_pkl_file = 'gpe-cell_gunay2008_reduce-{}_dL-{:.0f}.pkl'.format(
+                        str(reduction_method)[16:],
+                        reduction_params['split_dX'])
 
     # # Save cell
-    # reduction.pickle_reduced_cell(cell_pkl_file)
+    reduction.pickle_reduced_cell(cell_pkl_file)
 
     # # Load cell
     # from bgcellmodels.morphology import morph_io

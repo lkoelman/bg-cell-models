@@ -221,6 +221,7 @@ class StnCellModel(ephys_pynn.EphysModelWrapper):
                                 self.icell.soma[0], True, "PSA", sigma, 
                                 coords, self.icell.somatic, self.icell.basal)
 
+
 class StnCellReduced(StnCellModel):
     """
     Model class for Gillies STN cell.
@@ -241,13 +242,13 @@ class StnCellReduced(StnCellModel):
 
     def __init__(self, *args, **kwargs):
         # Define parameter names before calling superclass constructor
-        self.parameter_names = StnCellType.default_parameters.keys()
+        self.parameter_names = StnReducedType.default_parameters.keys()
         for rangevar in self.rangevar_names:
             self.parameter_names.append(rangevar + '_scale')
 
         self._pickle_file = kwargs.pop('cell_pickle_file')
         
-        super(StnCellModel, self).__init__(*args, **kwargs)
+        super(StnCellModel, self).__init__(*args, **kwargs) # skip superclass
 
 
     class NrnStnProto(object):
@@ -259,14 +260,11 @@ class StnCellReduced(StnCellModel):
         """
         Instantiate cell in simulator
 
-        The default behaviour implemented here works for cells that have ephys
-        morphology, mechanism, and parameter definitions. If you want to use
-        a Hoc cell without these definitions, you should subclass to override
-        this behaviour.
+        NOTE: called automatically by base class __init__
 
         @override       ephys.models.CellModel.instantiate()
         """
-
+        
         # Load cell from file
         from bgcellmodels.morphology import morph_io
         with open(self._pickle_file, 'rb') as file:
@@ -350,12 +348,17 @@ class StnCellType(cell_base.MorphCellType):
         return super(StnCellType, self).can_record(variable)
 
 
-class StnReduxType(StnCellType):
+class StnReducedType(StnCellType):
     """
     PyNN cell type for reduced STN model.
     """
     # All parameters the same as superclass
     model = StnCellReduced
+    
+    default_parameters = dict(StnCellType.default_parameters)
+    default_parameters['cell_pickle_file'] = np.array(
+        '/home/luye/cloudstore_m/simdata/Gillies2005_reduced/bush_sejnowski_tapered'
+        '/stn-cell_Gillies2005_reduced-BushSejnowski.pkl')
 
 
 def test_stn_cells_multiple(export_locals=True):
@@ -422,5 +425,4 @@ if __name__ == '__main__':
         cell_pickle_file='/home/luye/cloudstore_m/simdata/Gillies2005_reduced/bush_sejnowski_tapered/stn-cell_Gillies2005_reduced-BushSejnowski.pkl',
         owning_gid=1)
 
-    sim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
-    icell = cell.instantiate(sim=sim)
+    icell = cell.icell
