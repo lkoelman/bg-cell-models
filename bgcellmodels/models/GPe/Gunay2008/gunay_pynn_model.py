@@ -397,7 +397,7 @@ class GpeReducedType(GPeCellType):
     default_parameters.update(cell_base.MorphCellType._emf_parameters)
     
     default_parameters['cell_pickle_file'] = np.array(
-        '/home/luye/workspace/bgcellmodels/bgcellmodels/models/GPe/Gunay2008/reduced/gpe-cell_gunay2008_reduce-BushSejnowski_dL-1.pkl')
+        '~/workspace/bgcellmodels/bgcellmodels/models/GPe/Gunay2008/reduced/gpe-cell_gunay2008_reduce-BushSejnowski_dL-1.pkl')
 
 
 class GpeArkyCellType(GPeCellType):
