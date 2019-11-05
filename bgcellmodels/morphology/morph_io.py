@@ -125,7 +125,9 @@ def cell_to_dict(section, descr=None, metadata=None, icell=None):
     # Default SectionList membership (reconstruct using section names)
     if icell is not None:
         named_seclists = cell_data['cell_sectionlists']
-        for seclist_name in 'somatic', 'basal', 'apical', 'axonal':
+        proto_seclist_names = list(nrnutil.nrn_proto_seclists_arrays.keys())
+        proto_seclist_names.remove('all')
+        for seclist_name in proto_seclist_names:
             if hasattr(icell, seclist_name):
                 named_seclists[seclist_name] = [
                     sec.name() for sec in getattr(icell, seclist_name)

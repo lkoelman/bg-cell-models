@@ -267,7 +267,7 @@ class StnCellReduced(StnCellModel):
         
         # Load cell from file
         from bgcellmodels.morphology import morph_io
-        with open(self._pickle_file, 'rb') as file:
+        with open(os.path.expanduser(self._pickle_file), 'rb') as file:
             cell_data = pickle.load(file)
 
         name_subs_regex = [(r"[\[\]]", ""), [r"\.", "_"]]
@@ -357,8 +357,7 @@ class StnReducedType(StnCellType):
     
     default_parameters = dict(StnCellType.default_parameters)
     default_parameters['cell_pickle_file'] = np.array(
-        '/home/luye/cloudstore_m/simdata/Gillies2005_reduced/bush_sejnowski_tapered'
-        '/stn-cell_Gillies2005_reduced-BushSejnowski.pkl')
+        '~/workspace/bgcellmodels/bgcellmodels/models/STN/GilliesWillshaw/reduced/stn-cell_Gillies2005_reduced-BushSejnowski.pkl')
 
 
 def test_stn_cells_multiple(export_locals=True):

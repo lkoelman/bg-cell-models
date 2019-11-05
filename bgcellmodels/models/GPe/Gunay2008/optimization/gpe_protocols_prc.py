@@ -52,6 +52,21 @@ loc_soma_center = ephys.locations.NrnSeclistCompLocation(
         comp_x          = 0.5)
 
 
+def make_synapse_location(proximity):
+    """
+    Get location in dendritic tree based on proximity (prox/mid/dist)
+    """
+    dist_um = {
+        'prox'  : 0.5,
+        'mid'   : 3.0,
+        'dist'  : 6.0,
+    }[proximity]
+
+    return ephys.locations.NrnSomaDistanceCompLocation(
+                            name            = 'dend_' + proximity,
+                            seclist_name    = 'basal',
+                            soma_distance   = dist_um)
+
 
 
 class PhaseResponseProtocol(BpopProtocolWrapper):
@@ -63,21 +78,6 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
 
     Based on example BluePyOpt/examples/expsyn/expsyn.py
     """
-
-    def make_synapse_location(self, proximity):
-        """
-        Get location in dendritic tree based on proximity (prox/mid/dist)
-        """
-        dist_um = {
-            'prox'  : 0.5,
-            'mid'   : 3.0,
-            'dist'  : 6.0,
-        }[proximity]
-
-        return ephys.locations.NrnSomaDistanceCompLocation(
-                                name            = 'dend_' + proximity,
-                                seclist_name    = 'dendritic',
-                                soma_distance   = dist_um)
 
     def make_synapse_mechanism(
             self,
@@ -109,7 +109,7 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
 
     def __init__(
             self,
-            stn_model_type=None,
+            model_type=None,
             syn_comp_loc=None,
             syn_pp_mech=None,
             syn_pp_params=None,
@@ -119,19 +119,22 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
         """
         Initialize all protocol variables for given model type
 
-        @param  stn_model_type : cellpopdata.StnModel
+        @param  model_type : cellpopdata.StnModel
                 Type of model to use
 
         @param  syn_comp_loc : ephys.locations.Location
                 Location for synapse used to adminisiter PRC pulses
         """
         # protocol parameters
-        syn_gmax = kwargs.get('syn_gmax', 1e-3)
-        bias_rate = kwargs.get('bias_rate', 20.0)
+        syn_gmax = kwargs.get('syn_gmax', 0.05e-3) # uS
+        bias_rate = kwargs.get('bias_rate', 15.0)
 
         # Current-firing rate curves
-        fullmodel_fI_data = [(0.01, 16.36), (0.015, 20.73), (.02, 25.1),
-            (.03, 33.5), (0.032, 34.9), (0.035, 37.1), (.05, 47.3), (.1, 76.2)]
+        # NOTE: depolarization block from ~= 2.5e-3 nA
+        fullmodel_fI_data = [
+            (0., 15.0), (2.5e-4, 20.0), (5e-4, 25.0), (7.5e-4, 31.0),
+            (1e-3, 36.0), (1.5e-3, 47.0), (2e-3, 59.0), (2.2e-3, 65.0)
+        ]
         Idata, fdata = zip(*fullmodel_fI_data)
         bias_current = np.interp(bias_rate, fdata, Idata)
 
@@ -212,7 +215,7 @@ class PhaseResponseProtocol(BpopProtocolWrapper):
                         name        = self.IMPL_PROTO.name,
                         stimuli     = proto_stimuli,
                         recordings  = proto_recordings,
-                        init_func   = init_stn_physiology)
+                        init_func   = init_gpe_physiology)
 
         # TODO: fill in all params
         self.proto_vars = {
@@ -253,22 +256,23 @@ class PhaseResponseSynExcDist(PhaseResponseProtocol):
 
     def __init__(
             self,
-            stn_model_type=None,
+            model_type=None,
             **kwargs):
 
-        syn_loc = self.make_synapse_location(proximity='dist')
+        syn_loc = make_synapse_location(proximity='dist')
 
         pp_mech, pp_params, pp_loc = self.make_synapse_mechanism(
             'Exp2Syn', syn_loc,  e=0.0, tau1=1.0, tau2=3.0)
 
         return PhaseResponseProtocol.__init__(self,
-                    stn_model_type  = stn_model_type,
+                    model_type  = model_type,
                     syn_comp_loc    = syn_loc,
                     syn_pp_mech     = pp_mech,
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
-                    syn_gmax        = 1e-3,
-                    expected_rate   = 20.0,
+                    syn_gmax        = 0.025e-3,
+                    bias_rate       = 15.0,
+                    expected_rate   = 16.0,
                     **kwargs)
 
 
@@ -281,22 +285,23 @@ class PhaseResponseSynExcProx(PhaseResponseProtocol):
 
     def __init__(
             self,
-            stn_model_type=None,
+            model_type=None,
             **kwargs):
 
-        syn_loc = self.make_synapse_location(proximity='prox')
+        syn_loc = make_synapse_location(proximity='prox')
 
         pp_mech, pp_params, pp_loc = self.make_synapse_mechanism(
             'Exp2Syn', syn_loc,  e=0.0, tau1=1.0, tau2=3.0)
 
         return PhaseResponseProtocol.__init__(self,
-                    stn_model_type  = stn_model_type,
+                    model_type  = model_type,
                     syn_comp_loc    = syn_loc,
                     syn_pp_mech     = pp_mech,
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
-                    syn_gmax        = 1e-3,
-                    expected_rate   = 20.0,
+                    syn_gmax        = 0.025e-3,
+                    bias_rate       = 15.0,
+                    expected_rate   = 16.0,
                     **kwargs)
 
 
@@ -309,23 +314,24 @@ class PhaseResponseSynInhProx(PhaseResponseProtocol):
 
     def __init__(
             self,
-            stn_model_type=None,
+            model_type=None,
             **kwargs):
 
-        syn_loc = self.make_synapse_location(proximity='prox')
+        syn_loc = make_synapse_location(proximity='prox')
 
         pp_mech, pp_params, pp_loc = self.make_synapse_mechanism(
             'Exp2Syn', syn_loc,  e=-80.0, tau1=1.0, tau2=12.0)
 
         return PhaseResponseProtocol.__init__(self,
-                    stn_model_type  = stn_model_type,
+                    model_type  = model_type,
                     syn_loc         = syn_loc,
                     syn_comp_loc    = syn_loc,
                     syn_pp_mech     = pp_mech,
                     syn_pp_params   = pp_params,
                     syn_pp_loc      = pp_loc,
-                    syn_gmax        = 1e-3,
-                    expected_rate   = 15.0,
+                    syn_gmax        = 0.04e-3,
+                    bias_rate       = 15.0,
+                    expected_rate   = 11.5,
                     **kwargs)
 
 

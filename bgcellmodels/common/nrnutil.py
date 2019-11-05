@@ -33,6 +33,55 @@ class ExtSecRef(neuron.hclass(h.SectionRef)):
     pass
 
 
+class ICell(object):
+    """
+    Cell object with section array and SectionList names
+    conforming to Hoc prototype of Import3D morphology importer.
+    """
+    def __init__(self, **kwargs):
+        """
+        Make new ICell
+
+        @param  kwargs : dict[str, <list[Section] or h.SectionList>]
+                Section arrays or section lists according to Import3d prototype
+        """
+        # NOTE: since SectionList do not keep references alive, sections
+        #       must be stored in secarray or python list
+        self._all = []
+        self.all = h.SectionList()
+        if 'all' in kwargs:
+            for sec in kwargs['all']:
+                self._all.append(sec)
+                self.all.append(sec=sec)
+
+        for seclist_name, array_name in nrn_proto_seclists_arrays.items():
+            if seclist_name == 'all':
+                continue
+
+            sl = h.SectionList()
+            setattr(self, seclist_name, sl)
+            source = None
+            
+            # Check if sections were provided
+            if array_name in kwargs:
+                source = list(kwargs[array_name])
+            elif seclist_name in kwargs:
+                source = list(kwargs[seclist_name])
+            
+            # Fill section array and SectionList
+            if source is None:
+                setattr(self, array_name, [])
+            else:
+                setattr(self, array_name, source)
+                for sec in source:
+                    sl.append(sec=sec)
+
+            if 'all' not in kwargs:
+                for sec in getattr(self, array_name):
+                    self._all.append(sec)
+                    self.all.append(sec=sec)
+
+
 def hoc_load_from(working_dir, script):
     """
     Load Hoc code with given working directory.

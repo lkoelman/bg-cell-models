@@ -7,7 +7,7 @@ Object-oriented interface for various compartmental cell reduction methods.
 
 from abc import abstractmethod, ABCMeta
 
-from bgcellmodels.common import logutils
+from bgcellmodels.common import logutils, nrnutil
 from bgcellmodels.common.nrnutil import ExtSecRef, getsecref
 from bgcellmodels.common.treeutils import check_tree_constraints
 from neuron import h
@@ -159,6 +159,18 @@ class FoldReduction(object):
         return self._dend_refs
 
 
+    def make_icell(self):
+        """
+        Make cell object from current reduced state of cell.
+
+        Cell object has section array and SectionList names
+        conforming to Hoc prototype of Import3D morphology importer.
+        """
+        return nrnutil.ICell(soma=[ref.sec for ref in self.soma_refs],
+                             dend=[ref.sec for ref in self.dend_refs],
+                             axon=[ref.sec for ref in self._axon_refs])
+
+
     def count_segments(self):
         """
         Get total number of segments (= compartments) in cell
@@ -166,7 +178,7 @@ class FoldReduction(object):
         return sum((ref.sec.nseg for ref in self.all_sec_refs))
 
 
-    def pickle_reduced_cell(self, pkl_path):
+    def pickle_reduced_cell(self, pkl_path, icell=None):
         """
         Save reduced cell as binary pickle file.
         """
@@ -184,13 +196,8 @@ class FoldReduction(object):
                             self.count_segments()))
 
         # Make cell template
-        class ICell(object):
-            pass
-        icell = ICell()
-        icell.somatic   = [ref.sec for ref in self._soma_refs]
-        icell.basal     = [ref.sec for ref in self._dend_refs]
-        icell.axonal    = [ref.sec for ref in self._axon_refs]
-        # TODO: make this generic for 3D imported cells (separate dend in apical/basal)
+        if icell is None:
+            icell = self.make_icell()
 
         cell_data = morph_io.cell_to_dict(
                         section=self.soma_refs[0].sec,

@@ -506,11 +506,16 @@ def create_cell(model=MODEL_GUNAY2008_AXONLESS):
 
 if __name__ == '__main__':
     # Make GPe cell
-    cell = define_cell(MODEL_GUNAY2008_AXONLESS)
-    nrnsim = ephys.simulators.NrnSimulator(dt=0.025, cvode_active=False)
-    cell.instantiate(sim=nrnsim)
-    fix_comp_dimensions(cell)
+    ephys_cell, nrnsim = create_cell(model=MODEL_GUNAY2008_AXONLESS)
+    icell = ephys_cell.icell
 
-    # Instantiated cell has SectionLists 'all' 'somatic' 'axonal' 'basal'
-    icell = cell.icell
-    # from neuron import gui
+    # Save cell
+    # from bgcellmodels.morphology import morph_io
+    # import cPickle as pickle
+    # cell_data = morph_io.cell_to_dict(
+    #                     section=icell.soma[0],
+    #                     descr='Gunay (2008) GPe cell, axonless',
+    #                     icell=icell)
+    # pkl_path = 'gpe-cell_gunay2008-axonless_full.pkl'
+    # with open(pkl_path, 'wb') as file:
+    #         pickle.dump(cell_data, file)

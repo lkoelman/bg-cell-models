@@ -8,6 +8,7 @@ PyNN compatible cell models for GPe cell model.
 """
 
 import cPickle as pickle
+import os.path
 
 from neuron import h
 import numpy as np
@@ -261,7 +262,7 @@ class GpeCellReduced(GPeCellModel):
 
         # Load cell from file
         from bgcellmodels.morphology import morph_io
-        with open(self._pickle_file, 'rb') as file:
+        with open(os.path.expanduser(self._pickle_file), 'rb') as file:
             cell_data = pickle.load(file)
 
         name_subs_regex = [(r"[\[\]]", ""), [r"\.", "_"]]
@@ -396,8 +397,7 @@ class GpeReducedType(GPeCellType):
     default_parameters.update(cell_base.MorphCellType._emf_parameters)
     
     default_parameters['cell_pickle_file'] = np.array(
-        '/home/luye/cloudstore_m/simdata/GunayEdgerton2008_reduced'
-        '/gpe-cell_gunay2008_reduce-BushSejnowski_dL-1.pkl')
+        '/home/luye/workspace/bgcellmodels/bgcellmodels/models/GPe/Gunay2008/reduced/gpe-cell_gunay2008_reduce-BushSejnowski_dL-1.pkl')
 
 
 class GpeArkyCellType(GPeCellType):

@@ -186,7 +186,10 @@ if __name__ == '__main__':
                         reduction_params['split_dX'])
 
     # # Save cell
-    reduction.pickle_reduced_cell(cell_pkl_file)
+    from bgcellmodels.common import electrotonic
+    icell = reduction.make_icell()
+    electrotonic.set_min_nseg_hines(icell.all, 100.0, remove=True)
+    reduction.pickle_reduced_cell(cell_pkl_file, icell=icell)
 
     # # Load cell
     # from bgcellmodels.morphology import morph_io
