@@ -17,9 +17,20 @@ job_script="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/LuNetSgRe
 
 # Config files you want to repeat with different seeds (one per line)
 outputs_clipboard="
-configs/sweeps_dbs-amp/axons-full-V2_dbs-amp-0.1.json
-configs/sweeps_dbs-amp/axons-full-V2_dbs-amp-1.json
-configs/sweeps_dbs-amp/axons-full-V2_dbs-amp-10.0.json
+# configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.20.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.30.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.40.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.50.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.60.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.70.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.80.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.90.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.00.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.10.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.20.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.30.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.40.json
+configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.50.json
 "
 readarray -t configs <<< "${outputs_clipboard}"
 
@@ -37,7 +48,7 @@ declare -A model_args
 
 for sim_config in "${configs[@]}"; do
 
-    if [[ ${sim_config} == "" ]]; then
+    if [[ ${sim_config} == "" ]] || [[ ${sim_config:0:1} == "#" ]]; then
         continue
     fi
 
@@ -45,7 +56,7 @@ for sim_config in "${configs[@]}"; do
 
         # Resources requested using -l
         # walltime ~= 1:20 for 16 ppn, 7000ms, dt=0.025
-        walltime="4:00:00"
+        walltime="0:10:00"
 
         # Arguments passed to simulation script using -v
         # NOTE: comment to read option from config, if not it is overridden
@@ -55,7 +66,7 @@ for sim_config in "${configs[@]}"; do
         
         # Model configuration
         model_args["seed"]="$((start_seed+seed))"
-        model_args["dur"]="3000"
+        model_args["dur"]="7000"
         model_args["scale"]="1.0"
         model_args["nolfp"]="1"
         model_args["dd"]="1"

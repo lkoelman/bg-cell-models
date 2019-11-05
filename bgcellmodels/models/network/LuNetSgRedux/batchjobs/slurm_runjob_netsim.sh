@@ -64,7 +64,7 @@ mpi_command="mpirun -n ${numproc} python ${model_filepath} -id ${SLURM_JOB_ID}"
 # ARGUMENTS: short arguments
 opt_names_short=("d" "o" "wi" "tp" "p" "dc" "cs" "cc" "ca" "dm")
 for optname in "${opt_names_short[@]}"; do
-    if [ -n "${optname}" ]; then
+    if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} -${optname} ${!optname}"
     fi
 done
@@ -75,7 +75,7 @@ opt_names_long=("dur" "simdt" "scale" "seed" \
     "writeinterval" "transientperiod" "reportinterval" \
     "outdir" "config")
 for optname in "${opt_names_long[@]}"; do
-    if [ -n "${optname}" ]; then
+    if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} --${optname} ${!optname}"
     fi
 done
@@ -84,7 +84,7 @@ done
 # ARGUMENTS: flags
 flag_names=("lfp" "nolfp" "dbs" "nodbs" "dd" "dnorm" "progress" "nogui" "gui")
 for flagname in "${flag_names[@]}"; do
-    if [ -n "${flagname}" ]; then
+    if [ -n "${!flagname}" ]; then
         mpi_command="${mpi_command} --${flagname}"
     fi
 done

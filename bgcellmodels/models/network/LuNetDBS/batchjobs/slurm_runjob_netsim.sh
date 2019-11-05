@@ -4,7 +4,7 @@
 # QSUB CONFIGURATION
 ################################################################################
 
-# All command line options to `sbatchz and their equivalent environment
+# All command line options to `sbatch`` and their equivalent environment
 # variables can be found at https://slurm.schedmd.com/sbatch.html
 
 # Working directory where submitted script will be executed ($SLURM_SUBMIT_DIR)
@@ -27,14 +27,27 @@
 ################################################################################
 
 echo -e "
-Working directory for submitted script: $SLURM_SUBMIT_DIR
-The job id is                           $SLURM_JOB_ID
-The job name is                         $SLURM_JOB_NAME
+Job id is                               $SLURM_JOB_ID
+Job name is                             $SLURM_JOB_NAME
 The Sonic node is                       $SLURM_NODEID
+Number of tasks is                      $SLURM_NTASKS
+Working directory for submitted script: $SLURM_SUBMIT_DIR
 "
 
 # Setup environment
-module load gcc openmpi anaconda
+module purge
+module load anaconda
+
+## GCC toolchain:
+module load gcc openmpi/3.1.4
+
+## Intel toolchain:
+# module load intel/intel-cc intel/intel-mkl intel/intel-mpi
+# MPI_LIBDIR=/opt/software/intel/2019Parallel/compilers_and_libraries/linux/mpi/intel64/lib/release
+# export LIBRARY_PATH=$MPI_LIBDIR:$LIBRARY_PATH
+# export LD_LIBRARY_PATH=$MPI_LIBDIR:$LD_LIBRARY_PATH
+
+## Python environment
 conda activate --stack localpy27
 
 # Get all the paths
@@ -48,14 +61,14 @@ model_filename=model_parameterized.py
 model_filepath="${model_dir}/${model_filename}"
 
 # Command with minimum required arguments
-# numproc = $((SLURM_JOB_NUM_NODES*SLURM_NTASKS_PER_NODE))
+# numproc = ${SLURM_NTASKS}
 mpi_command="mpirun -n ${numproc} python ${model_filepath} -id ${SLURM_JOB_ID}"
 
 ################################################################################
 # Arguments for python script
 
 # ARGUMENTS: short arguments
-opt_names_short=("d" "o" "dt" "wi" "tp" "ri" "p" "dc" "cs" "cc" "ca" "dm")
+opt_names_short=("d" "o" "dt" "wi" "tp" "ri" "p" "dc" "cs" "cc" "ca" "dm" "ae")
 for optname in "${opt_names_short[@]}"; do
     if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} -${optname} ${!optname}"
@@ -67,7 +80,7 @@ done
 opt_names_long=("dur" "simdt" "scale" "seed" \
     "writeinterval" "transientperiod" "reportinterval" \
     "outdir" "configdir" "simconfig" "cellconfig" "axonfile" "morphdir" \
-    "femconfig")
+    "femconfig" "avoidelectrode")
 for optname in "${opt_names_long[@]}"; do
     if [ -n "${!optname}" ]; then
         mpi_command="${mpi_command} --${optname} ${!optname}"
@@ -119,7 +132,7 @@ echo -e "
 --------------------------------------------------------------------------------
 The contents of job generation file is:
 "
-cat "${model_dir}/batchjobs/generate_jobs.sh"
+cat "${model_dir}/batchjobs/slurm_generate_jobs.sh"
 
 echo -e "
 --------------------------------------------------------------------------------
