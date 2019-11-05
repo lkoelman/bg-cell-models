@@ -162,7 +162,7 @@ def write_population_data(pop, output, suffix, gather=True, clear=True):
 
 def run_simple_net(
         pop_scale       = 1.0,
-        sim_dur         = 500.0,
+        sim_dur         = None,
         export_locals   = True,
         with_gui        = True,
         output          = None,
@@ -194,6 +194,8 @@ def run_simple_net(
     sim.setup(timestep=0.025, min_delay=0.1, max_delay=10.0, use_cvode=False)
     if mpi_rank == 0:
         init_logging(logfile=None, debug=True)
+    if sim_dur is None:
+        sim_dur = config['simulation']['duration']
 
 
     print("""\nRunning net on MPI rank {} with following settings:
@@ -819,7 +821,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Run basal ganglia network simulation')
 
-    parser.add_argument('-d', '--dur', nargs='?', type=float, default=500.0,
+    parser.add_argument('-d', '--dur', nargs='?', type=float, default=None,
                         dest='sim_dur', help='Simulation duration')
 
     parser.add_argument('--scale', nargs='?', type=float, default=1.0,
