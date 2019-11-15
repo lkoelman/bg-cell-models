@@ -17,20 +17,7 @@ job_script="${HOME}/workspace/bgcellmodels/bgcellmodels/models/network/LuNetSgRe
 
 # Config files you want to repeat with different seeds (one per line)
 outputs_clipboard="
-# configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.20.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.30.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.40.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.50.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.60.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.70.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.80.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-0.90.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.00.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.10.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.20.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.30.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.40.json
-configs/sweeps_gmax_spont/syn-V18_spont_g-ctx-stn-x-1.50.json
+configs/sweeps_gmax_burst/syn-V18_f-burst-20_g-ctx-stn-x-0.20.json
 "
 readarray -t configs <<< "${outputs_clipboard}"
 

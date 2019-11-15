@@ -9,11 +9,11 @@
 
 # Working directory where submitted script will be executed ($SLURM_SUBMIT_DIR)
 # This must be a full path.
-#SBATCH -D /home/people/15203008/workspace/bgcellmodels/bgcellmodels/models/network/LuNetSgRedux
+#SBATCH -D /home/people/15203008/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe
 
 # Log files for standard output and standard error
-#SBATCH -o LuNetDBS-%j-stdout.log.o
-#SBATCH -e LuNetDBS-%j-stderr.log.e
+#SBATCH -o LuNetStnGpe-%j-stdout.log.o
+#SBATCH -e LuNetStnGpe-%j-stderr.log.e
 
 # E-mail on begin (b), abort (a) and end (e) of job
 #SBATCH --mail-type=BEGIN,END,FAIL
