@@ -1,0 +1,9 @@
+automatic_execution = True
+sweep_index = 14
+matfile_common_pattern = '-7000ms'
+outputs = '/home/luye/Documents/simdata/simdata_newsonic/LuNetSgRedux/sweep_f-burst-ctx/LuNetStnGpe_2019.11.05_14.26.17_job-85188_syn-V18_f-burst-60.0-Hz'
+ROI_INTERVAL = (3000.0, 7000.0)
+sweep_var_value = 60.0
+reference_phase = {'method': 'from_ctx', 'passband': (56.0, 64.0)}
+pickle_filename = 'analysis_results_3.0s-7.0s'
+sweep_var_name = 'f-burst'

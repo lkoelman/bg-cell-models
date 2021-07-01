@@ -662,8 +662,17 @@ def run_simple_net(
     # Simulation statistics
     num_segments = sum((sec.nseg for sec in h.allsec()))
     num_cell = sum((1 for sec in h.allsec()))
-    print("Will simulate {} sections ({} compartments) for {} seconds on MPI rank {}.".format(
-            num_cell, num_segments, sim_dur, mpi_rank))
+    each_num_segments = comm.gather(num_segments, root=0)
+    if mpi_rank == 0:
+        # only rank 0 receives broadcast result
+        total_num_segments = sum(each_num_segments)
+        print("Entire network consists of {} segments (compartments)".format(
+              total_num_segments))
+
+    print("MPI rank {} will simulate {} segments ({} sections) for {} ms.".format(
+            mpi_rank, num_segments, num_cell, sim_dur))
+
+
     tstart = time.time()
     outdir, filespec = os.path.split(output)
     progress_file = os.path.join(outdir, '{}_sim_progress.log'.format(

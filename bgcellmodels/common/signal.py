@@ -23,10 +23,10 @@ import scipy.stats
 def spike_indices(v_rec, v_th, loc='onset'):
     """
     Get spike indices in voltage trace.
-    
+
     @param  v_rec : np.array
             membrane voltage
-    
+
     @param  v_th : float
             voltage threshold for spike
 
@@ -48,7 +48,7 @@ def spike_indices(v_rec, v_th, loc='onset'):
 def spike_times(v_rec, t_rec, v_th, loc='onset'):
     """
     Get spike times in voltage trace.
-    
+
     @see    spike_indices(...)
 
     @param  t_rec : np.array
@@ -69,14 +69,14 @@ def coefficient_of_variation(v_rec, t_rec, v_th):
 
 
 def burst_metrics(
-        v_rec, t_rec, threshold=-20.0, 
+        v_rec, t_rec, threshold=-20.0,
         onset_isi=20.0, offset_isi=20.0, min_spk=4):
     """
     Identify bursts using simple algorithm where a burst consists of a minimum
     of <min_spk> spikes where the first ISI is smaller than <onset_isi> and
     susbequent ISIs are smaller than <offset_isi>.
 
-    After burst identification, calculate burst rate, inter-burst intervals, 
+    After burst identification, calculate burst rate, inter-burst intervals,
     intra-burst rates, number of spikes per burst.
 
     @return     dict[str, <float or list[float]>]
@@ -108,7 +108,7 @@ def burst_metrics(
     offset_times = []
     inter_burst_intervals = []
 
-    # Find bursts according to absolute criteria 
+    # Find bursts according to absolute criteria
     num_isi = len(isi_vals)
     isi_burst = np.zeros_like(isi_vals, dtype=bool) # flag which ISIs are in a burst
     isi_below_offset = np.array(isi_vals <= offset_isi, dtype=int)
@@ -136,7 +136,7 @@ def burst_metrics(
                 i += 1
                 continue
             num_follow = num_to_offset
-            
+
             # Burst properties
             burst_lengths.append(num_follow+1)
             f_intra = 1e3/np.mean(isi_vals[i:i+num_follow])
@@ -190,8 +190,8 @@ def burst_metrics_surprise(
                 E.g. 1000.0 if ISI values are in units of ms.
 
     @param      min_rate_factor : float
-                As the initial criterion for burst detection, spikes have to occur at a 
-                frequency which is higher than the baseline frequency by a factor 
+                As the initial criterion for burst detection, spikes have to occur at a
+                frequency which is higher than the baseline frequency by a factor
                 'min_rate_factor'.
 
     @param      min_burst_length : int
@@ -211,7 +211,7 @@ def burst_metrics_surprise(
                 Dictionary containing burst metrics:
 
         Per-burst metrics:
-        
+
         'begin'         -> list[int]            : start index for each burst
         'num_spikes'    -> list[int]            : number of spikes in each burst
         'surprise'      -> list[float]          : surprise value for each burst
@@ -220,9 +220,9 @@ def burst_metrics_surprise(
         'baseline_rate' -> list[float]          : baseline rate used to threshold
                                                   burst firing rate
         'inter_burst_intervals' -> list[float]  : times between bursts
-        
+
         Summary metrics:
-        
+
         'num_bursts' -> int                     : ~
         'mean_spikes_per_burst' -> float        : ~
         'median_spikes_per_burst' -> float      : ~
@@ -275,7 +275,7 @@ def burst_metrics_surprise(
         - min firing rate for burst growing = 0.5 x baselinerate
 
     Example usage of method, with different algorithm parameters:
-    
+
     - Wichmann and Soares 2006
         - surprise value threshold = 3
         - min firing rate for burst growing = 2 x baseline rate ? (in MATLAB code)
@@ -284,7 +284,7 @@ def burst_metrics_surprise(
         - surprise value threshold = 3
         - min firing rate for burst detectio = < 1 x baseline rate
         - burst growing in both directions, instead of shrinking from front
-    
+
     - Sanders et al. 2013, Sharott et al. 2014
         - surprise value threshold = 3
 
@@ -337,7 +337,7 @@ def burst_metrics_surprise(
 
             # calculation of frequency threshold
             mean_FR = len(I) / (np.sum(I) / sampling_rate)
-        
+
         # Firing rate thresholds in units of time (e.g. ms or s)
         fr_thr = sampling_rate / (min_rate_factor * mean_FR) # units of time (e.g. ms or s)
         grow_fr_thr = sampling_rate / (grow_rate_factor * mean_FR)
@@ -363,9 +363,9 @@ def burst_metrics_surprise(
             if q + 1 >= min_burst_length:
                 m = min_burst_length
 
-                while ((n + m < len(ISI)) and 
+                while ((n + m < len(ISI)) and
                        (ISI[n + m] < fr_thr) and
-                       (surprise(mean_FR, ISI[n:n+m+1], sampling_rate) >= 
+                       (surprise(mean_FR, ISI[n:n+m+1], sampling_rate) >=
                         surprise(mean_FR, ISI[n:n+m], sampling_rate))):
 
                     m += 1
@@ -395,8 +395,8 @@ def burst_metrics_surprise(
 
                 # formation of an array that will contain surprise values.
                 # The first one is that of the burst defined by the ISIs between n and n+m.
-                # Additional entries into S are surprise values that would result 
-                # from adding up to pmax additional spikes (S2 will be the surprise 
+                # Additional entries into S are surprise values that would result
+                # from adding up to pmax additional spikes (S2 will be the surprise
                 # values for ISI(n:n+m+1), S3 the one for ISI(n:n+m+2) etc.)
                 S = np.zeros(pmax + 1)
                 S[0] = surprise(mean_FR, ISI[n:n+m+1], sampling_rate)
@@ -408,9 +408,9 @@ def burst_metrics_surprise(
                 ind_max_S = np.argmax(S)
 
                 if n+m < len(ISI):
-                    # this will set the m-value to the previous m, if the first 
+                    # this will set the m-value to the previous m, if the first
                     # entry into the S array is the highest (i.e., if adding additional
-                    # ISIs didn't increase the surprise value), or, it will correct m 
+                    # ISIs didn't increase the surprise value), or, it will correct m
                     # to the highest value
                     m += ind_max_S
                 else:
@@ -472,7 +472,7 @@ def burst_metrics_surprise(
         burst_metrics['median_intra_burst_frequency'] = np.median(all_rates)
         burst_metrics['proportion_time_in_bursts'] = burst_metrics['total_spikes_in_bursts'] / burst_metrics['mean_intra_burst_frequency'] / (np.sum(ISI[beg_idx+1:len(ISI)]) / sampling_rate)
         burst_metrics['proportion_spikes_in_bursts'] = burst_metrics['total_spikes_in_bursts'] / (len(ISI) - beg_idx)
-        
+
         # burst rate is sampling_rate / mean(inter_burst_intervals)
         if burst_metrics['num_bursts'] >= 2:
             for i_burst, i_begin in enumerate(burst_metrics['begin']):
@@ -534,18 +534,18 @@ def surprise(r, data, sampling_rate, with_deceleration=False):
 
 
 def numpy_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):
-    """ 
+    """
     Sum peri-stimulus spike histograms (PSTH) of spike trains
 
     @param spiketimes   list of Hoc.Vector() objects or other iterables,
                         each containing spike times of one cell.
-    
+
     @param tstart       stimulus time/start time for histogram
-    
+
     @param tstop        stop time for histogram
-    
+
     @param binwidth     bin width (ms)
-    
+
     @return             hoc.Vector() containing binned spikes
     """
     # Compute bin edges
@@ -642,18 +642,18 @@ def moving_average_rate(spiketrains, tstart, tstop, dt, binwidth):
 
 
 def nrn_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):
-    """ 
+    """
     Sum peri-stimulus spike histograms (PSTH) of spike trains
 
     @param spiketimes   list of Hoc.Vector() objects or other iterables,
                         each containing spike times of one cell.
-    
+
     @param tstart       stimulus time/start time for histogram
-    
+
     @param tstop        stop time for histogram
-    
+
     @param binwidth     bin width (ms)
-    
+
     @return             hoc.Vector() containing binned spikes
     """
 
@@ -661,15 +661,15 @@ def nrn_sum_psth(spiketrains, tstart, tstop, binwidth=10.0, average=False):
     # avghist = h.Vector(int((tstop-tstart)/binwidth) + 2, 0.0)
     st1 = h.Vector(spiketrains[0])
     avghist = st1.histogram(tstart, tstop, binwidth)
-    
+
     # add histogram for each cell (add bins element-wise)
     for st in spiketrains[1:-1]:
         if not isinstance(st, neuron.hoc.HocObject):
             st = h.Vector(st)
-        
+
         spkhist = st.histogram(tstart, tstop, binwidth)
         avghist.add(spkhist) # add element-wise
-    
+
     # divide by nb. of cells/trials and by binwidth in ms to get rate
     if average:
         avghist.div(len(spiketrains))
@@ -699,7 +699,7 @@ def nrn_avg_rate_simple(spiketrains, tstart, tstop, binwidth):
 def nrn_avg_rate_adaptive(spiketrains, tstart, tstop, binwidth=10.0, minsum=15):
     """
     Compute running average firing rate of population.
-    
+
     @param spiketrains  list of Hoc.Vector() objects or other iterables,
 
     @param minsum       minimum number of spikes required in adaptive
@@ -710,8 +710,8 @@ def nrn_avg_rate_adaptive(spiketrains, tstart, tstop, binwidth=10.0, minsum=15):
                         For bin i, the corresponding mean frequency f_mean[i] is determined by centering an adaptive square window on i and widening the window until the number of spikes under the window equals <minsum>. Then f_mean[i] is calculated as:
 
                             f_mean[i] = N[i] / (m * binwidth * trials)
-                        
-                        where m is the number of 
+
+                        where m is the number of
                         bins included after widening the adaptive window.
 
     @see                https://neuron.yale.edu/neuron/static/new_doc/programming/math/vector.html#Vector.psth
@@ -734,7 +734,7 @@ def composite_spiketrain(spike_times, duration, dt_out=1.0, select=None):
 
     @param  spike_times : list(numpy.array)
             List of spike time vectors.
-    
+
     @param  duration : float
             Total duration of simulation (ms).
 
@@ -756,13 +756,20 @@ def composite_spiketrain(spike_times, duration, dt_out=1.0, select=None):
         spike_indices = (st / dt_out).astype(int)
         binary_trains[spike_indices, i_select] = 1.0
     return binary_trains.mean(axis=1)
-    
+
 
 def composite_spiketrain_coherence(trains_a, trains_b, duration, freq_res=1.0, overlap=0.75):
     """
     Coherence between composite (pooled) spike trains as binary signals, averaged.
 
     See Terry and Griffin 2008 : https://doi.org/10.1016/j.jneumeth.2007.09.014
+
+    Notes
+    -----
+
+    - coherence is the cross-spectral density, normalized by the individual
+      spectral densities
+    - the cross-spectral density is the Fourrier transform of the cross-correlation
     """
     Ts = 1.0 # ms
     nperseg = int(1e3 / Ts / freq_res) # fs / dF
@@ -778,19 +785,19 @@ def combinatorial_spiketrain_coherence(
         freq_res=1.0, overlap=0.75, max_comb=100):
     """
     Spiketrain coherence as average over all combinations of two groups.
-    
+
     As described in McManus et al 2016, https://doi.org/10.1152/jn.00097.2016
-    
+
     WARNING: scales badly with population size, e.g. for a population of 50
     spike trains, there are 126e12 ways of dividing them in two groups.
     """
     import scipy.special
     import itertools
-    
+
     Ts = 1.0 # ms
     nperseg = int(1e3 / Ts / freq_res) # fs / dF
     noverlap = int(nperseg * overlap)
-    
+
     N = len(spike_trains)
     k = N / 2
     inds_N = set(range(N))
@@ -805,14 +812,14 @@ def combinatorial_spiketrain_coherence(
         grp_b = inds_N - grp_a
         comp_spk_a = composite_spiketrain(spike_trains, dt_out=Ts, select=grp_a)
         comp_spk_b = composite_spiketrain(spike_trains, dt_out=Ts, select=grp_b)
-        f, Cxy = scipy.signal.coherence(comp_spk_a, comp_spk_b, 
+        f, Cxy = scipy.signal.coherence(comp_spk_a, comp_spk_b,
                                         fs=1e3/Ts, nperseg=nperseg, noverlap=noverlap)
         Cxy_sum += Cxy
     return f, Cxy_sum / len(grp_a_inds)
 
 
 def morgera_covariance_complexity(
-    v_rec, t_rec, interval, 
+    v_rec, t_rec, interval,
     t_window=1000.0, t_overlap=800.0):
     """
     Morgera covariance complexity ('synchronization index').
@@ -832,7 +839,7 @@ def morgera_covariance_complexity(
     ----------
 
     S. S. Morgera, "Information Theoretic Complexity and Relation to Pattern
-    Recognition", IEEE Transactions on Systems, Man, and Cybernetics, 
+    Recognition", IEEE Transactions on Systems, Man, and Cybernetics,
     15 (1985) 608-619
     """
     M_values = []
@@ -847,13 +854,13 @@ def morgera_covariance_complexity(
             break
         irange = [int((t - t_rec[0])/Ts) for t in window]
         islice = np.s_[irange[0]:irange[1]] # slice object
-        
+
         # SVD and singular values
         u, s, vh = np.linalg.svd(v_rec[islice, :], full_matrices=True)
         lambas = s**2
         sigmas = lambas / lambas.sum()
         C = - 1./np.log(len(sigmas)) * np.sum(sigmas * np.log(sigmas))
-        
+
         t1_values.append(window[1])
         M_values.append(1 - C)
 
@@ -861,7 +868,7 @@ def morgera_covariance_complexity(
 
 
 def get_efel_features(
-        vm, t, interval, features, 
+        vm, t, interval, features,
         threshold=None, raise_warnings=True, **kwargs):
     """
     Calculate electrophysiology features using eFEL.
@@ -883,9 +890,9 @@ def get_efel_features(
     >>> features = ['ISI_values', 'burst_ISI_indices', 'burst_mean_freq', 'burst_number']
     >>> feat_vals = signal.get_efel_features(vm, t, [0.5e3, 3e3], features)
     >>> print("\n".join(("{} : {}".format(name, val) for name,val in feat_vals)))
-    
+
     """
-    
+
     import efel
     efel.reset()
 
@@ -959,7 +966,7 @@ def get_all_pyelectro_features(
                             start_analysis = interval[0],
                             end_analysis = interval[1],
                             show_smoothed_data = False
-                        ) 
+                        )
 
     trace_analysis.analyse()
 
@@ -971,7 +978,7 @@ def compute_PRC(t_spikes, t_stim, sort_by='phi',
     """
     Compute phase response curve (PRC) using traditional method.
 
-    I.e. compute the phases of incoming spikes (t_stim) in the spike period 
+    I.e. compute the phases of incoming spikes (t_stim) in the spike period
     (phi) and the phase advance/delay of each recorded spike (delta_phi).
 
     @author     Lucas Koelman, ported from Matlab implementation by M. Giugliano
@@ -1013,7 +1020,7 @@ def compute_PRC(t_spikes, t_stim, sort_by='phi',
         # Check if there is more than one pulse in ISI
         isi_pulses_mask = ((t_stim > t_spikes[idx_preceding]) &
                            (t_stim < t_spikes[idx_following]))
-        
+
         if isi_pulses_mask.astype(int).sum() > 1 and exclude_multi_stim_isis:
             excluded_stim_mask[i] = True
             continue
@@ -1047,8 +1054,8 @@ def compute_PRC_corrected(t_spikes, t_stim):
     Compute phase response curve (PRC) using corrected method
     (Phoka et al., 2010).
 
-    The corrected method solves the dead zone ('bermuda triangle') problem in 
-    the PRC where it is impossible to get a phase advance (delta phi > 0) for a 
+    The corrected method solves the dead zone ('bermuda triangle') problem in
+    the PRC where it is impossible to get a phase advance (delta phi > 0) for a
     stimulus arriving late in the phase (phi ~= 1). See Phoka et al. (2010),
     Fig. 2.N vs 3.E.
 

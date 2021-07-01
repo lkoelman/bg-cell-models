@@ -297,7 +297,7 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
                 includeTraces=None, excludeTraces=None, labelTime=False,
                 showFig=True, colorList=None, lineList=None, yRange=None,
                 traceSharex=False, showGrid=True, title=None, traceXforms=None,
-                fontSize=10, labelRotation=-90, **plot_kwargs):
+                fontSize=10, labelRotation=-90, singleAxis=False, **plot_kwargs):
     """
     Plot previously recorded traces
 
@@ -370,21 +370,38 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
         shared_ax = traceSharex
 
     figs = []
+    traces_axes = {t: None for t in tracesList}
     label_fontsize = fontSize
     fig_size = plot_kwargs.pop('figsize', None)
     plot_kwargs.setdefault('linewidth', 1.0)
     for itrace, trace in enumerate(tracesList):
+
+        found_ax = False # have not found axis for this trace
         
         if oneFigPer == 'cell':
             
             if itrace == 0:
 
                 figs.append(plt.figure(figsize=fig_size))
-                
                 ax = plt.subplot(len(tracesList), 1, itrace+1, sharex=shared_ax)
                 if traceSharex:
                     shared_ax = ax
-            else:
+                found_ax = True    
+
+            elif singleAxis:
+                
+                if isinstance(singleAxis, (list, tuple)):
+                    trace_grp = next((g for g in singleAxis if trace in g), None)
+                    if trace_grp is None:
+                        found_ax = False
+                    else:
+                        ax = next((traces_axes[t] for t in trace_grp if traces_axes[t] is not None), None)
+                        found_ax = ax is not None
+
+                else:
+                    pass # ax = ax
+
+            if not found_ax:
                 ax = plt.subplot(len(tracesList), 1, itrace+1, sharex=shared_ax)
         
         else: # one separate figure per trace
@@ -395,6 +412,8 @@ def plotTraces(traceData, recordStep, timeRange=None, oneFigPer='cell',
             ax = plt.subplot(111, sharex=shared_ax)
             if itrace==0 and traceSharex:
                 shared_ax = ax
+
+        traces_axes[trace] = ax
 
         # Get data to plot
         if (traceXforms is not None) and (trace in traceXforms):
