@@ -31,6 +31,14 @@ See notes in `notes/BG_observations_experiments.md`
 
 --------------------------------------------------------------------------------
 
+# TODO
+
+- [ ] copy the requirements (`pip freeze` output from last run)
+- [ ] create Dockerfile with Ubuntu + NEURON
+- [ ] explain in README what model belongs to what chapter
+
+--------------------------------------------------------------------------------
+
 # Installation
 
 These installation instructions are for the Conda Python ditribution.
@@ -79,6 +87,9 @@ python setup.py develop # or: pip install -e path_to_repo
 python setup.py mechanisms # Build NMODL files automatically:
 ```
 
+### Cluster environment
+
+NEURON installation: https://gist.github.com/lkoelman/49e7105b5c54128fe1c35d4e2d6b7273
 
 
 --------------------------------------------------------------------------------

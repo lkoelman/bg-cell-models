@@ -1,0 +1,12 @@
+numpy
+matplotlib
+pint
+transforms3d
+plyfile
+lazyarray
+pint
+NEURON==7.7
+-e git+https://github.com/BlueBrain/BluePyOpt.git@1456941abe425b4a20fb084eab1cb6415ccfe2b8#egg=bluepyopt
+-e git+https://github.com/lkoelman/LFPsim.git@9fe09cec4496f3d0a031c1f47fd6fa1d7f7ff933#egg=LFPsim
+-e git+https://github.com/lkoelman/python-neo.git@2e702db677c82f3c0a4132d9c43bafcc7bdb44a3#egg=neo
+-e git+https://github.com/lkoelman/PyNN.git@3b1cf2589bc4ad92a21f521b1a674be1a7c78e6f#egg=PyNN
