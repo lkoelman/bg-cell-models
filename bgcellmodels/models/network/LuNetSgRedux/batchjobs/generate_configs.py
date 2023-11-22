@@ -19,26 +19,30 @@ import numpy as np
 
 # SETPARAM: template file and output directory
 template_paths = """
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-0.20.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-0.30.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-0.40.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-0.50.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-0.60.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-0.70.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-0.80.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-0.90.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-1.0.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-1.00.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-1.10.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-1.20.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-1.30.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-1.33.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-1.40.json
-/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_stn_EI_ratio/syn-V18_spont_g-ctx-stn-x-1.50.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-3.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-6.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-9.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-12.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-15.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-18.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-21.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-24.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-27.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-30.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-33.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-36.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-39.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-42.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-45.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-48.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-51.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-54.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-57.0-Hz.json
+/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetStnGpe/configs/sweeps_f-burst-input/syn-V18_f-burst-60.0-Hz.json
 """.strip().split()
 
 # SETPARAM: output dir
-outdir = "/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetSgRedux/configs/sweeps_gmax_spont"
+outdir = "/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetSgRedux/configs/sweeps_f-burst-ctx"
 
 for template_path in template_paths:
 

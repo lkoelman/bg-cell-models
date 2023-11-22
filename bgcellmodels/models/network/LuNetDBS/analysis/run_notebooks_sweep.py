@@ -24,8 +24,11 @@ from multiprocessing import Pool
 
 # SETPARAM: List simulation output directories to analyze
 output_dirs = """
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/stim-ctx_conf-V6/LuNetDBS_2019.08.15_13.51.42_job-21551_netconf-V6_dbs-ctx-only-phase-225
-/home/luye/Documents/simdata/q8_sweep-dbs-phase/stim-ctx_conf-V6/LuNetDBS_2019.08.15_13.51.45_job-21548_netconf-V6_dbs-ctx-only-phase-090
+/home/luye/Documents/simdata/simdata_newsonic/sweeps_dbs-amp/conf-V6_stim-all/LuNetDBS_2019.08.14_17.26.26_job-21434_netconf-V6_FINAL_dbs-amp-0.4
+/home/luye/Documents/simdata/simdata_newsonic/sweeps_dbs-amp/conf-V6_stim-all/LuNetDBS_2019.08.14_17.26.26_job-21436_netconf-V6_FINAL_dbs-amp-0.8
+/home/luye/Documents/simdata/simdata_newsonic/sweeps_dbs-amp/conf-V6_stim-all/LuNetDBS_2019.08.14_17.26.27_job-21435_netconf-V6_FINAL_dbs-amp-0.6
+/home/luye/Documents/simdata/simdata_newsonic/sweeps_dbs-amp/conf-V6_stim-all/LuNetDBS_2019.08.14_17.26.32_job-21438_netconf-V6_FINAL_dbs-amp-1.2
+/home/luye/Documents/simdata/simdata_newsonic/sweeps_dbs-amp/conf-V6_stim-all/LuNetDBS_2019.08.15_09.39.38_job-21516_netconf-V6_FINAL_dbs-amp-0.2
 """.strip().split()
 
 nb_dir = "/home/luye/workspace/bgcellmodels/bgcellmodels/models/network/LuNetDBS/analysis"
@@ -33,14 +36,14 @@ nb_infile = "lunet_dbs_analysis.ipynb"
 nb_path = os.path.join(nb_dir, nb_infile)
 
 # SETPARAM: name of sweep variable
-sweep_name = "dbs-phase"
+sweep_name = "dbs-amp"
 
 def process_sim_outputs(args):
 
     sim_outdir, sweep_index = args
 
     # SETPARAM: pattern for extraction of sweep variable from filename
-    sweep_val_pattern = r"phase-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
+    sweep_val_pattern = r"amp-([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)"
     match = re.search(sweep_val_pattern, sim_outdir)
     sweep_val = match.groups()[0]
 

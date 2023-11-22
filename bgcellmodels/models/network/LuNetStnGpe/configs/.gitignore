@@ -1,4 +1,4 @@
 # ignore all contents but not the folder itself
-*
-*/
-!.gitignore
+# *
+# */
+# !.gitignore
