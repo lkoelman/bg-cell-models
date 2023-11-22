@@ -1,0 +1,12 @@
+[submodule "PyNN"]
+	path = PyNN
+	url = https://github.com/lkoelman/PyNN.git
+[submodule "python-neo"]
+	path = python-neo
+	url = https://github.com/lkoelman/python-neo.git
+[submodule "LFPsim"]
+	path = LFPsim
+	url = https://github.com/lkoelman/LFPsim.git
+[submodule "BluePyOpt"]
+	path = BluePyOpt
+	url = https://github.com/BlueBrain/BluePyOpt.git
