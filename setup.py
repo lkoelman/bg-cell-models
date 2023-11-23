@@ -38,6 +38,10 @@ here = path.abspath(path.dirname(__file__))
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     readme_contents = f.read()
 
+# Load requirements from requirements.txt
+with open(path.join(here, 'requirements-minimal.txt'), encoding='utf-8') as f:
+    minimal_requirements = f.read().splitlines()
+
 
 BASEDIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -204,19 +208,7 @@ setup(
     # This field lists other packages that your project depends on to run.
     # Any package you put here will be installed by pip when your project is
     # installed, so they must be valid existing projects.
-    install_requires=[
-        'numpy',
-        'matplotlib',
-        'pint',
-        'transforms3d',
-        'plyfile',
-        'lazyarray',
-        'pint',
-        # Manual install specific versions:
-        # 'PyNN',
-        # 'BluePyOpt',
-        # 'elephant',
-    ],
+    install_requires=minimal_requirements,
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"

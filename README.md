@@ -33,9 +33,8 @@ See notes in `notes/BG_observations_experiments.md`
 
 # TODO
 
-- [ ] copy the requirements (`pip freeze` output from last run)
-- [ ] create Dockerfile with Ubuntu + NEURON
 - [ ] explain in README what model belongs to what chapter
+- [ ] explain how to run the model
 
 --------------------------------------------------------------------------------
 
@@ -47,53 +46,41 @@ Our custom PyNN classes have only been tested with:
 - PyNN 0.9.2 (commit id `4b80343ba17afd688a92b3a0755ea73179c9daab`)
 - BluePyOpt version 1.5.35 (commit id `1456941abe425b4a20fb084eab1cb6415ccfe2b8`).
 
+## Dockerized install
+
+Install the models in a Docker container:
+
+```bash
+cd docker
+docker build . -t neuron7
+
+cd ..
+docker run -v $(pwd):/bgmodel -it neuron7 bash
+
+cd /bgmodel
+./install.sh
+```
 
 ## Installation
 
-Install editable version (symlink to this directory):
+Installation in a UNIX environment where NEURON 7.X with MPI support is installed.
 
-```sh
+First activate the python environment where Neuron and mpi4py are installed.
+Then:
 
-# BluePyOpt for various simulation tools
-git clone https://github.com/BlueBrain/BluePyOpt.git
-cd BluePyOpt && git checkout 1456941abe425b4a20fb084eab1cb6415ccfe2b8
-pip install -e .
-cd ..
-
-# PyNN for network simulation (patched version)
-git clone https://github.com/lkoelman/PyNN.git
-cd PyNN && git checkout lkmn-multicomp
-cd pyNN/neuron/nmodl && nrnivmodl
-cd ../../.. & pip install -e .
-cd ..
-
-# Neo electrophysiology data formats (patched version)
-pip uninstall neo
-git clone https://github.com/lkoelman/python-neo.git
-cd python-neo && git checkout lkmn-dev # development version with MATLAB annotation support
-pip install -e .
-cd ..
-
-# Tools for LFP simulation
-git clone https://github.com/lkoelman/LFPsim.git
-cd LFPsim/lfpsim && nrnivmodl && cd ..
-pip install -e ./LFPsim
-
-
-# Basal Ganglia cell and network models
-git clone https://lkmn_ucd@bitbucket.org/lkmn_ucd/bg-cell-models.git bgcellmodels
-cd bgcellmodels && git checkout --track origin/nothreadsafe
-python setup.py develop # or: pip install -e path_to_repo
-python setup.py mechanisms # Build NMODL files automatically:
+```bash
+git clone --recurse-submodules https://github.com/lkoelman/bg-cell-models.git
+cd bg-cell-models
+./install.sh
 ```
 
-### Cluster environment
 
-NEURON installation: https://gist.github.com/lkoelman/49e7105b5c54128fe1c35d4e2d6b7273
+To install Neuron 7 on a cluster, see https://gist.github.com/lkoelman/49e7105b5c54128fe1c35d4e2d6b7273
 
 
 --------------------------------------------------------------------------------
-# Install Supporting Tools (optional)
+
+# Supporting Tools (optional)
 
 ## NEURON Syntax Definitions
 
